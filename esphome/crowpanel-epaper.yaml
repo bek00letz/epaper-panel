@@ -9,9 +9,8 @@
 
 substitutions:
   name: crowpanel-epaper
-  frames_url: "http://homeassistant.local:8123/local/epaper/frames.png"
-  frame_url:  "http://homeassistant.local:8123/local/epaper/frame.png"
-  hook_url:   "http://homeassistant.local:8123/api/webhook/epaper_next"
+  frames_url: "http://homeassistant.local:8099/frames.png"
+  frame_url:  "http://homeassistant.local:8099/frame.png"
   page_h: "272"
 
 esphome:
@@ -57,10 +56,10 @@ globals:
     initial_value: 'false'
 
 font:
-  - file: "../fonts/Lato-Bold.ttf"
+  - file: "../addon/app/fonts/Lato-Bold.ttf"
     id: diag_big
     size: 56
-  - file: "../fonts/Lato-Regular.ttf"
+  - file: "../addon/app/fonts/Lato-Regular.ttf"
     id: diag_small
     size: 26
 
@@ -275,13 +274,6 @@ script:
           condition:
             wifi.connected:
           timeout: 30s
-      - http_request.post:
-          url: ${hook_url}
-          request_headers:
-            Content-Type: application/json
-          body: !lambda |-
-            return "{\"rssi\":" + to_string((int) id(wifi_rssi).state) + "}";
-      - delay: 800ms
       - component.update: frames
 
 interval:
