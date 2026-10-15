@@ -31,7 +31,8 @@ the add-on itself lives in `addon/`.
 | Home Assistant | `homeassistant.local:8123` (Proxmox VM on a Dell OptiPlex 7070 Ultra, SSD — not resource-constrained) |
 | Panel | `crowpanel-epaper.local`, hostname `crowpanel-epaper` |
 | Jellyfin | `jellyfin.local:8096` |
-| Add-on frame port | `<ha>:8099` — the panel fetches here, no auth, LAN only |
+| Add-on frame port | `<ha>:7410` — the panel fetches here, no auth, LAN only |
+| **Port 8099 is taken** | the Homegar adaptation. Leave it alone; that is why the panel is on 7410 |
 | Editor | HA sidebar → E-paper (ingress, behind your HA login) |
 
 Never route the panel through the Cloudflare tunnel (`homeassistant.example.com`). It would

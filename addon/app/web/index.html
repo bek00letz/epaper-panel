@@ -60,6 +60,11 @@ small{color:var(--mut)}
       <label>show if</label>
       <input id="showif" placeholder="{{ is_state('timer.x','active') }} — blank means always">
     </div>
+    <div class="row" id="holdrow" style="display:none">
+      <label>hold for</label>
+      <input id="hold" type="number" min="1" max="120" style="max-width:90px">
+      <small>minutes on screen before it hands the panel back</small>
+    </div>
     <small id="hint">Drag an entity onto the canvas, or add an element. Drag to move, corner to resize.</small>
   </div>
 
@@ -127,6 +132,8 @@ function select(name){
   $("page").value=cur;
   $("tier").value=page().tier||"rotate";
   $("showif").value=page().show_if||"";
+  $("hold").value=page().hold_minutes??10;
+  holdRow();
   paint(); preview();
 }
 
@@ -298,7 +305,9 @@ function props(){
 /* ---------- page level ---------- */
 $("undo").onclick=undo; $("redo").onclick=redo;
 $("page").onchange=e=>select(e.target.value);
-$("tier").onchange=e=>{snapshot();page().tier=e.target.value;};
+function holdRow(){ $("holdrow").style.display = page()&&page().tier==="alert" ? "flex" : "none"; }
+$("tier").onchange=e=>{snapshot();page().tier=e.target.value;holdRow();};
+$("hold").onchange=e=>{snapshot();page().hold_minutes=Number(e.target.value)||10;};
 $("showif").onchange=e=>{snapshot();const v=e.target.value.trim(); v?page().show_if=v:delete page().show_if;};
 $("addpage").onclick=()=>{
   const n=prompt("Page name (lowercase, no spaces)"); if(!n) return;

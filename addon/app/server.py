@@ -159,6 +159,17 @@ class Frames:
 
 FRAMES = Frames()
 
+# Which alert page, if any, currently owns the screen.
+ALERT = {"name": None, "until": 0.0, "fired": {}}
+
+
+async def call_ha_service(session, domain, service, data=None):
+    try:
+        await ha_json(session, f"/services/{domain}/{service}",
+                      method="POST", json=data or {})
+    except Exception as exc:
+        print(f"service {domain}.{service} failed: {exc!r}", flush=True)
+
 
 def _png(img) -> bytes:
     buf = io.BytesIO()
@@ -254,10 +265,53 @@ async def publish_computed(session):
                               "icon": "mdi:white-balance-sunny"})
 
 
+async def check_alerts(session, spec):
+    """Alert pages never rotate. They seize the screen when their condition
+    turns true, hold, then hand it back.
+
+    Edge-triggered, not level: an alert that stays true all evening fires
+    once, rather than grabbing the panel every refresh.
+    """
+    import time
+    now = time.time()
+    defs = spec.get("pages", {})
+    alerts = {n: p for n, p in defs.items()
+              if p.get("tier") == "alert" and p.get("show_if")}
+    if not alerts:
+        return None
+
+    states = await resolve_templates(session, {n: p["show_if"] for n, p in alerts.items()})
+    truthy = {n for n, v in states.items()
+              if str(v).strip().lower() in ("true", "on", "yes")}
+
+    # release an expired or no-longer-true alert
+    if ALERT["name"] and (now > ALERT["until"] or ALERT["name"] not in truthy):
+        print(f"alert {ALERT['name']} released", flush=True)
+        ALERT["name"], ALERT["until"] = None, 0.0
+
+    for name in truthy:
+        if ALERT["fired"].get(name):
+            continue                                  # already handled this episode
+        hold = int(alerts[name].get("hold_minutes", 10)) * 60
+        ALERT.update(name=name, until=now + hold)
+        ALERT["fired"][name] = True
+        print(f"alert {name} fired, holding {hold}s", flush=True)
+        break
+
+    for name in list(ALERT["fired"]):                  # re-arm when it goes false
+        if name not in truthy:
+            ALERT["fired"].pop(name, None)
+
+    return ALERT["name"]
+
+
 async def build_frames(session):
     await publish_computed(session)
     spec = load_layouts()
+    alert = await check_alerts(session, spec)
     live = await eligible_pages(session, spec)
+    if alert:
+        live = [alert] + [n for n in live if n != alert]
     vals = await gather_values(session, spec, set(live))
 
     series = {}
@@ -290,8 +344,16 @@ async def render_loop(app):
                 nxt = Frames()
                 nxt.strip, nxt.single, nxt.names = strip, single, names
                 nxt.rendered_at = datetime.now().isoformat(timespec="seconds")
+                was_alert = FRAMES.names[:1] == [ALERT["name"]] if ALERT["name"] else False
                 globals()["FRAMES"] = nxt
                 print(f"rendered {names} ({len(strip)}B strip)", flush=True)
+                # An alert is only useful if the panel looks at it now.
+                if ALERT["name"] and names[:1] == [ALERT["name"]] and not was_alert:
+                    await call_ha_service(session, "esphome",
+                                          "crowpanel_epaper_refresh_now")
+                    await asyncio.sleep(8)      # let the fetch land first
+                    await call_ha_service(session, "esphome",
+                                          "crowpanel_epaper_show_page", {"index": 0})
             except Exception as exc:
                 print(f"render failed: {exc!r}", flush=True)
                 FRAMES.error = repr(exc)
