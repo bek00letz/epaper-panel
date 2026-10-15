@@ -31,7 +31,7 @@ map:
 
 options:
   jellyfin_base: "http://jellyfin.local:8096"
-  jellyfin_user: ""
+  jellyfin_user: ""   # blank = first user, or put a username here
   jellyfin_key: ""
   refresh_seconds: 60
 schema:

@@ -60,12 +60,35 @@ def human_ago(dt, now=None):
     return dt.strftime("%-d %b").lower()
 
 
+def jellyfin_user_id(api_key, base, prefer=""):
+    """Resolve a Jellyfin user id.
+
+    Blank config is the common case, so look one up rather than making
+    someone dig a UUID out of the Jellyfin admin URL. A named preference
+    wins; otherwise take the first user.
+    """
+    try:
+        users = _http_json(f"{base}/Users", {"X-Emby-Token": api_key})
+    except Exception:
+        return ""
+    if prefer:
+        for u in users:
+            if prefer.lower() in (u.get("Name", "").lower(), u.get("Id", "").lower()):
+                return u.get("Id", "")
+    return users[0].get("Id", "") if users else ""
+
+
 def jellyfin_new(api_key, *, base=JELLYFIN_BASE, user=JELLYFIN_USER,
                  days=WATCH_WINDOW_DAYS, limit=20):
     """Recently added AND unplayed, newest first, series grouped.
 
     Returns [] on any failure -- a dead Jellyfin must not take the panel down.
     """
+    if not user or "-" not in user and len(user) != 32:
+        user = jellyfin_user_id(api_key, base, prefer=user)
+    if not user:
+        return []
+
     params = {
         "userId": user, "Limit": limit, "IsPlayed": "false",
         "IncludeItemTypes": "Movie,Episode", "GroupItems": "true",
