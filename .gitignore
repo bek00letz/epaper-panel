@@ -1,0 +1,14 @@
+# Real credentials — never commit
+esphome/secrets.yaml
+secrets.json
+
+# Local state and build artefacts
+state.json
+out/
+.venv/
+.esphome-venv/
+esphome/.esphome/
+esphome/build/
+__pycache__/
+*.pyc
+.DS_Store

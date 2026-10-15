@@ -1,0 +1,22 @@
+{
+  "_comment": "Live snapshot pulled from Home Assistant 2026-10-15T19:25+03:00. Used so the renderer can be developed without a long-lived token. Replace with live API calls on the HA box.",
+  "taken_at": "2026-10-15T19:25:00+03:00",
+  "states": {
+    "sensor.solar_today_production":                    {"state": "10.6",        "unit": "kWh"},
+    "sensor.solar_pv_power":                            {"state": "13",          "unit": "W"},
+    "sensor.home_battery":                             {"state": "67",          "unit": "%"},
+    "sensor.home_battery_power_2":                     {"state": "1435",        "unit": "W"},
+    "sensor.home_battery_state":                       {"state": "discharging", "unit": null},
+    "sensor.solar_load_power":                          {"state": "1426",        "unit": "W"},
+    "sensor.solcast_pv_forecast_forecast_today":       {"state": "12.6869",     "unit": "kWh"},
+    "sensor.cat_location":                          {"state": "Outdoor Cat", "unit": null, "last_changed": "2026-10-14T23:34:43+03:00"},
+    "sensor.outdoor_temperature":      {"state": "10.3",        "unit": "°C"},
+    "sensor.indoor_temperature": {"state": "unavailable", "unit": "°C"},
+    "timer.dryer_cycle":                     {"state": "idle",        "unit": null, "remaining": null, "duration": "0:00:00"}
+  },
+  "pv_curve_w": [1.8, 1.8, 1.0, 2.0, 2.1, 2.1, 1.1, 13.1, 219.1, 817.7, 806.7, 738.4,
+                 1038.7, 1398.7, 2905.8, 1710.6, 563.4, 342.0, 70.1],
+  "pv_curve_start_hour": 0,
+  "month_kwh": 287.3,
+  "panel": {"battery_pct": 86, "rssi": -62}
+}

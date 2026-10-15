@@ -1,0 +1,315 @@
+# CrowPanel 5.79" e-paper living-room panel.
+#
+# Home Assistant renders every page of the rotation into one tall PNG; the
+# panel holds it in PSRAM and blits a slice. Paging with the dial therefore
+# needs no network at all -- just a partial refresh, about half a second.
+#
+# STAGE 2 (this file): still mains-powered, no deep sleep, so it stays
+# reachable over OTA. See the bottom for turning it into a battery device.
+
+substitutions:
+  name: crowpanel-epaper
+  frames_url: "http://homeassistant.local:8123/local/epaper/frames.png"
+  frame_url:  "http://homeassistant.local:8123/local/epaper/frame.png"
+  hook_url:   "http://homeassistant.local:8123/api/webhook/epaper_next"
+  page_h: "272"
+
+esphome:
+  name: ${name}
+  friendly_name: E-paper panel
+  on_boot:
+    priority: -100
+    then:
+      - script.execute: refetch
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: esp-idf
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+external_components:
+  - source: github://ESPBoards/esphome-lvgl-crowpanel-epaper-5.79-4.2
+
+globals:
+  - id: have_frames
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+  - id: have_single
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+  - id: page
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: page_count
+    type: int
+    restore_value: false
+    initial_value: '1'
+  - id: pinned
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+
+font:
+  - file: "../fonts/Lato-Bold.ttf"
+    id: diag_big
+    size: 56
+  - file: "../fonts/Lato-Regular.ttf"
+    id: diag_small
+    size: 26
+
+logger:
+
+# Lets Home Assistant push the panel instead of it only ever pulling on a
+# timer -- so "Re-render now" on the dashboard updates the screen at once.
+api:
+  actions:
+    - action: refresh_now
+      then:
+        - script.execute: refetch
+    - action: show_page
+      variables:
+        index: int
+      then:
+        - lambda: |-
+            if (index >= 0 && index < id(page_count)) id(page) = index;
+        - script.execute: redraw
+
+    # Relative paging, for remotes. Home Assistant has no idea which page the
+    # panel is on -- the panel owns that -- so it can only say "move by N".
+    - action: page_step
+      variables:
+        delta: int
+      then:
+        - lambda: |-
+            int n = id(page_count) > 0 ? id(page_count) : 1;
+            id(page) = ((id(page) + delta) % n + n) % n;
+        - script.execute: redraw
+
+    - action: hold_toggle
+      then:
+        - lambda: 'id(pinned) = !id(pinned);'
+        - script.execute: redraw
+
+ota:
+  - platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  fast_connect: true
+
+switch:
+  - platform: gpio
+    pin: 7
+    id: epd_power
+    restore_mode: ALWAYS_ON
+    internal: true
+
+display:
+  - platform: crowpanel_epaper
+    id: epd
+    model: "5.79in"
+    clk_pin: 12
+    mosi_pin: 11
+    cs_pin: 45
+    dc_pin: 46
+    reset_pin: 47
+    busy_pin: 48
+    invert_colors: true
+    full_update_every: 10
+    update_interval: never
+    auto_clear_enabled: false
+    lambda: |-
+      if (id(have_frames)) {
+        // Read only the rows we need. it.image() at a negative offset works,
+        // but walks all 1.29M pixels of the strip to discard most of them --
+        // about 2s. Copying the 272 rows directly is roughly 6x less work.
+        const int off = ${page_h} * id(page);
+        for (int y = 0; y < ${page_h}; y++) {
+          for (int x = 0; x < 792; x++) {
+            it.draw_pixel_at(x, y, id(frames).get_pixel(x, y + off));
+          }
+        }
+        // Held pages need to say so, or a stopped rotation reads as a fault.
+        // Top-right margin: every page anchors its content at or inside
+        // x=752, so x>752 is free on all of them.
+        if (id(pinned)) {
+          it.filled_rectangle(761, 12, 5, 20);     // shackle, left
+          it.filled_rectangle(778, 12, 5, 20);     // shackle, right
+          it.filled_rectangle(761, 12, 22, 5);     // shackle, top
+          it.filled_rectangle(754, 30, 36, 26);    // body
+          it.filled_circle(772, 40, 4, COLOR_OFF);         // keyhole
+          it.filled_rectangle(770, 40, 4, 10, COLOR_OFF);  // keyhole stem
+        }
+      } else if (id(have_single)) {
+        // Strip missing -- fall back to whatever single frame HA is serving.
+        it.image(0, 0, id(frame));
+      } else {
+        it.print(40, 40, id(diag_big), "panel alive");
+        it.printf(40, 130, id(diag_small), "ip: %s", id(wifi_ip).state.c_str());
+        it.printf(40, 170, id(diag_small), "waiting for %s", "frames.png");
+      }
+
+http_request:
+  verify_ssl: false
+  timeout: 15s
+  # Default is 512 bytes on ESP32, which caps throughput around 31 KB/s and
+  # dominates fetch time for anything larger than a few KB.
+  buffer_size_rx: 8192
+
+online_image:
+  - id: frames
+    url: ${frames_url}
+    format: png
+    type: BINARY
+    buffer_size: 32768
+    on_download_finished:
+      - lambda: |-
+          int h = id(frames).get_height();
+          id(page_count) = (h >= ${page_h}) ? h / ${page_h} : 1;
+          if (id(page) >= id(page_count)) id(page) = 0;
+          id(have_frames) = true;
+          ESP_LOGI("panel", "%d pages held locally", id(page_count));
+      - component.update: epd
+    on_error:
+      - logger.log: "frames.png missing - falling back to single frame"
+      - component.update: frame
+
+  - id: frame
+    url: ${frame_url}
+    format: png
+    type: BINARY
+    buffer_size: 32768
+    on_download_finished:
+      - lambda: 'id(have_single) = true;'
+      - component.update: epd
+    on_error:
+      - logger.log: "frame.png failed too - retrying in 20s"
+      - component.update: epd
+      - delay: 20s
+      - script.execute: refetch
+
+binary_sensor:
+  # Five discrete push-buttons, all active-low. Elecrow's demo uses plain
+  # INPUT, so the board carries its own pull-ups; ours are belt and braces.
+  - platform: gpio
+    id: key_next
+    internal: true
+    pin: {number: 4, mode: {input: true, pullup: true}, inverted: true}
+    filters: [delayed_on: 20ms]
+    on_press:
+      - logger.log: "KEY next"
+      - lambda: 'id(page) = (id(page) + 1) % id(page_count);'
+      - script.execute: redraw
+
+  - platform: gpio
+    id: key_prev
+    internal: true
+    pin: {number: 6, mode: {input: true, pullup: true}, inverted: true}
+    filters: [delayed_on: 20ms]
+    on_press:
+      - logger.log: "KEY prev"
+      - lambda: 'id(page) = (id(page) - 1 + id(page_count)) % id(page_count);'
+      - script.execute: redraw
+
+  - platform: gpio
+    id: key_ok
+    internal: true
+    pin: {number: 5, mode: {input: true, pullup: true}, inverted: true}
+    filters: [delayed_on: 20ms]
+    on_press:
+      - logger.log: "KEY ok (hold/release page)"
+      - lambda: 'id(pinned) = !id(pinned);'
+      - script.execute: redraw
+
+  - platform: gpio
+    id: key_home
+    internal: true
+    pin: {number: 2, mode: {input: true, pullup: true}, inverted: true}
+    filters: [delayed_on: 20ms]
+    on_press:
+      - logger.log: "KEY home (refetch)"
+      - script.execute: refetch
+
+  - platform: gpio
+    id: key_exit
+    internal: true
+    pin: {number: 1, mode: {input: true, pullup: true}, inverted: true}
+    filters: [delayed_on: 20ms]
+    on_press:
+      - logger.log: "KEY exit (back to rotation)"
+      - lambda: 'id(pinned) = false; id(page) = 0;'
+      - script.execute: redraw
+
+sensor:
+  - platform: wifi_signal
+    id: wifi_rssi
+    name: Panel Wi-Fi
+    update_interval: 60s
+
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      id: wifi_ip
+      name: Panel IP
+
+script:
+  - id: redraw
+    mode: restart
+    then:
+      - delay: 250ms
+      - component.update: epd
+
+  - id: refetch
+    mode: single
+    then:
+      - wait_until:
+          condition:
+            wifi.connected:
+          timeout: 30s
+      - http_request.post:
+          url: ${hook_url}
+          request_headers:
+            Content-Type: application/json
+          body: !lambda |-
+            return "{\"rssi\":" + to_string((int) id(wifi_rssi).state) + "}";
+      - delay: 800ms
+      - component.update: frames
+
+interval:
+  # Bring-up only. Under deep sleep the wake itself replaces this.
+  - interval: 5min
+    then:
+      - if:
+          condition:
+            lambda: 'return !id(pinned);'
+          then:
+            - lambda: 'id(page) = (id(page) + 1) % id(page_count);'
+      - script.execute: refetch
+
+# ---------------------------------------------------------------------------
+# STAGE 3: battery. Uncomment, delete the interval: block above, and add
+#   - deep_sleep.enter: sleeper
+# to both on_download_finished and on_error.
+#
+# deep_sleep:
+#   id: sleeper
+#   run_duration: 30s
+#   sleep_duration: 5min
+#   esp32_ext1_wakeup:
+#     pins:
+#       - {number: 4, mode: {input: true, pullup: true}}
+#       - {number: 6, mode: {input: true, pullup: true}}
+#       - {number: 5, mode: {input: true, pullup: true}}
+#       - {number: 2, mode: {input: true, pullup: true}}
+#       - {number: 1, mode: {input: true, pullup: true}}
+#     mode: ANY_LOW
+# ---------------------------------------------------------------------------
