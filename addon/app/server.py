@@ -82,6 +82,52 @@ async def ha_template(session, tpl):
         return ""
 
 
+async def publish_entity(session, entity_id, state, attrs=None):
+    """Push a computed value into Home Assistant as a real entity.
+
+    Things the service works out -- the next unwatched title, this month's
+    solar -- are useful beyond the panel, and publishing them means page
+    templates are ordinary {{ states(...) }} rather than a private channel.
+    """
+    try:
+        await ha_json(session, f"/states/{entity_id}", method="POST",
+                      json={"state": str(state)[:255], "attributes": attrs or {}})
+    except Exception as exc:
+        print(f"publish {entity_id} failed: {exc!r}", flush=True)
+
+
+async def ha_ws_statistics(statistic_id, period="month", months_back=1):
+    """Long-term statistics over the websocket API.
+
+    Statistics are websocket-only -- there is no REST endpoint -- which is
+    why earlier versions read the recorder database directly. The supervisor
+    token works here, so that fragility goes away.
+    """
+    from datetime import timedelta
+    start = datetime.now().astimezone().replace(
+        day=1, hour=0, minute=0, second=0, microsecond=0)
+    url = HA_BASE.replace("http://", "ws://").replace("https://", "wss://") + "/websocket"
+    try:
+        async with aiohttp.ClientSession() as ses:
+            async with ses.ws_connect(url, timeout=10) as ws:
+                await ws.receive_json()                      # auth_required
+                await ws.send_json({"type": "auth", "access_token": HA_TOKEN})
+                if (await ws.receive_json()).get("type") != "auth_ok":
+                    return None
+                await ws.send_json({
+                    "id": 1, "type": "recorder/statistics_during_period",
+                    "start_time": start.isoformat(),
+                    "statistic_ids": [statistic_id],
+                    "period": period, "types": ["change"],
+                })
+                msg = await ws.receive_json()
+                rows = (msg.get("result") or {}).get(statistic_id) or []
+                return sum(float(r.get("change") or 0) for r in rows)
+    except Exception as exc:
+        print(f"statistics for {statistic_id} failed: {exc!r}", flush=True)
+        return None
+
+
 SEP = "<<<|epaper|>>>"
 
 
@@ -179,7 +225,37 @@ async def eligible_pages(session, spec):
     return live or [n for n in rotation if n in defs][:1]
 
 
+async def publish_computed(session):
+    """Values only this service can work out, pushed to HA before rendering."""
+    key = os.environ.get("JELLYFIN_KEY") or ""
+    if key:
+        items = await asyncio.to_thread(
+            sources.jellyfin_new, key,
+            base=os.environ.get("JELLYFIN_BASE") or sources.JELLYFIN_BASE,
+            user=os.environ.get("JELLYFIN_USER") or sources.JELLYFIN_USER)
+        top = items[0] if items else None
+        await publish_entity(session, "sensor.epaper_watch",
+                             top["title"] if top else "nothing new",
+                             {"detail": top["detail"] if top else "",
+                              "count": len(items),
+                              "titles": [i["title"] for i in items],
+                              "friendly_name": "E-paper next to watch",
+                              "icon": "mdi:television-play"})
+        await publish_entity(session, "sensor.epaper_watch_count", len(items),
+                             {"friendly_name": "E-paper new to watch",
+                              "icon": "mdi:television-play"})
+
+    month = await ha_ws_statistics("sensor.solar_total_production")
+    if month is not None:
+        await publish_entity(session, "sensor.epaper_solar_month", round(month, 1),
+                             {"unit_of_measurement": "kWh",
+                              "device_class": "energy",
+                              "friendly_name": "E-paper solar this month",
+                              "icon": "mdi:white-balance-sunny"})
+
+
 async def build_frames(session):
+    await publish_computed(session)
     spec = load_layouts()
     live = await eligible_pages(session, spec)
     vals = await gather_values(session, spec, set(live))
