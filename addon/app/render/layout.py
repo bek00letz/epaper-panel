@@ -29,6 +29,22 @@ _MDI_MAP = _FONTS / "mdi-codepoints.json"
 
 _mdi_codepoints = None
 
+MM_PER_PX = 139.1 / T.W          # ~0.176 mm; the panel is 139mm wide
+
+# Cap height is ~0.7em, and legibility bands come from the 3m measurements
+# in ARCHITECTURE.md.
+def legibility(size_px):
+    mm = size_px * 0.7 * MM_PER_PX
+    if mm < 4.4:
+        verdict = "too small at 3 m"
+    elif mm < 13:
+        verdict = "squint at 3 m"
+    elif mm < 19:
+        verdict = "comfortable"
+    else:
+        verdict = "effortless"
+    return round(mm, 1), verdict
+
 
 def mdi_codepoint(name):
     """Map 'mdi:washing-machine' (or bare 'washing-machine') to a codepoint."""
@@ -59,7 +75,7 @@ def _anchor_x(align, x, w):
     return {"left": x, "center": x + w // 2, "right": x + w}.get(align, x)
 
 
-def _draw_text(img, d, el, text):
+def _draw_text(img, d, el, text, metrics=None):
     if not text:
         return
     w, h = int(el.get("w", 200)), int(el.get("h", 60))
@@ -68,6 +84,10 @@ def _draw_text(img, d, el, text):
 
     size = int(el["size"]) if el.get("size") else T.fit_size(text, w, h, 200, bold=bold)
     f = T.font(size, bold=bold)
+    if metrics is not None:
+        mm, verdict = legibility(size)
+        metrics.append({"size": size, "mm": mm, "verdict": verdict,
+                        "overflow": T.text_width(text, f) > w})
     ax = _anchor_x(align, int(el["x"]), w)
     anchor = {"left": "lm", "center": "mm", "right": "rm"}.get(align, "lm")
     d.text((ax, int(el["y"]) + h // 2), text, font=f, fill=T.BLACK, anchor=anchor)
@@ -87,7 +107,7 @@ def _draw_icon(img, d, el, _text):
         return
     ch = chr(cp)
     w, h = int(el.get("w", 100)), int(el.get("h", 100))
-    size = _fit_glyph(ch, w, h)
+    size = int(el["size"]) if el.get("size") else _fit_glyph(ch, w, h)
     f = ImageFont.truetype(str(_MDI_TTF), size)
     d.text((int(el["x"]) + w // 2, int(el["y"]) + h // 2), ch,
            font=f, fill=T.BLACK, anchor="mm")
@@ -155,7 +175,8 @@ def element_text(el, vals, idx):
     return ""
 
 
-def render_page(page, vals, *, clock="", label="", battery_pct=0, series=None):
+def render_page(page, vals, *, clock="", label="", battery_pct=0, series=None,
+                metrics=None):
     """Draw one page. `vals` maps element index -> resolved template result."""
     img, d = T.new_canvas()
     for i, el in enumerate(page.get("elements", [])):
@@ -165,6 +186,11 @@ def render_page(page, vals, *, clock="", label="", battery_pct=0, series=None):
         try:
             if el["type"] == "curve":
                 drawer(img, d, el, "", (series or {}).get(i))
+            elif el["type"] in ("text", "number"):
+                got = []
+                drawer(img, d, el, element_text(el, vals, i), got)
+                if metrics is not None and got:
+                    metrics.append({"i": i, **got[0]})
             else:
                 drawer(img, d, el, element_text(el, vals, i))
         except Exception:

@@ -292,12 +292,16 @@ async def api_preview(request):
             if el.get("type") == "curve" and el.get("entity"):
                 series[i] = await curve_series(session, el["entity"],
                                                int(el.get("hours", 24)))
+    metrics = []
     img = await asyncio.to_thread(
         layout.render_page, page, vals,
         clock=datetime.now().strftime("%H:%M"),
         label=body.get("label", "preview"),
-        battery_pct=86, series=series)
-    return web.Response(body=_png(T.to_1bit(img)), content_type="image/png")
+        battery_pct=86, series=series, metrics=metrics)
+    # Effective font sizes ride back on a header so the editor can report
+    # what you actually got, in millimetres, rather than what you asked for.
+    return web.Response(body=_png(T.to_1bit(img)), content_type="image/png",
+                        headers={"X-Metrics": json.dumps(metrics)})
 
 
 async def editor_index(request):
