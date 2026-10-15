@@ -1,0 +1,6 @@
+# Without this the supervisor never passes BUILD_FROM and the build fails
+# with "base name should not be blank". Pinned rather than :latest so a
+# rebuild later produces the same image.
+build_from:
+  amd64: ghcr.io/home-assistant/amd64-base:3.22
+  aarch64: ghcr.io/home-assistant/aarch64-base:3.22
