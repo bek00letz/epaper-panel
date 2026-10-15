@@ -12,8 +12,8 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-JELLYFIN_BASE = "http://jellyfin.local:8096"
-JELLYFIN_USER = "REDACTED-JELLYFIN-USER"   # bek00letz
+JELLYFIN_BASE = ""   # set via add-on config
+JELLYFIN_USER = ""   # set via add-on config
 WATCH_WINDOW_DAYS = 30
 
 ENT = {
