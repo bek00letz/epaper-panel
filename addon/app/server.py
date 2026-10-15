@@ -23,7 +23,7 @@ from aiohttp import web
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).parent))
-from render import pages, sources, theme as T  # noqa: E402
+from render import layout, pages, sources, theme as T  # noqa: E402
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 WEB_DIR = Path(__file__).parent / "web"
@@ -34,7 +34,70 @@ REFRESH = int(os.environ.get("REFRESH_SECONDS", "60") or 60)
 FRAME_PORT = 8099
 INGRESS_PORT = 8080
 
-DEFAULT_ROTATION = "solar,solar_month,cat,watch,cat,temps"
+LAYOUTS_PATH = DATA_DIR / "layouts.json"
+DEFAULTS_PATH = Path(__file__).parent / "default_layouts.json"
+
+_entity_cache = {"at": 0.0, "items": []}
+
+
+def load_layouts():
+    """User layouts, seeded from the shipped defaults on first run."""
+    for src in (LAYOUTS_PATH, DEFAULTS_PATH):
+        try:
+            return json.loads(src.read_text())
+        except Exception:
+            continue
+    return {"rotation": [], "pages": {}}
+
+
+def save_layouts(spec):
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = LAYOUTS_PATH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(spec, indent=2))
+    tmp.replace(LAYOUTS_PATH)
+
+
+async def ha_json(session, path, method="GET", **kw):
+    url = f"{HA_BASE}/api{path}"
+    headers = {"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"}
+    async with session.request(method, url, headers=headers, **kw) as r:
+        r.raise_for_status()
+        return await r.json()
+
+
+async def ha_template(session, tpl):
+    """Render one template through Home Assistant.
+
+    Returns "" on any failure: a page with blank values is recoverable, a
+    crashed render loop is not.
+    """
+    url = f"{HA_BASE}/api/template"
+    headers = {"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"}
+    try:
+        async with session.post(url, headers=headers, json={"template": tpl}) as r:
+            if r.status != 200:
+                return ""
+            return (await r.text()).strip()
+    except Exception:
+        return ""
+
+
+SEP = "<<<|epaper|>>>"
+
+
+async def resolve_templates(session, templates):
+    """Render many templates in ONE request.
+
+    Joined with a separator rather than built into a JSON literal, because
+    user templates contain quotes and would break the quoting.
+    """
+    if not templates:
+        return {}
+    keys = list(templates)
+    joined = f"\n{SEP}\n".join(templates[k] for k in keys)
+    out = await ha_template(session, joined)
+    parts = [p.strip() for p in out.split(SEP)]
+    return {k: (parts[i] if i < len(parts) else "") for i, k in enumerate(keys)}
 
 
 class Frames:
@@ -57,34 +120,84 @@ def _png(img) -> bytes:
     return buf.getvalue()
 
 
-def render_all(data, rotation):
-    """Render every eligible page; return (strip_png, first_png, names)."""
-    live, seen_watch, imgs = [], 0, []
-    for name in rotation:
-        if name in pages.ALWAYS:
-            live.append(name)
-        elif name == "watch" and data.watch:
-            live.append(name)
-        elif name == "dryer" and data.dryer_remaining():
-            live.append(name)
-    live = live or ["solar"]
+async def curve_series(session, entity, hours=24, buckets=24):
+    """Hourly means for a sparkline, from the recorder's history API."""
+    start = datetime.now().astimezone().replace(minute=0, second=0, microsecond=0)
+    start = start.replace(hour=0) if hours >= 24 else start
+    path = (f"/history/period/{start.isoformat()}"
+            f"?filter_entity_id={entity}&minimal_response&no_attributes")
+    try:
+        rows = await ha_json(session, path)
+    except Exception:
+        return []
+    if not rows or not rows[0]:
+        return []
+    sums, counts = [0.0] * buckets, [0] * buckets
+    for r in rows[0]:
+        try:
+            v = float(r["state"])
+            t = datetime.fromisoformat(r["last_changed"]).astimezone()
+        except (KeyError, TypeError, ValueError):
+            continue
+        sums[t.hour] += v
+        counts[t.hour] += 1
+    last = max((i for i, c in enumerate(counts) if c), default=-1)
+    return [sums[i] / counts[i] if counts[i] else 0.0 for i in range(last + 1)]
 
+
+async def gather_values(session, spec, names):
+    """Resolve every template on every named page in one request."""
+    batch, index = {}, []
+    for name in names:
+        page = spec["pages"][name]
+        for i, tpl in layout.collect_templates(page).items():
+            key = f"{name}:{i}"
+            batch[key] = tpl
+            index.append((name, i, key))
+    resolved = await resolve_templates(session, batch)
+    out = {n: {} for n in names}
+    for name, i, key in index:
+        out[name][i] = resolved.get(key, "")
+    return out
+
+
+async def eligible_pages(session, spec):
+    """Pages whose tier and show_if say they belong in the rotation now."""
+    rotation = spec.get("rotation", [])
+    defs = spec.get("pages", {})
+    gates = {n: defs[n]["show_if"] for n in set(rotation)
+             if n in defs and defs[n].get("show_if")}
+    passed = await resolve_templates(session, gates) if gates else {}
+    live = []
+    for name in rotation:
+        page = defs.get(name)
+        if page is None or page.get("tier") == "alert":
+            continue
+        if name in gates and str(passed.get(name, "")).strip().lower() not in ("true", "on", "yes"):
+            continue
+        live.append(name)
+    return live or [n for n in rotation if n in defs][:1]
+
+
+async def build_frames(session):
+    spec = load_layouts()
+    live = await eligible_pages(session, spec)
+    vals = await gather_values(session, spec, set(live))
+
+    series = {}
+    for name in set(live):
+        for i, el in enumerate(spec["pages"][name].get("elements", [])):
+            if el.get("type") == "curve" and el.get("entity"):
+                series.setdefault(name, {})[i] = await curve_series(
+                    session, el["entity"], int(el.get("hours", 24)))
+
+    imgs = []
     for i, name in enumerate(live):
-        item = None
-        if name == "watch" and data.watch:
-            item = data.watch[seen_watch % len(data.watch)]
-            seen_watch += 1
-        ctx = {
-            "clock": datetime.now().strftime("%H:%M"),
-            "label": f"{name.replace('_', ' ')} · {i + 1}/{len(live)}",
-            "battery_pct": 0,
-        }
-        if name == "watch":
-            img = pages.watch(data, ctx, item)
-        elif name == "dryer":
-            img = pages.dryer(data, ctx)
-        else:
-            img = pages.ALWAYS[name](data, ctx)
+        img = await asyncio.to_thread(
+            layout.render_page, spec["pages"][name], vals.get(name, {}),
+            clock=datetime.now().strftime("%H:%M"),
+            label=f"{name.replace('_', ' ')} \u00b7 {i + 1}/{len(live)}",
+            battery_pct=0, series=series.get(name))
         imgs.append(T.to_1bit(img))
 
     strip = Image.new("1", (T.W, T.H * len(imgs)), 1)
@@ -93,40 +206,20 @@ def render_all(data, rotation):
     return _png(strip), _png(imgs[0]), live
 
 
-def build_frames():
-    """Blocking: fetch state and draw. Runs in a thread.
-
-    Without a token (i.e. running outside the add-on) it falls back to the
-    captured fixture, so the service can be developed and smoke-tested
-    anywhere.
-    """
-    if HA_TOKEN:
-        data = sources.from_ha(HA_BASE, HA_TOKEN)
-    else:
-        data = sources.from_fixture(Path(__file__).parent / "render" / "fixture.json")
-    key = os.environ.get("JELLYFIN_KEY") or ""
-    if key:
-        data.watch = sources.jellyfin_new(
-            key,
-            base=os.environ.get("JELLYFIN_BASE") or sources.JELLYFIN_BASE,
-            user=os.environ.get("JELLYFIN_USER") or sources.JELLYFIN_USER,
-        )
-    return render_all(data, [p.strip() for p in DEFAULT_ROTATION.split(",") if p.strip()])
-
-
 async def render_loop(app):
-    while True:
-        try:
-            strip, single, names = await asyncio.to_thread(build_frames)
-            nxt = Frames()
-            nxt.strip, nxt.single, nxt.names = strip, single, names
-            nxt.rendered_at = datetime.now().isoformat(timespec="seconds")
-            globals()["FRAMES"] = nxt          # swap by reference
-            print(f"rendered {names} ({len(strip)}B strip)", flush=True)
-        except Exception as exc:                # a bad render must not stop the loop
-            print(f"render failed: {exc!r}", flush=True)
-            FRAMES.error = repr(exc)
-        await asyncio.sleep(REFRESH)
+    async with aiohttp.ClientSession() as session:
+        while True:
+            try:
+                strip, single, names = await build_frames(session)
+                nxt = Frames()
+                nxt.strip, nxt.single, nxt.names = strip, single, names
+                nxt.rendered_at = datetime.now().isoformat(timespec="seconds")
+                globals()["FRAMES"] = nxt
+                print(f"rendered {names} ({len(strip)}B strip)", flush=True)
+            except Exception as exc:
+                print(f"render failed: {exc!r}", flush=True)
+                FRAMES.error = repr(exc)
+            await asyncio.sleep(REFRESH)
 
 
 async def frame_png(request):
@@ -154,6 +247,59 @@ async def status(request):
     })
 
 
+async def api_layouts_get(request):
+    return web.json_response(load_layouts())
+
+
+async def api_layouts_put(request):
+    spec = await request.json()
+    if not isinstance(spec, dict) or "pages" not in spec:
+        raise web.HTTPBadRequest(text="expected {rotation, pages}")
+    save_layouts(spec)
+    return web.json_response({"saved": True, "pages": list(spec["pages"])})
+
+
+async def api_entities(request):
+    """Entity list for the picker. Cached briefly -- it is a big response."""
+    import time
+    if time.time() - _entity_cache["at"] < 60 and _entity_cache["items"]:
+        return web.json_response(_entity_cache["items"])
+    async with aiohttp.ClientSession() as session:
+        try:
+            states = await ha_json(session, "/states")
+        except Exception as exc:
+            return web.json_response({"error": repr(exc)}, status=502)
+    items = sorted(
+        ({"entity_id": s["entity_id"],
+          "name": (s.get("attributes") or {}).get("friendly_name") or s["entity_id"],
+          "state": s.get("state"),
+          "unit": (s.get("attributes") or {}).get("unit_of_measurement") or ""}
+         for s in states),
+        key=lambda e: e["entity_id"])
+    _entity_cache.update(at=time.time(), items=items)
+    return web.json_response(items)
+
+
+async def api_preview(request):
+    """Render one page spec through the real engine, so WYSIWYG cannot lie."""
+    body = await request.json()
+    page = body.get("page") or {}
+    async with aiohttp.ClientSession() as session:
+        tpls = layout.collect_templates(page)
+        vals = await resolve_templates(session, tpls) if tpls else {}
+        series = {}
+        for i, el in enumerate(page.get("elements", [])):
+            if el.get("type") == "curve" and el.get("entity"):
+                series[i] = await curve_series(session, el["entity"],
+                                               int(el.get("hours", 24)))
+    img = await asyncio.to_thread(
+        layout.render_page, page, vals,
+        clock=datetime.now().strftime("%H:%M"),
+        label=body.get("label", "preview"),
+        battery_pct=86, series=series)
+    return web.Response(body=_png(T.to_1bit(img)), content_type="image/png")
+
+
 async def editor_index(request):
     index = WEB_DIR / "index.html"
     if not index.exists():
@@ -173,6 +319,10 @@ async def start(app_runners):
     editor.add_routes([
         web.get("/", editor_index),
         web.get("/api/status", status),
+        web.get("/api/layouts", api_layouts_get),
+        web.put("/api/layouts", api_layouts_put),
+        web.get("/api/entities", api_entities),
+        web.post("/api/preview", api_preview),
     ])
     if WEB_DIR.exists():
         editor.router.add_static("/static/", WEB_DIR)

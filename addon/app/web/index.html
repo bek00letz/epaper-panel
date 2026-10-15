@@ -1,0 +1,249 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>E-paper editor</title>
+<style>
+:root{--bg:#f6f6f4;--card:#fff;--line:#d9d8d2;--ink:#1a1a18;--mut:#6b6a64;--accent:#378add}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.5 system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--ink)}
+header{display:flex;gap:10px;align-items:center;padding:10px 14px;background:var(--card);border-bottom:1px solid var(--line);flex-wrap:wrap}
+select,input,button{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:#fff}
+button{cursor:pointer}button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
+#msg{margin-left:auto;color:var(--mut);font-size:13px}
+main{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:12px;padding:12px}
+@media(max-width:900px){main{grid-template-columns:1fr}}
+#stage{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px}
+#canvas{position:relative;width:100%;aspect-ratio:792/272;background:#fff url("") no-repeat center/100% 100%;
+        border:1px solid var(--line);user-select:none;touch-action:none}
+.el{position:absolute;border:1.5px dashed rgba(0,0,0,.35);cursor:move}
+.el.sel{border:2px solid var(--accent);background:rgba(55,138,221,.08)}
+.el .hd{position:absolute;right:-5px;bottom:-5px;width:11px;height:11px;background:var(--accent);
+        border:2px solid #fff;border-radius:2px;cursor:nwse-resize}
+aside{display:flex;flex-direction:column;gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.card h3{margin:0 0 8px;font-size:12px;font-weight:600;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+.row{display:flex;gap:6px;align-items:center;margin-bottom:6px}
+.row label{width:74px;color:var(--mut);font-size:13px;flex:none}
+.row input,.row select{flex:1;min-width:0}
+.pal{display:flex;flex-wrap:wrap;gap:6px}
+.pal button{font-size:13px}
+#ents{max-height:190px;overflow:auto;font-size:12px}
+#ents div{padding:4px 6px;border-radius:4px;cursor:grab;font-family:ui-monospace,monospace;font-size:11px}
+#ents div:hover{background:#eef4fb}
+small{color:var(--mut)}
+</style>
+
+<header>
+  <select id="page"></select>
+  <button id="addpage">+ page</button>
+  <button id="delpage">delete</button>
+  <select id="tier" title="When this page appears">
+    <option value="rotate">in rotation</option>
+    <option value="when">only when true</option>
+    <option value="alert">interrupt only</option>
+  </select>
+  <button id="save" class="primary">Save</button>
+  <span id="msg"></span>
+</header>
+
+<main>
+  <div id="stage">
+    <div id="canvas"></div>
+    <div class="row" style="margin-top:10px">
+      <label>show if</label>
+      <input id="showif" placeholder="{{ is_state('timer.x','active') }} — blank means always">
+    </div>
+    <small id="hint">Drag an entity onto the canvas, or add an element. Drag to move, corner to resize.</small>
+  </div>
+
+  <aside>
+    <div class="card">
+      <h3>Add element</h3>
+      <div class="pal">
+        <button data-add="number">Number</button>
+        <button data-add="text">Text</button>
+        <button data-add="icon">Icon</button>
+        <button data-add="curve">Curve</button>
+        <button data-add="line">Line</button>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Entities</h3>
+      <input id="search" placeholder="search…" style="width:100%;margin-bottom:6px">
+      <div id="ents"></div>
+    </div>
+    <div class="card">
+      <h3>Selected</h3>
+      <div id="props"><small>Nothing selected.</small></div>
+    </div>
+  </aside>
+</main>
+
+<script>
+const W=792,H=272;
+let spec={rotation:[],pages:{}}, cur=null, sel=-1, ents=[], timer=null;
+const $=id=>document.getElementById(id);
+const canvas=$("canvas");
+
+const api=(p,o)=>fetch(p,o).then(r=>r.ok?r:Promise.reject(new Error(r.status+" "+r.statusText)));
+const msg=t=>{$("msg").textContent=t; if(t) setTimeout(()=>{if($("msg").textContent===t)$("msg").textContent=""},2500);};
+
+async function boot(){
+  spec=await api("api/layouts").then(r=>r.json());
+  ents=await api("api/entities").then(r=>r.json()).catch(()=>[]);
+  drawEntities("");
+  fillPages();
+  select(Object.keys(spec.pages)[0]);
+}
+
+function fillPages(){
+  $("page").innerHTML=Object.keys(spec.pages).map(n=>`<option>${n}</option>`).join("");
+}
+
+function select(name){
+  cur=name; sel=-1;
+  if(!cur) return;
+  $("page").value=cur;
+  $("tier").value=spec.pages[cur].tier||"rotate";
+  $("showif").value=spec.pages[cur].show_if||"";
+  paint(); preview();
+}
+
+const page=()=>spec.pages[cur];
+const els=()=>page().elements||(page().elements=[]);
+
+function paint(){
+  canvas.querySelectorAll(".el").forEach(n=>n.remove());
+  els().forEach((el,i)=>{
+    const d=document.createElement("div");
+    d.className="el"+(i===sel?" sel":"");
+    d.style.left=(el.x/W*100)+"%"; d.style.top=(el.y/H*100)+"%";
+    d.style.width=(el.w/W*100)+"%"; d.style.height=(el.h/H*100)+"%";
+    d.dataset.i=i;
+    d.innerHTML='<div class="hd"></div>';
+    canvas.appendChild(d);
+  });
+  props();
+}
+
+function preview(){
+  clearTimeout(timer);
+  timer=setTimeout(async()=>{
+    try{
+      const r=await api("api/preview",{method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({page:page(),label:cur})});
+      const b=await r.blob();
+      canvas.style.backgroundImage=`url(${URL.createObjectURL(b)})`;
+    }catch(e){ msg("preview failed: "+e.message); }
+  },220);
+}
+
+/* ---- drag & resize, in panel pixels ---- */
+let drag=null;
+canvas.addEventListener("pointerdown",e=>{
+  const box=e.target.closest(".el"); if(!box) return;
+  sel=+box.dataset.i; paint();
+  const scale=W/canvas.getBoundingClientRect().width;
+  drag={i:sel,mode:e.target.classList.contains("hd")?"size":"move",
+        sx:e.clientX,sy:e.clientY,el:{...els()[sel]},scale};
+  canvas.setPointerCapture(e.pointerId);
+});
+canvas.addEventListener("pointermove",e=>{
+  if(!drag) return;
+  const dx=(e.clientX-drag.sx)*drag.scale, dy=(e.clientY-drag.sy)*drag.scale;
+  const el=els()[drag.i], o=drag.el, snap=v=>Math.round(v/2)*2;
+  if(drag.mode==="move"){
+    el.x=Math.max(0,Math.min(W-o.w,snap(o.x+dx)));
+    el.y=Math.max(0,Math.min(H-o.h,snap(o.y+dy)));
+  }else{
+    el.w=Math.max(16,Math.min(W-o.x,snap(o.w+dx)));
+    el.h=Math.max(10,Math.min(H-o.y,snap(o.h+dy)));
+  }
+  paint();
+});
+canvas.addEventListener("pointerup",()=>{ if(drag){drag=null; preview();} });
+
+/* ---- palette ---- */
+document.querySelectorAll("[data-add]").forEach(b=>b.onclick=()=>{
+  const t=b.dataset.add;
+  const base={type:t,x:60,y:60,w:t==="line"?240:260,h:t==="line"?4:90};
+  if(t==="number"){base.value="{{ states('sensor.example') }}";base.decimals=1;base.align="left";}
+  if(t==="text"){base.value="label";base.size=30;base.bold=false;base.align="left";}
+  if(t==="icon"){base.icon="mdi:home";base.w=110;base.h=110;}
+  if(t==="curve"){base.entity="sensor.example";base.hours=24;}
+  els().push(base); sel=els().length-1; paint(); preview();
+});
+
+/* ---- entity list, draggable onto the canvas ---- */
+$("search").oninput=e=>drawEntities(e.target.value);
+function drawEntities(q){
+  const f=ents.filter(e=>!q||e.entity_id.includes(q)||(e.name||"").toLowerCase().includes(q.toLowerCase())).slice(0,120);
+  $("ents").innerHTML=f.map(e=>`<div draggable="true" data-e="${e.entity_id}" title="${e.name} — ${e.state}">${e.entity_id}</div>`).join("")
+    || "<small>no match</small>";
+  $("ents").querySelectorAll("div[data-e]").forEach(d=>{
+    d.ondragstart=ev=>ev.dataTransfer.setData("text/plain",d.dataset.e);
+  });
+}
+canvas.addEventListener("dragover",e=>e.preventDefault());
+canvas.addEventListener("drop",e=>{
+  e.preventDefault();
+  const id=e.dataTransfer.getData("text/plain"); if(!id) return;
+  const r=canvas.getBoundingClientRect(), s=W/r.width;
+  els().push({type:"number",value:`{{ states('${id}') }}`,decimals:1,align:"left",
+              x:Math.round((e.clientX-r.left)*s),y:Math.round((e.clientY-r.top)*s),w:260,h:90});
+  sel=els().length-1; paint(); preview();
+});
+
+/* ---- properties ---- */
+function props(){
+  const box=$("props");
+  if(sel<0||!els()[sel]){box.innerHTML="<small>Nothing selected.</small>";return;}
+  const el=els()[sel];
+  const f=(k,label,type="text")=>`<div class="row"><label>${label}</label>
+    <input data-k="${k}" type="${type}" value="${(el[k]??"").toString().replace(/"/g,"&quot;")}"></div>`;
+  let h="";
+  if(el.type==="number")h=f("value","value")+f("decimals","decimals","number")+f("fallback","if error");
+  else if(el.type==="text")h=f("value","value")+f("size","size","number");
+  else if(el.type==="icon")h=f("icon","mdi name");
+  else if(el.type==="curve")h=f("entity","entity")+f("hours","hours","number");
+  else if(el.type==="line")h=f("thickness","thickness","number");
+  if(el.type==="text"||el.type==="number")
+    h+=`<div class="row"><label>align</label><select data-k="align">
+        ${["left","center","right"].map(a=>`<option${el.align===a?" selected":""}>${a}</option>`).join("")}</select></div>`;
+  h+=`<div class="row"><label>box</label><small>${el.x},${el.y} · ${el.w}×${el.h}</small></div>
+      <button id="del">Remove</button>`;
+  box.innerHTML=h;
+  box.querySelectorAll("[data-k]").forEach(inp=>inp.onchange=()=>{
+    const k=inp.dataset.k, v=inp.value;
+    el[k]=(inp.type==="number")?(v===""?undefined:Number(v)):v;
+    preview();
+  });
+  $("del").onclick=()=>{els().splice(sel,1);sel=-1;paint();preview();};
+}
+
+/* ---- page-level ---- */
+$("page").onchange=e=>select(e.target.value);
+$("tier").onchange=e=>{page().tier=e.target.value;};
+$("showif").onchange=e=>{const v=e.target.value.trim(); v?page().show_if=v:delete page().show_if;};
+$("addpage").onclick=()=>{
+  const n=prompt("Page name (lowercase, no spaces)"); if(!n) return;
+  spec.pages[n]={tier:"rotate",elements:[]};
+  if(!spec.rotation.includes(n)) spec.rotation.push(n);
+  fillPages(); select(n);
+};
+$("delpage").onclick=()=>{
+  if(!cur||!confirm(`Delete page "${cur}"?`)) return;
+  delete spec.pages[cur];
+  spec.rotation=spec.rotation.filter(n=>n!==cur);
+  fillPages(); select(Object.keys(spec.pages)[0]);
+};
+$("save").onclick=async()=>{
+  try{
+    await api("api/layouts",{method:"PUT",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(spec)});
+    msg("Saved — the panel picks it up on its next refresh.");
+  }catch(e){ msg("save failed: "+e.message); }
+};
+
+boot().catch(e=>msg("load failed: "+e.message));
+</script>
