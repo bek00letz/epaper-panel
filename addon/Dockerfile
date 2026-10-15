@@ -1,0 +1,14 @@
+ARG BUILD_FROM
+FROM ${BUILD_FROM}
+
+# Pillow from apk rather than pip: the wheel would need a compiler toolchain
+# and the Alpine package is already built against the right libs.
+RUN apk add --no-cache python3 py3-pip py3-pillow tzdata \
+ && pip3 install --no-cache-dir --break-system-packages aiohttp
+
+COPY app /opt/epaper
+COPY run.sh /run.sh
+RUN chmod a+x /run.sh
+
+WORKDIR /opt/epaper
+CMD ["/run.sh"]

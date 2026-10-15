@@ -21,9 +21,9 @@ from pathlib import Path
 
 from PIL import Image
 
-import pages
-import sources
-import theme as T
+from . import pages
+from . import sources
+from . import theme as T
 
 
 def save_atomic(img, path, fmt=None):

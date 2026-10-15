@@ -20,15 +20,21 @@ FOOTER_SIZE  = 20
 BODY_SIZE    = 26    # the "worthwhile when passing by" tier
 LABEL_SIZE   = 30
 
-_FONTS = Path(__file__).parent / "fonts"
+# Fonts live beside the app, not inside the render package. Check both so
+# this works whether run as a package or as a loose script.
+_FONT_DIRS = [
+    Path(__file__).parent.parent / "fonts",
+    Path(__file__).parent / "fonts",
+]
 
 
 def _font_file(*names):
-    for n in names:
-        p = _FONTS / n
-        if p.exists():
-            return str(p)
-    raise FileNotFoundError(f"none of {names} in {_FONTS}")
+    for d in _FONT_DIRS:
+        for n in names:
+            p = d / n
+            if p.exists():
+                return str(p)
+    raise FileNotFoundError(f"none of {names} in {[str(d) for d in _FONT_DIRS]}")
 
 
 BOLD    = _font_file("Lato-Bold.ttf", "DejaVuSans-Bold.ttf")

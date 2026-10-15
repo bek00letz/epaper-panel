@@ -1,0 +1,41 @@
+name: E-paper panel
+version: "0.1.0"
+slug: epaper_panel
+description: Renders status pages for the living-room CrowPanel e-paper display
+url: https://github.com/bek00letz/epaper-panel
+arch:
+  - amd64
+  - aarch64
+init: false
+
+# The editor runs behind Home Assistant's own login, in the sidebar.
+ingress: true
+ingress_port: 8080
+panel_icon: mdi:tablet-dashboard
+panel_title: E-paper
+
+# A second, unauthenticated port purely so the panel can fetch frames.
+# The panel has no credentials and cannot use ingress.
+ports:
+  8099/tcp: 8099
+ports_description:
+  8099/tcp: Frame fetches from the panel (LAN only, no auth)
+
+# Supervisor injects a token for http://supervisor/core/api and the
+# websocket -- no long-lived token to create or store.
+homeassistant_api: true
+
+# Read-only, only for the recorder database if the websocket route fails.
+map:
+  - homeassistant_config:ro
+
+options:
+  jellyfin_base: "http://jellyfin.local:8096"
+  jellyfin_user: ""
+  jellyfin_key: ""
+  refresh_seconds: 60
+schema:
+  jellyfin_base: "str?"
+  jellyfin_user: "str?"
+  jellyfin_key: "password?"
+  refresh_seconds: "int(10,3600)?"

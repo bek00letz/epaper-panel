@@ -8,7 +8,7 @@ import math
 
 from PIL import Image, ImageDraw
 
-import theme as T
+from . import theme as T
 
 
 # ------------------------------------------------------------------ pieces
