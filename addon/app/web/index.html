@@ -3,82 +3,152 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>E-paper editor</title>
 <style>
-:root{--bg:#f6f6f4;--card:#fff;--line:#d9d8d2;--ink:#1a1a18;--mut:#6b6a64;--accent:#378add}
+:root{
+  --bg:#f2f2ef; --card:#fff; --line:#e3e2dd; --line2:#cfcec8;
+  --ink:#1b1b19; --mut:#6e6d66; --faint:#97968f;
+  --accent:#2f6fd0; --accent-bg:#eaf1fb; --danger:#b3261e; --good:#1d7a4c;
+  --r-out:10px; --r-in:6px;
+}
 *{box-sizing:border-box}
-body{margin:0;font:14px/1.5 system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--ink)}
-header{display:flex;gap:10px;align-items:center;padding:10px 14px;background:var(--card);border-bottom:1px solid var(--line);flex-wrap:wrap}
-select,input,button{font:inherit;padding:5px 8px;border:1px solid var(--line);border-radius:6px;background:#fff}
-button{cursor:pointer}button.primary{background:var(--accent);color:#fff;border-color:var(--accent)}
-#msg{margin-left:auto;color:var(--mut);font-size:13px}
-main{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:12px;padding:12px}
-@media(max-width:900px){main{grid-template-columns:1fr}}
-#stage{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:12px}
-#canvas{position:relative;width:100%;aspect-ratio:792/272;background:#fff url("") no-repeat center/100% 100%;
-        border:1px solid var(--line);user-select:none;touch-action:none}
-.el{position:absolute;border:1.5px dashed rgba(0,0,0,.35);cursor:move}
-.el.sel{border:2px solid var(--accent);background:rgba(55,138,221,.08)}
+html,body{height:100%}
+body{margin:0;font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
+     background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased}
+
+/* chrome sits quiet so the canvas keeps the eye */
+header{display:flex;gap:8px;align-items:center;padding:10px 16px;background:var(--card);
+       border-bottom:1px solid var(--line);flex-wrap:wrap;position:sticky;top:0;z-index:10}
+.brand{font-weight:600;letter-spacing:-.01em;margin-right:4px}
+.sep{width:1px;height:24px;background:var(--line);margin:0 4px}
+select,input,button{font:inherit;color:inherit;background:#fff;border:1px solid var(--line2);
+                    border-radius:var(--r-in);padding:7px 10px;min-height:36px}
+select{padding-right:26px}
+button{cursor:pointer;transition:background .12s,border-color .12s}
+button:hover{background:#f7f7f5}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+button:disabled{opacity:.4;cursor:default}
+button.primary{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:500}
+button.primary:hover{background:#2a63ba}
+button.icon{min-width:36px;padding:7px 9px;font-size:15px}
+.spacer{margin-left:auto}
+
+main{display:grid;grid-template-columns:minmax(0,1fr) 316px;gap:14px;padding:14px;align-items:start}
+@media(max-width:940px){main{grid-template-columns:1fr}}
+
+/* canvas: the task, so it gets the weight */
+#stage{background:var(--card);border:1px solid var(--line);border-radius:var(--r-out);padding:16px}
+#frame{background:#3a3a37;border-radius:8px;padding:7px}
+#canvas{position:relative;width:100%;aspect-ratio:792/272;background:#fff no-repeat center/100% 100%;
+        user-select:none;touch-action:none;border-radius:2px}
+.el{position:absolute;border:1px dashed rgba(0,0,0,.3);cursor:move;border-radius:2px}
+.el:hover{border-color:rgba(0,0,0,.55)}
+.el.sel{border:2px solid var(--accent);background:rgba(47,111,208,.07)}
+.el .hd{position:absolute;right:-6px;bottom:-6px;width:13px;height:13px;background:var(--accent);
+        border:2px solid #fff;border-radius:3px;cursor:nwse-resize;box-shadow:0 1px 3px rgba(0,0,0,.25)}
 .guide{position:absolute;background:#e0439b;pointer-events:none;z-index:5}
 .guide.v{width:1px;top:0;bottom:0}.guide.h{height:1px;left:0;right:0}
-#legib{margin-top:6px;font-size:12px}
-#legib b{font-weight:600}
-.warn{color:#b3261e}.ok{color:#1d7a4c}
-.el .hd{position:absolute;right:-5px;bottom:-5px;width:11px;height:11px;background:var(--accent);
-        border:2px solid #fff;border-radius:2px;cursor:nwse-resize}
+#belt{display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap}
+#belt label{color:var(--mut);font-size:13px}
+#belt input{flex:1;min-width:220px}
+.hint{color:var(--faint);font-size:12.5px;margin-top:10px}
+
+/* right rail: chunked, so nothing is a wall of controls */
 aside{display:flex;flex-direction:column;gap:12px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
-.card h3{margin:0 0 8px;font-size:12px;font-weight:600;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
-.row{display:flex;gap:6px;align-items:center;margin-bottom:6px}
-.row label{width:74px;color:var(--mut);font-size:13px;flex:none}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-out);overflow:hidden}
+.card>h3{margin:0;padding:11px 14px 9px;font-size:11px;font-weight:600;color:var(--mut);
+         text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--line)}
+.card>.body{padding:12px 14px}
+.pal{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+.pal button{justify-content:flex-start;text-align:left;font-size:13px}
+
+/* entity rows: name first, id second, value right — scannable, not a wall of slugs */
+#ents{max-height:196px;overflow:auto;margin:0 -4px}
+.ent{display:flex;gap:9px;align-items:baseline;padding:7px 8px;border-radius:var(--r-in);cursor:grab}
+.ent:hover{background:var(--accent-bg)}
+.ent .nm{font-weight:500;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ent .id{font:11px/1.3 ui-monospace,SFMono-Regular,monospace;color:var(--faint);
+         white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ent .col{min-width:0;flex:1}
+.ent .val{font-size:12px;color:var(--mut);white-space:nowrap;flex:none;max-width:84px;
+          overflow:hidden;text-overflow:ellipsis}
+
+/* properties: grouped rather than one long list */
+.grp{padding-top:4px}
+.grp+.grp{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
+.grp>.lbl{font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px}
+.row{display:flex;gap:7px;align-items:center;margin-bottom:7px}
+.row:last-child{margin-bottom:0}
+.row>label{width:66px;flex:none;color:var(--mut);font-size:13px}
 .row input,.row select{flex:1;min-width:0}
-.pal{display:flex;flex-wrap:wrap;gap:6px}
-.pal button{font-size:13px}
-#ents{max-height:190px;overflow:auto;font-size:12px}
-#ents div{padding:4px 6px;border-radius:4px;cursor:grab;font-family:ui-monospace,monospace;font-size:11px}
-#ents div:hover{background:#eef4fb}
-small{color:var(--mut)}
+.row input[type=number]{max-width:92px}
+.chip{display:block;margin-top:9px;padding:8px 10px;border-radius:var(--r-in);
+      background:var(--accent-bg);font-size:12.5px;line-height:1.45}
+.chip.bad{background:#fcecea}
+.chip b{font-weight:600}
+.ok{color:var(--good)}.warn{color:var(--danger)}
+.empty{color:var(--faint);font-size:13px;padding:2px 0}
+
+/* feedback that is actually noticed */
+#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(8px);
+       background:#24241f;color:#fff;padding:11px 16px;border-radius:999px;font-size:13.5px;
+       display:flex;gap:12px;align-items:center;box-shadow:0 6px 24px rgba(0,0,0,.26);
+       opacity:0;pointer-events:none;transition:opacity .16s,transform .16s;z-index:40;max-width:92vw}
+#toast.on{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
+#toast button{background:transparent;border:1px solid rgba(255,255,255,.4);color:#fff;
+              min-height:28px;padding:3px 11px;font-size:13px}
+#toast button:hover{background:rgba(255,255,255,.14)}
+@media(prefers-reduced-motion:reduce){#toast{transition:none}}
+
 @font-face{font-family:mdi;src:url("api/mdi/font") format("truetype")}
-#pickwrap{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:20}
-#pick{background:#fff;border-radius:10px;padding:14px;width:min(620px,92vw);max-height:80vh;display:flex;flex-direction:column;gap:10px}
-#picks{display:grid;grid-template-columns:repeat(auto-fill,minmax(68px,1fr));gap:6px;overflow:auto}
-#picks button{font-family:mdi;font-size:26px;line-height:1.5;padding:4px;height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
-#picks button span{font-family:system-ui,sans-serif;font-size:9px;color:var(--mut);max-width:62px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mdiprev{font-family:mdi;font-size:20px;margin-left:6px}
+#pickwrap{position:fixed;inset:0;background:rgba(20,20,18,.45);display:none;
+          align-items:center;justify-content:center;z-index:30;padding:16px}
+#pick{background:#fff;border-radius:14px;padding:14px;width:min(660px,94vw);
+      max-height:82vh;display:flex;flex-direction:column;gap:12px}
+#picks{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:7px;overflow:auto}
+#picks button{font-family:mdi;font-size:27px;line-height:1.1;padding:9px 4px;height:70px;
+              display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;
+              border-color:var(--line)}
+#picks button span{font-family:system-ui,sans-serif;font-size:9.5px;color:var(--mut);
+                   max-width:68px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mdiprev{font-family:mdi;font-size:22px;margin-left:8px;color:var(--ink)}
 </style>
 
 <header>
-  <select id="page"></select>
-  <button id="addpage">+ page</button>
-  <button id="delpage">delete</button>
+  <span class="brand">E-paper</span>
+  <select id="page" title="Page"></select>
   <select id="tier" title="When this page appears">
     <option value="rotate">in rotation</option>
     <option value="when">only when true</option>
     <option value="alert">interrupt only</option>
   </select>
-  <button id="undo" title="Undo (Cmd/Ctrl+Z)">↶</button>
-  <button id="redo" title="Redo (Cmd/Ctrl+Shift+Z)">↷</button>
+  <button id="addpage" title="New page">+</button>
+  <button id="delpage" title="Delete this page">Delete</button>
+  <span class="sep"></span>
+  <button id="undo" class="icon" title="Undo (Cmd/Ctrl+Z)">&#8630;</button>
+  <button id="redo" class="icon" title="Redo (Cmd/Ctrl+Shift+Z)">&#8631;</button>
+  <span class="spacer"></span>
   <button id="push" title="Make the panel fetch and redraw now">Push to panel</button>
   <button id="save" class="primary">Save</button>
-  <span id="msg"></span>
 </header>
 
 <main>
   <div id="stage">
-    <div id="canvas"></div>
-    <div class="row" style="margin-top:10px">
-      <label>show if</label>
-      <input id="showif" placeholder="{{ is_state('timer.x','active') }} — blank means always">
+    <div id="frame"><div id="canvas"></div></div>
+    <div id="belt">
+      <label for="showif">Show if</label>
+      <input id="showif" placeholder="blank means always — e.g. {{ is_state('timer.x','active') }}">
+      <label for="hold" id="holdlab" style="display:none">Hold</label>
+      <input id="hold" type="number" min="1" max="120" style="display:none;max-width:78px;flex:none">
     </div>
-    <div class="row" id="holdrow" style="display:none">
-      <label>hold for</label>
-      <input id="hold" type="number" min="1" max="120" style="max-width:90px">
-      <small>minutes on screen before it hands the panel back</small>
-    </div>
-    <small id="hint">Drag an entity onto the canvas, or add an element. Drag to move, corner to resize.</small>
+    <p class="hint">Drag an entity onto the canvas, or add an element. Drag to move, corner to resize.
+       Arrows nudge, Shift+arrows by ten. Hold Alt to ignore snapping.</p>
   </div>
 
   <aside>
-    <div class="card">
-      <h3>Add element</h3>
+    <!-- Ordered by how often each is touched: properties constantly,
+         the palette per element, entities only while hunting one. -->
+    <div class="card"><h3>Selected element</h3><div class="body" id="props"></div></div>
+
+    <div class="card"><h3>Add element</h3><div class="body">
       <div class="pal">
         <button data-add="number">Number</button>
         <button data-add="text">Text</button>
@@ -86,23 +156,24 @@ small{color:var(--mut)}
         <button data-add="curve">Curve</button>
         <button data-add="line">Line</button>
       </div>
-    </div>
-    <div class="card">
-      <h3>Entities</h3>
-      <input id="search" placeholder="search…" style="width:100%;margin-bottom:6px">
+    </div></div>
+
+    <div class="card"><h3>Entities</h3><div class="body">
+      <input id="search" placeholder="Search by name or id…" style="width:100%;margin-bottom:8px">
       <div id="ents"></div>
-    </div>
-    <div class="card">
-      <h3>Selected</h3>
-      <div id="props"><small>Nothing selected.</small></div>
-    </div>
+    </div></div>
   </aside>
 </main>
+
 <div id="pickwrap"><div id="pick">
-  <div class="row" style="margin:0"><input id="picksearch" placeholder="search icons…" style="flex:1">
-    <button id="pickclose">Close</button></div>
+  <div class="row" style="margin:0">
+    <input id="picksearch" placeholder="Search icons…" style="flex:1">
+    <button id="pickclose">Close</button>
+  </div>
   <div id="picks"></div>
 </div></div>
+
+<div id="toast"><span id="toasttext"></span><button id="toastact" style="display:none"></button></div>
 
 <script>
 const W=792,H=272,SNAP=6;
@@ -111,7 +182,18 @@ let hist=[], hpos=-1, metrics=[];
 const $=id=>document.getElementById(id);
 const canvas=$("canvas");
 const api=(p,o)=>fetch(p,o).then(r=>r.ok?r:Promise.reject(new Error(r.status+" "+r.statusText)));
-const msg=t=>{$("msg").textContent=t;if(t)setTimeout(()=>{if($("msg").textContent===t)$("msg").textContent=""},2500);};
+let toastT=null;
+function msg(text,action){
+  clearTimeout(toastT);
+  $("toasttext").textContent=text;
+  const b=$("toastact");
+  if(action){ b.style.display=""; b.textContent=action.label;
+              b.onclick=()=>{ action.run(); hideToast(); }; }
+  else b.style.display="none";
+  $("toast").classList.add("on");
+  toastT=setTimeout(hideToast, action?7000:3000);
+}
+const hideToast=()=>$("toast").classList.remove("on");
 
 /* ---------- history ---------- */
 function snapshot(){
@@ -284,8 +366,12 @@ document.querySelectorAll("[data-add]").forEach(b=>b.onclick=()=>{
 $("search").oninput=e=>drawEntities(e.target.value);
 function drawEntities(q){
   const f=ents.filter(e=>!q||e.entity_id.includes(q)||(e.name||"").toLowerCase().includes(q.toLowerCase())).slice(0,120);
-  $("ents").innerHTML=f.map(e=>`<div draggable="true" data-e="${e.entity_id}" title="${e.name} — ${e.state}">${e.entity_id}</div>`).join("")||"<small>no match</small>";
-  $("ents").querySelectorAll("div[data-e]").forEach(d=>d.ondragstart=ev=>ev.dataTransfer.setData("text/plain",d.dataset.e));
+  const esc=t=>String(t??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+  $("ents").innerHTML=f.map(e=>`<div class="ent" draggable="true" data-e="${esc(e.entity_id)}">
+      <div class="col"><div class="nm">${esc(e.name)}</div><div class="id">${esc(e.entity_id)}</div></div>
+      <div class="val">${esc(e.state)}${e.unit?" "+esc(e.unit):""}</div></div>`).join("")
+    || '<div class="empty">No entity matches that.</div>';
+  $("ents").querySelectorAll(".ent").forEach(d=>d.ondragstart=ev=>ev.dataTransfer.setData("text/plain",d.dataset.e));
 }
 canvas.addEventListener("dragover",e=>e.preventDefault());
 canvas.addEventListener("drop",e=>{
@@ -301,34 +387,41 @@ canvas.addEventListener("drop",e=>{
 /* ---------- properties ---------- */
 function props(){
   const box=$("props");
-  if(sel<0||!els()[sel]){box.innerHTML="<small>Nothing selected.</small>";return;}
+  if(sel<0||!els()[sel]){
+    box.innerHTML='<div class="empty">Nothing selected. Click an element on the canvas.</div>';return;}
   const el=els()[sel];
   const f=(k,label,type="text",ph="")=>`<div class="row"><label>${label}</label>
     <input data-k="${k}" type="${type}" placeholder="${ph}" value="${(el[k]??"").toString().replace(/"/g,"&quot;")}"></div>`;
-  let h="";
-  if(el.type==="number")h=f("value","value")+f("decimals","decimals","number")+f("size","size","number","auto — fit box")+f("fallback","if error");
-  else if(el.type==="text")h=f("value","value")+f("size","size","number","auto — fit box");
+  let h='<div class="grp"><div class="lbl">Content</div>';
+  if(el.type==="number")h+=f("value","value")+f("decimals","decimals","number")+f("fallback","if error");
+  else if(el.type==="text")h+=f("value","value");
   else if(el.type==="icon"){
-    h=f("icon","mdi name")+`<div class="row"><label></label><button id="browse">Browse icons…</button>
-      <span class="mdiprev" id="mdiprev"></span></div>`+f("size","size","number","auto — fit box");
+    h+=f("icon","mdi name")+`<div class="row"><label></label><button id="browse">Browse icons…</button>
+      <span class="mdiprev" id="mdiprev"></span></div>`;
   }
-  else if(el.type==="curve")h=f("entity","entity")+f("hours","hours","number")+
-    `<div id="legib">A sparkline of that entity's recent history — the shape of
-     today, not a number. Good for solar output or power draw.</div>`;
-  else if(el.type==="line")h=f("thickness","thickness","number");
-  if(el.type==="text"||el.type==="number")
-    h+=`<div class="row"><label>align</label><select data-k="align">
-        ${["left","center","right"].map(a=>`<option${el.align===a?" selected":""}>${a}</option>`).join("")}</select></div>`;
-  h+=`<div class="row"><label>position</label>
+  else if(el.type==="curve")h+=f("entity","entity")+f("hours","hours","number")+
+    `<div class="chip">A sparkline of that entity's recent history — the shape of the
+     day rather than a number. Good for solar output or power draw.</div>`;
+  else if(el.type==="line")h+=f("thickness","thickness","number");
+  h+="</div>";
+  if(["text","number","icon"].includes(el.type)){
+    h+='<div class="grp"><div class="lbl">Appearance</div>'+f("size","size","number","auto");
+    if(el.type!=="icon")
+      h+=`<div class="row"><label>align</label><select data-k="align">
+          ${["left","center","right"].map(a=>`<option${el.align===a?" selected":""}>${a}</option>`).join("")}</select></div>`;
+    const m=metrics.find(x=>x.i===sel);
+    if(m) h+=`<div class="chip${m.mm>=13?"":" bad"}">Renders at <b>${m.size} px</b> = <b>${m.mm} mm</b> —
+         <span class="${m.mm>=13?"ok":"warn"}">${m.verdict}</span>${m.overflow?' · <span class="warn">overflows its box</span>':""}</div>`;
+    h+="</div>";
+  }
+  h+=`<div class="grp"><div class="lbl">Box</div>
+      <div class="row"><label>position</label>
         <input data-k="x" type="number" value="${el.x}" title="x">
         <input data-k="y" type="number" value="${el.y}" title="y"></div>
       <div class="row"><label>size</label>
         <input data-k="w" type="number" value="${el.w}" title="width">
-        <input data-k="h" type="number" value="${el.h}" title="height"></div>`;
-  const m=metrics.find(x=>x.i===sel);
-  if(m) h+=`<div id="legib">Renders at <b>${m.size} px</b> = <b>${m.mm} mm</b> —
-       <span class="${m.mm>=13?"ok":"warn"}">${m.verdict}</span>${m.overflow?' <span class="warn">· overflows its box</span>':""}</div>`;
-  h+=`<div class="row" style="margin-top:8px"><button id="dup">Duplicate</button><button id="del">Remove</button></div>`;
+        <input data-k="h" type="number" value="${el.h}" title="height"></div></div>`;
+  h+=`<div class="grp"><div class="row"><button id="dup">Duplicate</button><button id="del">Remove</button></div></div>`;
   box.innerHTML=h;
   box.querySelectorAll("[data-k]").forEach(inp=>inp.onchange=()=>{
     snapshot();
@@ -350,7 +443,11 @@ function props(){
 /* ---------- page level ---------- */
 $("undo").onclick=undo; $("redo").onclick=redo;
 $("page").onchange=e=>select(e.target.value);
-function holdRow(){ $("holdrow").style.display = page()&&page().tier==="alert" ? "flex" : "none"; }
+function holdRow(){
+  const on = page() && page().tier==="alert";
+  $("hold").style.display = on ? "" : "none";
+  $("holdlab").style.display = on ? "" : "none";
+}
 $("tier").onchange=e=>{snapshot();page().tier=e.target.value;holdRow();};
 $("hold").onchange=e=>{snapshot();page().hold_minutes=Number(e.target.value)||10;};
 $("showif").onchange=e=>{snapshot();const v=e.target.value.trim(); v?page().show_if=v:delete page().show_if;};
@@ -361,15 +458,17 @@ $("addpage").onclick=()=>{
   fillPages(); select(n);
 };
 $("delpage").onclick=()=>{
-  if(!cur||!confirm(`Delete page "${cur}"?`)) return;
-  snapshot(); delete spec.pages[cur];
-  spec.rotation=spec.rotation.filter(n=>n!==cur);
+  if(!cur) return;
+  const gone=cur;
+  snapshot(); delete spec.pages[gone];
+  spec.rotation=spec.rotation.filter(n=>n!==gone);
   fillPages(); select(Object.keys(spec.pages)[0]);
+  msg(`Deleted "${gone}".`, {label:"Undo", run:undo});
 };
 $("save").onclick=async()=>{
   try{
     await api("api/layouts",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(spec)});
-    msg("Saved — the panel picks it up on its next refresh.");
+    msg("Saved. The panel picks it up on its next refresh.", {label:"Push now", run:()=>$("push").click()});
   }catch(e){ msg("save failed: "+e.message); }
 };
 /* ---------- icon picker ---------- */

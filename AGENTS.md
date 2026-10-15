@@ -93,6 +93,21 @@ For firmware, `esphome config` catches schema errors but not behaviour. A full
 - **Strokes under ~4 px are invisible on this panel** (145 dpi, so 3 px is
   0.5 mm). Icons drawn in the lambda need chunky geometry.
 
+## Editor design decisions
+
+- **The canvas is the task**, so the chrome is deliberately quiet and the panel
+  sits in a dark frame that reads as the device. Do not add colour or weight
+  that competes with it.
+- **The right rail is ordered by how often each panel is touched**: properties
+  constantly, palette per element, entities only while hunting one. Do not
+  reorder it alphabetically or by "importance".
+- **No confirmation dialogs.** Deleting a page shows an undo toast instead.
+  There is a 60-deep undo stack; use it rather than asking "are you sure?".
+- **Controls are >=36px tall** (Fitts). Do not shrink them to fit more in.
+- **The legibility chip lives in the Appearance group**, next to the size field
+  it describes. It is the one opinionated thing in the editor and the reason
+  the tool is specific to this panel rather than a generic canvas.
+
 ## Inputs
 
 Five discrete push-buttons, **not** a rotary encoder, despite what the Elecrow
