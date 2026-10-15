@@ -1,5 +1,5 @@
 name: E-paper panel
-version: "0.1.4"
+version: "0.1.5"
 slug: epaper_panel
 description: Renders status pages for the living-room CrowPanel e-paper display
 url: https://github.com/bek00letz/epaper-panel

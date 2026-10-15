@@ -442,6 +442,33 @@ async def api_preview(request):
                         headers={"X-Metrics": json.dumps(metrics)})
 
 
+async def api_push(request):
+    """Make the panel fetch and redraw now, instead of waiting for its timer."""
+    async with aiohttp.ClientSession() as session:
+        await call_ha_service(session, "esphome", "crowpanel_epaper_refresh_now")
+    return web.json_response({"pushed": True})
+
+
+async def api_mdi_font(request):
+    f = Path(__file__).parent / "fonts" / "mdi.ttf"
+    if not f.exists():
+        raise web.HTTPNotFound()
+    return web.FileResponse(f, headers={"Cache-Control": "max-age=86400"})
+
+
+async def api_mdi_list(request):
+    """Icon names and codepoints for the picker, so it can show real glyphs."""
+    import json as _json
+    try:
+        cps = _json.loads((Path(__file__).parent / "fonts" / "mdi-codepoints.json").read_text())
+    except Exception:
+        return web.json_response([])
+    q = (request.query.get("q") or "").strip().lower()
+    names = [n for n in cps if q in n] if q else list(cps)
+    names.sort(key=lambda n: (len(n), n))
+    return web.json_response([{"n": n, "c": cps[n]} for n in names[:400]])
+
+
 async def editor_index(request):
     index = WEB_DIR / "index.html"
     if not index.exists():
@@ -465,6 +492,9 @@ async def start(app_runners):
         web.put("/api/layouts", api_layouts_put),
         web.get("/api/entities", api_entities),
         web.post("/api/preview", api_preview),
+        web.post("/api/push", api_push),
+        web.get("/api/mdi/font", api_mdi_font),
+        web.get("/api/mdi/list", api_mdi_list),
     ])
     if WEB_DIR.exists():
         editor.router.add_static("/static/", WEB_DIR)

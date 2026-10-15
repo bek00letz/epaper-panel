@@ -36,6 +36,13 @@ aside{display:flex;flex-direction:column;gap:12px}
 #ents div{padding:4px 6px;border-radius:4px;cursor:grab;font-family:ui-monospace,monospace;font-size:11px}
 #ents div:hover{background:#eef4fb}
 small{color:var(--mut)}
+@font-face{font-family:mdi;src:url("api/mdi/font") format("truetype")}
+#pickwrap{position:fixed;inset:0;background:rgba(0,0,0,.4);display:none;align-items:center;justify-content:center;z-index:20}
+#pick{background:#fff;border-radius:10px;padding:14px;width:min(620px,92vw);max-height:80vh;display:flex;flex-direction:column;gap:10px}
+#picks{display:grid;grid-template-columns:repeat(auto-fill,minmax(68px,1fr));gap:6px;overflow:auto}
+#picks button{font-family:mdi;font-size:26px;line-height:1.5;padding:4px;height:58px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+#picks button span{font-family:system-ui,sans-serif;font-size:9px;color:var(--mut);max-width:62px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mdiprev{font-family:mdi;font-size:20px;margin-left:6px}
 </style>
 
 <header>
@@ -49,6 +56,7 @@ small{color:var(--mut)}
   </select>
   <button id="undo" title="Undo (Cmd/Ctrl+Z)">↶</button>
   <button id="redo" title="Redo (Cmd/Ctrl+Shift+Z)">↷</button>
+  <button id="push" title="Make the panel fetch and redraw now">Push to panel</button>
   <button id="save" class="primary">Save</button>
   <span id="msg"></span>
 </header>
@@ -90,6 +98,11 @@ small{color:var(--mut)}
     </div>
   </aside>
 </main>
+<div id="pickwrap"><div id="pick">
+  <div class="row" style="margin:0"><input id="picksearch" placeholder="search icons…" style="flex:1">
+    <button id="pickclose">Close</button></div>
+  <div id="picks"></div>
+</div></div>
 
 <script>
 const W=792,H=272,SNAP=6;
@@ -183,6 +196,20 @@ function guides(el,i){
   if(gy!==null){const g=document.createElement("div");g.className="guide h";g.style.top=(gy/H*100)+"%";canvas.appendChild(g);}
 }
 
+function guidesResize(el,i){
+  // Snap the far edges while resizing, so a second element can be made
+  // flush with the first without nudging numbers.
+  const xs=[40,W/2,W-40], ys=[26,H/2,236];
+  els().forEach((o,j)=>{ if(j!==i){ xs.push(o.x,o.x+o.w); ys.push(o.y,o.y+o.h); }});
+  const near=(v,list)=>{ for(const t of list) if(Math.abs(v-t)<=SNAP) return t; return null; };
+  let gx=near(el.x+el.w,xs), gy=near(el.y+el.h,ys);
+  if(gx!==null) el.w=Math.round(gx-el.x);
+  if(gy!==null) el.h=Math.round(gy-el.y);
+  canvas.querySelectorAll(".guide").forEach(n=>n.remove());
+  if(gx!==null){const g=document.createElement("div");g.className="guide v";g.style.left=(gx/W*100)+"%";canvas.appendChild(g);}
+  if(gy!==null){const g=document.createElement("div");g.className="guide h";g.style.top=(gy/H*100)+"%";canvas.appendChild(g);}
+}
+
 /* ---------- drag & resize ---------- */
 let drag=null;
 canvas.addEventListener("pointerdown",e=>{
@@ -205,6 +232,7 @@ canvas.addEventListener("pointermove",e=>{
   }else{
     el.w=Math.max(16,Math.min(W-o.x,Math.round(o.w+dx)));
     el.h=Math.max(10,Math.min(H-o.y,Math.round(o.h+dy)));
+    if(!e.altKey) guidesResize(el,drag.i);
   }
   canvas.querySelectorAll(".el").forEach(n=>{
     const q=els()[+n.dataset.i];
@@ -280,13 +308,23 @@ function props(){
   let h="";
   if(el.type==="number")h=f("value","value")+f("decimals","decimals","number")+f("size","size","number","auto — fit box")+f("fallback","if error");
   else if(el.type==="text")h=f("value","value")+f("size","size","number","auto — fit box");
-  else if(el.type==="icon")h=f("icon","mdi name")+f("size","size","number","auto — fit box");
-  else if(el.type==="curve")h=f("entity","entity")+f("hours","hours","number");
+  else if(el.type==="icon"){
+    h=f("icon","mdi name")+`<div class="row"><label></label><button id="browse">Browse icons…</button>
+      <span class="mdiprev" id="mdiprev"></span></div>`+f("size","size","number","auto — fit box");
+  }
+  else if(el.type==="curve")h=f("entity","entity")+f("hours","hours","number")+
+    `<div id="legib">A sparkline of that entity's recent history — the shape of
+     today, not a number. Good for solar output or power draw.</div>`;
   else if(el.type==="line")h=f("thickness","thickness","number");
   if(el.type==="text"||el.type==="number")
     h+=`<div class="row"><label>align</label><select data-k="align">
         ${["left","center","right"].map(a=>`<option${el.align===a?" selected":""}>${a}</option>`).join("")}</select></div>`;
-  h+=`<div class="row"><label>box</label><small>${el.x},${el.y} · ${el.w}×${el.h}</small></div>`;
+  h+=`<div class="row"><label>position</label>
+        <input data-k="x" type="number" value="${el.x}" title="x">
+        <input data-k="y" type="number" value="${el.y}" title="y"></div>
+      <div class="row"><label>size</label>
+        <input data-k="w" type="number" value="${el.w}" title="width">
+        <input data-k="h" type="number" value="${el.h}" title="height"></div>`;
   const m=metrics.find(x=>x.i===sel);
   if(m) h+=`<div id="legib">Renders at <b>${m.size} px</b> = <b>${m.mm} mm</b> —
        <span class="${m.mm>=13?"ok":"warn"}">${m.verdict}</span>${m.overflow?' <span class="warn">· overflows its box</span>':""}</div>`;
@@ -298,6 +336,13 @@ function props(){
     if(v===""){ delete el[k]; } else { el[k]=(inp.type==="number")?Number(v):v; }
     preview();
   });
+  if($("browse")){
+    const cp=(el.icon||"").toString();
+    $("browse").onclick=()=>openPicker(el);
+    fetch("api/mdi/list?q="+encodeURIComponent(cp.replace("mdi:","")))
+      .then(r=>r.json()).then(l=>{const m=l.find(x=>"mdi:"+x.n===cp||x.n===cp);
+        if(m&&$("mdiprev")) $("mdiprev").textContent=String.fromCodePoint(m.c);}).catch(()=>{});
+  }
   $("dup").onclick=duplicate;
   $("del").onclick=()=>{snapshot();els().splice(sel,1);sel=-1;paint();preview();};
 }
@@ -327,5 +372,27 @@ $("save").onclick=async()=>{
     msg("Saved — the panel picks it up on its next refresh.");
   }catch(e){ msg("save failed: "+e.message); }
 };
+/* ---------- icon picker ---------- */
+let pickTarget=null;
+function openPicker(el){ pickTarget=el; $("pickwrap").style.display="flex";
+  $("picksearch").value=""; loadIcons(""); $("picksearch").focus(); }
+$("pickclose").onclick=()=>$("pickwrap").style.display="none";
+$("pickwrap").onclick=e=>{ if(e.target.id==="pickwrap") $("pickwrap").style.display="none"; };
+$("picksearch").oninput=e=>loadIcons(e.target.value);
+async function loadIcons(q){
+  const list=await fetch("api/mdi/list?q="+encodeURIComponent(q)).then(r=>r.json()).catch(()=>[]);
+  $("picks").innerHTML=list.map(i=>
+    `<button data-n="${i.n}" title="mdi:${i.n}">${String.fromCodePoint(i.c)}<span>${i.n}</span></button>`).join("");
+  $("picks").querySelectorAll("button").forEach(b=>b.onclick=()=>{
+    snapshot(); pickTarget.icon="mdi:"+b.dataset.n;
+    $("pickwrap").style.display="none"; paint(); preview();
+  });
+}
+
+$("push").onclick=async()=>{
+  try{ await api("api/push",{method:"POST"}); msg("Pushed — the panel is fetching now."); }
+  catch(e){ msg("push failed: "+e.message); }
+};
+
 boot().catch(e=>msg("load failed: "+e.message));
 </script>
