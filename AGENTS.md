@@ -3,33 +3,26 @@
 Read [ARCHITECTURE.md](ARCHITECTURE.md) before changing how anything works.
 This file is about not stepping on rakes.
 
-## The single most important thing: there is no automatic deploy
+## Deploying
 
-Editing a `.py` file here changes **nothing** on the Home Assistant box. The
-renderer runs from `/config/epaper/` on HA, which is a separate copy.
-
-This has caused two outages already, both of which looked like hardware faults
-and were actually stale code.
-
-To deploy, serve this directory over HTTP and call the update action:
+**The project is a Home Assistant add-on, installed from git.** No files get
+copied by hand any more.
 
 ```bash
-# on this machine
-python -m http.server 8099 --bind 0.0.0.0   # from the project root
+git push                      # from here
 ```
 
-```python
-# then, over the HA API
-ha_call_service(domain="shell_command", service="epaper_update", return_response=True)
-```
+Then in Home Assistant: **Settings → Add-ons → E-paper panel → Rebuild**
+(or Reload the repository first if `config.yaml` changed).
 
-`shell_command.epaper_update` curls `render.py`, `pages.py`, `sources.py` and
-`theme.py` from `http://dev-host.local:8099/`, writing to `.new` and moving on
-success, then re-renders. **Always check its `stdout`** — it is the only
-confirmation the deploy landed.
+The add-on repository is https://github.com/bek00letz/epaper-panel, added in
+HA as a custom add-on repository. `repository.yaml` at the root makes it one;
+the add-on itself lives in `addon/`.
 
-If you change the host serving the files, update the `epaper_update` entry in
-HA's `configuration.yaml`.
+> Earlier versions ran `render.py` from `/config/epaper/` and were deployed by
+> curling files from a laptop. That caused two outages that both looked like
+> hardware faults and were stale code. If you find references to
+> `shell_command.epaper_update` or `/config/www/epaper/`, they are obsolete.
 
 ## Addresses
 
@@ -38,7 +31,8 @@ HA's `configuration.yaml`.
 | Home Assistant | `homeassistant.local:8123` (Proxmox VM on a Dell OptiPlex 7070 Ultra, SSD — not resource-constrained) |
 | Panel | `crowpanel-epaper.local`, hostname `crowpanel-epaper` |
 | Jellyfin | `jellyfin.local:8096` |
-| Dev machine serving files | `dev-host.local:8099` |
+| Add-on frame port | `<ha>:8099` — the panel fetches here, no auth, LAN only |
+| Editor | HA sidebar → E-paper (ingress, behind your HA login) |
 
 Never route the panel through the Cloudflare tunnel (`homeassistant.example.com`). It would
 make a living-room display depend on the internet and expose the webhook
@@ -119,9 +113,7 @@ When touching display code, `it.image()` at a negative offset is a trap: see
 
 ## Hazards
 
-- `shell_command.epaper_render` interpolates `input_text.e_paper_rotation` into
-  a shell command. That is a command-injection path for any HA user. Fix by
-  having the renderer read the helper over the API.
-- `secrets.json` holds a long-lived HA token and the Jellyfin API key. It is not
-  in version control and must not be pasted into logs or chat.
+- The add-on gets a supervisor token automatically (`homeassistant_api: true`),
+  so there is no long-lived token to store. The Jellyfin key is add-on config,
+  not a file in the repo.
 - The recorder DB is opened **read-only** (`mode=ro`). Keep it that way.
