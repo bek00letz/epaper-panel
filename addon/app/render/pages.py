@@ -23,11 +23,16 @@ def _sun(draw, cx, cy, r=30, rays=8):
                   fill=T.BLACK, width=7)
 
 
-def _cat(draw, dx=0, dy=4):
+def draw_cat(draw, x=0, y=0, height=200):
+    """The sitting cat, placed and scaled. Traced at a nominal 200px tall."""
+    _cat(draw, dx=x - 96, dy=y, scale=height / 200.0)
+
+
+def _cat(draw, dx=0, dy=4, scale=1.0):
     """Sitting cat in profile, facing right. Ears sit on the head circle so the
     three shapes merge into one silhouette; the tail is a stroked curve."""
     def P(pts):
-        return [(x + dx, y + dy) for x, y in pts]
+        return [(dx + x * scale, dy + y * scale) for x, y in pts]
 
     # body: chest and front leg on the left, haunch and back on the right
     draw.polygon(P([(124, 96), (112, 130), (106, 170), (104, 202),
@@ -38,7 +43,7 @@ def _cat(draw, dx=0, dy=4):
     draw.polygon(P([(160, 30), (200, 4), (190, 44)]), fill=T.BLACK)  # right ear
     draw.line(P([(202, 196), (248, 188), (268, 166), (272, 136),
                  (262, 112), (246, 102)]),
-              fill=T.BLACK, width=14, joint="curve")
+              fill=T.BLACK, width=max(3, int(14 * scale)), joint="curve")
 
 
 def _drum(draw, cx, cy, r=46):

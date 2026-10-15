@@ -1,0 +1,74 @@
+{
+  "rotation": ["solar", "solar_month", "cat", "watch", "cat", "temps"],
+  "pages": {
+    "solar": {
+      "tier": "rotate",
+      "elements": [
+        {"type": "icon", "icon": "mdi:white-balance-sunny", "x": 32, "y": 44, "w": 116, "h": 116},
+        {"type": "number", "value": "{{ states('sensor.solar_today_production') }}", "decimals": 1,
+         "x": 160, "y": 30, "w": 310, "h": 128, "align": "left"},
+        {"type": "text", "value": "kWh today", "size": 30, "bold": false,
+         "x": 164, "y": 170, "w": 320, "h": 40, "align": "left"},
+        {"type": "curve", "entity": "sensor.solar_pv_power", "hours": 24,
+         "x": 490, "y": 100, "w": 270, "h": 86}
+      ]
+    },
+    "solar_month": {
+      "tier": "rotate",
+      "elements": [
+        {"type": "icon", "icon": "mdi:white-balance-sunny", "x": 32, "y": 44, "w": 116, "h": 116},
+        {"type": "number", "value": "{{ states('sensor.epaper_solar_month') }}", "decimals": 0,
+         "x": 160, "y": 30, "w": 310, "h": 128, "align": "left"},
+        {"type": "text", "value": "kWh this month", "size": 30, "bold": false,
+         "x": 164, "y": 170, "w": 340, "h": 40, "align": "left"},
+        {"type": "text", "value": "battery {{ states('sensor.home_battery') }} %", "size": 30,
+         "bold": false, "x": 452, "y": 170, "w": 300, "h": 40, "align": "right"}
+      ]
+    },
+    "cat": {
+      "tier": "rotate",
+      "elements": [
+        {"type": "icon", "icon": "custom:cat-sitting", "x": 96, "y": 12, "w": 200, "h": 200},
+        {"type": "text", "value": "{{ states('sensor.cat_location') | replace('Outdoor Cat','outside') | replace('Indoor Cat','inside') }}",
+         "x": 320, "y": 60, "w": 430, "h": 112, "align": "left"},
+        {"type": "text", "value": "since {{ as_timestamp(states.sensor.cat_location.last_changed) | timestamp_custom('%H:%M') }}",
+         "size": 30, "bold": false, "x": 324, "y": 184, "w": 420, "h": 40, "align": "left"}
+      ]
+    },
+    "temps": {
+      "tier": "rotate",
+      "elements": [
+        {"type": "text", "value": "yard", "size": 30, "bold": false, "x": 62, "y": 44, "w": 200, "h": 36},
+        {"type": "number", "value": "{{ states('sensor.outdoor_temperature') }}",
+         "decimals": 1, "x": 56, "y": 86, "w": 290, "h": 112, "align": "left"},
+        {"type": "line", "x": 392, "y": 40, "w": 4, "h": 160, "thickness": 2},
+        {"type": "text", "value": "inside", "size": 30, "bold": false, "x": 436, "y": 44, "w": 200, "h": 36},
+        {"type": "number", "value": "{{ states('sensor.indoor_temperature') }}",
+         "decimals": 1, "x": 430, "y": 86, "w": 290, "h": 112, "align": "left"}
+      ]
+    },
+    "watch": {
+      "tier": "when",
+      "show_if": "{{ states('sensor.epaper_watch_count') | int(0) > 0 }}",
+      "elements": [
+        {"type": "text", "value": "new to watch", "size": 26, "bold": false,
+         "x": 40, "y": 28, "w": 300, "h": 36, "align": "left"},
+        {"type": "text", "value": "{{ state_attr('sensor.epaper_watch','detail') }}", "size": 26,
+         "bold": false, "x": 452, "y": 28, "w": 300, "h": 36, "align": "right"},
+        {"type": "text", "value": "{{ states('sensor.epaper_watch') }}",
+         "x": 40, "y": 74, "w": 712, "h": 150, "align": "left"}
+      ]
+    },
+    "dryer": {
+      "tier": "when",
+      "show_if": "{{ is_state('timer.dryer_cycle','active') }}",
+      "elements": [
+        {"type": "icon", "icon": "mdi:tumble-dryer", "x": 56, "y": 60, "w": 110, "h": 110},
+        {"type": "text", "value": "{{ state_attr('timer.dryer_cycle','remaining')[:-3] }}",
+         "x": 190, "y": 40, "w": 320, "h": 122, "align": "left"},
+        {"type": "text", "value": "dryer, time left", "size": 30, "bold": false,
+         "x": 194, "y": 176, "w": 400, "h": 40, "align": "left"}
+      ]
+    }
+  }
+}
