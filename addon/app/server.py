@@ -78,6 +78,27 @@ def eval_fixture_template(tpl: str) -> str:
     """Evaluate common HA templates against fixture.json when running offline."""
     states = load_fixture().get("states", {})
     s = str(tpl or "").strip()
+
+    # Handle dynamic_grid JSON template: `[{% for e in [...] %}`
+    if "[{% for e in [" in s and 'states(e) | to_json' in s:
+        m_ents = re.search(r"for e in \[([^\]]+)\]", s)
+        res = []
+        if m_ents:
+            for raw_eid in m_ents.group(1).split(","):
+                eid = raw_eid.strip(" '\"")
+                if not eid:
+                    continue
+                st = states.get(eid) or {}
+                cur_state = st.get("state", "on")
+                fname = st.get("friendly_name") or eid.split(".")[-1].replace("_", " ").title()
+                res.append({
+                    "entity": eid,
+                    "state": str(cur_state),
+                    "name": fname,
+                    "changed": "25m ago"
+                })
+        return json.dumps(res)
+
     if s.startswith("{{") and s.endswith("}}"):
         expr = s[2:-2].strip()
     else:

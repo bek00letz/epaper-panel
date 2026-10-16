@@ -23,6 +23,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 from . import theme as T
+from . import binding
 from .binding import template_for
 
 _FONTS = Path(__file__).parent.parent / "fonts"
@@ -214,12 +215,359 @@ def _fmt_number(raw, el):
     return formatted
 
 
+def _fit_text(text, max_w, f):
+    if not text:
+        return ""
+    if T.text_width(text, f) <= max_w:
+        return text
+    t = str(text)
+    while len(t) > 1 and T.text_width(t + "…", f) > max_w:
+        t = t[:-1]
+    return t + "…"
+
+
+def _draw_icon_glyph(d, name, cx, cy, sz):
+    name = str(name or "")
+    if name.startswith("custom:"):
+        art = CUSTOM_ICONS.get(name.removeprefix("custom:"))
+        if art:
+            art(d, cx, cy - sz // 2, sz)
+        return
+    cp = mdi_codepoint(name)
+    if cp is not None:
+        f = _mdi_font(sz)
+        d.text((cx, cy), chr(cp), font=f, fill=T.BLACK, anchor="mm")
+
+
+def _draw_dynamic_grid(img, d, el, raw_val, display=None):
+    x, y, w, h = _clamp_box(el, 752, 214, display=display)
+    has_resolved = False
+    info_by_ent = {}
+    if raw_val is not None:
+        if isinstance(raw_val, str) and raw_val.strip() != "":
+            try:
+                parsed = json.loads(raw_val)
+                if isinstance(parsed, list):
+                    has_resolved = True
+                    info_by_ent = {x.get("entity"): x for x in parsed if isinstance(x, dict)}
+            except Exception:
+                pass
+        elif isinstance(raw_val, list):
+            has_resolved = True
+            info_by_ent = {x.get("entity"): x for x in raw_val if isinstance(x, dict)}
+
+    configured_items = el.get("items") or []
+    filter_state = str(el.get("filter_state") or "on").strip().lower()
+
+    active_items = []
+    for it in configured_items:
+        if not isinstance(it, dict):
+            continue
+        ent = it.get("entity", "").strip()
+        name = it.get("name") or ""
+        icon = it.get("icon") or "mdi:power"
+
+        if has_resolved:
+            res = info_by_ent.get(ent, {})
+            state = str(res.get("state") or "").strip()
+            friendly = res.get("name") or ""
+            changed = res.get("changed") or ""
+
+            is_active = (state and state not in ("unavailable", "unknown")) if filter_state in ("*", "any") else (state.lower() == filter_state)
+            if is_active:
+                active_items.append({
+                    "entity": ent,
+                    "name": name or friendly or ent.split(".")[-1].replace("_", " ").title(),
+                    "icon": icon,
+                    "state": state,
+                    "changed": changed
+                })
+        else:
+            active_items.append({
+                "entity": ent,
+                "name": name or (ent.split(".")[-1].replace("_", " ").title() if ent else "Active Spot"),
+                "icon": icon,
+                "state": "on",
+                "changed": "25m ago"
+            })
+
+    if not configured_items and not active_items:
+        active_items = [{
+            "entity": "switch.sample_1",
+            "name": "Sample Zone",
+            "icon": "mdi:radiator",
+            "state": "on",
+            "changed": "30m ago"
+        }]
+
+    sec_mode = el.get("secondary_mode", "runtime")
+    def format_sec(item):
+        if sec_mode == "none":
+            return ""
+        if sec_mode == "state":
+            return item.get("state", "")
+        ch = item.get("changed", "").strip()
+        if ch:
+            clean_ch = ch.removesuffix(" ago").replace(" minutes", "m").replace(" hours", "h").replace(" minute", "m").replace(" hour", "h")
+            return f"on for {clean_ch}"
+        return "active"
+
+    hdr_title = str(el.get("header_title") or "").strip()
+    hdr_icon = str(el.get("header_icon") or "").strip()
+    has_header = bool(hdr_title or hdr_icon)
+
+    if has_header:
+        hdr_h = 28
+        hx = x
+        hy = y + 2
+        if hdr_icon:
+            _draw_icon_glyph(d, hdr_icon, hx + 12, hy + 12, 22)
+            hx += 28
+        if hdr_title:
+            f_ht = T.font(18, bold=True)
+            d.text((hx, hy + 12), hdr_title, font=f_ht, fill=T.BLACK, anchor="lm")
+
+        badge_str = f"{len(active_items)} / {len(configured_items)} ON" if configured_items else f"{len(active_items)} ACTIVE"
+        f_hb = T.font(12, bold=True)
+        bw = T.text_width(badge_str, f_hb) + 16
+        bx0 = x + w - bw
+        by0 = y + 2
+        d.rounded_rectangle([(bx0, by0), (bx0 + bw, by0 + 20)], radius=4, outline=T.BLACK, width=1)
+        d.text((bx0 + bw // 2, by0 + 10), badge_str, font=f_hb, fill=T.BLACK, anchor="mm")
+
+        y += hdr_h + 8
+        h -= hdr_h + 8
+
+    n = len(active_items)
+    if n == 0:
+        d.rounded_rectangle([(x, y), (x + w, y + h)], radius=10, outline=T.BLACK, width=1)
+        idle_icon = hdr_icon or "mdi:power-sleep"
+        _draw_icon_glyph(d, idle_icon, x + w // 2, y + h // 2 - 20, 48)
+        f_idle1 = T.font(20, bold=True)
+        d.text((x + w // 2, y + h // 2 + 18), "All Entities Idle", font=f_idle1, fill=T.BLACK, anchor="mm")
+        f_idle2 = T.font(13, bold=False)
+        d.text((x + w // 2, y + h // 2 + 38), "Automatically skipped from rotation when show_if is configured", font=f_idle2, fill=T.BLACK, anchor="mm")
+        return
+
+    is_wide = (w >= h)
+    if n == 1:
+        it = active_items[0]
+        sec = format_sec(it)
+        d.rounded_rectangle([(x, y), (x + w, y + h)], radius=12, outline=T.BLACK, width=2)
+        if is_wide:
+            isz = min(88, h - 36)
+            _draw_icon_glyph(d, it["icon"], x + 24 + isz // 2, y + h // 2, isz)
+            tx = x + 24 + isz + 24
+            name_f = T.font(32, bold=True)
+            name_txt = _fit_text(it["name"], w - isz - 210, name_f)
+            d.text((tx, y + h // 2 - (14 if sec else 0)), name_txt, font=name_f, fill=T.BLACK, anchor="lm")
+            if sec:
+                sec_f = T.font(18, bold=False)
+                d.text((tx, y + h // 2 + 18), sec, font=sec_f, fill=T.BLACK, anchor="lm")
+            bw, bh = 84, 28
+            bx0 = x + w - bw - 24
+            by0 = y + (h - bh) // 2
+            d.rounded_rectangle([(bx0, by0), (bx0 + bw, by0 + bh)], radius=6, fill=T.BLACK)
+            d.text((bx0 + bw // 2, by0 + bh // 2), "ACTIVE", font=T.font(13, bold=True), fill=T.WHITE, anchor="mm")
+        else:
+            isz = min(80, w // 3)
+            mid_y = y + h // 2
+            _draw_icon_glyph(d, it["icon"], x + w // 2, mid_y - (50 if sec else 30), isz)
+            name_f = T.font(28, bold=True)
+            name_txt = _fit_text(it["name"], w - 32, name_f)
+            d.text((x + w // 2, mid_y + (20 if sec else 30)), name_txt, font=name_f, fill=T.BLACK, anchor="mm")
+            if sec:
+                sec_f = T.font(18, bold=False)
+                d.text((x + w // 2, mid_y + 54), sec, font=sec_f, fill=T.BLACK, anchor="mm")
+            pw, ph = 36, 18
+            d.rounded_rectangle([(x + w - pw - 10, y + 10), (x + w - 10, y + 10 + ph)], radius=4, fill=T.BLACK)
+            d.text((x + w - 10 - pw // 2, y + 10 + ph // 2), "ON", font=T.font(10, bold=True), fill=T.WHITE, anchor="mm")
+        return
+
+    gap = 12
+    if n == 2:
+        if is_wide:
+            cw = (w - gap) // 2
+            cards = [(x, y, cw, h), (x + cw + gap, y, cw, h)]
+            for it, (cx0, cy0, cw_i, ch_i) in zip(active_items, cards):
+                cx1, cy1 = cx0 + cw_i, cy0 + ch_i
+                d.rounded_rectangle([(cx0, cy0), (cx1, cy1)], radius=10, outline=T.BLACK, width=2)
+                pw, ph = 34, 18
+                d.rounded_rectangle([(cx1 - pw - 8, cy0 + 8), (cx1 - 8, cy0 + 8 + ph)], radius=4, fill=T.BLACK)
+                d.text((cx1 - 8 - pw // 2, cy0 + 8 + ph // 2), "ON", font=T.font(10, bold=True), fill=T.WHITE, anchor="mm")
+                isz = min(56, ch_i - 36)
+                _draw_icon_glyph(d, it["icon"], cx0 + 16 + isz // 2, cy0 + ch_i // 2, isz)
+                tx = cx0 + 16 + isz + 14
+                sec = format_sec(it)
+                name_f = T.font(24, bold=True)
+                name_txt = _fit_text(it["name"], cw_i - isz - 64, name_f)
+                d.text((tx, cy0 + ch_i // 2 - (12 if sec else 0)), name_txt, font=name_f, fill=T.BLACK, anchor="lm")
+                if sec:
+                    sec_f = T.font(15, bold=False)
+                    d.text((tx, cy0 + ch_i // 2 + 16), sec, font=sec_f, fill=T.BLACK, anchor="lm")
+        else:
+            ch_card = (h - gap) // 2
+            cards = [(x, y, w, ch_card), (x, y + ch_card + gap, w, ch_card)]
+            for it, (cx0, cy0, cw_i, ch_i) in zip(active_items, cards):
+                cx1, cy1 = cx0 + cw_i, cy0 + ch_i
+                d.rounded_rectangle([(cx0, cy0), (cx1, cy1)], radius=10, outline=T.BLACK, width=2)
+                pw, ph = 34, 18
+                d.rounded_rectangle([(cx1 - pw - 8, cy0 + 8), (cx1 - 8, cy0 + 8 + ph)], radius=4, fill=T.BLACK)
+                d.text((cx1 - 8 - pw // 2, cy0 + 8 + ph // 2), "ON", font=T.font(10, bold=True), fill=T.WHITE, anchor="mm")
+                sec = format_sec(it)
+                if ch_i > cw_i * 1.1:
+                    isz = min(64, cw_i // 3)
+                    mid_y = cy0 + ch_i // 2
+                    _draw_icon_glyph(d, it["icon"], cx0 + cw_i // 2, mid_y - (40 if sec else 20), isz)
+                    name_f = T.font(24, bold=True)
+                    name_txt = _fit_text(it["name"], cw_i - 24, name_f)
+                    d.text((cx0 + cw_i // 2, mid_y + (16 if sec else 20)), name_txt, font=name_f, fill=T.BLACK, anchor="mm")
+                    if sec:
+                        sec_f = T.font(16, bold=False)
+                        d.text((cx0 + cw_i // 2, mid_y + 46), sec, font=sec_f, fill=T.BLACK, anchor="mm")
+                else:
+                    isz = min(50, ch_i - 28)
+                    _draw_icon_glyph(d, it["icon"], cx0 + 16 + isz // 2, cy0 + ch_i // 2, isz)
+                    tx = cx0 + 16 + isz + 12
+                    name_f = T.font(20, bold=True)
+                    name_txt = _fit_text(it["name"], cw_i - isz - 60, name_f)
+                    d.text((tx, cy0 + ch_i // 2 - (10 if sec else 0)), name_txt, font=name_f, fill=T.BLACK, anchor="lm")
+                    if sec:
+                        sec_f = T.font(14, bold=False)
+                        d.text((tx, cy0 + ch_i // 2 + 14), sec, font=sec_f, fill=T.BLACK, anchor="lm")
+        return
+
+    gap = 10
+    if n == 3:
+        if is_wide:
+            cw = (w - 2 * gap) // 3
+            cards = [(x + k * (cw + gap), y, cw, h) for k in range(3)]
+            for it, (cx0, cy0, cw_i, ch_i) in zip(active_items, cards):
+                cx1, cy1 = cx0 + cw_i, cy0 + ch_i
+                d.rounded_rectangle([(cx0, cy0), (cx1, cy1)], radius=10, outline=T.BLACK, width=2)
+                pw, ph = 30, 16
+                d.rounded_rectangle([(cx1 - pw - 6, cy0 + 6), (cx1 - 6, cy0 + 6 + ph)], radius=4, fill=T.BLACK)
+                d.text((cx1 - 6 - pw // 2, cy0 + 6 + ph // 2), "ON", font=T.font(9, bold=True), fill=T.WHITE, anchor="mm")
+                isz = min(46, ch_i // 3)
+                _draw_icon_glyph(d, it["icon"], cx0 + cw_i // 2, cy0 + ch_i * 0.35, isz)
+                name_f = T.font(20, bold=True)
+                name_txt = _fit_text(it["name"], cw_i - 16, name_f)
+                d.text((cx0 + cw_i // 2, cy0 + ch_i * 0.68), name_txt, font=name_f, fill=T.BLACK, anchor="mm")
+                sec = format_sec(it)
+                if sec:
+                    sec_f = T.font(14, bold=False)
+                    d.text((cx0 + cw_i // 2, cy0 + ch_i * 0.86), sec, font=sec_f, fill=T.BLACK, anchor="mm")
+        else:
+            ch_card = (h - 2 * gap) // 3
+            cards = [(x, y + k * (ch_card + gap), w, ch_card) for k in range(3)]
+            for it, (cx0, cy0, cw_i, ch_i) in zip(active_items, cards):
+                cx1, cy1 = cx0 + cw_i, cy0 + ch_i
+                d.rounded_rectangle([(cx0, cy0), (cx1, cy1)], radius=10, outline=T.BLACK, width=2)
+                pw, ph = 30, 16
+                d.rounded_rectangle([(cx1 - pw - 6, cy0 + 6), (cx1 - 6, cy0 + 6 + ph)], radius=4, fill=T.BLACK)
+                d.text((cx1 - 6 - pw // 2, cy0 + 6 + ph // 2), "ON", font=T.font(9, bold=True), fill=T.WHITE, anchor="mm")
+                isz = min(42, ch_i - 20)
+                _draw_icon_glyph(d, it["icon"], cx0 + 14 + isz // 2, cy0 + ch_i // 2, isz)
+                tx = cx0 + 14 + isz + 10
+                sec = format_sec(it)
+                name_f = T.font(19, bold=True)
+                name_txt = _fit_text(it["name"], cw_i - isz - 54, name_f)
+                d.text((tx, cy0 + ch_i // 2 - (10 if sec else 0)), name_txt, font=name_f, fill=T.BLACK, anchor="lm")
+                if sec:
+                    sec_f = T.font(13, bold=False)
+                    d.text((tx, cy0 + ch_i // 2 + 14), sec, font=sec_f, fill=T.BLACK, anchor="lm")
+        return
+
+    layout_4 = el.get("layout_4", "columns").lower()
+    if n == 4 and layout_4 == "quadrant":
+        gap = 10
+        cw = (w - gap) // 2
+        ch_card = (h - gap) // 2
+        cards = [
+            (x, y, cw, ch_card),
+            (x + cw + gap, y, cw, ch_card),
+            (x, y + ch_card + gap, cw, ch_card),
+            (x + cw + gap, y + ch_card + gap, cw, ch_card)
+        ]
+        for it, (cx0, cy0, cw_i, ch_i) in zip(active_items, cards):
+            cx1, cy1 = cx0 + cw_i, cy0 + ch_i
+            d.rounded_rectangle([(cx0, cy0), (cx1, cy1)], radius=10, outline=T.BLACK, width=2)
+            pw, ph = 30, 16
+            d.rounded_rectangle([(cx1 - pw - 6, cy0 + 6), (cx1 - 6, cy0 + 6 + ph)], radius=4, fill=T.BLACK)
+            d.text((cx1 - 6 - pw // 2, cy0 + 6 + ph // 2), "ON", font=T.font(9, bold=True), fill=T.WHITE, anchor="mm")
+            sec = format_sec(it)
+
+            if ch_i > cw_i * 1.3:
+                # Tall card (e.g. portrait 2x2 grid)
+                isz = min(48, int(cw_i * 0.45))
+                mid_y = cy0 + ch_i // 2
+                _draw_icon_glyph(d, it["icon"], cx0 + cw_i // 2, mid_y - (36 if sec else 20), isz)
+                name_f = T.font(min(22, max(16, cw_i // 6)), bold=True)
+                name_txt = _fit_text(it["name"], cw_i - 16, name_f)
+                d.text((cx0 + cw_i // 2, mid_y + (14 if sec else 20)), name_txt, font=name_f, fill=T.BLACK, anchor="mm")
+                if sec:
+                    sec_f = T.font(13, bold=False)
+                    d.text((cx0 + cw_i // 2, mid_y + 40), sec, font=sec_f, fill=T.BLACK, anchor="mm")
+            else:
+                # Wide card (e.g. landscape 2x2 grid)
+                isz = min(40, ch_i - 20)
+                _draw_icon_glyph(d, it["icon"], cx0 + 14 + isz // 2, cy0 + ch_i // 2, isz)
+                tx = cx0 + 14 + isz + 10
+                name_f = T.font(18, bold=True)
+                name_txt = _fit_text(it["name"], cw_i - isz - 52, name_f)
+                d.text((tx, cy0 + ch_i // 2 - (9 if sec else 0)), name_txt, font=name_f, fill=T.BLACK, anchor="lm")
+                if sec:
+                    sec_f = T.font(13, bold=False)
+                    d.text((tx, cy0 + ch_i // 2 + 13), sec, font=sec_f, fill=T.BLACK, anchor="lm")
+        return
+
+    gap = 8
+    if is_wide:
+        cw = (w - (n - 1) * gap) // n
+        cards = [(x + k * (cw + gap), y, cw, h) for k in range(n)]
+        for it, (cx0, cy0, cw_i, ch_i) in zip(active_items, cards):
+            cx1, cy1 = cx0 + cw_i, cy0 + ch_i
+            d.rounded_rectangle([(cx0, cy0), (cx1, cy1)], radius=8, outline=T.BLACK, width=2)
+            pw, ph = 28, 15
+            d.rounded_rectangle([(cx1 - pw - 5, cy0 + 5), (cx1 - 5, cy0 + 5 + ph)], radius=3, fill=T.BLACK)
+            d.text((cx1 - 5 - pw // 2, cy0 + 5 + ph // 2), "ON", font=T.font(9, bold=True), fill=T.WHITE, anchor="mm")
+            isz = min(38, ch_i // 3)
+            _draw_icon_glyph(d, it["icon"], cx0 + cw_i // 2, cy0 + ch_i * 0.35, isz)
+            name_f = T.font(16, bold=True)
+            name_txt = _fit_text(it["name"], cw_i - 12, name_f)
+            d.text((cx0 + cw_i // 2, cy0 + ch_i * 0.68), name_txt, font=name_f, fill=T.BLACK, anchor="mm")
+            sec = format_sec(it)
+            if sec:
+                sec_f = T.font(12, bold=False)
+                d.text((cx0 + cw_i // 2, cy0 + ch_i * 0.86), sec, font=sec_f, fill=T.BLACK, anchor="mm")
+    else:
+        ch_card = (h - (n - 1) * gap) // n
+        cards = [(x, y + k * (ch_card + gap), w, ch_card) for k in range(n)]
+        for it, (cx0, cy0, cw_i, ch_i) in zip(active_items, cards):
+            cx1, cy1 = cx0 + cw_i, cy0 + ch_i
+            d.rounded_rectangle([(cx0, cy0), (cx1, cy1)], radius=8, outline=T.BLACK, width=2)
+            pw, ph = 28, 15
+            d.rounded_rectangle([(cx1 - pw - 5, cy0 + 5), (cx1 - 5, cy0 + 5 + ph)], radius=3, fill=T.BLACK)
+            d.text((cx1 - 5 - pw // 2, cy0 + 5 + ph // 2), "ON", font=T.font(9, bold=True), fill=T.WHITE, anchor="mm")
+            isz = min(34, ch_i - 14)
+            _draw_icon_glyph(d, it["icon"], cx0 + 12 + isz // 2, cy0 + ch_i // 2, isz)
+            tx = cx0 + 12 + isz + 8
+            sec = format_sec(it)
+            name_f = T.font(16, bold=True)
+            name_txt = _fit_text(it["name"], cw_i - isz - 46, name_f)
+            d.text((tx, cy0 + ch_i // 2 - (8 if sec else 0)), name_txt, font=name_f, fill=T.BLACK, anchor="lm")
+            if sec:
+                sec_f = T.font(12, bold=False)
+                d.text((tx, cy0 + ch_i // 2 + 12), sec, font=sec_f, fill=T.BLACK, anchor="lm")
+
+
 DRAWERS = {
     "text": _draw_text,
     "number": _draw_text,          # same drawing, value formatted first
     "icon": _draw_icon,
     "line": _draw_line,
     "curve": _draw_curve,
+    "dynamic_grid": _draw_dynamic_grid,
 }
 
 
@@ -261,6 +609,8 @@ def render_page(page, vals, *, clock="", label="", battery_pct=None, series=None
                             # else, so say so rather than let it look broken.
                             entry["not_a_number"] = str(raw)[:60]
                     metrics.append(entry)
+            elif el["type"] == "dynamic_grid":
+                drawer(img, d, el, vals.get(i), display=display)
             else:
                 drawer(img, d, el, element_text(el, vals, i), display=display)
         except Exception:
@@ -278,9 +628,22 @@ def collect_templates(page):
     """
     out = {}
     for i, el in enumerate(page.get("elements", [])):
-        if el.get("type") not in ("text", "number"):
-            continue
-        tpl = template_for(el)
-        if tpl and "{{" in tpl:
-            out[i] = tpl
+        if el.get("type") in ("text", "number"):
+            tpl = template_for(el)
+            if tpl and "{{" in tpl:
+                out[i] = tpl
+        elif el.get("type") == "dynamic_grid":
+            items = el.get("items", [])
+            ents = [it.get("entity", "").strip() for it in items if isinstance(it, dict) and it.get("entity", "").strip()]
+            if ents:
+                ents_quoted = ", ".join(f"'{binding._quote(e)}'" for e in ents)
+                tpl = (
+                    "[{% for e in [" + ents_quoted + "] %}"
+                    '{"entity": {{ e | to_json }}, '
+                    '"state": {{ states(e) | to_json }}, '
+                    '"name": {{ (state_attr(e, "friendly_name") or "") | to_json }}, '
+                    '"changed": {{ (relative_time(states[e].last_changed) if (states[e] is defined and states[e] is not none and states[e].last_changed is defined) else "") | to_json }}}'
+                    "{% if not loop.last %},{% endif %}{% endfor %}]"
+                )
+                out[i] = tpl
     return out

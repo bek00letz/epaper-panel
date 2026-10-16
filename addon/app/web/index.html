@@ -1050,6 +1050,7 @@ aside {
           <button data-add="icon"><span class="icon">⭐</span><span>Icon</span></button>
           <button data-add="curve"><span class="icon">📈</span><span>Graph</span></button>
           <button data-add="line"><span class="icon">➖</span><span>Divider</span></button>
+          <button data-add="dynamic_grid"><span class="icon">🔲</span><span>Dynamic Grid</span></button>
         </div>
       </div>
     </div>
@@ -1440,11 +1441,22 @@ function reflowPageElements(p, toPortrait) {
   const usableW = TW - (margin * 2);
 
   // Group elements by type
+  const grids = list.filter(e => e.type === "dynamic_grid");
   const icons = list.filter(e => e.type === "icon");
   const curves = list.filter(e => e.type === "curve");
   const lines = list.filter(e => e.type === "line");
   const numbers = list.filter(e => e.type === "number");
   const texts = list.filter(e => e.type === "text");
+
+  if (grids.length) {
+    grids.forEach(g => {
+      g.x = margin;
+      g.y = 16;
+      g.w = usableW;
+      g.h = safeH - 24;
+    });
+    return;
+  }
 
   // Detect Clock page: single prominent time template + date
   const isClock = texts.some(t => String(t.value || "").includes("%H:%M") || String(t.value || "").includes("%I:%M"));
@@ -2126,6 +2138,22 @@ document.querySelectorAll("[data-add]").forEach(b => b.onclick = () => {
   if (t === "text") { base.value = "Label"; base.size = 30; base.bold = false; base.align = "left"; }
   if (t === "icon") { base.icon = "mdi:home"; base.w = 110; base.h = 110; }
   if (t === "curve") { base.entity = "sensor.example"; base.hours = 24; }
+  if (t === "dynamic_grid") {
+    base.y = 16;
+    base.w = maxW;
+    base.h = curSafeH() - 24;
+    base.header_icon = "mdi:lightning-bolt";
+    base.header_title = "Active Devices";
+    base.filter_state = "on";
+    base.layout_4 = "quadrant";
+    base.secondary_mode = "runtime";
+    base.items = [
+      { entity: "switch.zone_1", name: "Zone 1", icon: "mdi:radiator" },
+      { entity: "switch.zone_2", name: "Zone 2", icon: "mdi:radiator" },
+      { entity: "switch.zone_3", name: "Zone 3", icon: "mdi:radiator" },
+      { entity: "switch.zone_4", name: "Zone 4", icon: "mdi:radiator" }
+    ];
+  }
   els().push(base); sel = els().length - 1; paint(); preview();
 });
 
@@ -2361,6 +2389,56 @@ function props() {
       `<div class="chip">24h history curve (sparkline) of that sensor's values. Ideal for solar output or power draw.</div>`;
   } else if (el.type === "line") {
     h += f("thickness", "thickness", "number");
+  } else if (el.type === "dynamic_grid") {
+    if (!Array.isArray(el.items)) el.items = [];
+    h += f("header_title", "header title", "text", "e.g. Active Blanket Zones") +
+      f("header_icon", "header icon", "text", "e.g. mdi:cat") +
+      `<div class="row"><label>filter state</label>
+        <select data-k="filter_state">
+          <option value="on"${(el.filter_state || "on") === "on" ? " selected" : ""}>on (Show when Active)</option>
+          <option value="off"${el.filter_state === "off" ? " selected" : ""}>off</option>
+          <option value="*"${el.filter_state === "*" ? " selected" : ""}>* (Any State)</option>
+        </select>
+      </div>
+      <div class="row"><label>4-spot layout</label>
+        <select data-k="layout_4">
+          <option value="quadrant"${(el.layout_4 || "quadrant") === "quadrant" ? " selected" : ""}>2×2 Quadrant Grid</option>
+          <option value="columns"${el.layout_4 === "columns" ? " selected" : ""}>4 Columns / Stack</option>
+        </select>
+      </div>
+      <div class="row"><label>secondary tag</label>
+        <select data-k="secondary_mode">
+          <option value="runtime"${(el.secondary_mode || "runtime") === "runtime" ? " selected" : ""}>Runtime ("on for Xm")</option>
+          <option value="state"${el.secondary_mode === "state" ? " selected" : ""}>Raw State ("on")</option>
+          <option value="none"${el.secondary_mode === "none" ? " selected" : ""}>None (Icon &amp; Name Only)</option>
+        </select>
+      </div>`;
+
+    h += `</div><div class="grp"><div class="lbl" style="display:flex;justify-content:space-between;align-items:center;">
+      <span>Monitored Spots (${el.items.length})</span>
+      <button id="dgadditem" class="sm" title="Add another entity to monitor">＋ Add Spot</button>
+    </div>`;
+
+    el.items.forEach((it, idx) => {
+      h += `<div class="dg-item" style="border:1px solid var(--border);border-radius:6px;padding:8px;margin-bottom:8px;background:rgba(0,0,0,0.02);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+          <span style="font-size:12px;font-weight:600;color:var(--text-muted)">Spot #${idx + 1}</span>
+          <button class="sm dgdelitem" data-dgi="${idx}" style="color:var(--danger);padding:0 6px;" title="Remove this spot">&times;</button>
+        </div>
+        <div class="row" style="margin-bottom:4px;"><label>entity</label>
+          <input class="dgentinp" data-dgi="${idx}" data-field="entity" type="text" list="entities-dl" placeholder="switch.example" value="${esc(it.entity || "")}">
+        </div>
+        <div class="row" style="margin-bottom:4px;"><label>name</label>
+          <input class="dgentinp" data-dgi="${idx}" data-field="name" type="text" placeholder="Auto (friendly name)" value="${esc(it.name || "")}">
+        </div>
+        <div class="row"><label>icon</label>
+          <input class="dgentinp" data-dgi="${idx}" data-field="icon" type="text" placeholder="mdi:radiator" value="${esc(it.icon || "")}">
+        </div>
+      </div>`;
+    });
+    if (!el.items.length) {
+      h += `<div class="chip">No spots configured yet. Click <b>＋ Add Spot</b> above.</div>`;
+    }
   }
   h += "</div>";
 
@@ -2453,6 +2531,39 @@ function props() {
       el[k] = v;
     }
     paint(); preview();
+  });
+
+  const addDg = box.querySelector("#dgadditem");
+  if (addDg) {
+    addDg.onclick = () => {
+      snapshot();
+      if (!Array.isArray(el.items)) el.items = [];
+      el.items.push({
+        entity: "",
+        name: `Spot ${el.items.length + 1}`,
+        icon: "mdi:radiator"
+      });
+      paint(); preview();
+    };
+  }
+  box.querySelectorAll(".dgdelitem").forEach(b => {
+    b.onclick = () => {
+      snapshot();
+      const idx = +b.dataset.dgi;
+      el.items.splice(idx, 1);
+      paint(); preview();
+    };
+  });
+  box.querySelectorAll(".dgentinp").forEach(inp => {
+    inp.onchange = () => {
+      snapshot();
+      const idx = +inp.dataset.dgi;
+      const fld = inp.dataset.field;
+      if (el.items[idx]) {
+        el.items[idx][fld] = inp.value;
+        paint(); preview();
+      }
+    };
   });
 
   if ($("browse")) {
@@ -2876,10 +2987,35 @@ const PRESET_ICONS = {
   solar: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>`,
   presence_door: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V6a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v14"/><path d="M2 20h20"/><circle cx="14" cy="12" r="1"/></svg>`,
   bin_day: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`,
-  clock: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>`
+  clock: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>`,
+  dynamic_entities: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>`
 };
 
 const PRESETS = [
+  {
+    id: "dynamic_entities",
+    title: "Dynamic Entities",
+    desc: "Adaptive responsive panel that monitors multiple devices (1 to 4) and dynamically displays only active spots, resizing to fill the screen.",
+    tier: "when",
+    show_if: "{{ states('switch.zone_1') == 'on' or states('switch.zone_2') == 'on' or states('switch.zone_3') == 'on' or states('switch.zone_4') == 'on' }}",
+    makeElements: (ent) => [
+      {
+        type: "dynamic_grid",
+        x: 20, y: 16, w: 752, h: 214,
+        header_icon: "mdi:lightning-bolt",
+        header_title: "Active Devices",
+        filter_state: "on",
+        layout_4: "quadrant",
+        secondary_mode: "runtime",
+        items: [
+          { entity: ent || "switch.zone_1", name: "Zone 1", icon: "mdi:radiator" },
+          { entity: "switch.zone_2", name: "Zone 2", icon: "mdi:radiator" },
+          { entity: "switch.zone_3", name: "Zone 3", icon: "mdi:paw" },
+          { entity: "switch.zone_4", name: "Zone 4", icon: "mdi:bed" }
+        ]
+      }
+    ]
+  },
   {
     id: "event_countdown",
     title: "Event & Schedule Countdown",
@@ -2982,9 +3118,10 @@ function applyPresetToPage(preset) {
 
   snapshot();
   spec.pages[n] = {
-    tier: "rotate",
+    tier: preset.tier || "rotate",
     elements: preset.makeElements("")
   };
+  if (preset.show_if) spec.pages[n].show_if = preset.show_if;
   if (!spec.rotation.includes(n)) spec.rotation.push(n);
   fillPages();
   select(n);
