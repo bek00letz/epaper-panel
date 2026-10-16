@@ -126,6 +126,7 @@ aside{display:flex;flex-direction:column;gap:12px}
   <button id="undo" class="icon" title="Undo (Cmd/Ctrl+Z)">&#8630;</button>
   <button id="redo" class="icon" title="Redo (Cmd/Ctrl+Shift+Z)">&#8631;</button>
   <span class="spacer"></span>
+  <button id="datasrc" title="Things Home Assistant cannot provide on its own">Data sources</button>
   <button id="push" title="Make the panel fetch and redraw now">Push to panel</button>
   <button id="save" class="primary">Save</button>
 </header>
@@ -172,6 +173,28 @@ aside{display:flex;flex-direction:column;gap:12px}
   </div>
   <div id="picks"></div>
 </div></div>
+
+<div id="srcwrap" style="position:fixed;inset:0;background:rgba(20,20,18,.45);display:none;
+     align-items:center;justify-content:center;z-index:30;padding:16px">
+  <div style="background:#fff;border-radius:14px;padding:16px;width:min(620px,94vw);
+       max-height:84vh;display:flex;flex-direction:column;gap:12px">
+    <div class="row" style="margin:0">
+      <strong style="flex:1">Data sources</strong>
+      <select id="srcadd" style="max-width:180px">
+        <option value="">Add a source…</option>
+        <option value="jellyfin">Jellyfin — new and unwatched</option>
+        <option value="rest">Any JSON API</option>
+        <option value="statistics">A long-term statistic</option>
+      </select>
+      <button id="srcclose">Close</button>
+    </div>
+    <div id="srclist" style="overflow:auto;display:flex;flex-direction:column;gap:12px"></div>
+    <div class="chip">Each source publishes <code>sensor.epaper_&lt;name&gt;</code> into Home
+      Assistant. Pages then bind to it like any other entity. With none configured the
+      add-on simply renders the entities you already have.</div>
+    <div class="row" style="margin:0"><span id="srcmsg" style="flex:1;color:var(--mut);font-size:13px"></span>
+      <button id="srcsave" class="primary">Save sources</button></div>
+  </div></div>
 
 <div id="toast"><span id="toasttext"></span><button id="toastact" style="display:none"></button></div>
 
@@ -536,6 +559,71 @@ $("save").onclick=async()=>{
     msg("Saved. The panel picks it up on its next refresh.", {label:"Push now", run:()=>$("push").click()});
   }catch(e){ msg("save failed: "+e.message); }
 };
+/* ---------- data sources ---------- */
+const SRC_FIELDS={
+  jellyfin:[["name","name"],["base","server"],["key","api key"],
+            ["user","user"],["days","new within","number"]],
+  rest:[["name","name"],["url","url"],["pick","json path"],
+        ["unit","unit"],["icon","mdi icon"]],
+  statistics:[["name","name"],["entity","statistic"],["period","period"],
+              ["unit","unit"],["icon","mdi icon"]],
+};
+let srcs=[];
+$("datasrc").onclick=async()=>{
+  srcs=await api("api/sources").then(r=>r.json()).catch(()=>[]);
+  drawSources(); $("srcwrap").style.display="flex";
+};
+$("srcclose").onclick=()=>$("srcwrap").style.display="none";
+$("srcwrap").onclick=e=>{ if(e.target.id==="srcwrap") $("srcwrap").style.display="none"; };
+$("srcadd").onchange=e=>{
+  const t=e.target.value; if(!t) return;
+  const base={type:t,name:""};
+  if(t==="jellyfin") base.days=30;
+  if(t==="statistics") base.period="month";
+  srcs.push(base); e.target.value=""; drawSources();
+};
+function drawSources(){
+  $("srclist").innerHTML = srcs.length ? srcs.map((s,i)=>`
+    <div class="card"><div class="body">
+      <div class="row"><strong style="flex:1">${esc(s.type)}</strong>
+        <button data-test="${i}">Test</button><button data-del="${i}">Remove</button></div>
+      ${(SRC_FIELDS[s.type]||[]).map(([k,label,type])=>
+        `<div class="row"><label>${label}</label>
+         <input data-si="${i}" data-sk="${k}" type="${type||"text"}" value="${esc(s[k]??"")}"></div>`).join("")}
+      <div class="chip" data-out="${i}" style="display:none"></div>
+    </div></div>`).join("")
+    : '<div class="empty">No sources. The add-on will render your Home Assistant entities only.</div>';
+
+  $("srclist").querySelectorAll("[data-si]").forEach(inp=>inp.onchange=()=>{
+    const s=srcs[+inp.dataset.si], k=inp.dataset.sk;
+    s[k]= inp.type==="number" ? Number(inp.value)||0 : inp.value;
+  });
+  $("srclist").querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{
+    srcs.splice(+b.dataset.del,1); drawSources();
+  });
+  $("srclist").querySelectorAll("[data-test]").forEach(b=>b.onclick=async()=>{
+    const i=+b.dataset.test, out=$("srclist").querySelector(`[data-out="${i}"]`);
+    out.style.display=""; out.textContent="Testing…";
+    try{
+      const r=await api("api/sources/test",{method:"POST",
+        headers:{"Content-Type":"application/json"},body:JSON.stringify(srcs[i])}).then(r=>r.json());
+      out.className="chip";
+      out.textContent = r.published.length
+        ? r.published.map(p=>`${p.entity_id} = ${p.state}`).join("  ·  ")
+        : "Nothing came back. Check the settings above.";
+      if(!r.published.length) out.className="chip bad";
+    }catch(e){ out.className="chip bad"; out.textContent="Failed: "+e.message; }
+  });
+}
+$("srcsave").onclick=async()=>{
+  try{
+    await api("api/sources",{method:"PUT",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(srcs)});
+    $("srcmsg").textContent="Saved.";
+    setTimeout(()=>$("srcmsg").textContent="",2500);
+  }catch(e){ $("srcmsg").textContent="Save failed: "+e.message; }
+};
+
 /* ---------- icon picker ---------- */
 let pickTarget=null;
 function openPicker(el){ pickTarget=el; $("pickwrap").style.display="flex";

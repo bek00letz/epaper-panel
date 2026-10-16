@@ -1,112 +1,113 @@
-# Living-room e-paper panel
+> Vibecoded with Opus 5.
 
-An Elecrow CrowPanel 5.79" e-paper display showing household status from Home
-Assistant and Jellyfin, intended to sit in a living room and be read from about
-three metres away.
+# E-paper panel
 
-Home Assistant renders the screens as 1-bit PNGs; the panel fetches and draws
-them. Almost no logic lives on the device.
+A Home Assistant add-on that renders your entities onto an Elecrow CrowPanel
+e-paper display, with a drag-and-drop editor for designing the pages.
+
+![The pages it renders](docs/pages.png)
+
+Designed around one constraint: the panel hangs about three metres from a
+sofa. At that distance a 25 px character is at the threshold of legibility and
+110 px is effortless — on a 272 px-tall panel that means **one fact per screen,
+set large**, rotating, rather than a dense dashboard you have to walk up to.
+
+## The editor
+
+![The editor](docs/editor.jpg)
+
+Lives in your Home Assistant sidebar, behind your existing login. Drag an
+entity from the list onto the canvas, drag it where you want it, and the
+preview you see is a live render from the real engine — not an approximation.
+
+It also tells you, per element, what the panel will actually produce:
+**"Renders at 106 px = 13 mm — comfortable"**, measured against the viewing
+distance the whole project is built around.
+
+Most pages need no templating. An element says what it wants — an entity's
+state, an attribute, when it last changed — and a "say it differently" table
+turns `Outdoor Cat` into `outside` without a line of Jinja. Raw templates are
+still there when you need them.
+
+## Pages appear when they matter
+
+Each page has a tier:
+
+| Tier | Behaviour |
+|---|---|
+| **In rotation** | takes its turn |
+| **Only when true** | joins the rotation only while a condition holds |
+| **Interrupt** | never rotates; seizes the screen when something happens, holds, then hands it back |
+
+So a dryer page exists only while the dryer is running, and an "she's nearly
+home" page can take over the panel for fifteen minutes and then vanish.
 
 ## Hardware
 
-| | |
-|---|---|
-| Board | Elecrow CrowPanel 5.79" e-paper, SKU `DIS08792E` |
-| MCU | ESP32-S3 (assumed N8R8 — 8 MB octal PSRAM; unconfirmed) |
-| Panel | 792 × 272, 1-bit, dual SSD1683 cascade |
-| Physical size | ~139 × 48 mm, ~145 dpi |
-| Power | USB-C today. JST connector + onboard charging for a 1S LiPo later |
+Built and tested on the **CrowPanel 5.79"** (`DIS08792E`) — ESP32-S3, 792×272,
+1-bit, about 139 × 48 mm. The firmware is ESPHome and lives in
+[`esphome/`](esphome/).
 
-Pins (from the [Elecrow wiki](https://www.elecrow.com/wiki/CrowPanel_ESP32_E-paper_5.79-inch_HMI_Display.html)):
-display `clk 12 / mosi 11 / cs 45 / dc 46 / reset 47 / busy 48`, display power
-rail `GPIO7` (nothing renders until it is high), Exit `IO1`, Menu `IO2`,
-dial `IO4 / IO6` with press on `IO5`.
+It needs the external component
+[`ESPBoards/esphome-lvgl-crowpanel-epaper-5.79-4.2`](https://github.com/ESPBoards/esphome-lvgl-crowpanel-epaper-5.79-4.2);
+stock `waveshare_epaper` has no model for this panel. The other CrowPanel
+e-paper sizes should be a matter of resolution and model string, but are
+untested.
 
-ESPHome has no built-in driver for this panel. It needs the external component
-[`ESPBoards/esphome-lvgl-crowpanel-epaper-5.79-4.2`](https://github.com/ESPBoards/esphome-lvgl-crowpanel-epaper-5.79-4.2)
-with `model: "5.79in"` and `invert_colors: true`.
+The five buttons are **discrete push-buttons**, not a rotary encoder, whatever
+Elecrow's wiki calls them. Paging is instant because the panel holds every page
+in PSRAM and blits a slice.
 
-## Layout
+## Install
 
-```
-┌──────────────────────────────────────────────────────────┐
-│  ☀  10.6            ╭─╮                                  │  one fact,
-│     kWh today    ╭──╯ ╰──╮                               │  set large
-│ ──────────────────────────────────────────────────────── │
-│  18:04              solar · 1/5                     86 % │  diagnostics
-└──────────────────────────────────────────────────────────┘
-```
+1. **Settings → Add-ons → Add-on Store → ⋮ → Repositories**, add
+   `https://github.com/bek00letz/epaper-panel`
+2. Install **E-paper panel** and start it.
+3. Open **E-paper** in the sidebar.
+4. Point your panel at `http://<home-assistant>:8099/frames.png` — see
+   [`esphome/crowpanel-epaper.yaml`](esphome/crowpanel-epaper.yaml).
 
-Pages: `solar`, `solar_month`, `cat`, `watch`, `temps`, `dryer`.
+There is nothing to configure. With no data sources set up the add-on simply
+renders the entities you already have.
 
-## Running it
+## Data sources (optional)
 
-Development, on any machine with the repo:
+Some things Home Assistant cannot answer. Sources fetch them and publish them
+back as `sensor.epaper_<name>` entities, which pages then bind to like anything
+else:
 
-```bash
-./.venv/bin/python render.py --catalogue --out out   # every page + contact sheet
-./.venv/bin/python render.py --out out               # one frame, as deployed
-```
+- **Jellyfin** — what is new *and* unwatched. HA's own Jellyfin integration
+  reports who is watching; it knows nothing about your library.
+- **Any JSON API** — a URL, headers, and a path into the response.
+- **A long-term statistic** — e.g. this month's solar. Statistics are
+  websocket-only in HA, so templates cannot reach them.
 
-With no `secrets.json` it falls back to `fixture.json`, a snapshot of live
-Home Assistant state, so the renderer runs anywhere.
+## How it works
 
-Deployed, on the Home Assistant box, driven by `shell_command.epaper_render`.
-See [ha/SETUP.md](ha/SETUP.md).
+Home Assistant renders; the panel draws. The panel fetches a tall PNG of every
+page, holds it in PSRAM, and pages locally — so a button press redraws in about
+800 ms with no network round trip.
 
-## Current state
+[ARCHITECTURE.md](ARCHITECTURE.md) has the measurements behind the design
+decisions, including why the fetch cost turned out to be per-pixel rather than
+per-byte, and what that means for battery.
 
-Working: display, wifi, OTA, live HA data, Jellyfin "new and unwatched",
-server-side rendering, the control dashboard, local page switching from the
-buttons, and page selection pushed from Home Assistant
-(`esphome.crowpanel_epaper_show_page`).
+## Honest limitations
 
-Buttons work. The five controls are **discrete push-buttons, not a rotary
-encoder** — see [ARCHITECTURE.md](ARCHITECTURE.md#the-dial-is-not-a-dial). A
-page change takes about 810 ms end to end.
+- **It assumes you know your entities.** The picker shows friendly names and
+  live values, but nothing suggests what is worth putting on a wall.
+- **`show_if` conditions are still raw Jinja.** The value fields are not; this
+  is the next thing to fix.
+- **Only the 5.79" is tested.**
+- **No battery readout.** The voltage divider's GPIO is undocumented on this
+  board.
+- **Mains power is assumed.** Deep sleep would cost instant updates, remote
+  control and alerts that arrive when they happen — a bad trade for a panel
+  near a socket.
 
-| Button | Pin | Does |
-|---|---|---|
-| Next | `IO4` | forward one page |
-| Prev | `IO6` | back one page |
-| OK (dial press) | `IO5` | hold this page, stopping the rotation; again to release |
-| Home | `IO2` | re-render from Home Assistant and refetch |
-| Exit | `IO1` | release the hold, back to page one |
+## Credits
 
-The panel also exposes actions to Home Assistant, so remotes, dashboard
-buttons and automations can drive it:
-
-| Action | Does |
-|---|---|
-| `esphome.crowpanel_epaper_page_step` (`delta`) | move relative — what a remote needs |
-| `esphome.crowpanel_epaper_show_page` (`index`) | jump to a page |
-| `esphome.crowpanel_epaper_hold_toggle` | hold / release |
-| `esphome.crowpanel_epaper_refresh_now` | re-render and refetch |
-
-These only work while the panel is **awake**. Its own buttons work under deep
-sleep because pressing one wakes it; nothing external can. Remote control and
-deep sleep are therefore close to mutually exclusive — see
-[ARCHITECTURE.md](ARCHITECTURE.md#battery-and-deep-sleep).
-
-A held page shows a padlock in the top-right corner — without it a stopped
-rotation just looks like a fault. Data still refreshes while held; only the
-page stops moving.
-
-**Not done: deep sleep.** The panel is mains-powered. See
-[ARCHITECTURE.md](ARCHITECTURE.md#battery-and-deep-sleep) for the measurements
-that decide how it should be built.
-
-## Known issues
-
-- **Battery percentage is a placeholder.** The voltage divider's GPIO is not
-  documented for this board and has not been found. The footer shows whatever
-  the panel reports, currently nothing.
-- **`shell_command` injection.** `epaper_render` interpolates
-  `input_text.e_paper_rotation` into a shell command. Anyone who can edit that
-  helper can run commands as Home Assistant. Low risk on a private LAN, real
-  nonetheless. Fix: have the renderer read the helper over the API itself.
-- **`sensor.indoor_temperature`** (the indoor temp,
-  still named "Currently Bedroom") is unavailable, so `temps` shows `--`.
-- **Cat "since" time is unreliable.** `sensor.cat_location.last_changed`
-  resets on every Home Assistant restart, so it often reports a restart rather
-  than the cat actually going out.
+[ESPBoards](https://github.com/ESPBoards/esphome-lvgl-crowpanel-epaper-5.79-4.2)
+for the display component, Elecrow for publishing their demo source (the
+authoritative pin reference), [Lato](https://www.latofonts.com/) (SIL OFL) and
+[Material Design Icons](https://pictogrammers.com/library/mdi/) (Apache 2.0).

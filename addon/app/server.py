@@ -23,6 +23,7 @@ from aiohttp import web
 from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).parent))
+import feeds  # noqa: E402
 from render import layout, pages, sources, theme as T  # noqa: E402
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
@@ -38,6 +39,24 @@ LAYOUTS_PATH = DATA_DIR / "layouts.json"
 DEFAULTS_PATH = Path(__file__).parent / "default_layouts.json"
 
 _entity_cache = {"at": 0.0, "items": []}
+
+
+def load_sources():
+    """Configured data sources, migrating the old add-on options once."""
+    existing = feeds.load(DATA_DIR)
+    if existing:
+        return existing
+    seeded = []
+    if os.environ.get("JELLYFIN_KEY"):
+        seeded.append({"type": "jellyfin", "name": "watch",
+                       "base": os.environ.get("JELLYFIN_BASE", ""),
+                       "user": os.environ.get("JELLYFIN_USER", ""),
+                       "key": os.environ["JELLYFIN_KEY"], "days": 30,
+                       "friendly_name": "Next to watch"})
+    if seeded:
+        feeds.save(DATA_DIR, seeded)
+        print(f"migrated {len(seeded)} source(s) from add-on options", flush=True)
+    return seeded
 
 
 def load_layouts():
@@ -237,32 +256,17 @@ async def eligible_pages(session, spec):
 
 
 async def publish_computed(session):
-    """Values only this service can work out, pushed to HA before rendering."""
-    key = os.environ.get("JELLYFIN_KEY") or ""
-    if key:
-        items = await asyncio.to_thread(
-            sources.jellyfin_new, key,
-            base=os.environ.get("JELLYFIN_BASE") or sources.JELLYFIN_BASE,
-            user=os.environ.get("JELLYFIN_USER") or sources.JELLYFIN_USER)
-        top = items[0] if items else None
-        await publish_entity(session, "sensor.epaper_watch",
-                             top["title"] if top else "nothing new",
-                             {"detail": top["detail"] if top else "",
-                              "count": len(items),
-                              "titles": [i["title"] for i in items],
-                              "friendly_name": "E-paper next to watch",
-                              "icon": "mdi:television-play"})
-        await publish_entity(session, "sensor.epaper_watch_count", len(items),
-                             {"friendly_name": "E-paper new to watch",
-                              "icon": "mdi:television-play"})
+    """Run every configured source and publish what it returns.
 
-    month = await ha_ws_statistics("sensor.solar_total_production")
-    if month is not None:
-        await publish_entity(session, "sensor.epaper_solar_month", round(month, 1),
-                             {"unit_of_measurement": "kWh",
-                              "device_class": "energy",
-                              "friendly_name": "E-paper solar this month",
-                              "icon": "mdi:white-balance-sunny"})
+    With nothing configured this does nothing, which is the point: the
+    add-on is then simply "render my Home Assistant entities".
+    """
+    srcs = load_sources()
+    if not srcs:
+        return
+    ctx = {"ha_base": HA_BASE, "ha_token": HA_TOKEN}
+    for entity_id, state, attrs in await feeds.run_all(srcs, ctx):
+        await publish_entity(session, entity_id, state, attrs)
 
 
 async def check_alerts(session, spec):
@@ -449,6 +453,27 @@ async def api_push(request):
     return web.json_response({"pushed": True})
 
 
+async def api_sources_get(request):
+    return web.json_response(load_sources())
+
+
+async def api_sources_put(request):
+    body = await request.json()
+    if not isinstance(body, list):
+        raise web.HTTPBadRequest(text="expected a list of sources")
+    feeds.save(DATA_DIR, body)
+    return web.json_response({"saved": True, "count": len(body)})
+
+
+async def api_sources_test(request):
+    """Run one source now and report what it would publish."""
+    src = await request.json()
+    ctx = {"ha_base": HA_BASE, "ha_token": HA_TOKEN}
+    rows = await feeds.run_all([src], ctx)
+    return web.json_response({"published": [{"entity_id": e, "state": str(v)[:120],
+                                             "attributes": a} for e, v, a in rows]})
+
+
 async def api_mdi_font(request):
     f = Path(__file__).parent / "fonts" / "mdi.ttf"
     if not f.exists():
@@ -493,6 +518,9 @@ async def start(app_runners):
         web.get("/api/entities", api_entities),
         web.post("/api/preview", api_preview),
         web.post("/api/push", api_push),
+        web.get("/api/sources", api_sources_get),
+        web.put("/api/sources", api_sources_put),
+        web.post("/api/sources/test", api_sources_test),
         web.get("/api/mdi/font", api_mdi_font),
         web.get("/api/mdi/list", api_mdi_list),
     ])

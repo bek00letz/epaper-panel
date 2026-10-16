@@ -12,10 +12,6 @@ import urllib.request
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-JELLYFIN_BASE = ""   # set via add-on config
-JELLYFIN_USER = ""   # set via add-on config
-WATCH_WINDOW_DAYS = 30
-
 ENT = {
     "pv_today":   "sensor.solar_today_production",
     "pv_now":     "sensor.solar_pv_power",
@@ -47,88 +43,6 @@ def _http_json(url, headers=None, timeout=10):
 
 
 # --------------------------------------------------------------- Jellyfin
-
-def human_ago(dt, now=None):
-    now = now or datetime.now(timezone.utc)
-    days = (now.date() - dt.astimezone(now.tzinfo).date()).days
-    if days <= 0:
-        return "today"
-    if days == 1:
-        return "yesterday"
-    if days < 14:
-        return f"{days} days ago"
-    return dt.strftime("%-d %b").lower()
-
-
-def jellyfin_user_id(api_key, base, prefer=""):
-    """Resolve a Jellyfin user id.
-
-    Blank config is the common case, so look one up rather than making
-    someone dig a UUID out of the Jellyfin admin URL. A named preference
-    wins; otherwise take the first user.
-    """
-    try:
-        users = _http_json(f"{base}/Users", {"X-Emby-Token": api_key})
-    except Exception:
-        return ""
-    if prefer:
-        for u in users:
-            if prefer.lower() in (u.get("Name", "").lower(), u.get("Id", "").lower()):
-                return u.get("Id", "")
-    return users[0].get("Id", "") if users else ""
-
-
-def jellyfin_new(api_key, *, base=JELLYFIN_BASE, user=JELLYFIN_USER,
-                 days=WATCH_WINDOW_DAYS, limit=20):
-    """Recently added AND unplayed, newest first, series grouped.
-
-    Returns [] on any failure -- a dead Jellyfin must not take the panel down.
-    """
-    if not user or "-" not in user and len(user) != 32:
-        user = jellyfin_user_id(api_key, base, prefer=user)
-    if not user:
-        return []
-
-    params = {
-        "userId": user, "Limit": limit, "IsPlayed": "false",
-        "IncludeItemTypes": "Movie,Episode", "GroupItems": "true",
-        "Fields": "SeriesName,DateCreated,ChildCount",
-    }
-    url = f"{base}/Items/Latest?" + urllib.parse.urlencode(params)
-    try:
-        items = _http_json(url, {"X-Emby-Token": api_key})
-    except Exception:
-        return []
-
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    out = []
-    for it in items:
-        raw = it.get("DateCreated")
-        if not raw:
-            continue
-        try:
-            added = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-        except ValueError:
-            continue
-        if added < cutoff:
-            continue
-
-        kind = it.get("Type")
-        if kind == "Episode":
-            title, detail = (it.get("SeriesName") or it.get("Name")), it.get("Name")
-        elif kind == "Series":
-            n = it.get("ChildCount") or 0
-            title = it.get("Name")
-            detail = f"{n} new episodes" if n != 1 else "1 new episode"
-        else:
-            title, detail = it.get("Name"), "film"
-
-        out.append({
-            "title": title or "?",
-            "detail": f"{detail} · {human_ago(added)}",
-            "added": added,
-        })
-    return out
 
 
 # --------------------------------------------------------- Home Assistant

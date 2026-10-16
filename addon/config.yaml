@@ -1,7 +1,7 @@
 name: E-paper panel
-version: "0.2.0"
+version: "0.3.0"
 slug: epaper_panel
-description: Renders status pages for the living-room CrowPanel e-paper display
+description: Render Home Assistant onto an Elecrow CrowPanel e-paper display, with a visual editor
 url: https://github.com/bek00letz/epaper-panel
 arch:
   - amd64
@@ -21,21 +21,19 @@ ports:
 ports_description:
   8099/tcp: Frame fetches from the panel (LAN only, no auth)
 
-# Supervisor injects a token for http://supervisor/core/api and the
-# websocket -- no long-lived token to create or store.
+# Supervisor injects a token for the API and websocket -- nothing to create.
 homeassistant_api: true
 
-# Read-only, only for the recorder database if the websocket route fails.
-map:
-  - homeassistant_config:ro
-
+# Everything else -- pages, data sources -- is configured in the editor,
+# which is a better form than this one and keeps the add-on options empty
+# for anyone who just wants their existing HA entities on a panel.
 options:
-  jellyfin_base: "http://jellyfin.local:8096"
-  jellyfin_user: ""   # blank = first user, or put a username here
-  jellyfin_key: ""
   refresh_seconds: 60
 schema:
+  refresh_seconds: "int(10,3600)"
+  # DEPRECATED, kept only so an existing install migrates its Jellyfin
+  # settings into the editor's Data sources on first start. Safe to clear
+  # afterwards; a later version drops them.
   jellyfin_base: "str?"
   jellyfin_user: "str?"
   jellyfin_key: "password?"
-  refresh_seconds: "int(10,3600)?"
