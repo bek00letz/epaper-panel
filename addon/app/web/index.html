@@ -1970,6 +1970,27 @@ function compileShowIf() {
   return `{{ states('${ent}') | float(0) ${sym} ${rhs} }}`;
 }
 
+function syncDynamicGridShowIf(gridEl) {
+  if (!page() || page().tier !== "when") return;
+  if (!gridEl) {
+    gridEl = (page().elements || []).find(x => x.type === "dynamic_grid");
+  }
+  if (!gridEl) return;
+  const ents = (gridEl.items || []).map(x => (x.entity || "").trim()).filter(Boolean);
+  if (!ents.length) {
+    delete page().show_if;
+  } else {
+    const st = (gridEl.filter_state || "on").toLowerCase();
+    if (st === "*") {
+      delete page().show_if;
+    } else {
+      page().show_if = "{{ " + ents.map(e => `is_state('${e}','${st}')`).join(" or ") + " }}";
+    }
+  }
+  syncShowIfUI();
+  drawRotationPills();
+}
+
 function syncShowIfUI() {
   const raw = (page() && page().show_if) || "";
   $("showif").value = raw;
@@ -2016,6 +2037,9 @@ function select(name) {
   $("page").value = cur;
   $("tier").value = page().tier || "rotate";
   $("hold").value = page().hold_minutes ?? 10;
+  if (page().tier === "when") {
+    syncDynamicGridShowIf();
+  }
   syncShowIfUI();
   drawRotationPills();
   holdRow();
@@ -2653,23 +2677,6 @@ function props() {
     };
   }
 
-  function syncDynamicGridShowIf(gridEl) {
-    if (!page() || page().tier !== "when") return;
-    const ents = (gridEl.items || []).map(x => (x.entity || "").trim()).filter(Boolean);
-    if (!ents.length) {
-      delete page().show_if;
-    } else {
-      const st = (gridEl.filter_state || "on").toLowerCase();
-      if (st === "*") {
-        delete page().show_if;
-      } else {
-        page().show_if = "{{ " + ents.map(e => `is_state('${e}','${st}')`).join(" or ") + " }}";
-      }
-    }
-    syncShowIfUI();
-    drawRotationPills();
-  }
-
   const autoHideCb = box.querySelector("#dg_autohide");
   if (autoHideCb) {
     autoHideCb.onchange = e => {
@@ -2737,14 +2744,15 @@ function props() {
     };
   });
   box.querySelectorAll(".dgentinp").forEach(inp => {
-    inp.onchange = () => {
-      snapshot();
+    const handleEntityUpdate = (isCommit) => {
       const idx = +inp.dataset.dgi;
       const fld = inp.dataset.field;
-      if (el.items[idx]) {
-        el.items[idx][fld] = inp.value;
-        if (fld === "entity") {
-          syncDynamicGridShowIf(el);
+      if (!el.items || !el.items[idx]) return;
+      el.items[idx][fld] = inp.value;
+      if (fld === "entity") {
+        syncDynamicGridShowIf(el);
+        if (isCommit) {
+          snapshot();
           const val = (inp.value || "").trim();
           const match = ents.find(x => x.entity_id === val);
           const friendly = match ? (match.name || "") : "";
@@ -2755,11 +2763,18 @@ function props() {
             el.items[idx].icon = suggestIconForEntity(val, friendly);
           }
           props();
-        } else if (fld === "icon") {
-          props();
         }
-        paint(); preview();
+      } else if (fld === "icon" && isCommit) {
+        props();
       }
+      paint(); preview();
+    };
+    inp.oninput = () => {
+      if (inp.dataset.field === "entity") handleEntityUpdate(false);
+    };
+    inp.onchange = () => {
+      snapshot();
+      handleEntityUpdate(true);
     };
   });
 
@@ -2835,6 +2850,9 @@ $("tier").onchange = e => {
     spec.rotation = (spec.rotation || []).filter(n => n !== cur);
   } else if (cur && !(spec.rotation || []).includes(cur)) {
     (spec.rotation || (spec.rotation = [])).push(cur);
+  }
+  if (nextTier === "when") {
+    syncDynamicGridShowIf();
   }
   fillPages();
   $("page").value = cur;
@@ -3313,7 +3331,7 @@ const PRESETS = [
     id: "dynamic_entities",
     title: "Dynamic Entities",
     desc: "Adaptive responsive panel that monitors multiple devices (1 to 4) and dynamically displays only active spots, resizing to fill the screen.",
-    tier: "rotate",
+    tier: "when",
     makeElements: (ent) => [
       {
         type: "dynamic_grid",
@@ -3433,14 +3451,19 @@ function applyPresetToPage(preset) {
   if (spec.pages[n]) { msg(`A page named "${n}" already exists.`); return; }
 
   snapshot();
+  const els = preset.makeElements("");
   spec.pages[n] = {
     tier: preset.tier || "rotate",
-    elements: preset.makeElements("")
+    elements: els
   };
   if (preset.show_if) spec.pages[n].show_if = preset.show_if;
   if (!spec.rotation.includes(n)) spec.rotation.push(n);
   fillPages();
   select(n);
+  const dg = els.find(x => x.type === "dynamic_grid");
+  if (dg && spec.pages[n].tier === "when") {
+    syncDynamicGridShowIf(dg);
+  }
   $("templatewrap").style.display = "none";
   msg(`Created "${preset.title}" page! Select an element to bind your entity.`);
 }
