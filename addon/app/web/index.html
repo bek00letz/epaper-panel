@@ -1825,11 +1825,20 @@ function drawRotationPills() {
   box.innerHTML = rot.map((n, i) => {
     const p = spec.pages[n] || {};
     const isWhen = p.tier === "when";
+    const isAlert = p.tier === "alert";
     const isLive = (liveStatus.pages || []).includes(n);
-    return `<span class="rpill${n === cur ? " cur" : ""}" data-ri="${i}" data-rn="${esc(n)}" title="${isWhen ? (isLive ? "Condition true (in strip)" : "Condition false (skipped)") : "In rotation"}">
+    let tagHtml = "";
+    if (isWhen) {
+      tagHtml = isLive
+        ? `<span class="tag" style="background:#2ea043;color:#fff" title="Condition active: included in panel strip">live</span>`
+        : `<span class="tag" style="background:var(--border);color:var(--text-muted)" title="Condition false: temporarily skipped from strip">idle (skipped)</span>`;
+    } else if (isAlert) {
+      tagHtml = `<span class="tag" style="background:#d73a49;color:#fff">alert</span>`;
+    }
+    return `<span class="rpill${n === cur ? " cur" : ""}" data-ri="${i}" data-rn="${esc(n)}" title="${isWhen ? (isLive ? "Condition true (in rotation strip)" : "Condition false (skipped until active)") : "Always in rotation"}">
       <button data-rmv="${i}:-1" title="Move earlier">&lsaquo;</button>
       <span class="rname">${esc(n)}</span>
-      ${isWhen ? `<span class="tag">${isLive ? "active" : "when"}</span>` : ""}
+      ${tagHtml}
       <button data-rmv="${i}:1" title="Move later">&rsaquo;</button>
       <button data-rdel="${i}" title="Remove from rotation">&times;</button>
     </span>`;
@@ -2412,6 +2421,10 @@ function props() {
           <option value="state"${el.secondary_mode === "state" ? " selected" : ""}>Raw State ("on")</option>
           <option value="none"${el.secondary_mode === "none" ? " selected" : ""}>None (Icon &amp; Name Only)</option>
         </select>
+      </div>
+      <div class="row" style="margin-top:6px;border-top:1px solid var(--border);padding-top:6px;">
+        <label style="width:auto;flex:1;cursor:pointer" title="Automatically set page tier to 'when' and hide this screen from rotation if all spots are off">Hide page when all spots off</label>
+        <input type="checkbox" id="dg_autohide"${(page() && page().tier === "when") ? " checked" : ""}>
       </div>`;
 
     h += `</div><div class="grp"><div class="lbl" style="display:flex;justify-content:space-between;align-items:center;">
@@ -2518,6 +2531,45 @@ function props() {
     };
   }
 
+  function syncDynamicGridShowIf(gridEl) {
+    if (!page() || page().tier !== "when") return;
+    const ents = (gridEl.items || []).map(x => (x.entity || "").trim()).filter(Boolean);
+    if (!ents.length) {
+      delete page().show_if;
+    } else {
+      const st = (gridEl.filter_state || "on").toLowerCase();
+      if (st === "*") {
+        delete page().show_if;
+      } else {
+        page().show_if = "{{ " + ents.map(e => `is_state('${e}','${st}')`).join(" or ") + " }}";
+      }
+    }
+    syncShowIfUI();
+    drawRotationPills();
+  }
+
+  const autoHideCb = box.querySelector("#dg_autohide");
+  if (autoHideCb) {
+    autoHideCb.onchange = e => {
+      snapshot();
+      if (e.target.checked) {
+        page().tier = "when";
+        syncDynamicGridShowIf(el);
+        $("tier").value = "when";
+        $("belt").style.display = "flex";
+        msg("Page tier set to 'when': will automatically hide from rotation when all spots are off.");
+      } else {
+        page().tier = "rotate";
+        delete page().show_if;
+        $("tier").value = "rotate";
+        $("belt").style.display = "none";
+        syncShowIfUI();
+        drawRotationPills();
+        msg("Page set to 'Always in rotation': will always show, rendering the idle state when all spots are off.");
+      }
+    };
+  }
+
   box.querySelectorAll("[data-k]").forEach(inp => inp.onchange = () => {
     snapshot();
     const k = inp.dataset.k, v = inp.value;
@@ -2529,6 +2581,9 @@ function props() {
       el[k] = Number(v);
     } else {
       el[k] = v;
+    }
+    if (k === "filter_state" && page() && page().tier === "when") {
+      syncDynamicGridShowIf(el);
     }
     paint(); preview();
   });
@@ -2543,6 +2598,7 @@ function props() {
         name: `Spot ${el.items.length + 1}`,
         icon: "mdi:radiator"
       });
+      syncDynamicGridShowIf(el);
       paint(); preview();
     };
   }
@@ -2551,6 +2607,7 @@ function props() {
       snapshot();
       const idx = +b.dataset.dgi;
       el.items.splice(idx, 1);
+      syncDynamicGridShowIf(el);
       paint(); preview();
     };
   });
@@ -2561,6 +2618,7 @@ function props() {
       const fld = inp.dataset.field;
       if (el.items[idx]) {
         el.items[idx][fld] = inp.value;
+        if (fld === "entity") syncDynamicGridShowIf(el);
         paint(); preview();
       }
     };
@@ -2698,18 +2756,23 @@ $("delpage").onclick = () => {
   msg(`Deleted "${gone}".`, { label: "Undo", run: undo });
 };
 
+async function saveLayouts() {
+  const res = await api("api/layouts", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(spec)
+  }).then(r => r.json());
+  if (res.rotation) { spec.rotation = res.rotation; drawRotationPills(); }
+  if (res.orientation !== undefined) { spec.orientation = res.orientation; }
+  if (res.display !== undefined) { spec.display = res.display; }
+  syncOrientUI();
+  await refreshStatus();
+  return res;
+}
+
 $("save").onclick = async () => {
   try {
-    const res = await api("api/layouts", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(spec)
-    }).then(r => r.json());
-    if (res.rotation) { spec.rotation = res.rotation; drawRotationPills(); }
-    if (res.orientation !== undefined) { spec.orientation = res.orientation; }
-    if (res.display !== undefined) { spec.display = res.display; }
-    syncOrientUI();
-    await refreshStatus();
+    await saveLayouts();
     msg("Saved and rendered.", { label: "Push now", run: () => $("push").click() });
   } catch (e) { msg("Save failed: " + e.message); }
 };
@@ -2750,7 +2813,11 @@ $("safebtn").onclick = () => {
 /* Full Strip Preview */
 async function openStripPreview() {
   $("stripwrap").style.display = "flex";
-  await refreshStatus();
+  try {
+    await saveLayouts();
+  } catch (e) {
+    console.warn("Auto-save before strip preview failed:", e);
+  }
   const pages = (liveStatus.pages || []).join(" → ") || "none";
   $("stripmeta").textContent = `Pages: ${pages}`;
   $("stripimg").src = "api/strip.png?t=" + Date.now();
@@ -2760,7 +2827,7 @@ $("stripbtn").onclick = openStripPreview;
 $("stripclose").onclick = () => $("stripwrap").style.display = "none";
 $("stripwrap").onclick = e => { if (e.target.id === "stripwrap") $("stripwrap").style.display = "none"; };
 $("striprefresh").onclick = async () => {
-  await api("api/layouts", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+  await saveLayouts();
   await openStripPreview();
 };
 
@@ -2972,9 +3039,10 @@ async function loadIcons(q) {
 
 $("push").onclick = async () => {
   try {
+    await saveLayouts();
     await api("api/push", { method: "POST" });
     await refreshStatus();
-    msg("Pushed — the panel is fetching and redrawing now.");
+    msg("Saved and pushed — the panel is fetching and redrawing now.");
   } catch (e) { msg("Push failed: " + e.message); }
 };
 
@@ -2996,8 +3064,7 @@ const PRESETS = [
     id: "dynamic_entities",
     title: "Dynamic Entities",
     desc: "Adaptive responsive panel that monitors multiple devices (1 to 4) and dynamically displays only active spots, resizing to fill the screen.",
-    tier: "when",
-    show_if: "{{ states('switch.zone_1') == 'on' or states('switch.zone_2') == 'on' or states('switch.zone_3') == 'on' or states('switch.zone_4') == 'on' }}",
+    tier: "rotate",
     makeElements: (ent) => [
       {
         type: "dynamic_grid",
@@ -3008,10 +3075,10 @@ const PRESETS = [
         layout_4: "quadrant",
         secondary_mode: "runtime",
         items: [
-          { entity: ent || "switch.zone_1", name: "Zone 1", icon: "mdi:radiator" },
-          { entity: "switch.zone_2", name: "Zone 2", icon: "mdi:radiator" },
-          { entity: "switch.zone_3", name: "Zone 3", icon: "mdi:paw" },
-          { entity: "switch.zone_4", name: "Zone 4", icon: "mdi:bed" }
+          { entity: ent || "", name: "Spot 1", icon: "mdi:radiator" },
+          { entity: "", name: "Spot 2", icon: "mdi:radiator" },
+          { entity: "", name: "Spot 3", icon: "mdi:paw" },
+          { entity: "", name: "Spot 4", icon: "mdi:bed" }
         ]
       }
     ]
