@@ -952,6 +952,11 @@ aside {
             <option value="0">Disabled (Off)</option>
           </select>
         </label>
+        <label class="badge-tag" id="panel-refresh-badge" title="Physical panel hardware refresh interval. Adjust dynamically without reflashing firmware!" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">
+          <span>Refresh:</span>
+          <input type="range" id="panel-refresh-slider" min="1" max="60" value="5" style="width:68px;accent-color:var(--accent);cursor:pointer;vertical-align:middle;margin:0" />
+          <span id="panel-refresh-val" style="font-weight:700;min-width:34px;display:inline-block">5 min</span>
+        </label>
       </div>
       <div style="display:flex;gap:6px">
         <button id="zoomfit" class="sm active">Fit</button>
@@ -1145,10 +1150,13 @@ aside {
           <input id="cfg_host" placeholder="homeassistant.local or 192.168.1.x">
           <label style="width:auto;margin-left:6px" title="Initial default interval. Can also be adjusted dynamically via Home Assistant slider anytime without reflashing!">Default Refresh</label>
           <select id="cfg_interval" style="max-width:100px">
+            <option value="1min">1 min</option>
             <option value="2min">2 min</option>
             <option value="5min">5 min</option>
             <option value="10min">10 min</option>
             <option value="15min">15 min</option>
+            <option value="30min">30 min</option>
+            <option value="60min">60 min</option>
           </select>
         </div>
         <div class="chip" style="margin:2px 0;font-size:11px;color:var(--text-secondary)">✨ <b>Zero reflashing:</b> Creates a <code>number.&lt;device&gt;_refresh_interval</code> slider in Home Assistant to change the refresh timer on the fly anytime.</div>
@@ -1321,6 +1329,74 @@ function msg(text, action) {
 }
 const hideToast = () => $("toast").classList.remove("on");
 
+/* Panel Hardware Refresh Interval */
+let isDraggingRefresh = false;
+
+function updateRefreshUI(val) {
+  const m = Math.max(1, Math.min(60, parseInt(val, 10) || 5));
+  const slider = $("panel-refresh-slider");
+  const valSpan = $("panel-refresh-val");
+  const cfgSel = $("cfg_interval");
+
+  if (slider && !isDraggingRefresh) slider.value = m;
+  if (valSpan) valSpan.textContent = `${m} min`;
+
+  if (cfgSel) {
+    const valStr = `${m}min`;
+    const exists = Array.from(cfgSel.options).some(o => o.value === valStr);
+    if (!exists) {
+      const opt = document.createElement("option");
+      opt.value = valStr;
+      opt.textContent = `${m} min`;
+      cfgSel.appendChild(opt);
+    }
+    cfgSel.value = valStr;
+  }
+}
+
+async function setPanelRefresh(minutes, source = "slider") {
+  const m = Math.max(1, Math.min(60, parseInt(minutes, 10) || 5));
+  updateRefreshUI(m);
+  try {
+    const res = await api("api/panel-refresh", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ interval: m })
+    }).then(r => r.json());
+    if (res.ha_updated) {
+      msg(`Panel refresh set to ${m} min (applied live to Home Assistant entity)`);
+    } else {
+      msg(`Panel refresh set to ${m} min (saved to panel config)`);
+    }
+  } catch (err) {
+    msg(`Failed to update refresh rate: ${err.message || err}`);
+  }
+}
+
+const refreshSlider = $("panel-refresh-slider");
+if (refreshSlider) {
+  refreshSlider.addEventListener("mousedown", () => { isDraggingRefresh = true; });
+  refreshSlider.addEventListener("touchstart", () => { isDraggingRefresh = true; }, { passive: true });
+  refreshSlider.addEventListener("mouseup", () => { isDraggingRefresh = false; });
+  refreshSlider.addEventListener("touchend", () => { isDraggingRefresh = false; });
+
+  refreshSlider.addEventListener("input", e => {
+    const m = parseInt(e.target.value, 10) || 5;
+    if ($("panel-refresh-val")) $("panel-refresh-val").textContent = `${m} min`;
+  });
+
+  refreshSlider.addEventListener("change", e => {
+    isDraggingRefresh = false;
+    setPanelRefresh(e.target.value, "slider");
+  });
+}
+
+if ($("cfg_interval")) {
+  $("cfg_interval").addEventListener("change", e => {
+    setPanelRefresh(e.target.value, "select");
+  });
+}
+
 function syncOrientUI() {
   const o = String(Number(spec.orientation || 0));
   if ($("orient")) $("orient").value = o;
@@ -1443,6 +1519,9 @@ async function refreshStatus() {
       const o = Number(spec.orientation || 0);
       const otag = o ? ` · ${o}°` : "";
       txt.textContent = `${n} page${n === 1 ? "" : "s"} live${otag} · ${kb} KB`;
+    }
+    if (liveStatus.panel_interval && !isDraggingRefresh) {
+      updateRefreshUI(liveStatus.panel_interval);
     }
     drawRotationPills();
   } catch (_) {}
@@ -2335,7 +2414,7 @@ function applySetupResponse(r) {
   }
   $("cfg_host").value = c.ha_host || window.location.hostname || "homeassistant.local";
   $("cfg_dev").value = c.device_name || "crowpanel-epaper";
-  $("cfg_interval").value = c.refresh_interval || "5min";
+  updateRefreshUI(c.refresh_interval || "5min");
   $("cfg_orient").value = String(Number(spec.orientation || 0));
   $("cfg_ssid").value = c.wifi_ssid || "";
   $("cfg_pw").value = c.wifi_password || "";

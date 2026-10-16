@@ -638,17 +638,54 @@ async def editor_strip_png(request):
 async def status(request):
     f = FRAMES
     spec = load_layouts()
+    panel_cfg = load_panel_setup()
+    m_int = re.search(r"\d+", str(panel_cfg.get("refresh_interval", "5")))
+    panel_int = int(m_int.group(0)) if m_int else 5
     return web.json_response({
         "pages": f.names,
         "rendered_at": f.rendered_at,
         "strip_bytes": len(f.strip),
         "error": f.error,
         "refresh_seconds": REFRESH,
+        "panel_interval": panel_int,
         "esphome_device": ESPHOME_DEVICE,
         "active_alert": ALERT.get("name"),
         "frame_port": FRAME_PORT,
         "display": spec.get("display", T.DEFAULT_DISPLAY),
         "orientation": int(spec.get("orientation") or 0),
+    })
+
+
+async def api_panel_refresh(request):
+    """Update panel refresh rate both in saved panel setup and via HA service if online."""
+    body = await request.json()
+    raw_val = body.get("interval")
+    try:
+        minutes = max(1, min(60, int(float(raw_val))))
+    except (TypeError, ValueError):
+        raise web.HTTPBadRequest(text="invalid interval")
+
+    cfg = load_panel_setup()
+    cfg["refresh_interval"] = f"{minutes}min"
+    save_panel_setup(cfg)
+
+    slug = re.sub(r"[^a-z0-9_]+", "_", cfg.get("device_name", ESPHOME_DEVICE).lower()).strip("_")
+    entity_id = f"number.{slug}_refresh_interval"
+    ha_updated = False
+    if HA_TOKEN:
+        try:
+            await call_ha_service(SHARED_SESSION, "number", "set_value", {
+                "entity_id": entity_id,
+                "value": minutes
+            })
+            ha_updated = True
+        except Exception as exc:
+            print(f"could not call number.set_value on {entity_id}: {exc!r}", flush=True)
+
+    return web.json_response({
+        "saved": True,
+        "interval": minutes,
+        "ha_updated": ha_updated
     })
 
 
@@ -1395,6 +1432,7 @@ async def start(app_runners):
         web.post("/api/sources/test", api_sources_test),
         web.get("/api/panel-setup", api_panel_setup_get),
         web.post("/api/panel-setup", api_panel_setup_post),
+        web.post("/api/panel-refresh", api_panel_refresh),
         web.get("/api/mdi/font", api_mdi_font),
         web.get("/api/mdi/list", api_mdi_list),
     ])

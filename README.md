@@ -25,6 +25,7 @@ Lives in your Home Assistant sidebar, behind your existing login. Designed to be
 - **Flexible Viewing Distance Legibility:** Real-time font size and millimetre calculation with customizable viewing distances: **Desk (0.8 m)**, **Bedside (1.5 m)**, **Sofa (3.0 m)**, **Wall (5.0 m)**, or **Disabled**.
 - **Lovelace Dark & Light Theme:** Styled to match Home Assistant with an instant dark/light mode toggle, Inter typography, and CrowPanel hardware bezel frame simulation with Fit vs 100% zoom controls.
 - **Intelligent Entity Browser:** Filter entities with fast category chips (`Dates & Calendars`, `Sensors`, `Binary`, `Climate`, `Security`, `People`). Add entities via drag-and-drop or with the one-click **＋ Add** button on each card.
+- **Zero-Reflash Hardware Refresh Rate Slider:** Adjust how frequently the hardware panel fetches and redraws directly from the editor toolbar or Home Assistant (1–60 minutes). Changing the slider dynamically updates the panel's internal timer live without requiring firmware reflashes.
 - **Plain-English Bindings & Countdowns:** An element says what it wants—an entity's state, an attribute, when it last changed, a date countdown (`days_until`), or formatted dates (`date_formatted`)—without writing Jinja templates. A visual "say it differently" table turns raw values like `on` or `Outdoor Cat` into `outside` without code. Raw Jinja templates remain available for advanced power users.
 
 ## Pages appear when they matter
