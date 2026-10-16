@@ -886,7 +886,10 @@ def generate_esphome_yaml(cfg: dict) -> tuple[str, str]:
     pw = cfg.get("wifi_password") or ""
     api_key = (cfg.get("api_encryption_key") or "").strip() or _new_api_key()
     ota_pw = (cfg.get("ota_password") or "").strip() or _new_ota_password()
-    interval = re.sub(r"[^a-z0-9]+", "", (cfg.get("refresh_interval") or "5min").strip().lower()) or "5min"
+    raw_interval = cfg.get("refresh_interval") or "5min"
+    m_int = re.search(r"\d+", str(raw_interval))
+    initial_min = max(1, min(60, int(m_int.group(0)))) if m_int else 5
+    interval = f"{initial_min}min"
     try:
         orient = int(cfg.get("orientation") if "orientation" in cfg else load_layouts().get("orientation", 0))
     except (TypeError, ValueError):
@@ -1177,15 +1180,42 @@ script:
           timeout: 30s
       - component.update: frames
 
+number:
+  - platform: template
+    name: "Refresh interval"
+    id: panel_refresh_interval
+    icon: "mdi:timer-outline"
+    optimistic: true
+    min_value: 1
+    max_value: 60
+    step: 1
+    initial_value: {initial_min}
+    restore_value: true
+    unit_of_measurement: "min"
+    mode: box
+
 interval:
-  - interval: {interval}
+  - interval: 10s
     then:
       - if:
           condition:
-            lambda: 'return !id(pinned);'
+            lambda: |-
+              static int elapsed_sec = 0;
+              elapsed_sec += 10;
+              int target_sec = (int)(id(panel_refresh_interval).state * 60.0);
+              if (target_sec < 10) target_sec = 10;
+              if (elapsed_sec >= target_sec) {{
+                elapsed_sec = 0;
+                return true;
+              }}
+              return false;
           then:
-            - lambda: 'id(page) = (id(page) + 1) % id(page_count);'
-      - script.execute: refetch
+            - if:
+                condition:
+                  lambda: 'return !id(pinned);'
+                then:
+                  - lambda: 'id(page) = (id(page) + 1) % id(page_count);'
+            - script.execute: refetch
 """
 
     secrets_text = f"""# Put these in your ESPHome secrets.yaml if using !secret references:

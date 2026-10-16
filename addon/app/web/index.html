@@ -1143,7 +1143,7 @@ aside {
         <div class="row">
           <label style="width:130px">HA host / IP</label>
           <input id="cfg_host" placeholder="homeassistant.local or 192.168.1.x">
-          <label style="width:auto;margin-left:6px">Refresh</label>
+          <label style="width:auto;margin-left:6px" title="Initial default interval. Can also be adjusted dynamically via Home Assistant slider anytime without reflashing!">Default Refresh</label>
           <select id="cfg_interval" style="max-width:100px">
             <option value="2min">2 min</option>
             <option value="5min">5 min</option>
@@ -1151,6 +1151,7 @@ aside {
             <option value="15min">15 min</option>
           </select>
         </div>
+        <div class="chip" style="margin:2px 0;font-size:11px;color:var(--text-secondary)">✨ <b>Zero reflashing:</b> Creates a <code>number.&lt;device&gt;_refresh_interval</code> slider in Home Assistant to change the refresh timer on the fly anytime.</div>
         <div class="row">
           <label style="width:130px">Device name</label>
           <input id="cfg_dev" placeholder="crowpanel-epaper">
