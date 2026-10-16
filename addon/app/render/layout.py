@@ -198,7 +198,16 @@ def render_page(page, vals, *, clock="", label="", battery_pct=0, series=None,
                 got = []
                 drawer(img, d, el, element_text(el, vals, i), got)
                 if metrics is not None and got:
-                    metrics.append({"i": i, **got[0]})
+                    entry = {"i": i, **got[0]}
+                    if el["type"] == "number":
+                        raw = vals.get(i, el.get("value", ""))
+                        try:
+                            float(str(raw).strip())
+                        except (TypeError, ValueError):
+                            # "--" on the panel means exactly this and nothing
+                            # else, so say so rather than let it look broken.
+                            entry["not_a_number"] = str(raw)[:60]
+                    metrics.append(entry)
             else:
                 drawer(img, d, el, element_text(el, vals, i))
         except Exception:
