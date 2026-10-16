@@ -48,19 +48,39 @@ def _cached_font(path: str, size: int):
 
 
 def font(size, bold=True):
-    clamped = max(8, min(H, int(size)))
+    clamped = max(8, min(360, int(size)))
     return _cached_font(BOLD if bold else REGULAR, clamped)
 
 
-def new_canvas():
+def canvas_dims(orientation=0):
+    """Logical (width, height) for the editor and renderer before panel rotation."""
+    if int(orientation or 0) in (90, 270):
+        return H, W
+    return W, H
+
+
+def new_canvas(orientation=0):
     """8-bit greyscale working canvas; converted to 1-bit on save."""
-    img = Image.new("L", (W, H), WHITE)
+    cw, ch = canvas_dims(orientation)
+    img = Image.new("L", (cw, ch), WHITE)
     return img, ImageDraw.Draw(img)
 
 
 def to_1bit(img):
     """Hard threshold, no dithering -- crisp edges are what e-ink wants."""
     return img.convert("1", dither=Image.Dither.NONE)
+
+
+def orient_for_panel(img, orientation=0):
+    """Rotate a rendered logical page into the physical 792x272 panel buffer."""
+    deg = int(orientation or 0) % 360
+    if deg == 180:
+        return img.transpose(Image.Transpose.ROTATE_180)
+    if deg == 90:
+        return img.transpose(Image.Transpose.ROTATE_270)
+    if deg == 270:
+        return img.transpose(Image.Transpose.ROTATE_90)
+    return img
 
 
 def text_width(s, f):
@@ -70,7 +90,7 @@ def text_width(s, f):
 
 def fit_size(s, max_w, max_h, start, floor=24, bold=True):
     """Largest point size at which s fits max_w x max_h. Binary search."""
-    lo, hi, best = floor, max(floor, min(H, int(start))), floor
+    lo, hi, best = floor, max(floor, min(360, int(start))), floor
     while lo <= hi:
         mid = (lo + hi) // 2
         f = font(mid, bold)
@@ -103,16 +123,21 @@ def screen(img, box):
     reads quieter than a real title without needing a second colour.
     """
     x0, y0, x1, y1 = box
+    cw, ch = img.size
     px = img.load()
-    for y in range(max(0, y0), min(H, y1)):
-        for x in range(max(0, x0) + (y % 2), min(W, x1), 2):
+    for y in range(max(0, y0), min(ch, y1)):
+        for x in range(max(0, x0) + (y % 2), min(cw, x1), 2):
             px[x, y] = WHITE
 
 
-def footer(draw, *, clock, label, battery_pct=None):
+def footer(draw, *, clock, label, battery_pct=None, orientation=0):
+    cw, ch = canvas_dims(orientation)
+    margin = 20 if cw < 400 else MARGIN
+    rule_y = ch - 36
+    base_y = ch - 14
     f = font(FOOTER_SIZE, bold=False)
-    draw.line([(MARGIN, FOOTER_RULE), (W - MARGIN, FOOTER_RULE)], fill=BLACK, width=1)
-    draw.text((MARGIN, FOOTER_BASE), clock, font=f, fill=BLACK, anchor="ls")
-    draw.text((W // 2, FOOTER_BASE), label, font=f, fill=BLACK, anchor="ms")
+    draw.line([(margin, rule_y), (cw - margin, rule_y)], fill=BLACK, width=1)
+    draw.text((margin, base_y), clock, font=f, fill=BLACK, anchor="ls")
+    draw.text((cw // 2, base_y), label, font=f, fill=BLACK, anchor="ms")
     if battery_pct is not None and battery_pct > 0:
-        draw.text((W - MARGIN, FOOTER_BASE), f"{battery_pct} %", font=f, fill=BLACK, anchor="rs")
+        draw.text((cw - margin, base_y), f"{battery_pct} %", font=f, fill=BLACK, anchor="rs")

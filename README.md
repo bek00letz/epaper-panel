@@ -58,6 +58,18 @@ The five buttons are **discrete push-buttons**, not a rotary encoder, whatever
 Elecrow's wiki calls them. Paging is instant because the panel holds every page
 in PSRAM and blits a slice.
 
+Whether you mount the panel normally, **upside-down (`180°`)** to route the
+USB-C cable cleanly, or **vertically in portrait (`90°` / `270°`)**, the editor
+header and **Panel setup** wizard let you pick your mounting orientation:
+- The canvas switches between **792×272** (landscape) and **272×792** (portrait)
+  with a one-click **Reflow** helper to restack existing elements.
+- The server pre-rotates each page into the physical `792×272` framebuffer
+  before serving `/frames.png`, so changing orientation in the editor works
+  immediately on **Save / Push to panel** without reflashing ESPHome.
+- When generating new ESPHome firmware for `180°` or `270°` mounts, the wizard
+  also swaps the `Next` and `Prev` button pins (`GPIO 4` and `GPIO 6`) so the
+  physical rocker matches how the board is mounted.
+
 ## Install
 
 1. **Settings → Add-ons → Add-on Store → ⋮ → Repositories**, add

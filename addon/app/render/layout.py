@@ -110,10 +110,11 @@ def _anchor_x(align, x, w):
 
 
 def _clamp_box(el, default_w=200, default_h=60):
-    x = max(-T.W, min(T.W * 2, int(el.get("x", 0))))
-    y = max(-T.H, min(T.H * 2, int(el.get("y", 0))))
-    w = max(1, min(T.W * 2, int(el.get("w", default_w))))
-    h = max(1, min(T.H * 2, int(el.get("h", default_h))))
+    max_dim = max(T.W, T.H)
+    x = max(-max_dim, min(max_dim * 2, int(el.get("x", 0))))
+    y = max(-max_dim, min(max_dim * 2, int(el.get("y", 0))))
+    w = max(1, min(max_dim * 2, int(el.get("w", default_w))))
+    h = max(1, min(max_dim * 2, int(el.get("h", default_h))))
     return x, y, w, h
 
 
@@ -124,7 +125,7 @@ def _draw_text(img, d, el, text, metrics=None):
     align = el.get("align", "left")
     bold = el.get("bold", True)
 
-    size = max(8, min(T.H, int(el["size"]))) if el.get("size") else T.fit_size(text, w, h, 200, bold=bold)
+    size = max(8, min(360, int(el["size"]))) if el.get("size") else T.fit_size(text, w, h, 200, bold=bold)
     f = T.font(size, bold=bold)
     if metrics is not None:
         mm, verdict = legibility(size)
@@ -151,7 +152,7 @@ def _draw_icon(img, d, el, _text):
     if cp is None:
         return
     ch = chr(cp)
-    size = max(8, min(T.H, int(el["size"]))) if el.get("size") else _fit_glyph(ch, w, h)
+    size = max(8, min(360, int(el["size"]))) if el.get("size") else _fit_glyph(ch, w, h)
     f = _mdi_font(size)
     d.text((x + w // 2, y + h // 2), ch, font=f, fill=T.BLACK, anchor="mm")
 
@@ -226,9 +227,9 @@ def element_text(el, vals, idx):
 
 
 def render_page(page, vals, *, clock="", label="", battery_pct=None, series=None,
-                metrics=None):
+                metrics=None, orientation=0):
     """Draw one page. `vals` maps element index -> resolved template result."""
-    img, d = T.new_canvas()
+    img, d = T.new_canvas(orientation=orientation)
     for i, el in enumerate(page.get("elements", [])):
         drawer = DRAWERS.get(el.get("type"))
         if drawer is None:
@@ -255,7 +256,7 @@ def render_page(page, vals, *, clock="", label="", battery_pct=None, series=None
         except Exception:
             # One bad element must never cost the whole page.
             continue
-    T.footer(d, clock=clock, label=label, battery_pct=battery_pct)
+    T.footer(d, clock=clock, label=label, battery_pct=battery_pct, orientation=orientation)
     return img
 
 

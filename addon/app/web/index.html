@@ -47,9 +47,11 @@ main{display:grid;grid-template-columns:minmax(0,1fr) 326px;gap:14px;padding:14p
 
 /* canvas: the task, so it gets the weight */
 #stage{background:var(--card);border:1px solid var(--line);border-radius:var(--r-out);padding:16px}
-#frame{background:#3a3a37;border-radius:8px;padding:7px}
+#frame{background:#3a3a37;border-radius:8px;padding:7px;transition:max-width .18s}
+#frame.portrait{max-width:310px;margin:0 auto}
 #canvas{position:relative;width:100%;aspect-ratio:792/272;background:#fff no-repeat center/100% 100%;
         user-select:none;touch-action:none;border-radius:2px;overflow:hidden}
+#canvas.portrait{aspect-ratio:272/792}
 .el{position:absolute;border:1px dashed rgba(0,0,0,.3);cursor:move;border-radius:2px}
 .el:hover{border-color:rgba(0,0,0,.55)}
 .el.sel{border:2px solid var(--accent);background:rgba(47,111,208,.07)}
@@ -63,8 +65,10 @@ main{display:grid;grid-template-columns:minmax(0,1fr) 326px;gap:14px;padding:14p
 #canvas.show-safe .safe-zone{display:block}
 .safe-footer{left:0;right:0;top:85.29%;bottom:0;border-top:1px dashed rgba(47,111,208,.55);
              background:rgba(47,111,208,.04)}
+#canvas.portrait .safe-footer{top:94.95%}
 .safe-lock{right:0;top:0;width:5.05%;height:24%;border-left:1px dashed rgba(47,111,208,.55);
            border-bottom:1px dashed rgba(47,111,208,.55);background:rgba(47,111,208,.04)}
+#canvas.portrait .safe-lock{width:14.7%;height:8.2%}
 .safe-tag{position:absolute;font-size:10px;color:var(--accent);background:rgba(255,255,255,.88);
           padding:1px 5px;border-radius:3px;font-weight:500}
 
@@ -164,6 +168,13 @@ aside{display:flex;flex-direction:column;gap:12px}
   <span class="sep"></span>
   <button id="undo" class="icon" title="Undo (Cmd/Ctrl+Z)">&#8630;</button>
   <button id="redo" class="icon" title="Redo (Cmd/Ctrl+Shift+Z)">&#8631;</button>
+  <select id="orient" title="Panel mounting orientation (rotates rendered output to match how your panel is mounted)">
+    <option value="0">Landscape (0°)</option>
+    <option value="180">Upside-down (180°)</option>
+    <option value="90">Portrait CW (90°)</option>
+    <option value="270">Portrait CCW (270°)</option>
+  </select>
+  <button id="reflowbtn" class="sm" title="Reflow current page elements to fit the current Landscape/Portrait orientation">Reflow</button>
   <button id="safebtn" class="sm" title="Show footer &amp; held-page padlock margins on canvas">Guides</button>
   <span class="spacer"></span>
   <button id="statuspill" class="status-pill" title="Click to preview the full rendered panel strip">
@@ -182,7 +193,7 @@ aside{display:flex;flex-direction:column;gap:12px}
   <div id="stage">
     <div id="frame">
       <div id="canvas">
-        <div class="safe-zone safe-footer"><span class="safe-tag" style="right:8px;top:4px">footer zone (y &ge; 232)</span></div>
+        <div class="safe-zone safe-footer"><span id="safefootertag" class="safe-tag" style="right:8px;top:4px">footer zone (y &ge; 232)</span></div>
         <div class="safe-zone safe-lock"><span class="safe-tag" style="right:4px;bottom:4px">lock</span></div>
       </div>
     </div>
@@ -296,6 +307,13 @@ aside{display:flex;flex-direction:column;gap:12px}
         <div class="row">
           <label style="width:130px">Device name</label>
           <input id="cfg_dev" placeholder="crowpanel-epaper">
+          <label style="width:auto;margin-left:6px">Mount</label>
+          <select id="cfg_orient" style="max-width:170px" title="Panel mounting orientation (also swaps Next/Prev button pins when mounted 180° or 270°)">
+            <option value="0">Landscape (0°)</option>
+            <option value="180">Upside-down (180°)</option>
+            <option value="90">Portrait CW (90°)</option>
+            <option value="270">Portrait CCW (270°)</option>
+          </select>
         </div>
         <div class="row">
           <label style="width:130px">Wi-Fi SSID</label>
@@ -370,11 +388,16 @@ aside{display:flex;flex-direction:column;gap:12px}
 <div id="toast"><span id="toasttext"></span><button id="toastact" style="display:none"></button></div>
 
 <script>
-const W=792,H=272,SNAP=6;
-let spec={rotation:[],pages:{}}, cur=null, sel=-1, ents=[], timer=null, prevBlobUrl=null;
+const SNAP=6;
+let spec={orientation:0,rotation:[],pages:{}}, cur=null, sel=-1, ents=[], timer=null, prevBlobUrl=null;
 let hist=[], hpos=-1, metrics=[], liveStatus={pages:[]};
 const $=id=>document.getElementById(id);
-const canvas=$("canvas");
+const canvas=$("canvas"), frame=$("frame");
+const isPortrait=()=>[90,270].includes(Number(spec.orientation||0));
+const curW=()=>isPortrait()?272:792;
+const curH=()=>isPortrait()?792:272;
+const curSafeH=()=>isPortrait()?752:232;
+const curMargin=()=>isPortrait()?20:40;
 const api=(p,o)=>fetch(p,o).then(r=>r.ok?r:Promise.reject(new Error(r.status+" "+r.statusText)));
 const esc=t=>String(t??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 let toastT=null;
@@ -390,6 +413,67 @@ function msg(text,action){
 }
 const hideToast=()=>$("toast").classList.remove("on");
 
+function syncOrientUI(){
+  const o=String(Number(spec.orientation||0));
+  if($("orient")) $("orient").value=o;
+  if($("cfg_orient")) $("cfg_orient").value=o;
+  const port=isPortrait();
+  frame.classList.toggle("portrait",port);
+  canvas.classList.toggle("portrait",port);
+  if($("safefootertag")) $("safefootertag").innerHTML=`footer zone (y &ge; ${port?752:232})`;
+}
+
+/* ---------- smart page reflow between Landscape (792x272) and Portrait (272x792) ---------- */
+function reflowPageElements(p, toPortrait){
+  const list=p&&p.elements;
+  if(!Array.isArray(list)||!list.length) return;
+  if(toPortrait){
+    // Stack / adapt elements cleanly into 272x792 (safe height 752, margin 20, inner width 232)
+    const items=list.map((el,idx)=>({el,idx})).sort((a,b)=>(Math.round(a.el.y/28)-Math.round(b.el.y/28))||(a.el.x-b.el.x));
+    let yCursor=24;
+    for(const {el} of items){
+      if(el.type==="line"){
+        el.x=20; el.w=232; el.h=Math.max(2,Math.min(8,el.h||2));
+        el.y=Math.min(740,yCursor);
+        yCursor+=el.h+14;
+      }else if(el.type==="icon"){
+        const side=Math.min(96,Math.max(36,el.w||64));
+        el.x=20; el.y=Math.min(740-side,yCursor); el.w=side; el.h=side;
+        yCursor+=side+10;
+      }else if(el.type==="curve"){
+        const h=Math.min(140,Math.max(56,el.h||80));
+        el.x=20; el.w=232; el.y=Math.min(740-h,yCursor); el.h=h;
+        yCursor+=h+14;
+      }else{
+        const h=Math.min(130,Math.max(26,Math.round((el.h||44)*0.82)));
+        el.x=20; el.w=232; el.y=Math.min(740-h,yCursor); el.h=h;
+        if(el.size && el.size>72) el.size=Math.round(el.size*0.72);
+        yCursor+=h+10;
+      }
+    }
+  }else{
+    // Adapt from Portrait (272x792) back to Landscape (792x272)
+    for(const el of list){
+      if(el.type==="line" && el.w>=200){
+        el.x=40; el.w=712; el.y=Math.min(224,Math.max(16,Math.round(el.y*(232/752))));
+      }else{
+        el.x=Math.min(732,Math.max(0,Math.round(el.x*(792/272))));
+        el.y=Math.min(210,Math.max(0,Math.round(el.y*(232/752))));
+        el.w=Math.min(792-el.x,Math.max(24,Math.round(el.w*(792/272)*0.65)));
+        el.h=Math.min(232-el.y,Math.max(18,el.h));
+      }
+    }
+  }
+}
+
+function reflowCurrentPage(){
+  if(!cur||!page()) return;
+  snapshot();
+  reflowPageElements(page(), isPortrait());
+  paint(); preview();
+  msg(`Reflowed "${cur}" for ${isPortrait()?"Portrait (272×792)":"Landscape (792×272)"}.`, {label:"Undo", run:undo});
+}
+
 /* ---------- history ---------- */
 function snapshot(){
   hist=hist.slice(0,hpos+1);
@@ -401,6 +485,7 @@ function restore(i){
   if(i<0||i>=hist.length) return;
   hpos=i; spec=JSON.parse(hist[hpos]);
   if(!spec.pages[cur]) cur=Object.keys(spec.pages)[0];
+  syncOrientUI();
   fillPages(); $("page").value=cur; sel=-1; holdRow(); paint(); preview(); buttons();
 }
 const undo=()=>restore(hpos-1), redo=()=>restore(hpos+1);
@@ -421,7 +506,9 @@ async function refreshStatus(){
       dot.className="status-dot";
       const n=(liveStatus.pages||[]).length;
       const kb=((liveStatus.strip_bytes||0)/1024).toFixed(1);
-      txt.textContent=`${n} page${n===1?"":"s"} live · ${kb} KB`;
+      const o=Number(spec.orientation||0);
+      const otag=o?` · ${o}°`:"";
+      txt.textContent=`${n} page${n===1?"":"s"} live${otag} · ${kb} KB`;
     }
     drawRotationPills();
   }catch(_){}
@@ -429,6 +516,8 @@ async function refreshStatus(){
 
 async function boot(){
   spec=await api("api/layouts").then(r=>r.json());
+  if(spec.orientation===undefined) spec.orientation=0;
+  syncOrientUI();
   ents=await api("api/entities").then(r=>r.json()).catch(()=>[]);
   $("entities-dl").innerHTML=ents.map(e=>`<option value="${esc(e.entity_id)}">${esc(e.name)} (${esc(e.state)})</option>`).join("");
   drawEntities(""); fillPages(); snapshot();
@@ -582,11 +671,12 @@ function select(name){
 function paint(){
   canvas.querySelectorAll(".el,.guide").forEach(n=>n.remove());
   if(!cur||!page()) return;
+  const cw=curW(), ch=curH();
   els().forEach((el,i)=>{
     const d=document.createElement("div");
     d.className="el"+(i===sel?" sel":"");
-    d.style.left=(el.x/W*100)+"%"; d.style.top=(el.y/H*100)+"%";
-    d.style.width=(el.w/W*100)+"%"; d.style.height=(el.h/H*100)+"%";
+    d.style.left=(el.x/cw*100)+"%"; d.style.top=(el.y/ch*100)+"%";
+    d.style.width=(el.w/cw*100)+"%"; d.style.height=(el.h/ch*100)+"%";
     d.dataset.i=i; d.innerHTML='<div class="hd"></div>';
     canvas.appendChild(d);
   });
@@ -599,7 +689,7 @@ function preview(){
   timer=setTimeout(async()=>{
     try{
       const r=await api("api/preview",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({page:page(),label:cur})});
+        body:JSON.stringify({page:page(),label:cur,orientation:Number(spec.orientation||0)})});
       try{ metrics=JSON.parse(r.headers.get("X-Metrics")||"[]"); }catch(_){ metrics=[]; }
       const nextUrl=URL.createObjectURL(await r.blob());
       if(prevBlobUrl) URL.revokeObjectURL(prevBlobUrl);
@@ -610,7 +700,25 @@ function preview(){
   },220);
 }
 
-/* ---------- safe-area guides toggle ---------- */
+/* ---------- orientation & safe-area guides ---------- */
+$("orient").onchange=e=>{
+  const prevPort=isPortrait();
+  snapshot();
+  spec.orientation=Number(e.target.value)||0;
+  syncOrientUI();
+  paint(); preview();
+  const nextPort=isPortrait();
+  if(prevPort!==nextPort){
+    msg(`Switched to ${nextPort?"Portrait (272×792)":"Landscape (792×272)"}.`, {
+      label:"Reflow elements",
+      run:()=>{ reflowPageElements(page(), nextPort); paint(); preview(); }
+    });
+  }else{
+    msg(`Orientation set to ${spec.orientation}°. Click Save to update the panel strip.`);
+  }
+};
+$("reflowbtn").onclick=reflowCurrentPage;
+
 $("safebtn").onclick=()=>{
   canvas.classList.toggle("show-safe");
   $("safebtn").classList.toggle("active", canvas.classList.contains("show-safe"));
@@ -618,7 +726,8 @@ $("safebtn").onclick=()=>{
 
 /* ---------- snapping ---------- */
 function guides(el,i){
-  const xs=[0,40,W/2,W-40,W], ys=[0,26,H/2,232,H];
+  const cw=curW(), ch=curH(), m=curMargin(), sh=curSafeH();
+  const xs=[0,m,cw/2,cw-m,cw], ys=[0,26,ch/2,sh,ch];
   els().forEach((o,j)=>{ if(j!==i){ xs.push(o.x,o.x+o.w/2,o.x+o.w); ys.push(o.y,o.y+o.h/2,o.y+o.h); }});
   const near=(v,list)=>{ for(const t of list) if(Math.abs(v-t)<=SNAP) return t; return null; };
   let gx=null,gy=null;
@@ -631,20 +740,21 @@ function guides(el,i){
     if(t!==null){ el.y=Math.round(t-(set==="m"?el.h/2:set==="b"?el.h:0)); gy=t; break; }
   }
   canvas.querySelectorAll(".guide").forEach(n=>n.remove());
-  if(gx!==null){const g=document.createElement("div");g.className="guide v";g.style.left=(gx/W*100)+"%";canvas.appendChild(g);}
-  if(gy!==null){const g=document.createElement("div");g.className="guide h";g.style.top=(gy/H*100)+"%";canvas.appendChild(g);}
+  if(gx!==null){const g=document.createElement("div");g.className="guide v";g.style.left=(gx/cw*100)+"%";canvas.appendChild(g);}
+  if(gy!==null){const g=document.createElement("div");g.className="guide h";g.style.top=(gy/ch*100)+"%";canvas.appendChild(g);}
 }
 
 function guidesResize(el,i){
-  const xs=[40,W/2,W-40], ys=[26,H/2,232];
+  const cw=curW(), ch=curH(), m=curMargin(), sh=curSafeH();
+  const xs=[m,cw/2,cw-m], ys=[26,ch/2,sh];
   els().forEach((o,j)=>{ if(j!==i){ xs.push(o.x,o.x+o.w); ys.push(o.y,o.y+o.h); }});
   const near=(v,list)=>{ for(const t of list) if(Math.abs(v-t)<=SNAP) return t; return null; };
   let gx=near(el.x+el.w,xs), gy=near(el.y+el.h,ys);
   if(gx!==null) el.w=Math.round(gx-el.x);
   if(gy!==null) el.h=Math.round(gy-el.y);
   canvas.querySelectorAll(".guide").forEach(n=>n.remove());
-  if(gx!==null){const g=document.createElement("div");g.className="guide v";g.style.left=(gx/W*100)+"%";canvas.appendChild(g);}
-  if(gy!==null){const g=document.createElement("div");g.className="guide h";g.style.top=(gy/H*100)+"%";canvas.appendChild(g);}
+  if(gx!==null){const g=document.createElement("div");g.className="guide v";g.style.left=(gx/cw*100)+"%";canvas.appendChild(g);}
+  if(gy!==null){const g=document.createElement("div");g.className="guide h";g.style.top=(gy/ch*100)+"%";canvas.appendChild(g);}
 }
 
 /* ---------- drag & resize ---------- */
@@ -652,7 +762,7 @@ let drag=null;
 canvas.addEventListener("pointerdown",e=>{
   const box=e.target.closest(".el"); if(!box){ sel=-1; paint(); return; }
   sel=+box.dataset.i; paint();
-  const scale=W/canvas.getBoundingClientRect().width;
+  const scale=curW()/canvas.getBoundingClientRect().width;
   drag={i:sel,mode:e.target.classList.contains("hd")?"size":"move",
         sx:e.clientX,sy:e.clientY,el:{...els()[sel]},scale,moved:false};
   canvas.setPointerCapture(e.pointerId);
@@ -660,21 +770,22 @@ canvas.addEventListener("pointerdown",e=>{
 canvas.addEventListener("pointermove",e=>{
   if(!drag) return;
   if(!drag.moved){ snapshot(); drag.moved=true; }
+  const cw=curW(), ch=curH();
   const dx=(e.clientX-drag.sx)*drag.scale, dy=(e.clientY-drag.sy)*drag.scale;
   const el=els()[drag.i], o=drag.el;
   if(drag.mode==="move"){
-    el.x=Math.max(0,Math.min(W-o.w,Math.round(o.x+dx)));
-    el.y=Math.max(0,Math.min(H-o.h,Math.round(o.y+dy)));
+    el.x=Math.max(0,Math.min(cw-o.w,Math.round(o.x+dx)));
+    el.y=Math.max(0,Math.min(ch-o.h,Math.round(o.y+dy)));
     if(!e.altKey) guides(el,drag.i);
   }else{
-    el.w=Math.max(16,Math.min(W-o.x,Math.round(o.w+dx)));
-    el.h=Math.max(10,Math.min(H-o.y,Math.round(o.h+dy)));
+    el.w=Math.max(16,Math.min(cw-o.x,Math.round(o.w+dx)));
+    el.h=Math.max(10,Math.min(ch-o.y,Math.round(o.h+dy)));
     if(!e.altKey) guidesResize(el,drag.i);
   }
   canvas.querySelectorAll(".el").forEach(n=>{
     const q=els()[+n.dataset.i];
-    n.style.left=(q.x/W*100)+"%"; n.style.top=(q.y/H*100)+"%";
-    n.style.width=(q.w/W*100)+"%"; n.style.height=(q.h/H*100)+"%";
+    n.style.left=(q.x/cw*100)+"%"; n.style.top=(q.y/ch*100)+"%";
+    n.style.width=(q.w/cw*100)+"%"; n.style.height=(q.h/ch*100)+"%";
   });
   props();
 });
@@ -694,15 +805,15 @@ addEventListener("keydown",e=>{
   const map={ArrowLeft:[-step,0],ArrowRight:[step,0],ArrowUp:[0,-step],ArrowDown:[0,step]};
   if(map[e.key]){
     e.preventDefault(); snapshot();
-    el.x=Math.max(0,Math.min(W-el.w,el.x+map[e.key][0]));
-    el.y=Math.max(0,Math.min(H-el.h,el.y+map[e.key][1]));
+    el.x=Math.max(0,Math.min(curW()-el.w,el.x+map[e.key][0]));
+    el.y=Math.max(0,Math.min(curH()-el.h,el.y+map[e.key][1]));
     paint(); preview();
   }
 });
 function duplicate(){
   if(sel<0) return; snapshot();
   const c=JSON.parse(JSON.stringify(els()[sel]));
-  c.x=Math.min(W-c.w,c.x+12); c.y=Math.min(H-c.h,c.y+12);
+  c.x=Math.min(curW()-c.w,c.x+12); c.y=Math.min(curH()-c.h,c.y+12);
   els().push(c); sel=els().length-1; paint(); preview();
 }
 
@@ -710,7 +821,8 @@ function duplicate(){
 document.querySelectorAll("[data-add]").forEach(b=>b.onclick=()=>{
   snapshot();
   const t=b.dataset.add;
-  const base={type:t,x:60,y:60,w:t==="line"?240:260,h:t==="line"?4:90};
+  const m=curMargin(), maxW=curW()-m*2;
+  const base={type:t,x:m,y:60,w:Math.min(t==="line"?240:260,maxW),h:t==="line"?4:90};
   if(t==="number"){base.entity="";base.show="state";base.decimals=1;base.align="left";}
   if(t==="text"){base.value="label";base.size=30;base.bold=false;base.align="left";}
   if(t==="icon"){base.icon="mdi:home";base.w=110;base.h=110;}
@@ -733,11 +845,14 @@ canvas.addEventListener("drop",e=>{
   e.preventDefault();
   const id=e.dataTransfer.getData("text/plain"); if(!id) return;
   snapshot();
-  const r=canvas.getBoundingClientRect(), s=W/r.width;
+  const cw=curW(), ch=curH(), m=curMargin();
+  const r=canvas.getBoundingClientRect(), s=cw/r.width;
   const known=ents.find(x=>x.entity_id===id);
   const numeric=known && known.state!=="" && !isNaN(Number(known.state));
+  const w=Math.min(260, cw-m*2);
   const el={type:numeric?"number":"text",entity:id,show:"state",align:"left",
-            x:Math.round((e.clientX-r.left)*s),y:Math.round((e.clientY-r.top)*s),w:260,h:90};
+            x:Math.max(0,Math.min(cw-w,Math.round((e.clientX-r.left)*s))),
+            y:Math.max(0,Math.min(ch-90,Math.round((e.clientY-r.top)*s))),w,h:90};
   if(numeric){
     el.decimals = String(known.state).includes(".") ? 1 : 0;
     if(known.unit) el.suffix=" "+known.unit;
@@ -885,7 +1000,7 @@ function props(){
       <div class="row"><label>quick</label>
         <button id="aligncx" class="sm" title="Center horizontally">Center X</button>
         <button id="aligncy" class="sm" title="Center vertically (above footer)">Center Y</button>
-        <button id="alignfw" class="sm" title="Span full safe width (40..752)">Full W</button>
+        <button id="alignfw" class="sm" title="Span full safe width">Full W</button>
       </div></div>`;
   h+=`<div class="grp"><div class="row">
         <button id="layerup" class="sm" title="Bring forward">&uarr;</button>
@@ -909,9 +1024,9 @@ function props(){
   }
   wireContent(el,box);
   if(el.show==="attribute" && el.entity) loadAttributes(el.entity);
-  $("aligncx").onclick=()=>{snapshot();el.x=Math.round((W-el.w)/2);paint();preview();};
-  $("aligncy").onclick=()=>{snapshot();el.y=Math.round((232-el.h)/2);paint();preview();};
-  $("alignfw").onclick=()=>{snapshot();el.x=40;el.w=W-80;paint();preview();};
+  $("aligncx").onclick=()=>{snapshot();el.x=Math.round((curW()-el.w)/2);paint();preview();};
+  $("aligncy").onclick=()=>{snapshot();el.y=Math.round((curSafeH()-el.h)/2);paint();preview();};
+  $("alignfw").onclick=()=>{snapshot();const m=curMargin();el.x=m;el.w=curW()-m*2;paint();preview();};
   $("layerup").onclick=()=>{
     if(sel>=els().length-1) return;
     snapshot(); const t=els()[sel]; els()[sel]=els()[sel+1]; els()[sel+1]=t; sel++; paint(); preview();
@@ -969,6 +1084,7 @@ $("save").onclick=async()=>{
   try{
     const res=await api("api/layouts",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(spec)}).then(r=>r.json());
     if(res.rotation){ spec.rotation=res.rotation; drawRotationPills(); }
+    if(res.orientation!==undefined){ spec.orientation=res.orientation; syncOrientUI(); }
     await refreshStatus();
     msg("Saved and rendered.", {label:"Push now", run:()=>$("push").click()});
   }catch(e){ msg("save failed: "+e.message); }
@@ -997,6 +1113,7 @@ function applySetupResponse(r){
   $("cfg_host").value=c.ha_host||window.location.hostname||"homeassistant.local";
   $("cfg_dev").value=c.device_name||"crowpanel-epaper";
   $("cfg_interval").value=c.refresh_interval||"5min";
+  $("cfg_orient").value=String(Number(spec.orientation||0));
   $("cfg_ssid").value=c.wifi_ssid||"";
   $("cfg_pw").value=c.wifi_password||"";
   $("cfg_apikey").value=c.api_encryption_key||"";
@@ -1017,6 +1134,13 @@ function applySetupResponse(r){
 }
 
 async function savePanelSetup(extra={}){
+  const chosenOrient=Number($("cfg_orient").value)||0;
+  if(chosenOrient!==Number(spec.orientation||0)){
+    spec.orientation=chosenOrient;
+    syncOrientUI();
+    await api("api/layouts",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(spec)});
+    paint(); preview();
+  }
   const body={
     ha_host:$("cfg_host").value.trim()||window.location.hostname||"homeassistant.local",
     device_name:$("cfg_dev").value.trim()||"crowpanel-epaper",
@@ -1047,6 +1171,7 @@ $("setupclose").onclick=()=>$("setupwrap").style.display="none";
 $("setupwrap").onclick=e=>{ if(e.target.id==="setupwrap") $("setupwrap").style.display="none"; };
 $("cfgsave").onclick=()=>savePanelSetup().then(()=>msg("ESPHome YAML updated."));
 $("cfg_secrets").onchange=()=>savePanelSetup();
+$("cfg_orient").onchange=()=>savePanelSetup().then(()=>msg(`Mount set to ${$("cfg_orient").value}° and YAML updated.`));
 $("regenkeys").onclick=()=>savePanelSetup({regenerate_keys:true}).then(()=>msg("Generated new API key and OTA password."));
 $("copyapikey").onclick=()=>{
   navigator.clipboard.writeText($("cfg_apikey").value);

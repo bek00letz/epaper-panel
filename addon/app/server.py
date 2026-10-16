@@ -199,8 +199,13 @@ def sanitize_layouts(spec: dict) -> dict:
             rn = str(r).strip()
             if rn in pages and pages[rn].get("tier") != "alert":
                 rotation.append(rn)
-    # Ensure every non-alert page is in rotation unless explicitly removed
-    return {"rotation": rotation, "pages": pages}
+    try:
+        orient = int(spec.get("orientation") or 0)
+    except (TypeError, ValueError):
+        orient = 0
+    if orient not in (0, 90, 180, 270):
+        orient = 0
+    return {"orientation": orient, "rotation": rotation, "pages": pages}
 
 
 def save_layouts(spec):
@@ -463,6 +468,9 @@ async def check_alerts(session, spec):
 async def build_frames(session):
     await publish_computed(session)
     spec = load_layouts()
+    orient = int(spec.get("orientation") or 0)
+    if orient not in (0, 90, 180, 270):
+        orient = 0
     alert = await check_alerts(session, spec)
     if alert and alert in spec.get("pages", {}):
         # Serve a 1-page strip while an alert is active: decodes in ~1s on
@@ -472,11 +480,12 @@ async def build_frames(session):
         live = await eligible_pages(session, spec)
 
     if not live:
-        empty_page = {"elements": [{"type": "text", "value": "no pages", "x": 40, "y": 60, "w": 712, "h": 120}]}
+        cw, _ = T.canvas_dims(orient)
+        empty_page = {"elements": [{"type": "text", "value": "no pages", "x": 24, "y": 60, "w": cw - 48, "h": 120}]}
         img = await asyncio.to_thread(
             layout.render_page, empty_page, {},
-            clock=datetime.now().strftime("%H:%M"), label="empty")
-        one = T.to_1bit(img)
+            clock=datetime.now().strftime("%H:%M"), label="empty", orientation=orient)
+        one = T.orient_for_panel(T.to_1bit(img), orient)
         png = _png(one)
         return png, png, []
 
@@ -495,8 +504,8 @@ async def build_frames(session):
             layout.render_page, spec["pages"][name], vals.get(name, {}),
             clock=datetime.now().strftime("%H:%M"),
             label=f"{name.replace('_', ' ')} \u00b7 {i + 1}/{len(live)}",
-            battery_pct=None, series=series.get(name))
-        imgs.append(T.to_1bit(img))
+            battery_pct=None, series=series.get(name), orientation=orient)
+        imgs.append(T.orient_for_panel(T.to_1bit(img), orient))
 
     strip = Image.new("1", (T.W, T.H * len(imgs)), 1)
     for i, im in enumerate(imgs):
@@ -585,6 +594,7 @@ async def editor_strip_png(request):
 
 async def status(request):
     f = FRAMES
+    spec = load_layouts()
     return web.json_response({
         "pages": f.names,
         "rendered_at": f.rendered_at,
@@ -594,6 +604,7 @@ async def status(request):
         "esphome_device": ESPHOME_DEVICE,
         "active_alert": ALERT.get("name"),
         "frame_port": FRAME_PORT,
+        "orientation": int(spec.get("orientation") or 0),
     })
 
 
@@ -614,7 +625,12 @@ async def api_layouts_put(request):
         await refresh_frames(SHARED_SESSION)
     except Exception as exc:
         print(f"immediate render after save failed: {exc!r}", flush=True)
-    return web.json_response({"saved": True, "pages": list(clean["pages"]), "rotation": clean["rotation"]})
+    return web.json_response({
+        "saved": True,
+        "pages": list(clean["pages"]),
+        "rotation": clean["rotation"],
+        "orientation": clean["orientation"],
+    })
 
 
 async def api_entities(request):
@@ -678,6 +694,12 @@ async def api_preview(request):
     """Render one page spec through the real engine, so WYSIWYG cannot lie."""
     body = await request.json()
     page = body.get("page") or {}
+    try:
+        orient = int(body.get("orientation") if "orientation" in body else load_layouts().get("orientation", 0))
+    except (TypeError, ValueError):
+        orient = 0
+    if orient not in (0, 90, 180, 270):
+        orient = 0
     tpls = layout.collect_templates(page)
     vals = await resolve_templates(SHARED_SESSION, tpls) if tpls else {}
     series = {}
@@ -690,7 +712,7 @@ async def api_preview(request):
         layout.render_page, page, vals,
         clock=datetime.now().strftime("%H:%M"),
         label=str(body.get("label") or "preview")[:40],
-        battery_pct=None, series=series, metrics=metrics)
+        battery_pct=None, series=series, metrics=metrics, orientation=orient)
     # Effective font sizes ride back on a header so the editor can report
     # what you actually got, in millimetres, rather than what you asked for.
     return web.Response(body=_png(T.to_1bit(img)), content_type="image/png",
@@ -813,6 +835,11 @@ def generate_esphome_yaml(cfg: dict) -> tuple[str, str]:
     api_key = (cfg.get("api_encryption_key") or "").strip() or _new_api_key()
     ota_pw = (cfg.get("ota_password") or "").strip() or _new_ota_password()
     interval = re.sub(r"[^a-z0-9]+", "", (cfg.get("refresh_interval") or "5min").strip().lower()) or "5min"
+    try:
+        orient = int(cfg.get("orientation") if "orientation" in cfg else load_layouts().get("orientation", 0))
+    except (TypeError, ValueError):
+        orient = 0
+    next_pin, prev_pin = (6, 4) if orient in (180, 270) else (4, 6)
 
     api_key_line = "!secret api_encryption_key" if use_secrets else _yaml_str(api_key)
     ota_pw_line = "!secret ota_password" if use_secrets else _yaml_str(ota_pw)
@@ -1006,7 +1033,7 @@ binary_sensor:
   - platform: gpio
     id: key_next
     internal: true
-    pin: {{number: 4, mode: {{input: true, pullup: true}}, inverted: true}}
+    pin: {{number: {next_pin}, mode: {{input: true, pullup: true}}, inverted: true}}
     filters: [delayed_on: 20ms]
     on_press:
       - logger.log: "KEY next"
@@ -1016,7 +1043,7 @@ binary_sensor:
   - platform: gpio
     id: key_prev
     internal: true
-    pin: {{number: 6, mode: {{input: true, pullup: true}}, inverted: true}}
+    pin: {{number: {prev_pin}, mode: {{input: true, pullup: true}}, inverted: true}}
     filters: [delayed_on: 20ms]
     on_press:
       - logger.log: "KEY prev"
