@@ -36,6 +36,19 @@ CAT_WORDS = {
 DEAD = {"unavailable", "unknown", "none", ""}
 
 
+def human_ago(dt, now=None):
+    """'today' / 'yesterday' / '3 days ago' / '12 mar'."""
+    now = now or datetime.now(timezone.utc)
+    days = (now.date() - dt.astimezone(now.tzinfo).date()).days
+    if days <= 0:
+        return "today"
+    if days == 1:
+        return "yesterday"
+    if days < 14:
+        return f"{days} days ago"
+    return dt.strftime("%-d %b").lower()
+
+
 def _http_json(url, headers=None, timeout=10):
     req = urllib.request.Request(url, headers=headers or {})
     with urllib.request.urlopen(req, timeout=timeout) as r:
