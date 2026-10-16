@@ -892,6 +892,7 @@ aside {
   <button id="templatebtn" class="badge-btn" title="Add page from ready-made presets">Add Preset</button>
   <button id="addpage" title="New blank page">＋ Blank</button>
   <button id="duppage" title="Duplicate current page">Duplicate</button>
+  <button id="renamepage" title="Rename current page">Rename</button>
   <button id="delpage" title="Delete current page">Delete</button>
 
   <span class="sep"></span>
@@ -2162,6 +2163,31 @@ $("duppage").onclick = () => {
   fillPages();
   select(n);
   msg(`Duplicated "${cur}" to "${n}".`, { label: "Undo", run: undo });
+};
+
+$("renamepage").onclick = () => {
+  if (!cur || !page()) return;
+  const oldName = cur;
+  const raw = prompt(`Rename page "${oldName}" to:`, oldName);
+  if (!raw) return;
+  const newName = raw.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "");
+  if (!newName) { msg("Invalid page name."); return; }
+  if (newName === oldName) return;
+  if (spec.pages[newName]) { msg(`A page named "${newName}" already exists.`); return; }
+
+  snapshot();
+  // Preserve order of pages by rebuilding spec.pages with newName in place
+  const newPages = {};
+  for (const [k, v] of Object.entries(spec.pages)) {
+    if (k === oldName) newPages[newName] = v;
+    else newPages[k] = v;
+  }
+  spec.pages = newPages;
+  spec.rotation = (spec.rotation || []).map(n => n === oldName ? newName : n);
+
+  fillPages();
+  select(newName);
+  msg(`Renamed "${oldName}" to "${newName}".`, { label: "Undo", run: undo });
 };
 
 $("delpage").onclick = () => {
