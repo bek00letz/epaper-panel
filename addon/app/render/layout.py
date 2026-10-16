@@ -34,18 +34,19 @@ _mdi_codepoints = None
 MM_PER_PX = 139.1 / T.W          # ~0.176 mm; the panel is 139mm wide
 
 
-# Cap height is ~0.7em, and legibility bands come from the 3m measurements
-# in ARCHITECTURE.md.
-def legibility(size_px):
+# Cap height is ~0.7em, and legibility bands scale with viewing distance.
+def legibility(size_px, distance_m=3.0):
     mm = size_px * 0.7 * MM_PER_PX
-    if mm < 4.4:
-        verdict = "too small at 3 m"
-    elif mm < 13:
-        verdict = "squint at 3 m"
-    elif mm < 19:
-        verdict = "comfortable"
+    d = max(0.1, float(distance_m or 3.0))
+    factor = d / 3.0
+    if mm < 4.4 * factor:
+        verdict = f"too small at {d:.1f}m"
+    elif mm < 13.0 * factor:
+        verdict = f"squint at {d:.1f}m"
+    elif mm < 19.0 * factor:
+        verdict = f"comfortable"
     else:
-        verdict = "effortless"
+        verdict = f"effortless"
     return round(mm, 1), verdict
 
 
@@ -118,17 +119,18 @@ def _clamp_box(el, default_w=200, default_h=60):
     return x, y, w, h
 
 
-def _draw_text(img, d, el, text, metrics=None):
+def _draw_text(img, d, el, text, metrics=None, distance_m=3.0):
     if not text:
         return
     x, y, w, h = _clamp_box(el, 200, 60)
     align = el.get("align", "left")
-    bold = el.get("bold", True)
+    bold = el.get("bold") not in (False, "false", 0, "0")
+    family = str(el.get("font") or "lato").lower()
 
-    size = max(8, min(360, int(el["size"]))) if el.get("size") else T.fit_size(text, w, h, 200, bold=bold)
-    f = T.font(size, bold=bold)
+    size = max(8, min(360, int(el["size"]))) if el.get("size") else T.fit_size(text, w, h, 200, bold=bold, family=family)
+    f = T.font(size, bold=bold, family=family)
     if metrics is not None:
-        mm, verdict = legibility(size)
+        mm, verdict = legibility(size, distance_m=distance_m)
         t = text.strip()
         metrics.append({"size": size, "mm": mm, "verdict": verdict,
                         "overflow": T.text_width(text, f) > w,
@@ -227,7 +229,7 @@ def element_text(el, vals, idx):
 
 
 def render_page(page, vals, *, clock="", label="", battery_pct=None, series=None,
-                metrics=None, orientation=0):
+                metrics=None, orientation=0, distance_m=3.0):
     """Draw one page. `vals` maps element index -> resolved template result."""
     img, d = T.new_canvas(orientation=orientation)
     for i, el in enumerate(page.get("elements", [])):
@@ -239,7 +241,7 @@ def render_page(page, vals, *, clock="", label="", battery_pct=None, series=None
                 drawer(img, d, el, "", (series or {}).get(i))
             elif el["type"] in ("text", "number"):
                 got = []
-                drawer(img, d, el, element_text(el, vals, i), got)
+                drawer(img, d, el, element_text(el, vals, i), got, distance_m=distance_m)
                 if metrics is not None and got:
                     entry = {"i": i, **got[0]}
                     if el["type"] == "number":

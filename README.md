@@ -16,12 +16,15 @@ set large**, rotating, rather than a dense dashboard you have to walk up to.
 
 ![The editor](docs/editor.jpg)
 
-Lives in your Home Assistant sidebar, behind your existing login. Designed to be accessible to anyone—from an enthusiast building custom rotation loops to someone setting up a quick screen to track when their next pension or bin collection arrives.
+Lives in your Home Assistant sidebar, behind your existing login. Designed to be accessible to anyone—from an enthusiast building custom rotation loops to someone setting up a quick screen to track upcoming events, bin collection, or solar generation.
 
-- **✨ One-Click Ready-Made Presets:** Click **Add Preset** to choose from battle-tested screen templates (`Next Pension / Event Countdown`, `Room Climate & Comfort`, `Solar Power & Battery`, `Pet & Door Presence`, `Bin Day Collection`, `Giant Sofa Clock`). Each preset pre-configures icons, sofa-legible font scales, and entity bindings in one click.
-- **🎨 Lovelace Dark & Light Theme:** Beautiful interface styled to match Home Assistant with an instant dark/light mode toggle, Inter typography, and an authentic CrowPanel hardware frame preview with Fit vs 100% zoom controls.
-- **🏷️ Intelligent Entity Browser:** Filter entities with fast category chips (`📅 Dates & Calendars`, `🌡️ Sensors`, `⚡ Binary`, `❄️ Climate`, `🔒 Security`, `👤 People`). Add entities via drag-and-drop or with the one-click **➕ Add** button on each card.
-- **🛋️ 3-Metre Sofa Legibility Verdict:** Per-element real-time feedback (**"Renders at 106 px = 18 mm — effortless from 3 m sofa"**) guarantees your facts stay readable from across the room.
+- **One-Click Screen Presets:** Click **Add Preset** to choose from battle-tested screen templates (`Event & Schedule Countdown`, `Room Climate & Comfort`, `Solar Power & Generation`, `Door & Pet Presence`, `Bin Day Collection`, `Digital Clock & Date`). Presets pre-configure iconography, font scales, and layout geometries without overriding your own entities.
+- **Typography & Font Picker:** Select between **Lato** (clean modern sans-serif), **DejaVu Sans** (classic high-legibility sans-serif), and **Roboto Mono** (monospace, ideal for clocks and tabular numbers) with Bold and Regular weight controls.
+- **Persistent Advanced Coordinates:** Advanced pixel coordinate controls (X, Y, W, H) remain expanded across element selections for power-user precision.
+- **Duplicate Page:** Clone any page in one click to iterate on new layouts without breaking existing designs.
+- **Flexible Viewing Distance Legibility:** Real-time font size and millimetre calculation with customizable viewing distances: **Desk (0.8 m)**, **Bedside (1.5 m)**, **Sofa (3.0 m)**, **Wall (5.0 m)**, or **Disabled**.
+- **Lovelace Dark & Light Theme:** Styled to match Home Assistant with an instant dark/light mode toggle, Inter typography, and CrowPanel hardware bezel frame simulation with Fit vs 100% zoom controls.
+- **Intelligent Entity Browser:** Filter entities with fast category chips (`Dates & Calendars`, `Sensors`, `Binary`, `Climate`, `Security`, `People`). Add entities via drag-and-drop or with the one-click **＋ Add** button on each card.
 - **Plain-English Bindings & Countdowns:** An element says what it wants—an entity's state, an attribute, when it last changed, a date countdown (`days_until`), or formatted dates (`date_formatted`)—without writing Jinja templates. A visual "say it differently" table turns raw values like `on` or `Outdoor Cat` into `outside` without code. Raw Jinja templates remain available for advanced power users.
 
 ## Pages appear when they matter

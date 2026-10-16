@@ -38,8 +38,23 @@ def _font_file(*names):
     raise FileNotFoundError(f"none of {names} in {[str(d) for d in _FONT_DIRS]}")
 
 
-BOLD    = _font_file("Lato-Bold.ttf", "DejaVuSans-Bold.ttf")
-REGULAR = _font_file("Lato-Regular.ttf", "DejaVuSans.ttf")
+FONTS = {
+    "lato": {
+        "bold": _font_file("Lato-Bold.ttf", "DejaVuSans-Bold.ttf"),
+        "regular": _font_file("Lato-Regular.ttf", "DejaVuSans.ttf"),
+    },
+    "dejavu": {
+        "bold": _font_file("DejaVuSans-Bold.ttf", "Lato-Bold.ttf"),
+        "regular": _font_file("DejaVuSans.ttf", "Lato-Regular.ttf"),
+    },
+    "mono": {
+        "bold": _font_file("RobotoMono-Variable.ttf", "DejaVuSans-Bold.ttf"),
+        "regular": _font_file("RobotoMono-Variable.ttf", "DejaVuSans.ttf"),
+    },
+}
+
+BOLD    = FONTS["lato"]["bold"]
+REGULAR = FONTS["lato"]["regular"]
 
 
 @lru_cache(maxsize=128)
@@ -47,9 +62,11 @@ def _cached_font(path: str, size: int):
     return ImageFont.truetype(path, size)
 
 
-def font(size, bold=True):
+def font(size, bold=True, family="lato"):
     clamped = max(8, min(360, int(size)))
-    return _cached_font(BOLD if bold else REGULAR, clamped)
+    fam = FONTS.get(str(family or "lato").lower(), FONTS["lato"])
+    path = fam["bold"] if bold else fam["regular"]
+    return _cached_font(path, clamped)
 
 
 def canvas_dims(orientation=0):
@@ -88,12 +105,12 @@ def text_width(s, f):
     return b[2] - b[0]
 
 
-def fit_size(s, max_w, max_h, start, floor=24, bold=True):
+def fit_size(s, max_w, max_h, start, floor=24, bold=True, family="lato"):
     """Largest point size at which s fits max_w x max_h. Binary search."""
     lo, hi, best = floor, max(floor, min(360, int(start))), floor
     while lo <= hi:
         mid = (lo + hi) // 2
-        f = font(mid, bold)
+        f = font(mid, bold, family=family)
         asc, desc = f.getmetrics()
         if text_width(s, f) <= max_w and (asc + desc) <= max_h:
             best, lo = mid, mid + 1

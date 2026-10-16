@@ -800,6 +800,36 @@ aside {
 }
 #toast button:hover { background: rgba(255, 255, 255, 0.3); }
 
+/* Fonts */
+@font-face {
+  font-family: 'Lato';
+  src: url('fonts/Lato-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Lato';
+  src: url('fonts/Lato-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'DejaVu Sans';
+  src: url('fonts/DejaVuSans.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'DejaVu Sans';
+  src: url('fonts/DejaVuSans-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Roboto Mono';
+  src: url('fonts/RobotoMono-Variable.ttf') format('truetype');
+}
+
 /* MDI font and picker */
 @font-face {
   font-family: mdi;
@@ -859,8 +889,9 @@ aside {
   <span class="sep"></span>
 
   <select id="page" title="Current Page"></select>
-  <button id="templatebtn" class="badge-btn" title="Add page from ready-made presets">✨ Add Preset</button>
+  <button id="templatebtn" class="badge-btn" title="Add page from ready-made presets">Add Preset</button>
   <button id="addpage" title="New blank page">＋ Blank</button>
+  <button id="duppage" title="Duplicate current page">Duplicate</button>
   <button id="delpage" title="Delete current page">Delete</button>
 
   <span class="sep"></span>
@@ -900,7 +931,16 @@ aside {
       <div class="screen-meta">
         <span class="badge-tag" id="res-badge">792 × 272 px</span>
         <span class="badge-tag">1-Bit Monochrome</span>
-        <span class="badge-tag" id="view-distance-tag">Designed for 3m sofa viewing</span>
+        <label class="badge-tag" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">
+          <span>Legibility:</span>
+          <select id="viewdist" style="padding:1px 6px;font-size:11px;height:22px;border:none;background:transparent;color:inherit;font-weight:600;cursor:pointer">
+            <option value="0.8">Desk (0.8 m)</option>
+            <option value="1.5">Bedside (1.5 m)</option>
+            <option value="3.0">Sofa (3.0 m)</option>
+            <option value="5.0">Wall (5.0 m)</option>
+            <option value="0">Disabled (Off)</option>
+          </select>
+        </label>
       </div>
       <div style="display:flex;gap:6px">
         <button id="zoomfit" class="sm active">Fit</button>
@@ -931,9 +971,9 @@ aside {
       <div style="display:flex;align-items:center;gap:10px;width:100%;margin-bottom:4px">
         <span class="bar-title">Page Tier</span>
         <select id="tier" style="max-width:210px" title="When this page appears">
-          <option value="rotate">🔄 Always in rotation</option>
-          <option value="when">⚡ Show only when active</option>
-          <option value="alert">🚨 Urgent interruption</option>
+          <option value="rotate">Always in rotation</option>
+          <option value="when">Show only when active</option>
+          <option value="alert">Urgent interruption</option>
         </select>
         <span class="hint" id="tierhint" style="margin:0">Shows every few minutes in the rotation cycle.</span>
       </div>
@@ -945,7 +985,7 @@ aside {
           <option value="raw">Custom Jinja</option>
         </select>
         <div id="condsimple" style="display:flex;gap:6px;align-items:center;flex:1;flex-wrap:wrap">
-          <input id="condent" list="entities-dl" placeholder="entity (e.g. calendar.pension, timer.dryer)" style="flex:1;min-width:180px">
+          <input id="condent" list="entities-dl" placeholder="entity (e.g. calendar.events, timer.dryer)" style="flex:1;min-width:180px">
           <select id="condop" style="max-width:130px">
             <option value="eq">is</option>
             <option value="ne">is not</option>
@@ -970,7 +1010,7 @@ aside {
       <button id="stripbtn" class="sm" title="Preview all stacked pages">Full strip</button>
     </div>
 
-    <p class="hint">💡 <b>Tip:</b> Click an entity card or drag it onto the canvas. Use arrows to nudge, Shift+arrows by 10px. Hold Alt to ignore grid snapping.</p>
+    <p class="hint"><b>Tip:</b> Click an entity card or drag it onto the canvas. Use arrows to nudge, Shift+arrows by 10px. Hold Alt to ignore grid snapping.</p>
   </div>
 
   <!-- Sidebar Rail -->
@@ -994,7 +1034,6 @@ aside {
           <button data-add="icon"><span class="icon">⭐</span><span>Icon</span></button>
           <button data-add="curve"><span class="icon">📈</span><span>Graph</span></button>
           <button data-add="line"><span class="icon">➖</span><span>Divider</span></button>
-          <button id="quickpensionbtn"><span class="icon">💰</span><span>Pension</span></button>
         </div>
       </div>
     </div>
@@ -1027,10 +1066,10 @@ aside {
 <div id="templatewrap" class="modal-wrap">
   <div class="modal-card">
     <div class="row" style="margin:0">
-      <strong style="font-size:16px;flex:1">✨ Ready-Made Page Presets</strong>
+      <strong style="font-size:16px;flex:1">Page Presets</strong>
       <button id="templateclose">Close</button>
     </div>
-    <p class="hint" style="margin:0">Pick a preset to quickly create a beautiful, sofa-legible page. Ideal for pensions, bin days, solar generation, or room temperatures.</p>
+    <p class="hint" style="margin:0">Pick a preset to quickly create a beautiful, high-legibility page. Customize entities and layouts after creation.</p>
     <div class="template-grid" id="templategrid">
       <!-- Injected via JS -->
     </div>
@@ -1180,6 +1219,8 @@ const SNAP = 6;
 let spec = { orientation: 0, rotation: [], pages: {} }, cur = null, sel = -1, ents = [], timer = null, prevBlobUrl = null;
 let hist = [], hpos = -1, metrics = [], liveStatus = { pages: [] };
 let activeDomainFilter = "";
+let advCoordsOpen = localStorage.getItem("epaper_adv_coords") === "true";
+let viewDist = localStorage.getItem("epaper_view_dist") || "3.0";
 
 const $ = id => document.getElementById(id);
 const canvas = $("canvas"), bezel = $("bezel-wrapper");
@@ -1201,6 +1242,16 @@ $("themetoggle").onclick = () => {
   $("themetoggle").textContent = curTheme === "dark" ? "☀️" : "🌙";
   localStorage.setItem("epaper_theme", curTheme);
 };
+
+/* Viewing Distance */
+if ($("viewdist")) {
+  $("viewdist").value = viewDist;
+  $("viewdist").onchange = e => {
+    viewDist = e.target.value;
+    localStorage.setItem("epaper_view_dist", viewDist);
+    preview();
+  };
+}
 
 /* Zoom Controls */
 $("zoomfit").onclick = () => {
@@ -1357,7 +1408,7 @@ async function boot() {
 const fillPages = () => {
   $("page").innerHTML = Object.keys(spec.pages).map(n => {
     const t = spec.pages[n].tier || "rotate";
-    const badge = t === "alert" ? " [🚨 alert]" : t === "when" ? " [⚡ when]" : "";
+    const badge = t === "alert" ? " [alert]" : t === "when" ? " [when]" : "";
     return `<option value="${esc(n)}">${esc(n)}${badge}</option>`;
   }).join("");
   drawRotationPills();
@@ -1529,7 +1580,12 @@ function preview() {
       const r = await api("api/preview", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ page: page(), label: cur, orientation: Number(spec.orientation || 0) })
+        body: JSON.stringify({
+          page: page(),
+          label: cur,
+          orientation: Number(spec.orientation || 0),
+          distance: Number(viewDist)
+        })
       });
       try { metrics = JSON.parse(r.headers.get("X-Metrics") || "[]"); } catch (_) { metrics = []; }
       const nextUrl = URL.createObjectURL(await r.blob());
@@ -1797,8 +1853,8 @@ async function loadAttributes(entity) {
 /* Content Binding Options */
 const SHOWS = [
   ["state", "Standard State / Value"],
-  ["days_until", "📅 Days countdown ('4 days')"],
-  ["date_formatted", "🕒 Formatted Date ('24 Oct')"],
+  ["days_until", "Days countdown ('4 days')"],
+  ["date_formatted", "Formatted Date ('24 Oct')"],
   ["attribute", "Entity Attribute"],
   ["last_changed", "When it last changed ('2 hrs ago')"],
   ["last_updated", "When it last updated"]
@@ -1898,7 +1954,7 @@ function props() {
   const box = $("props"), badge = $("selbadge");
   if (sel < 0 || !els()[sel]) {
     badge.style.display = "none";
-    box.innerHTML = '<div class="empty">No element selected.<br>Click an element on the canvas to inspect, or click <b>✨ Add Preset</b> to build a screen.</div>';
+    box.innerHTML = '<div class="empty">No element selected.<br>Click an element on the canvas to inspect, or click <b>Add Preset</b> to build a screen.</div>';
     return;
   }
   const el = els()[sel];
@@ -1924,7 +1980,16 @@ function props() {
   if (["text", "number", "icon"].includes(el.type)) {
     h += '<div class="grp"><div class="lbl">Typography &amp; Legibility</div>' + f("size", "size (px)", "number", "auto");
     if (el.type !== "icon") {
-      h += `<div class="row"><label>align</label><select data-k="align">
+      h += `<div class="row"><label>font</label><select data-k="font">
+        <option value="lato"${(el.font || "lato") === "lato" ? " selected" : ""} style="font-family:'Lato',sans-serif">Lato (Clean Sans)</option>
+        <option value="dejavu"${el.font === "dejavu" ? " selected" : ""} style="font-family:'DejaVu Sans',sans-serif">DejaVu Sans (Classic)</option>
+        <option value="mono"${el.font === "mono" ? " selected" : ""} style="font-family:'Roboto Mono',monospace">Roboto Mono (Monospace)</option>
+      </select></div>
+      <div class="row"><label>weight</label><select data-k="bold">
+        <option value="true"${el.bold !== false ? " selected" : ""}>Bold</option>
+        <option value="false"${el.bold === false ? " selected" : ""}>Regular</option>
+      </select></div>
+      <div class="row"><label>align</label><select data-k="align">
           ${["left", "center", "right"].map(a => `<option${el.align === a ? " selected" : ""}>${a}</option>`).join("")}</select></div>`;
     }
     const m = metrics.find(x => x.i === sel);
@@ -1935,12 +2000,19 @@ function props() {
       if (m.collection) {
         h += `<div class="chip bad"><b>That is a list, not a single value.</b> Pick a different attribute, or switch show to State.</div>`;
       }
-      const isComfortable = m.mm >= 13;
-      h += `<div class="chip ${isComfortable ? "good" : "bad"}">
-         <b>🛋️ 3m Sofa Check:</b> Renders at <b>${esc(m.size)} px</b> = <b>${esc(m.mm)} mm</b> —
-         <span class="${isComfortable ? "ok" : "warn"}">${esc(m.verdict)}</span>
-         ${m.overflow ? ' · <span class="warn">overflows box</span>' : ''}
-      </div>`;
+      const dist = Number(viewDist);
+      if (dist > 0) {
+        const factor = dist / 3.0;
+        const isComfortable = m.mm >= (13.0 * factor);
+        const checkTitle = dist === 3.0 ? "3m Sofa Check" : dist === 0.8 ? "Desk Check (0.8m)" : dist === 1.5 ? "Bedside Check (1.5m)" : `Legibility Check (${dist}m)`;
+        h += `<div class="chip ${isComfortable ? "good" : "bad"}">
+           <b>${checkTitle}:</b> Renders at <b>${esc(m.size)} px</b> = <b>${esc(m.mm)} mm</b> —
+           <span class="${isComfortable ? "ok" : "warn"}">${esc(m.verdict)}</span>
+           ${m.overflow ? ' · <span class="warn">overflows box</span>' : ''}
+        </div>`;
+      } else if (m.overflow) {
+        h += `<div class="chip bad"><span class="warn">Text overflows box</span></div>`;
+      }
     }
     h += "</div>";
   }
@@ -1951,7 +2023,7 @@ function props() {
         <button id="aligncy" class="sm" title="Center vertically">Center Y</button>
         <button id="alignfw" class="sm" title="Full safe width">Full Width</button>
       </div>
-      <details style="margin-top:8px">
+      <details id="advcoords" style="margin-top:8px"${advCoordsOpen ? " open" : ""}>
         <summary style="font-size:11.5px;color:var(--text-muted);cursor:pointer">Advanced Pixel Coordinates</summary>
         <div style="margin-top:6px">
           <div class="row"><label>position</label>
@@ -1973,10 +2045,26 @@ function props() {
 
   box.innerHTML = h;
 
+  const advDet = box.querySelector("#advcoords");
+  if (advDet) {
+    advDet.ontoggle = () => {
+      advCoordsOpen = advDet.open;
+      localStorage.setItem("epaper_adv_coords", advCoordsOpen ? "true" : "false");
+    };
+  }
+
   box.querySelectorAll("[data-k]").forEach(inp => inp.onchange = () => {
     snapshot();
     const k = inp.dataset.k, v = inp.value;
-    if (v === "") { delete el[k]; } else { el[k] = (inp.type === "number") ? Number(v) : v; }
+    if (v === "") {
+      delete el[k];
+    } else if (k === "bold") {
+      el.bold = v === "true";
+    } else if (inp.type === "number") {
+      el[k] = Number(v);
+    } else {
+      el[k] = v;
+    }
     paint(); preview();
   });
 
@@ -2051,6 +2139,29 @@ $("addpage").onclick = () => {
   spec.pages[n] = { tier: "rotate", elements: [] };
   if (!spec.rotation.includes(n)) spec.rotation.push(n);
   fillPages(); select(n);
+};
+
+$("duppage").onclick = () => {
+  if (!cur || !page()) return;
+  let defaultName = cur + "_copy";
+  let count = 1;
+  while (spec.pages[defaultName]) {
+    count++;
+    defaultName = `${cur}_copy${count}`;
+  }
+  const raw = prompt(`Duplicate "${cur}" as:`, defaultName);
+  if (!raw) return;
+  const n = raw.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "");
+  if (!n) { msg("Invalid page name."); return; }
+  if (spec.pages[n]) { msg(`A page named "${n}" already exists.`); return; }
+  snapshot();
+  spec.pages[n] = JSON.parse(JSON.stringify(page()));
+  if (!spec.rotation.includes(n) && (page().tier || "rotate") === "rotate") {
+    spec.rotation.push(n);
+  }
+  fillPages();
+  select(n);
+  msg(`Duplicated "${cur}" to "${n}".`, { label: "Undo", run: undo });
 };
 
 $("delpage").onclick = () => {
@@ -2312,91 +2423,85 @@ $("push").onclick = async () => {
 };
 
 /* =====================================================================
-   ✨ PENSIONER & ULTRA-INTUITIVE TEMPLATE LIBRARY
+   SCREEN TEMPLATE LIBRARY
    ===================================================================== */
+const PRESET_ICONS = {
+  event_countdown: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M12 14v4M10 16h4"/></svg>`,
+  climate: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 14.76V3.5a2.5 2.5 0 0 0-5 0v11.26a4.5 4.5 0 1 0 5 0z"/></svg>`,
+  solar: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>`,
+  presence_door: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V6a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v14"/><path d="M2 20h20"/><circle cx="14" cy="12" r="1"/></svg>`,
+  bin_day: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`,
+  clock: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>`
+};
+
 const PRESETS = [
   {
-    id: "pension",
-    icon: "💰",
-    title: "Next Pension Countdown",
-    desc: "Huge sofa-readable countdown ('in 4 days') and pension arrival date banner.",
-    suggestedDomain: "calendar",
-    makeElements: (ent) => {
-      const isCal = ent && ent.startsWith("calendar.");
-      return [
-        { type: "icon", icon: "mdi:cash-clock", x: 32, y: 40, w: 110, h: 110 },
-        { type: "number", entity: ent || "calendar.pension", show: isCal ? "days_until" : "state",
-          suffix: " days", decimals: 0, x: 160, y: 24, w: 340, h: 130, align: "left" },
-        { type: "text", value: "until next pension", size: 30, bold: false, x: 164, y: 166, w: 320, h: 42, align: "left" },
-        { type: "text", entity: ent || "calendar.pension", show: isCal ? "date_formatted" : "state",
-          prefix: "arrival: ", format: "day_date", size: 28, bold: false, x: 450, y: 166, w: 300, h: 42, align: "right" }
-      ];
-    }
+    id: "event_countdown",
+    title: "Event & Schedule Countdown",
+    desc: "Large countdown in days with arrival date banner for upcoming calendar events.",
+    makeElements: (ent) => [
+      { type: "icon", icon: "mdi:calendar-clock", x: 32, y: 40, w: 110, h: 110 },
+      { type: "number", entity: ent || "", show: "days_until",
+        suffix: " days", decimals: 0, x: 160, y: 24, w: 340, h: 130, align: "left" },
+      { type: "text", value: "days until event", size: 30, bold: false, x: 164, y: 166, w: 320, h: 42, align: "left" },
+      { type: "text", entity: ent || "", show: "date_formatted",
+        prefix: "date: ", format: "day_date", size: 28, bold: false, x: 450, y: 166, w: 300, h: 42, align: "right" }
+    ]
   },
   {
     id: "climate",
-    icon: "🌡️",
     title: "Room Climate & Comfort",
-    desc: "Big temperature stat with comfort status and humidity from your room thermostat.",
-    suggestedDomain: "climate",
+    desc: "Room temperature display with comfort subtitle and 24h temperature history curve.",
     makeElements: (ent) => [
       { type: "icon", icon: "mdi:thermometer", x: 32, y: 44, w: 116, h: 116 },
-      { type: "number", entity: ent || "sensor.living_room_temperature", show: "state",
+      { type: "number", entity: ent || "", show: "state",
         suffix: " °C", decimals: 1, x: 160, y: 30, w: 320, h: 128, align: "left" },
-      { type: "text", value: "living room comfort", size: 30, bold: false, x: 164, y: 170, w: 320, h: 40, align: "left" },
-      { type: "curve", entity: ent || "sensor.living_room_temperature", hours: 24, x: 490, y: 100, w: 270, h: 86 }
+      { type: "text", value: "room climate", size: 30, bold: false, x: 164, y: 170, w: 320, h: 40, align: "left" },
+      { type: "curve", entity: ent || "", hours: 24, x: 490, y: 100, w: 270, h: 86 }
     ]
   },
   {
     id: "solar",
-    icon: "☀️",
     title: "Solar Power & Generation",
-    desc: "Active solar generation wattage, today's kWh total, and 24h solar curve.",
-    suggestedDomain: "sensor",
+    desc: "Solar generation kWh stat with today's status subtitle and 24h generation curve.",
     makeElements: (ent) => [
       { type: "icon", icon: "mdi:white-balance-sunny", x: 32, y: 44, w: 116, h: 116 },
-      { type: "number", entity: ent || "sensor.solar_today_production", show: "state",
+      { type: "number", entity: ent || "", show: "state",
         suffix: " kWh", decimals: 1, x: 160, y: 30, w: 310, h: 128, align: "left" },
       { type: "text", value: "produced today", size: 30, bold: false, x: 164, y: 170, w: 320, h: 40, align: "left" },
-      { type: "curve", entity: "sensor.solar_pv_power", hours: 24, x: 490, y: 100, w: 270, h: 86 }
+      { type: "curve", entity: ent || "", hours: 24, x: 490, y: 100, w: 270, h: 86 }
     ]
   },
   {
-    id: "pet_door",
-    icon: "🐾",
-    title: "Pet or Door Presence",
-    desc: "Bold status ('Inside' / 'Closed') with time since it last changed.",
-    suggestedDomain: "binary_sensor",
+    id: "presence_door",
+    title: "Door or Pet Presence",
+    desc: "Bold state readout ('Inside' / 'Closed') with relative time since last change.",
     makeElements: (ent) => [
-      { type: "icon", icon: "mdi:cat", x: 32, y: 44, w: 116, h: 116 },
-      { type: "text", entity: ent || "binary_sensor.front_door", show: "state",
-        replace: { "on": "Outside", "off": "Inside", "open": "Open", "closed": "Closed" },
+      { type: "icon", icon: "mdi:door", x: 32, y: 44, w: 116, h: 116 },
+      { type: "text", entity: ent || "", show: "state",
+        replace: { "on": "Open", "off": "Closed" },
         size: 80, bold: true, x: 164, y: 30, w: 360, h: 128, align: "left" },
-      { type: "text", entity: ent || "binary_sensor.front_door", show: "last_changed",
+      { type: "text", entity: ent || "", show: "last_changed",
         format: "relative", prefix: "since ", size: 30, bold: false, x: 164, y: 170, w: 420, h: 40, align: "left" }
     ]
   },
   {
     id: "bin_day",
-    icon: "🗑️",
     title: "Bin & Waste Collection",
     desc: "Reminds when the bin collection or recycling truck arrives.",
-    suggestedDomain: "calendar",
     makeElements: (ent) => [
       { type: "icon", icon: "mdi:trash-can", x: 32, y: 40, w: 110, h: 110 },
-      { type: "number", entity: ent || "calendar.bins", show: "days_until",
+      { type: "number", entity: ent || "", show: "days_until",
         suffix: " days", decimals: 0, x: 160, y: 24, w: 340, h: 130, align: "left" },
-      { type: "text", value: "until bin collection", size: 30, bold: false, x: 164, y: 166, w: 320, h: 42, align: "left" },
-      { type: "text", entity: ent || "calendar.bins", show: "calendar_title",
+      { type: "text", value: "until collection", size: 30, bold: false, x: 164, y: 166, w: 320, h: 42, align: "left" },
+      { type: "text", entity: ent || "", show: "calendar_title",
         prefix: "type: ", size: 28, bold: false, x: 450, y: 166, w: 300, h: 42, align: "right" }
     ]
   },
   {
     id: "clock",
-    icon: "🕒",
-    title: "Giant Sofa Clock & Day",
-    desc: "Giant 110px digital clock and today's day & date for easy reading across the room.",
-    suggestedDomain: "sensor",
+    title: "Digital Clock & Date",
+    desc: "Large 110px digital clock and today's day & date for easy reading.",
     makeElements: () => [
       { type: "text", value: "{{ now().strftime('%H:%M') }}", size: 110, bold: true, x: 40, y: 20, w: 450, h: 140, align: "left" },
       { type: "text", value: "{{ now().strftime('%A, %-d %B') }}", size: 36, bold: false, x: 44, y: 168, w: 500, h: 46, align: "left" },
@@ -2409,7 +2514,7 @@ function buildTemplateLibrary() {
   const grid = $("templategrid");
   grid.innerHTML = PRESETS.map(p => `
     <div class="template-card" data-tid="${p.id}">
-      <span class="template-icon">${p.icon}</span>
+      <span class="template-icon">${PRESET_ICONS[p.id] || ""}</span>
       <div class="template-title">${esc(p.title)}</div>
       <div class="template-desc">${esc(p.desc)}</div>
     </div>
@@ -2424,38 +2529,27 @@ function buildTemplateLibrary() {
 }
 
 function applyPresetToPage(preset) {
-  // Find a matching entity from HA
-  let matched = ents.find(e => e.entity_id.startsWith(preset.suggestedDomain + "."));
-  if (preset.id === "pension") {
-    matched = ents.find(e => e.entity_id.includes("pension") || e.entity_id.includes("payday")) || matched;
-  }
-  const entityId = matched ? matched.entity_id : "";
-
-  // Prompt friendly page name
   const pageName = prompt(`Create page for "${preset.title}":`, preset.id);
   if (!pageName) return;
   const n = pageName.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "");
   if (!n) return;
+  if (spec.pages[n]) { msg(`A page named "${n}" already exists.`); return; }
 
   snapshot();
   spec.pages[n] = {
     tier: "rotate",
-    elements: preset.makeElements(entityId)
+    elements: preset.makeElements("")
   };
   if (!spec.rotation.includes(n)) spec.rotation.push(n);
   fillPages();
   select(n);
   $("templatewrap").style.display = "none";
-  msg(`Created "${preset.title}" page!`, { label: "Push now", run: () => $("push").click() });
+  msg(`Created "${preset.title}" page! Select an element to bind your entity.`);
 }
 
 $("templatebtn").onclick = () => $("templatewrap").style.display = "flex";
 $("templateclose").onclick = () => $("templatewrap").style.display = "none";
 $("templatewrap").onclick = e => { if (e.target.id === "templatewrap") $("templatewrap").style.display = "none"; };
-$("quickpensionbtn").onclick = () => {
-  const p = PRESETS.find(x => x.id === "pension");
-  if (p) applyPresetToPage(p);
-};
 
 boot().catch(e => msg("Load failed: " + e.message));
 </script>

@@ -746,11 +746,13 @@ async def api_preview(request):
             series[i] = await curve_series(SHARED_SESSION, el["entity"],
                                            int(el.get("hours", 24)))
     metrics = []
+    dist = float(body.get("distance") or 3.0)
     img = await asyncio.to_thread(
         layout.render_page, page, vals,
         clock=datetime.now().strftime("%H:%M"),
         label=str(body.get("label") or "preview")[:40],
-        battery_pct=None, series=series, metrics=metrics, orientation=orient)
+        battery_pct=None, series=series, metrics=metrics, orientation=orient,
+        distance_m=dist)
     # Effective font sizes ride back on a header so the editor can report
     # what you actually got, in millimetres, rather than what you asked for.
     return web.Response(body=_png(T.to_1bit(img)), content_type="image/png",
@@ -1249,9 +1251,14 @@ async def api_panel_setup_post(request):
 
 
 async def panel_font(request):
-    """Serve bundled Lato TTF files on port 8099 so ESPHome can fetch them over LAN."""
+    """Serve bundled font TTF files on port 8099 so ESPHome and editor can fetch them over LAN."""
     name = request.match_info.get("name", "")
-    if name not in ("Lato-Bold.ttf", "Lato-Regular.ttf"):
+    allowed = (
+        "Lato-Bold.ttf", "Lato-Regular.ttf",
+        "DejaVuSans-Bold.ttf", "DejaVuSans.ttf",
+        "RobotoMono-Variable.ttf",
+    )
+    if name not in allowed:
         raise web.HTTPNotFound()
     f = Path(__file__).parent / "fonts" / name
     if not f.exists():
