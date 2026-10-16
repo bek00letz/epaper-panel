@@ -19,26 +19,37 @@ header{display:flex;gap:8px;align-items:center;padding:10px 16px;background:var(
        border-bottom:1px solid var(--line);flex-wrap:wrap;position:sticky;top:0;z-index:10}
 .brand{font-weight:600;letter-spacing:-.01em;margin-right:4px}
 .sep{width:1px;height:24px;background:var(--line);margin:0 4px}
-select,input,button{font:inherit;color:inherit;background:#fff;border:1px solid var(--line2);
+select,input,button,textarea{font:inherit;color:inherit;background:#fff;border:1px solid var(--line2);
                     border-radius:var(--r-in);padding:7px 10px;min-height:36px}
 select{padding-right:26px}
 button{cursor:pointer;transition:background .12s,border-color .12s}
 button:hover{background:#f7f7f5}
-button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 button:disabled{opacity:.4;cursor:default}
 button.primary{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:500}
 button.primary:hover{background:#2a63ba}
 button.icon{min-width:36px;padding:7px 9px;font-size:15px}
+button.sm{min-height:28px;padding:3px 8px;font-size:12px}
+button.active{background:var(--accent-bg);border-color:var(--accent);color:var(--accent);font-weight:500}
 .spacer{margin-left:auto}
 
-main{display:grid;grid-template-columns:minmax(0,1fr) 316px;gap:14px;padding:14px;align-items:start}
+/* status pill in header */
+.status-pill{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;padding:5px 11px;
+             border-radius:999px;background:#f7f7f4;border:1px solid var(--line2);color:var(--mut);
+             cursor:pointer;min-height:32px}
+.status-pill:hover{background:var(--accent-bg);border-color:var(--accent);color:var(--ink)}
+.status-dot{width:8px;height:8px;border-radius:50%;background:var(--good);flex:none}
+.status-dot.warn{background:#d97706}
+.status-dot.err{background:var(--danger)}
+
+main{display:grid;grid-template-columns:minmax(0,1fr) 326px;gap:14px;padding:14px;align-items:start}
 @media(max-width:940px){main{grid-template-columns:1fr}}
 
 /* canvas: the task, so it gets the weight */
 #stage{background:var(--card);border:1px solid var(--line);border-radius:var(--r-out);padding:16px}
 #frame{background:#3a3a37;border-radius:8px;padding:7px}
 #canvas{position:relative;width:100%;aspect-ratio:792/272;background:#fff no-repeat center/100% 100%;
-        user-select:none;touch-action:none;border-radius:2px}
+        user-select:none;touch-action:none;border-radius:2px;overflow:hidden}
 .el{position:absolute;border:1px dashed rgba(0,0,0,.3);cursor:move;border-radius:2px}
 .el:hover{border-color:rgba(0,0,0,.55)}
 .el.sel{border:2px solid var(--accent);background:rgba(47,111,208,.07)}
@@ -46,10 +57,30 @@ main{display:grid;grid-template-columns:minmax(0,1fr) 316px;gap:14px;padding:14p
         border:2px solid #fff;border-radius:3px;cursor:nwse-resize;box-shadow:0 1px 3px rgba(0,0,0,.25)}
 .guide{position:absolute;background:#e0439b;pointer-events:none;z-index:5}
 .guide.v{width:1px;top:0;bottom:0}.guide.h{height:1px;left:0;right:0}
-#belt{display:flex;gap:10px;align-items:center;margin-top:14px;flex-wrap:wrap}
-#belt label{color:var(--mut);font-size:13px}
-#belt input{flex:1;min-width:220px}
-.hint{color:var(--faint);font-size:12.5px;margin-top:10px}
+
+/* safe-area overlay (footer + held-page padlock margin) */
+.safe-zone{position:absolute;pointer-events:none;z-index:4;display:none}
+#canvas.show-safe .safe-zone{display:block}
+.safe-footer{left:0;right:0;top:85.29%;bottom:0;border-top:1px dashed rgba(47,111,208,.55);
+             background:rgba(47,111,208,.04)}
+.safe-lock{right:0;top:0;width:5.05%;height:24%;border-left:1px dashed rgba(47,111,208,.55);
+           border-bottom:1px dashed rgba(47,111,208,.55);background:rgba(47,111,208,.04)}
+.safe-tag{position:absolute;font-size:10px;color:var(--accent);background:rgba(255,255,255,.88);
+          padding:1px 5px;border-radius:3px;font-weight:500}
+
+/* condition & rotation bars below canvas */
+.bar-box{margin-top:12px;padding:10px 12px;background:#f9f9f7;border:1px solid var(--line);
+         border-radius:var(--r-in);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.bar-box>label{color:var(--mut);font-size:12.5px;font-weight:500;min-width:62px}
+.rot-pills{display:flex;gap:6px;align-items:center;flex-wrap:wrap;flex:1}
+.rpill{display:inline-flex;align-items:center;gap:4px;background:#fff;border:1px solid var(--line2);
+       border-radius:999px;padding:3px 9px;font-size:12.5px;cursor:pointer;user-select:none}
+.rpill:hover{border-color:var(--accent)}
+.rpill.cur{background:var(--accent-bg);border-color:var(--accent);color:var(--accent);font-weight:500}
+.rpill .tag{font-size:10px;color:var(--mut);background:#eee;padding:0 5px;border-radius:999px}
+.rpill button{border:0;background:transparent;padding:0 3px;min-height:0;font-size:12px;color:var(--faint);line-height:1}
+.rpill button:hover{color:var(--danger);background:transparent}
+.hint{color:var(--faint);font-size:12.5px;margin:10px 0 0}
 
 /* right rail: chunked, so nothing is a wall of controls */
 aside{display:flex;flex-direction:column;gap:12px}
@@ -83,9 +114,21 @@ aside{display:flex;flex-direction:column;gap:12px}
 .chip{display:block;margin-top:9px;padding:8px 10px;border-radius:var(--r-in);
       background:var(--accent-bg);font-size:12.5px;line-height:1.45}
 .chip.bad{background:#fcecea}
+.chip.good{background:#e7f6ed}
 .chip b{font-weight:600}
 .ok{color:var(--good)}.warn{color:var(--danger)}
 .empty{color:var(--faint);font-size:13px;padding:2px 0}
+
+/* modals */
+.modal-wrap{position:fixed;inset:0;background:rgba(20,20,18,.45);display:none;
+            align-items:center;justify-content:center;z-index:30;padding:16px}
+.modal-card{background:#fff;border-radius:14px;padding:18px;width:min(740px,95vw);
+            max-height:88vh;display:flex;flex-direction:column;gap:12px;box-shadow:0 16px 48px rgba(0,0,0,.22)}
+.codebox{font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;background:#1e1e1c;color:#f2f2ef;
+         padding:12px;border-radius:var(--r-in);overflow:auto;max-height:240px;white-space:pre;
+         border:1px solid #333;width:100%;resize:vertical}
+.steps{margin:0;padding-left:20px;font-size:13px;color:var(--ink);line-height:1.55}
+.steps li+li{margin-top:4px}
 
 /* feedback that is actually noticed */
 #toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(8px);
@@ -99,10 +142,6 @@ aside{display:flex;flex-direction:column;gap:12px}
 @media(prefers-reduced-motion:reduce){#toast{transition:none}}
 
 @font-face{font-family:mdi;src:url("api/mdi/font") format("truetype")}
-#pickwrap{position:fixed;inset:0;background:rgba(20,20,18,.45);display:none;
-          align-items:center;justify-content:center;z-index:30;padding:16px}
-#pick{background:#fff;border-radius:14px;padding:14px;width:min(660px,94vw);
-      max-height:82vh;display:flex;flex-direction:column;gap:12px}
 #picks{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:7px;overflow:auto}
 #picks button{font-family:mdi;font-size:27px;line-height:1.1;padding:9px 4px;height:70px;
               display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;
@@ -125,32 +164,64 @@ aside{display:flex;flex-direction:column;gap:12px}
   <span class="sep"></span>
   <button id="undo" class="icon" title="Undo (Cmd/Ctrl+Z)">&#8630;</button>
   <button id="redo" class="icon" title="Redo (Cmd/Ctrl+Shift+Z)">&#8631;</button>
+  <button id="safebtn" class="sm" title="Show footer &amp; held-page padlock margins on canvas">Guides</button>
   <span class="spacer"></span>
+  <button id="statuspill" class="status-pill" title="Click to preview the full rendered panel strip">
+    <span id="statusdot" class="status-dot"></span>
+    <span id="statustext">Loading…</span>
+  </button>
+  <button id="setupbtn" title="Configure &amp; generate ESPHome firmware for your panel">Panel setup</button>
   <button id="datasrc" title="Things Home Assistant cannot provide on its own">Data sources</button>
   <button id="push" title="Make the panel fetch and redraw now">Push to panel</button>
   <button id="save" class="primary">Save</button>
 </header>
 
+<datalist id="entities-dl"></datalist>
+
 <main>
   <div id="stage">
-    <div id="frame"><div id="canvas"></div></div>
-    <div id="belt">
-      <label for="showif" id="showiflab">Show if</label>
-      <input id="showif" placeholder="e.g. {{ is_state('timer.dryer_cycle','active') }}">
-      <label for="hold" id="holdlab" style="display:none">Hold (min)</label>
-      <input id="hold" type="number" min="1" max="120" style="display:none;max-width:78px;flex:none">
+    <div id="frame">
+      <div id="canvas">
+        <div class="safe-zone safe-footer"><span class="safe-tag" style="right:8px;top:4px">footer zone (y &ge; 232)</span></div>
+        <div class="safe-zone safe-lock"><span class="safe-tag" style="right:4px;bottom:4px">lock</span></div>
+      </div>
     </div>
-    <div id="rotbelt" style="display:flex;gap:10px;align-items:center;margin-top:8px;flex-wrap:wrap">
-      <label for="rotation" style="color:var(--mut);font-size:13px" title="Comma-separated page order; repeat a page name to weight it">Rotation</label>
-      <input id="rotation" style="flex:1;min-width:220px" placeholder="solar, solar_month, cat, watch, temps, dryer">
+
+    <div id="belt" class="bar-box" style="display:none">
+      <label id="showiflab">Show if</label>
+      <select id="condmode" style="max-width:140px">
+        <option value="simple">Entity check</option>
+        <option value="raw">Custom Jinja</option>
+      </select>
+      <div id="condsimple" style="display:flex;gap:6px;align-items:center;flex:1;flex-wrap:wrap">
+        <input id="condent" list="entities-dl" placeholder="entity (e.g. timer.dryer_cycle)" style="flex:1;min-width:180px">
+        <select id="condop" style="max-width:136px">
+          <option value="eq">is</option>
+          <option value="ne">is not</option>
+          <option value="gt">&gt; greater than</option>
+          <option value="lt">&lt; less than</option>
+          <option value="ge">&ge; at least</option>
+          <option value="le">&le; at most</option>
+        </select>
+        <input id="condval" placeholder="value (e.g. active)" style="max-width:140px">
+      </div>
+      <input id="showif" placeholder="e.g. {{ is_state('timer.dryer_cycle','active') }}" style="display:none;flex:1;min-width:220px">
+      <label for="hold" id="holdlab" style="display:none;min-width:auto;margin-left:6px">Hold (min)</label>
+      <input id="hold" type="number" min="1" max="1440" style="display:none;max-width:74px;flex:none">
     </div>
+
+    <div id="rotbelt" class="bar-box">
+      <label title="Pages shown in rotation; click a pill to switch, arrows to reorder, + to add/weight">Rotation</label>
+      <div id="rotpills" class="rot-pills"></div>
+      <button id="rotadd" class="sm" title="Add another slot for the current page in rotation">+ Add current page</button>
+      <button id="stripbtn" class="sm" title="Preview all live rotation pages stacked as the panel receives them">Full strip</button>
+    </div>
+
     <p class="hint">Drag an entity onto the canvas, or add an element. Drag to move, corner to resize.
        Arrows nudge, Shift+arrows by ten. Hold Alt to ignore snapping.</p>
   </div>
 
   <aside>
-    <!-- Ordered by how often each is touched: properties constantly,
-         the palette per element, entities only while hunting one. -->
     <div class="card"><h3>Selected element</h3><div class="body" id="props"></div></div>
 
     <div class="card"><h3>Add element</h3><div class="body">
@@ -170,7 +241,8 @@ aside{display:flex;flex-direction:column;gap:12px}
   </aside>
 </main>
 
-<div id="pickwrap"><div id="pick">
+<!-- Icon Picker Modal -->
+<div id="pickwrap" class="modal-wrap"><div class="modal-card" style="width:min(660px,94vw)">
   <div class="row" style="margin:0">
     <input id="picksearch" placeholder="Search icons…" style="flex:1">
     <button id="pickclose">Close</button>
@@ -178,13 +250,12 @@ aside{display:flex;flex-direction:column;gap:12px}
   <div id="picks"></div>
 </div></div>
 
-<div id="srcwrap" style="position:fixed;inset:0;background:rgba(20,20,18,.45);display:none;
-     align-items:center;justify-content:center;z-index:30;padding:16px">
-  <div style="background:#fff;border-radius:14px;padding:16px;width:min(620px,94vw);
-       max-height:84vh;display:flex;flex-direction:column;gap:12px">
+<!-- Data Sources Modal -->
+<div id="srcwrap" class="modal-wrap">
+  <div class="modal-card" style="width:min(620px,94vw)">
     <div class="row" style="margin:0">
       <strong style="flex:1">Data sources</strong>
-      <select id="srcadd" style="max-width:180px">
+      <select id="srcadd" style="max-width:190px">
         <option value="">Add a source…</option>
         <option value="jellyfin">Jellyfin — new and unwatched</option>
         <option value="rest">Any JSON API</option>
@@ -198,17 +269,114 @@ aside{display:flex;flex-direction:column;gap:12px}
       add-on simply renders the entities you already have.</div>
     <div class="row" style="margin:0"><span id="srcmsg" style="flex:1;color:var(--mut);font-size:13px"></span>
       <button id="srcsave" class="primary">Save sources</button></div>
-  </div></div>
+  </div>
+</div>
+
+<!-- Panel Setup / ESPHome Firmware Wizard Modal -->
+<div id="setupwrap" class="modal-wrap">
+  <div class="modal-card">
+    <div class="row" style="margin:0">
+      <strong style="flex:1;font-size:16px">Panel setup &amp; ESPHome firmware wizard</strong>
+      <button id="setupclose">Close</button>
+    </div>
+    <div id="setupconn" class="chip" style="margin:0">Checking panel connection…</div>
+    <div style="overflow:auto;display:flex;flex-direction:column;gap:12px;padding-right:2px">
+      <div class="card"><div class="body">
+        <div class="row">
+          <label style="width:130px">HA host / IP</label>
+          <input id="cfg_host" placeholder="homeassistant.local or 192.168.1.x">
+          <label style="width:auto;margin-left:6px">Refresh</label>
+          <select id="cfg_interval" style="max-width:100px">
+            <option value="2min">2 min</option>
+            <option value="5min">5 min</option>
+            <option value="10min">10 min</option>
+            <option value="15min">15 min</option>
+          </select>
+        </div>
+        <div class="row">
+          <label style="width:130px">Device name</label>
+          <input id="cfg_dev" placeholder="crowpanel-epaper">
+        </div>
+        <div class="row">
+          <label style="width:130px">Wi-Fi SSID</label>
+          <input id="cfg_ssid" placeholder="Leave blank to use ESPHome !secret wifi_ssid">
+          <input id="cfg_pw" type="password" placeholder="Wi-Fi password" style="max-width:190px">
+        </div>
+        <div class="row">
+          <label style="width:130px">API encryption key</label>
+          <input id="cfg_apikey" readonly style="font-family:ui-monospace,monospace;font-size:12px;background:#f7f7f5">
+          <button id="copyapikey" class="sm" title="Copy key for Home Assistant adoption">Copy key</button>
+        </div>
+        <div class="row">
+          <label style="width:130px">OTA password</label>
+          <input id="cfg_otapw" style="font-family:ui-monospace,monospace;font-size:12px">
+          <button id="regenkeys" class="sm" title="Generate a fresh random API key and OTA password">Regenerate</button>
+        </div>
+        <div class="row" style="margin-top:4px">
+          <label style="width:130px"></label>
+          <label style="width:auto;display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--ink)">
+            <input id="cfg_secrets" type="checkbox" style="min-height:0;width:16px;height:16px;flex:none">
+            Use <code>!secret</code> references instead of embedding credentials in YAML
+          </label>
+          <span class="spacer"></span>
+          <button id="cfgsave" class="primary sm">Update YAML</button>
+        </div>
+      </div></div>
+
+      <div>
+        <div class="row" style="margin-bottom:6px">
+          <strong style="font-size:13px;flex:1">Generated <code>crowpanel-epaper.yaml</code></strong>
+          <button id="copyyaml" class="sm primary">Copy YAML</button>
+          <button id="dlyaml" class="sm">Download .yaml</button>
+        </div>
+        <textarea id="yamlout" class="codebox" readonly></textarea>
+      </div>
+
+      <div id="secretsbox" style="display:none">
+        <div class="row" style="margin-bottom:6px">
+          <strong style="font-size:13px;flex:1">Companion <code>secrets.yaml</code> entries</strong>
+          <button id="copysecrets" class="sm">Copy secrets.yaml</button>
+        </div>
+        <textarea id="secretsout" class="codebox" style="max-height:110px" readonly></textarea>
+      </div>
+
+      <div class="card"><div class="body" style="background:#f9f9f7">
+        <div class="lbl" style="font-size:11px;color:var(--mut);text-transform:uppercase;margin-bottom:6px">How to flash in Home Assistant</div>
+        <ol class="steps">
+          <li>Open the <b>ESPHome</b> add-on → click <b>New Device</b> → name it and pick <b>ESP32-S3</b> → click <b>Skip</b>.</li>
+          <li>Click <b>Edit</b> on the newly created device card, replace the file with the YAML above, and click <b>Install</b> (use USB-C for the first flash; updates after that are wireless OTA).</li>
+          <li>When Home Assistant discovers the panel under <b>Settings → Devices &amp; Services</b>, click <b>Configure</b> and paste the <b>API encryption key</b> above.</li>
+        </ol>
+      </div></div>
+    </div>
+  </div>
+</div>
+
+<!-- Full Strip Preview Modal -->
+<div id="stripwrap" class="modal-wrap">
+  <div class="modal-card" style="width:min(840px,95vw)">
+    <div class="row" style="margin:0">
+      <strong style="flex:1">Live panel strip (<code>/frames.png</code>)</strong>
+      <span id="stripmeta" style="font-size:12.5px;color:var(--mut)"></span>
+      <button id="striprefresh" class="sm">Re-render</button>
+      <button id="stripclose">Close</button>
+    </div>
+    <div style="overflow:auto;background:#3a3a37;padding:12px;border-radius:8px;text-align:center">
+      <img id="stripimg" alt="Rendered strip" style="max-width:100%;height:auto;background:#fff;border-radius:2px;display:block;margin:0 auto">
+    </div>
+  </div>
+</div>
 
 <div id="toast"><span id="toasttext"></span><button id="toastact" style="display:none"></button></div>
 
 <script>
 const W=792,H=272,SNAP=6;
 let spec={rotation:[],pages:{}}, cur=null, sel=-1, ents=[], timer=null, prevBlobUrl=null;
-let hist=[], hpos=-1, metrics=[];
+let hist=[], hpos=-1, metrics=[], liveStatus={pages:[]};
 const $=id=>document.getElementById(id);
 const canvas=$("canvas");
 const api=(p,o)=>fetch(p,o).then(r=>r.ok?r:Promise.reject(new Error(r.status+" "+r.statusText)));
+const esc=t=>String(t??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 let toastT=null;
 function msg(text,action){
   clearTimeout(toastT);
@@ -238,27 +406,175 @@ function restore(i){
 const undo=()=>restore(hpos-1), redo=()=>restore(hpos+1);
 function buttons(){ $("undo").disabled=hpos<=0; $("redo").disabled=hpos>=hist.length-1; }
 
-/* ---------- boot ---------- */
+/* ---------- boot & live status ---------- */
+async function refreshStatus(){
+  try{
+    liveStatus=await api("api/status").then(r=>r.json());
+    const dot=$("statusdot"), txt=$("statustext");
+    if(liveStatus.error){
+      dot.className="status-dot err";
+      txt.textContent="Render error";
+    }else if(liveStatus.active_alert){
+      dot.className="status-dot warn";
+      txt.textContent=`Alert active: ${liveStatus.active_alert}`;
+    }else{
+      dot.className="status-dot";
+      const n=(liveStatus.pages||[]).length;
+      const kb=((liveStatus.strip_bytes||0)/1024).toFixed(1);
+      txt.textContent=`${n} page${n===1?"":"s"} live · ${kb} KB`;
+    }
+    drawRotationPills();
+  }catch(_){}
+}
+
 async function boot(){
   spec=await api("api/layouts").then(r=>r.json());
   ents=await api("api/entities").then(r=>r.json()).catch(()=>[]);
+  $("entities-dl").innerHTML=ents.map(e=>`<option value="${esc(e.entity_id)}">${esc(e.name)} (${esc(e.state)})</option>`).join("");
   drawEntities(""); fillPages(); snapshot();
   select(Object.keys(spec.pages)[0]);
+  await refreshStatus();
+  setInterval(refreshStatus, 15000);
 }
+
 const fillPages=()=>{
-  $("page").innerHTML=Object.keys(spec.pages).map(n=>`<option value="${esc(n)}">${esc(n)}</option>`).join("");
-  $("rotation").value=(spec.rotation||[]).join(", ");
+  $("page").innerHTML=Object.keys(spec.pages).map(n=>{
+    const t=spec.pages[n].tier||"rotate";
+    const badge=t==="alert"?" [alert]":t==="when"?" [when]":"";
+    return `<option value="${esc(n)}">${esc(n)}${badge}</option>`;
+  }).join("");
+  drawRotationPills();
 };
 const page=()=>spec.pages[cur];
 const els=()=>page().elements||(page().elements=[]);
+
+function drawRotationPills(){
+  const box=$("rotpills"); if(!box) return;
+  const rot=spec.rotation||[];
+  if(!rot.length){
+    box.innerHTML='<span class="empty">No pages in rotation.</span>';
+    return;
+  }
+  box.innerHTML=rot.map((n,i)=>{
+    const p=spec.pages[n]||{};
+    const isWhen=p.tier==="when";
+    const isLive=(liveStatus.pages||[]).includes(n);
+    return `<span class="rpill${n===cur?" cur":""}" data-ri="${i}" data-rn="${esc(n)}" title="${isWhen?(isLive?"Condition true (currently in strip)":"Condition false (currently skipped)"):"Always in rotation"}">
+      <button data-rmv="${i}:-1" title="Move earlier">&lsaquo;</button>
+      <span class="rname">${esc(n)}</span>
+      ${isWhen?`<span class="tag">${isLive?"when · on":"when"}</span>`:""}
+      <button data-rmv="${i}:1" title="Move later">&rsaquo;</button>
+      <button data-rdel="${i}" title="Remove from rotation">&times;</button>
+    </span>`;
+  }).join("");
+  box.querySelectorAll(".rpill").forEach(el=>el.onclick=e=>{
+    if(e.target.tagName==="BUTTON") return;
+    const rn=el.dataset.rn;
+    if(spec.pages[rn]) select(rn);
+  });
+  box.querySelectorAll("[data-rmv]").forEach(b=>b.onclick=e=>{
+    e.stopPropagation();
+    const [idx,dir]=b.dataset.rmv.split(":").map(Number);
+    const j=idx+dir;
+    if(j<0||j>=spec.rotation.length) return;
+    snapshot();
+    const tmp=spec.rotation[idx];
+    spec.rotation[idx]=spec.rotation[j];
+    spec.rotation[j]=tmp;
+    drawRotationPills();
+  });
+  box.querySelectorAll("[data-rdel]").forEach(b=>b.onclick=e=>{
+    e.stopPropagation();
+    snapshot();
+    spec.rotation.splice(+b.dataset.rdel,1);
+    drawRotationPills();
+  });
+}
+
+$("rotadd").onclick=()=>{
+  if(!cur||!page()) return;
+  if(page().tier==="alert"){
+    msg("Alert pages interrupt automatically and do not sit in the rotation.");
+    return;
+  }
+  snapshot();
+  (spec.rotation||(spec.rotation=[])).push(cur);
+  drawRotationPills();
+};
+
+/* ---------- structured Show-If condition builder ---------- */
+function parseShowIf(expr){
+  const s=String(expr||"").trim();
+  if(!s) return {mode:"simple",ent:"",op:"eq",val:"active"};
+  const inner=(s.startswith?.("{{")||s.startsWith("{{"))&&s.endsWith("}}") ? s.slice(2,-2).trim() : s;
+  let m=inner.match(/^is_state\(\s*'([^']+)'\s*,\s*'([^']*)'\s*\)$/);
+  if(m) return {mode:"simple",ent:m[1],op:"eq",val:m[2]};
+  m=inner.match(/^not\s+is_state\(\s*'([^']+)'\s*,\s*'([^']*)'\s*\)$/);
+  if(m) return {mode:"simple",ent:m[1],op:"ne",val:m[2]};
+  m=inner.match(/^states\(\s*'([^']+)'\s*\)\s*\|\s*(?:int|float)\([^)]*\)\s*(>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)$/);
+  if(m){
+    const map={">":"gt","<":"lt",">=":"ge","<=":"le"};
+    return {mode:"simple",ent:m[1],op:map[m[2]]||"gt",val:m[3]};
+  }
+  return {mode:"raw",raw:s};
+}
+
+function compileShowIf(){
+  if($("condmode").value==="raw") return $("showif").value.trim();
+  const ent=$("condent").value.trim().replace(/'/g,"");
+  const op=$("condop").value;
+  const val=$("condval").value.trim().replace(/'/g,"");
+  if(!ent) return "";
+  if(op==="eq") return `{{ is_state('${ent}','${val}') }}`;
+  if(op==="ne") return `{{ not is_state('${ent}','${val}') }}`;
+  const sym={gt:">",lt:"<",ge:">=",le:"<="}[op]||">";
+  const num=Number(val);
+  const rhs=isNaN(num)?0:num;
+  return `{{ states('${ent}') | float(0) ${sym} ${rhs} }}`;
+}
+
+function syncShowIfUI(){
+  const raw=(page()&&page().show_if)||"";
+  $("showif").value=raw;
+  const parsed=parseShowIf(raw);
+  $("condmode").value=parsed.mode;
+  $("condsimple").style.display=parsed.mode==="simple"?"flex":"none";
+  $("showif").style.display=parsed.mode==="raw"?"":"none";
+  if(parsed.mode==="simple"){
+    $("condent").value=parsed.ent||"";
+    $("condop").value=parsed.op||"eq";
+    $("condval").value=parsed.val??"";
+  }
+}
+
+function commitShowIf(){
+  snapshot();
+  const compiled=compileShowIf();
+  $("showif").value=compiled;
+  if(compiled) page().show_if=compiled;
+  else delete page().show_if;
+}
+
+$("condmode").onchange=()=>{
+  const m=$("condmode").value;
+  $("condsimple").style.display=m==="simple"?"flex":"none";
+  $("showif").style.display=m==="raw"?"":"none";
+  if(m==="raw" && !$("showif").value.trim()){
+    $("showif").value=compileShowIf();
+  }
+};
+$("condent").onchange=commitShowIf;
+$("condop").onchange=commitShowIf;
+$("condval").onchange=commitShowIf;
+$("showif").onchange=e=>{snapshot();const v=e.target.value.trim(); v?page().show_if=v:delete page().show_if;};
 
 function select(name){
   cur=name; sel=-1; if(!cur||!page()) return;
   $("page").value=cur;
   $("tier").value=page().tier||"rotate";
-  $("showif").value=page().show_if||"";
   $("hold").value=page().hold_minutes??10;
-  $("rotation").value=(spec.rotation||[]).join(", ");
+  syncShowIfUI();
+  drawRotationPills();
   holdRow();
   paint(); preview();
 }
@@ -294,11 +610,16 @@ function preview(){
   },220);
 }
 
+/* ---------- safe-area guides toggle ---------- */
+$("safebtn").onclick=()=>{
+  canvas.classList.toggle("show-safe");
+  $("safebtn").classList.toggle("active", canvas.classList.contains("show-safe"));
+};
+
 /* ---------- snapping ---------- */
 function guides(el,i){
-  const xs=[0,40,W/2,W-40,W], ys=[0,26,H/2,236,H];
+  const xs=[0,40,W/2,W-40,W], ys=[0,26,H/2,232,H];
   els().forEach((o,j)=>{ if(j!==i){ xs.push(o.x,o.x+o.w/2,o.x+o.w); ys.push(o.y,o.y+o.h/2,o.y+o.h); }});
-  const hit=[];
   const near=(v,list)=>{ for(const t of list) if(Math.abs(v-t)<=SNAP) return t; return null; };
   let gx=null,gy=null;
   for(const [val,set] of [[el.x,"l"],[el.x+el.w/2,"c"],[el.x+el.w,"r"]]){
@@ -315,9 +636,7 @@ function guides(el,i){
 }
 
 function guidesResize(el,i){
-  // Snap the far edges while resizing, so a second element can be made
-  // flush with the first without nudging numbers.
-  const xs=[40,W/2,W-40], ys=[26,H/2,236];
+  const xs=[40,W/2,W-40], ys=[26,H/2,232];
   els().forEach((o,j)=>{ if(j!==i){ xs.push(o.x,o.x+o.w); ys.push(o.y,o.y+o.h); }});
   const near=(v,list)=>{ for(const t of list) if(Math.abs(v-t)<=SNAP) return t; return null; };
   let gx=near(el.x+el.w,xs), gy=near(el.y+el.h,ys);
@@ -331,7 +650,7 @@ function guidesResize(el,i){
 /* ---------- drag & resize ---------- */
 let drag=null;
 canvas.addEventListener("pointerdown",e=>{
-  const box=e.target.closest(".el"); if(!box) return;
+  const box=e.target.closest(".el"); if(!box){ sel=-1; paint(); return; }
   sel=+box.dataset.i; paint();
   const scale=W/canvas.getBoundingClientRect().width;
   drag={i:sel,mode:e.target.classList.contains("hd")?"size":"move",
@@ -382,7 +701,8 @@ addEventListener("keydown",e=>{
 });
 function duplicate(){
   if(sel<0) return; snapshot();
-  const c={...els()[sel]}; c.x=Math.min(W-c.w,c.x+12); c.y=Math.min(H-c.h,c.y+12);
+  const c=JSON.parse(JSON.stringify(els()[sel]));
+  c.x=Math.min(W-c.w,c.x+12); c.y=Math.min(H-c.h,c.y+12);
   els().push(c); sel=els().length-1; paint(); preview();
 }
 
@@ -414,15 +734,11 @@ canvas.addEventListener("drop",e=>{
   const id=e.dataTransfer.getData("text/plain"); if(!id) return;
   snapshot();
   const r=canvas.getBoundingClientRect(), s=W/r.width;
-  // Choose the kind from what the entity actually holds. Always creating a
-  // number meant dropping a text entity silently rendered the fallback.
   const known=ents.find(x=>x.entity_id===id);
   const numeric=known && known.state!=="" && !isNaN(Number(known.state));
   const el={type:numeric?"number":"text",entity:id,show:"state",align:"left",
             x:Math.round((e.clientX-r.left)*s),y:Math.round((e.clientY-r.top)*s),w:260,h:90};
   if(numeric){
-    // A whole number is usually a count, and "2.0" is wrong for a count.
-    // Take the lead from how the entity reports itself.
     el.decimals = String(known.state).includes(".") ? 1 : 0;
     if(known.unit) el.suffix=" "+known.unit;
   }
@@ -445,7 +761,6 @@ const SHOWS=[["state","State"],["attribute","Attribute"],
              ["last_changed","When it last changed"],["last_updated","When it last updated"]];
 const FORMATS=[["relative","Relative — 2 hours ago"],["time","Time — 14:05"],
                ["date","Date — 3 Mar"],["datetime","Date and time"]];
-const esc=t=>String(t??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const opts=(list,cur)=>list.map(([v,l])=>`<option value="${v}"${cur===v?" selected":""}>${l}</option>`).join("");
 
 function contentRows(el){
@@ -465,8 +780,8 @@ function contentRows(el){
   }
 
   const show=el.show||"state";
-  h+=`<div class="row"><label>entity</label><input data-k="entity" value="${esc(el.entity||"")}"
-        placeholder="drag one from the list below"></div>
+  h+=`<div class="row"><label>entity</label><input data-k="entity" list="entities-dl" value="${esc(el.entity||"")}"
+        placeholder="search or drag from below"></div>
       <div class="row"><label>show</label><select data-k="show">${opts(SHOWS,show)}</select></div>`;
   if(show==="attribute")
     h+=`<div class="row"><label>attribute</label>
@@ -528,15 +843,15 @@ function props(){
   if(sel<0||!els()[sel]){
     box.innerHTML='<div class="empty">Nothing selected. Click an element on the canvas.</div>';return;}
   const el=els()[sel];
-  const f=(k,label,type="text",ph="")=>`<div class="row"><label>${label}</label>
-    <input data-k="${k}" type="${type}" placeholder="${ph}" value="${esc(el[k]??"")}"></div>`;
+  const f=(k,label,type="text",ph="",dl="")=>`<div class="row"><label>${label}</label>
+    <input data-k="${k}" type="${type}"${dl?` list="${dl}"`:""} placeholder="${ph}" value="${esc(el[k]??"")}"></div>`;
   let h='<div class="grp"><div class="lbl">Content</div>';
   if(el.type==="text"||el.type==="number") h+=contentRows(el);
   else if(el.type==="icon"){
     h+=f("icon","mdi name")+`<div class="row"><label></label><button id="browse">Browse icons…</button>
       <span class="mdiprev" id="mdiprev"></span></div>`;
   }
-  else if(el.type==="curve")h+=f("entity","entity")+f("hours","hours","number")+
+  else if(el.type==="curve")h+=f("entity","entity","text","","entities-dl")+f("hours","hours","number")+
     `<div class="chip">A sparkline of that entity's recent history — the shape of the
      day rather than a number. Good for solar output or power draw.</div>`;
   else if(el.type==="line")h+=f("thickness","thickness","number");
@@ -566,14 +881,24 @@ function props(){
         <input data-k="y" type="number" value="${esc(el.y)}" title="y"></div>
       <div class="row"><label>size</label>
         <input data-k="w" type="number" value="${esc(el.w)}" title="width">
-        <input data-k="h" type="number" value="${esc(el.h)}" title="height"></div></div>`;
-  h+=`<div class="grp"><div class="row"><button id="dup">Duplicate</button><button id="del">Remove</button></div></div>`;
+        <input data-k="h" type="number" value="${esc(el.h)}" title="height"></div>
+      <div class="row"><label>quick</label>
+        <button id="aligncx" class="sm" title="Center horizontally">Center X</button>
+        <button id="aligncy" class="sm" title="Center vertically (above footer)">Center Y</button>
+        <button id="alignfw" class="sm" title="Span full safe width (40..752)">Full W</button>
+      </div></div>`;
+  h+=`<div class="grp"><div class="row">
+        <button id="layerup" class="sm" title="Bring forward">&uarr;</button>
+        <button id="layerdn" class="sm" title="Send backward">&darr;</button>
+        <button id="dup" style="flex:1">Duplicate</button>
+        <button id="del" style="flex:1">Remove</button>
+      </div></div>`;
   box.innerHTML=h;
   box.querySelectorAll("[data-k]").forEach(inp=>inp.onchange=()=>{
     snapshot();
     const k=inp.dataset.k, v=inp.value;
     if(v===""){ delete el[k]; } else { el[k]=(inp.type==="number")?Number(v):v; }
-    preview();
+    paint(); preview();
   });
   if($("browse")){
     const cp=(el.icon||"").toString();
@@ -584,6 +909,17 @@ function props(){
   }
   wireContent(el,box);
   if(el.show==="attribute" && el.entity) loadAttributes(el.entity);
+  $("aligncx").onclick=()=>{snapshot();el.x=Math.round((W-el.w)/2);paint();preview();};
+  $("aligncy").onclick=()=>{snapshot();el.y=Math.round((232-el.h)/2);paint();preview();};
+  $("alignfw").onclick=()=>{snapshot();el.x=40;el.w=W-80;paint();preview();};
+  $("layerup").onclick=()=>{
+    if(sel>=els().length-1) return;
+    snapshot(); const t=els()[sel]; els()[sel]=els()[sel+1]; els()[sel+1]=t; sel++; paint(); preview();
+  };
+  $("layerdn").onclick=()=>{
+    if(sel<=0) return;
+    snapshot(); const t=els()[sel]; els()[sel]=els()[sel-1]; els()[sel-1]=t; sel--; paint(); preview();
+  };
   $("dup").onclick=duplicate;
   $("del").onclick=()=>{snapshot();els().splice(sel,1);sel=-1;paint();preview();};
 }
@@ -608,16 +944,11 @@ $("tier").onchange=e=>{
   }else if(cur && !(spec.rotation||[]).includes(cur)){
     (spec.rotation||(spec.rotation=[])).push(cur);
   }
-  $("rotation").value=(spec.rotation||[]).join(", ");
+  fillPages();
+  $("page").value=cur;
   holdRow();
 };
 $("hold").onchange=e=>{snapshot();page().hold_minutes=Number(e.target.value)||10;};
-$("showif").onchange=e=>{snapshot();const v=e.target.value.trim(); v?page().show_if=v:delete page().show_if;};
-$("rotation").onchange=e=>{
-  snapshot();
-  spec.rotation=e.target.value.split(",").map(s=>s.trim()).filter(s=>s && spec.pages[s] && spec.pages[s].tier!=="alert");
-  $("rotation").value=spec.rotation.join(", ");
-};
 $("addpage").onclick=()=>{
   const raw=prompt("Page name (lowercase letters, numbers, underscores)"); if(!raw) return;
   const n=raw.trim().toLowerCase().replace(/[^a-z0-9_-]+/g,"_").replace(/^_+|_+$/g,"");
@@ -637,17 +968,117 @@ $("delpage").onclick=()=>{
 $("save").onclick=async()=>{
   try{
     const res=await api("api/layouts",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(spec)}).then(r=>r.json());
-    if(res.rotation){ spec.rotation=res.rotation; $("rotation").value=spec.rotation.join(", "); }
+    if(res.rotation){ spec.rotation=res.rotation; drawRotationPills(); }
+    await refreshStatus();
     msg("Saved and rendered.", {label:"Push now", run:()=>$("push").click()});
   }catch(e){ msg("save failed: "+e.message); }
 };
+
+/* ---------- Full Strip Preview Modal ---------- */
+async function openStripPreview(){
+  $("stripwrap").style.display="flex";
+  await refreshStatus();
+  const pages=(liveStatus.pages||[]).join(" → ")||"none";
+  $("stripmeta").textContent=`Pages: ${pages}`;
+  $("stripimg").src="api/strip.png?t="+Date.now();
+}
+$("statuspill").onclick=openStripPreview;
+$("stripbtn").onclick=openStripPreview;
+$("stripclose").onclick=()=>$("stripwrap").style.display="none";
+$("stripwrap").onclick=e=>{ if(e.target.id==="stripwrap") $("stripwrap").style.display="none"; };
+$("striprefresh").onclick=async()=>{
+  await api("api/layouts",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(spec)});
+  await openStripPreview();
+};
+
+/* ---------- Panel Setup / ESPHome Firmware Wizard ---------- */
+function applySetupResponse(r){
+  const c=r.config||{};
+  $("cfg_host").value=c.ha_host||window.location.hostname||"homeassistant.local";
+  $("cfg_dev").value=c.device_name||"crowpanel-epaper";
+  $("cfg_interval").value=c.refresh_interval||"5min";
+  $("cfg_ssid").value=c.wifi_ssid||"";
+  $("cfg_pw").value=c.wifi_password||"";
+  $("cfg_apikey").value=c.api_encryption_key||"";
+  $("cfg_otapw").value=c.ota_password||"";
+  $("cfg_secrets").checked=!!c.use_secrets;
+  $("yamlout").value=r.yaml||"";
+  $("secretsout").value=r.secrets_yaml||"";
+  $("secretsbox").style.display=(c.use_secrets||!c.wifi_ssid)?"block":"none";
+  const p=r.panel||{};
+  const conn=$("setupconn");
+  if(p.connected){
+    conn.className="chip good";
+    conn.innerHTML=`<b>Panel connected in Home Assistant</b>${p.ip?` · IP <code>${esc(p.ip)}</code>`:""}${p.rssi?` · Wi-Fi ${esc(p.rssi)} dBm`:""}`;
+  }else{
+    conn.className="chip";
+    conn.innerHTML=`<b>Ready to set up:</b> generate your ESPHome YAML below, flash it in ESPHome Dashboard, and adopt the device in Home Assistant.`;
+  }
+}
+
+async function savePanelSetup(extra={}){
+  const body={
+    ha_host:$("cfg_host").value.trim()||window.location.hostname||"homeassistant.local",
+    device_name:$("cfg_dev").value.trim()||"crowpanel-epaper",
+    refresh_interval:$("cfg_interval").value,
+    wifi_ssid:$("cfg_ssid").value.trim(),
+    wifi_password:$("cfg_pw").value,
+    api_encryption_key:$("cfg_apikey").value.trim(),
+    ota_password:$("cfg_otapw").value.trim(),
+    use_secrets:$("cfg_secrets").checked,
+    ...extra
+  };
+  const r=await api("api/panel-setup",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}).then(x=>x.json());
+  applySetupResponse(r);
+  await refreshStatus();
+}
+
+$("setupbtn").onclick=async()=>{
+  $("setupwrap").style.display="flex";
+  try{
+    const r=await api("api/panel-setup").then(x=>x.json());
+    if((!r.config.ha_host || r.config.ha_host==="homeassistant.local") && window.location.hostname && !["localhost","127.0.0.1"].includes(window.location.hostname)){
+      r.config.ha_host=window.location.hostname;
+    }
+    applySetupResponse(r);
+  }catch(e){ msg("Failed to load panel setup: "+e.message); }
+};
+$("setupclose").onclick=()=>$("setupwrap").style.display="none";
+$("setupwrap").onclick=e=>{ if(e.target.id==="setupwrap") $("setupwrap").style.display="none"; };
+$("cfgsave").onclick=()=>savePanelSetup().then(()=>msg("ESPHome YAML updated."));
+$("cfg_secrets").onchange=()=>savePanelSetup();
+$("regenkeys").onclick=()=>savePanelSetup({regenerate_keys:true}).then(()=>msg("Generated new API key and OTA password."));
+$("copyapikey").onclick=()=>{
+  navigator.clipboard.writeText($("cfg_apikey").value);
+  msg("Copied API encryption key.");
+};
+$("copyyaml").onclick=async()=>{
+  await savePanelSetup();
+  navigator.clipboard.writeText($("yamlout").value);
+  msg("Copied ESPHome YAML to clipboard.");
+};
+$("copysecrets").onclick=async()=>{
+  await savePanelSetup();
+  navigator.clipboard.writeText($("secretsout").value);
+  msg("Copied secrets.yaml snippet.");
+};
+$("dlyaml").onclick=async()=>{
+  await savePanelSetup();
+  const blob=new Blob([$("yamlout").value],{type:"text/yaml"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download=($("cfg_dev").value.trim()||"crowpanel-epaper")+".yaml";
+  a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+};
+
 /* ---------- data sources ---------- */
 const SRC_FIELDS={
   jellyfin:[["name","name"],["base","server"],["key","api key","password"],
             ["user","user"],["days","new within","number"]],
   rest:[["name","name"],["url","url"],["headers","headers","password"],["pick","json path"],
         ["unit","unit"],["icon","mdi icon"]],
-  statistics:[["name","name"],["entity","statistic"],["period","period"],
+  statistics:[["name","name"],["entity","statistic","text","entities-dl"],["period","period"],
               ["unit","unit"],["icon","mdi icon"]],
 };
 let srcs=[];
@@ -671,9 +1102,9 @@ function drawSources(){
         <button data-test="${i}">Test</button><button data-del="${i}">Remove</button></div>
       <div class="chip">Creates <code>sensor.epaper_${esc(s.name||"<name>")}</code>${
         s.type==="jellyfin"?` and <code>sensor.epaper_${esc(s.name||"<name>")}_count</code>`:""}</div>
-      ${(SRC_FIELDS[s.type]||[]).map(([k,label,type])=>
+      ${(SRC_FIELDS[s.type]||[]).map(([k,label,type,dl])=>
         `<div class="row"><label>${label}</label>
-         <input data-si="${i}" data-sk="${k}" type="${type||"text"}" value="${esc(s[k]??"")}"></div>`).join("")}
+         <input data-si="${i}" data-sk="${k}" type="${type||"text"}"${dl?` list="${dl}"`:""} value="${esc(s[k]??"")}"></div>`).join("")}
       <div class="chip" data-out="${i}" style="display:none"></div>
     </div></div>`).join("")
     : '<div class="empty">No sources. The add-on will render your Home Assistant entities only.</div>';
@@ -683,7 +1114,7 @@ function drawSources(){
     s[k]= inp.type==="number" ? Number(inp.value)||0 : inp.value;
     if(k==="name"){
       s.name=s.name.trim().toLowerCase().replace(/[^a-z0-9_]+/g,"_").replace(/^_+|_+$/g,"");
-      drawSources();        // keep the "creates…" line honest
+      drawSources();
     }
   });
   $("srclist").querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{
@@ -731,8 +1162,11 @@ async function loadIcons(q){
 }
 
 $("push").onclick=async()=>{
-  try{ await api("api/push",{method:"POST"}); msg("Pushed — the panel is fetching now."); }
-  catch(e){ msg("push failed: "+e.message); }
+  try{
+    await api("api/push",{method:"POST"});
+    await refreshStatus();
+    msg("Pushed — the panel is fetching now.");
+  }catch(e){ msg("push failed: "+e.message); }
 };
 
 boot().catch(e=>msg("load failed: "+e.message));

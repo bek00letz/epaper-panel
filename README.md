@@ -63,16 +63,16 @@ in PSRAM and blits a slice.
 1. **Settings → Add-ons → Add-on Store → ⋮ → Repositories**, add
    `https://github.com/bek00letz/epaper-panel`
 2. Install **E-paper panel** and start it.
-3. Open **E-paper** in the sidebar.
-4. Copy [`esphome/secrets.example.yaml`](esphome/secrets.example.yaml) to
-   `esphome/secrets.yaml`, fill in your Wi-Fi, API encryption key, and OTA
-   password, and flash [`esphome/crowpanel-epaper.yaml`](esphome/crowpanel-epaper.yaml)
-   (pointing at `http://<home-assistant>:8099/frames.png`).
+3. Open **E-paper** in the sidebar and click **Panel setup** to generate a
+   ready-to-flash ESPHome YAML (with your Home Assistant address, Wi-Fi, and
+   auto-generated API encryption key & OTA password pre-filled) to paste into
+   your ESPHome Dashboard.
 
 With no data sources set up the add-on simply renders the entities you already
-have. Optional add-on settings let you customize `esphome_device` (default
-`crowpanel_epaper`, used when pushing page changes or alerts) and `frame_token`
-(optional token authentication on port `8099`).
+have. Optional add-on settings let you customize `esphome_device` (also synced
+automatically by the **Panel setup** wizard) and `frame_token` (optional token
+authentication on port `8099`, automatically appended to the wizard's generated
+frame URLs).
 
 ## Data sources (optional)
 
@@ -100,8 +100,6 @@ per-byte, and what that means for battery.
 
 - **It assumes you know your entities.** The picker shows friendly names and
   live values, but nothing suggests what is worth putting on a wall.
-- **`show_if` conditions are still raw Jinja.** The value fields are not; this
-  is the next thing to fix.
 - **Only the 5.79" is tested.**
 - **No battery readout.** The voltage divider's GPIO is undocumented on this
   board.

@@ -11,12 +11,14 @@ Frames are held in memory and swapped by reference, so a fetch can never see
 a half-written file and there is nothing to clean up on disk.
 """
 import asyncio
+import base64
 import hashlib
 import hmac
 import io
 import json
 import os
 import re
+import secrets
 import sys
 import time
 import urllib.parse
@@ -46,6 +48,7 @@ FRAME_PORT = int(os.environ.get("FRAME_PORT", "8099") or 8099)
 INGRESS_PORT = int(os.environ.get("INGRESS_PORT", "8080") or 8080)
 
 LAYOUTS_PATH = DATA_DIR / "layouts.json"
+PANEL_SETUP_PATH = DATA_DIR / "panel_setup.json"
 DEFAULTS_PATH = Path(__file__).parent / "default_layouts.json"
 FIXTURE_PATH = Path(__file__).parent / "render" / "fixture.json"
 
@@ -571,6 +574,15 @@ async def public_status(request):
     })
 
 
+async def editor_strip_png(request):
+    """Serve the rendered strip over Ingress without requiring FRAME_TOKEN."""
+    f = FRAMES
+    if not f.strip:
+        raise web.HTTPServiceUnavailable(text="no frame rendered yet")
+    return web.Response(body=f.strip, content_type="image/png",
+                        headers={"Cache-Control": "no-cache"})
+
+
 async def status(request):
     f = FRAMES
     return web.json_response({
@@ -580,6 +592,8 @@ async def status(request):
         "error": f.error,
         "refresh_seconds": REFRESH,
         "esphome_device": ESPHOME_DEVICE,
+        "active_alert": ALERT.get("name"),
+        "frame_port": FRAME_PORT,
     })
 
 
@@ -719,6 +733,467 @@ async def api_sources_test(request):
                                              "attributes": a} for e, v, a in rows]})
 
 
+def _new_api_key() -> str:
+    return base64.b64encode(os.urandom(32)).decode("ascii")
+
+
+def _new_ota_password() -> str:
+    return secrets.token_urlsafe(12)
+
+
+def load_panel_setup(default_host: str = "homeassistant.local") -> dict:
+    """Load or initialize the ESPHome panel setup wizard state."""
+    cfg = {}
+    if PANEL_SETUP_PATH.exists():
+        try:
+            cfg = json.loads(PANEL_SETUP_PATH.read_text())
+        except Exception:
+            cfg = {}
+    changed = False
+    defaults = {
+        "device_name": ESPHOME_DEVICE.replace("_", "-"),
+        "ha_host": default_host,
+        "wifi_ssid": "",
+        "wifi_password": "",
+        "api_encryption_key": _new_api_key(),
+        "ota_password": _new_ota_password(),
+        "refresh_interval": "5min",
+        "use_secrets": False,
+    }
+    for k, v in defaults.items():
+        if not cfg.get(k) and k not in ("wifi_ssid", "wifi_password", "use_secrets"):
+            cfg[k] = v
+            changed = True
+        elif k not in cfg:
+            cfg[k] = v
+            changed = True
+    if changed:
+        save_panel_setup(cfg)
+    return cfg
+
+
+def save_panel_setup(cfg: dict) -> dict:
+    global ESPHOME_DEVICE
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    dev = re.sub(r"[^a-z0-9-]+", "-", str(cfg.get("device_name") or "crowpanel-epaper").strip().lower()).strip("-")
+    cfg["device_name"] = dev or "crowpanel-epaper"
+    ESPHOME_DEVICE = cfg["device_name"].replace("-", "_")
+    tmp = PANEL_SETUP_PATH.with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(cfg, indent=2))
+    os.chmod(tmp, 0o600)
+    tmp.replace(PANEL_SETUP_PATH)
+    return cfg
+
+
+def _yaml_str(s: str) -> str:
+    escaped = str(s or "").replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def generate_esphome_yaml(cfg: dict) -> tuple[str, str]:
+    """Build ready-to-flash crowpanel-epaper.yaml and companion secrets.yaml."""
+    dev_name = cfg.get("device_name") or "crowpanel-epaper"
+    raw_host = (cfg.get("ha_host") or "homeassistant.local").strip()
+    if raw_host.startswith(("http://", "https://")):
+        parsed = urllib.parse.urlsplit(raw_host)
+        host_only = parsed.hostname or "homeassistant.local"
+        scheme = parsed.scheme
+    else:
+        host_only = raw_host.split("/")[0].split(":")[0] or "homeassistant.local"
+        scheme = "http"
+
+    base_url = f"{scheme}://{host_only}:{FRAME_PORT}"
+    token_q = f"?token={urllib.parse.quote(FRAME_TOKEN)}" if FRAME_TOKEN else ""
+    frames_url = f"{base_url}/frames.png{token_q}"
+    frame_url = f"{base_url}/frame.png{token_q}"
+
+    use_secrets = bool(cfg.get("use_secrets"))
+    ssid = (cfg.get("wifi_ssid") or "").strip()
+    pw = cfg.get("wifi_password") or ""
+    api_key = (cfg.get("api_encryption_key") or "").strip() or _new_api_key()
+    ota_pw = (cfg.get("ota_password") or "").strip() or _new_ota_password()
+    interval = re.sub(r"[^a-z0-9]+", "", (cfg.get("refresh_interval") or "5min").strip().lower()) or "5min"
+
+    api_key_line = "!secret api_encryption_key" if use_secrets else _yaml_str(api_key)
+    ota_pw_line = "!secret ota_password" if use_secrets else _yaml_str(ota_pw)
+    if use_secrets or not ssid:
+        wifi_ssid_line = "!secret wifi_ssid"
+        wifi_pw_line = "!secret wifi_password"
+    else:
+        wifi_ssid_line = _yaml_str(ssid)
+        wifi_pw_line = _yaml_str(pw)
+
+    yaml_text = f"""# CrowPanel 5.79" e-paper panel — generated by the E-paper add-on wizard.
+# Paste into ESPHome Dashboard (New Device -> Edit -> Install).
+
+substitutions:
+  name: {dev_name}
+  frames_url: {_yaml_str(frames_url)}
+  frame_url:  {_yaml_str(frame_url)}
+  page_h: "272"
+
+esphome:
+  name: ${{name}}
+  friendly_name: E-paper panel
+  on_boot:
+    priority: -100
+    then:
+      - script.execute: refetch
+
+esp32:
+  board: esp32-s3-devkitc-1
+  framework:
+    type: esp-idf
+
+psram:
+  mode: octal
+  speed: 80MHz
+
+external_components:
+  - source: github://ESPBoards/esphome-lvgl-crowpanel-epaper-5.79-4.2
+
+globals:
+  - id: have_frames
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+  - id: have_single
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+  - id: page
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: page_count
+    type: int
+    restore_value: false
+    initial_value: '1'
+  - id: pinned
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+
+font:
+  - file: "gfonts://Lato@700"
+    id: diag_big
+    size: 56
+  - file: "gfonts://Lato@400"
+    id: diag_small
+    size: 26
+
+logger:
+
+api:
+  encryption:
+    key: {api_key_line}
+  actions:
+    - action: refresh_now
+      then:
+        - script.execute: refetch
+    - action: show_page
+      variables:
+        index: int
+      then:
+        - lambda: |-
+            if (index >= 0 && index < id(page_count)) id(page) = index;
+        - script.execute: redraw
+    - action: page_step
+      variables:
+        delta: int
+      then:
+        - lambda: |-
+            int n = id(page_count) > 0 ? id(page_count) : 1;
+            id(page) = ((id(page) + delta) % n + n) % n;
+        - script.execute: redraw
+    - action: hold_toggle
+      then:
+        - lambda: 'id(pinned) = !id(pinned);'
+        - script.execute: redraw
+
+ota:
+  - platform: esphome
+    password: {ota_pw_line}
+
+wifi:
+  ssid: {wifi_ssid_line}
+  password: {wifi_pw_line}
+  fast_connect: true
+
+switch:
+  - platform: gpio
+    pin: 7
+    id: epd_power
+    restore_mode: ALWAYS_ON
+    internal: true
+
+display:
+  - platform: crowpanel_epaper
+    id: epd
+    model: "5.79in"
+    clk_pin: 12
+    mosi_pin: 11
+    cs_pin: 45
+    dc_pin: 46
+    reset_pin: 47
+    busy_pin: 48
+    invert_colors: true
+    full_update_every: 10
+    update_interval: never
+    auto_clear_enabled: false
+    lambda: |-
+      if (id(have_frames)) {{
+        const int off = ${{page_h}} * id(page);
+        for (int y = 0; y < ${{page_h}}; y++) {{
+          for (int x = 0; x < 792; x++) {{
+            it.draw_pixel_at(x, y, id(frames).get_pixel(x, y + off));
+          }}
+        }}
+        if (id(pinned)) {{
+          it.filled_rectangle(761, 12, 5, 20);
+          it.filled_rectangle(778, 12, 5, 20);
+          it.filled_rectangle(761, 12, 22, 5);
+          it.filled_rectangle(754, 30, 36, 26);
+          it.filled_circle(772, 40, 4, COLOR_OFF);
+          it.filled_rectangle(770, 40, 4, 10, COLOR_OFF);
+        }}
+      }} else if (id(have_single)) {{
+        it.image(0, 0, id(frame));
+      }} else {{
+        it.print(40, 40, id(diag_big), "panel alive");
+        it.printf(40, 130, id(diag_small), "ip: %s", id(wifi_ip).state.c_str());
+        it.printf(40, 170, id(diag_small), "waiting for %s", "frames.png");
+      }}
+
+http_request:
+  verify_ssl: false
+  timeout: 15s
+  buffer_size_rx: 8192
+
+online_image:
+  - id: frames
+    url: ${{frames_url}}
+    format: png
+    type: BINARY
+    buffer_size: 32768
+    on_download_finished:
+      - lambda: |-
+          int h = id(frames).get_height();
+          id(page_count) = (h >= ${{page_h}}) ? h / ${{page_h}} : 1;
+          if (id(page) >= id(page_count)) id(page) = 0;
+          id(have_frames) = true;
+          ESP_LOGI("panel", "%d pages held locally", id(page_count));
+      - component.update: epd
+    on_error:
+      - logger.log: "frames.png missing - falling back to single frame"
+      - component.update: frame
+
+  - id: frame
+    url: ${{frame_url}}
+    format: png
+    type: BINARY
+    buffer_size: 32768
+    on_download_finished:
+      - lambda: 'id(have_single) = true;'
+      - component.update: epd
+    on_error:
+      - logger.log: "frame.png failed too - retrying in 20s"
+      - component.update: epd
+      - delay: 20s
+      - script.execute: refetch
+
+binary_sensor:
+  - platform: gpio
+    id: key_next
+    internal: true
+    pin: {{number: 4, mode: {{input: true, pullup: true}}, inverted: true}}
+    filters: [delayed_on: 20ms]
+    on_press:
+      - logger.log: "KEY next"
+      - lambda: 'id(page) = (id(page) + 1) % id(page_count);'
+      - script.execute: redraw
+
+  - platform: gpio
+    id: key_prev
+    internal: true
+    pin: {{number: 6, mode: {{input: true, pullup: true}}, inverted: true}}
+    filters: [delayed_on: 20ms]
+    on_press:
+      - logger.log: "KEY prev"
+      - lambda: 'id(page) = (id(page) - 1 + id(page_count)) % id(page_count);'
+      - script.execute: redraw
+
+  - platform: gpio
+    id: key_ok
+    internal: true
+    pin: {{number: 5, mode: {{input: true, pullup: true}}, inverted: true}}
+    filters: [delayed_on: 20ms]
+    on_press:
+      - logger.log: "KEY ok (hold/release page)"
+      - lambda: 'id(pinned) = !id(pinned);'
+      - script.execute: redraw
+
+  - platform: gpio
+    id: key_home
+    internal: true
+    pin: {{number: 2, mode: {{input: true, pullup: true}}, inverted: true}}
+    filters: [delayed_on: 20ms]
+    on_press:
+      - logger.log: "KEY home (refetch)"
+      - script.execute: refetch
+
+  - platform: gpio
+    id: key_exit
+    internal: true
+    pin: {{number: 1, mode: {{input: true, pullup: true}}, inverted: true}}
+    filters: [delayed_on: 20ms]
+    on_press:
+      - logger.log: "KEY exit (back to rotation)"
+      - lambda: 'id(pinned) = false; id(page) = 0;'
+      - script.execute: redraw
+
+sensor:
+  - platform: wifi_signal
+    id: wifi_rssi
+    name: Panel Wi-Fi
+    update_interval: 60s
+
+text_sensor:
+  - platform: wifi_info
+    ip_address:
+      id: wifi_ip
+      name: Panel IP
+
+script:
+  - id: redraw
+    mode: restart
+    then:
+      - delay: 250ms
+      - component.update: epd
+
+  - id: refetch
+    mode: single
+    then:
+      - wait_until:
+          condition:
+            wifi.connected:
+          timeout: 30s
+      - component.update: frames
+
+interval:
+  - interval: {interval}
+    then:
+      - if:
+          condition:
+            lambda: 'return !id(pinned);'
+          then:
+            - lambda: 'id(page) = (id(page) + 1) % id(page_count);'
+      - script.execute: refetch
+"""
+
+    secrets_text = f"""# Put these in your ESPHome secrets.yaml if using !secret references:
+wifi_ssid: {_yaml_str(ssid or "your-wifi-ssid")}
+wifi_password: {_yaml_str(pw or "your-wifi-password")}
+api_encryption_key: {_yaml_str(api_key)}
+ota_password: {_yaml_str(ota_pw)}
+"""
+    return yaml_text, secrets_text
+
+
+async def _detect_panel_connection(device_slug: str) -> dict:
+    """Check whether Home Assistant sees the ESPHome panel entities."""
+    slug = re.sub(r"[^a-z0-9_]+", "_", device_slug.lower()).strip("_")
+    ip_val, rssi_val = None, None
+    if not HA_TOKEN:
+        panel_fix = load_fixture().get("panel") or {}
+        return {"connected": False, "ip": None, "rssi": panel_fix.get("rssi")}
+    try:
+        states = await ha_json(SHARED_SESSION, "/states")
+        for s in states:
+            if not isinstance(s, dict):
+                continue
+            eid = s.get("entity_id", "")
+            st = s.get("state")
+            if st in (None, "unknown", "unavailable", ""):
+                continue
+            if eid in (f"sensor.{slug}_panel_ip", "sensor.panel_ip", f"text_sensor.{slug}_panel_ip"):
+                ip_val = st
+            elif eid in (f"sensor.{slug}_panel_wi_fi", "sensor.panel_wi_fi"):
+                rssi_val = st
+    except Exception:
+        pass
+    return {"connected": bool(ip_val or rssi_val), "ip": ip_val, "rssi": rssi_val}
+
+
+async def api_panel_setup_get(request):
+    fwd = request.headers.get("X-Forwarded-Host") or request.headers.get("Host") or ""
+    host_guess = fwd.split(",")[0].strip().split(":")[0]
+    if not host_guess or host_guess in ("localhost", "127.0.0.1", "0.0.0.0"):
+        host_guess = "homeassistant.local"
+    cfg = load_panel_setup(default_host=host_guess)
+    yaml_text, secrets_text = generate_esphome_yaml(cfg)
+    conn = await _detect_panel_connection(cfg["device_name"])
+    masked_cfg = dict(cfg)
+    if masked_cfg.get("wifi_password"):
+        masked_cfg["wifi_password"] = feeds.SECRET_MASK
+    return web.json_response({
+        "config": masked_cfg,
+        "yaml": yaml_text,
+        "secrets_yaml": secrets_text,
+        "frame_port": FRAME_PORT,
+        "has_frame_token": bool(FRAME_TOKEN),
+        "panel": conn,
+    })
+
+
+async def api_panel_setup_post(request):
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise web.HTTPBadRequest(text="expected a JSON object")
+    cur = load_panel_setup()
+    if body.get("regenerate_keys"):
+        cur["api_encryption_key"] = _new_api_key()
+        cur["ota_password"] = _new_ota_password()
+    for k in ("device_name", "ha_host", "wifi_ssid", "refresh_interval"):
+        if k in body and isinstance(body[k], str):
+            cur[k] = body[k].strip()
+    if "use_secrets" in body:
+        cur["use_secrets"] = bool(body["use_secrets"])
+    if "wifi_password" in body and isinstance(body["wifi_password"], str):
+        if body["wifi_password"] != feeds.SECRET_MASK:
+            cur["wifi_password"] = body["wifi_password"]
+    for k in ("api_encryption_key", "ota_password"):
+        if k in body and isinstance(body[k], str) and body[k].strip():
+            if not body.get("regenerate_keys"):
+                cur[k] = body[k].strip()
+    saved = save_panel_setup(cur)
+    yaml_text, secrets_text = generate_esphome_yaml(saved)
+    conn = await _detect_panel_connection(saved["device_name"])
+    masked_cfg = dict(saved)
+    if masked_cfg.get("wifi_password"):
+        masked_cfg["wifi_password"] = feeds.SECRET_MASK
+    return web.json_response({
+        "saved": True,
+        "config": masked_cfg,
+        "yaml": yaml_text,
+        "secrets_yaml": secrets_text,
+        "frame_port": FRAME_PORT,
+        "has_frame_token": bool(FRAME_TOKEN),
+        "panel": conn,
+    })
+
+
+async def panel_font(request):
+    """Serve bundled Lato TTF files on port 8099 so ESPHome can fetch them over LAN."""
+    name = request.match_info.get("name", "")
+    if name not in ("Lato-Bold.ttf", "Lato-Regular.ttf"):
+        raise web.HTTPNotFound()
+    f = Path(__file__).parent / "fonts" / name
+    if not f.exists():
+        raise web.HTTPNotFound()
+    return web.FileResponse(f, headers={"Cache-Control": "max-age=86400"})
+
+
 async def api_mdi_font(request):
     f = Path(__file__).parent / "fonts" / "mdi.ttf"
     if not f.exists():
@@ -742,7 +1217,7 @@ async def editor_index(request):
     index = WEB_DIR / "index.html"
     if not index.exists():
         return web.Response(text="Editor not built yet.", content_type="text/plain")
-    return web.FileResponse(index)
+    return web.FileResponse(index, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
 async def start(app_runners):
@@ -751,12 +1226,14 @@ async def start(app_runners):
         web.get("/frame.png", frame_png),
         web.get("/frames.png", frames_png),
         web.get("/status", public_status),
+        web.get("/fonts/{name}", panel_font),
     ])
 
     editor = web.Application(client_max_size=1024 * 1024)
     editor.add_routes([
         web.get("/", editor_index),
         web.get("/api/status", status),
+        web.get("/api/strip.png", editor_strip_png),
         web.get("/api/layouts", api_layouts_get),
         web.put("/api/layouts", api_layouts_put),
         web.get("/api/entities", api_entities),
@@ -766,6 +1243,8 @@ async def start(app_runners):
         web.get("/api/sources", api_sources_get),
         web.put("/api/sources", api_sources_put),
         web.post("/api/sources/test", api_sources_test),
+        web.get("/api/panel-setup", api_panel_setup_get),
+        web.post("/api/panel-setup", api_panel_setup_post),
         web.get("/api/mdi/font", api_mdi_font),
         web.get("/api/mdi/list", api_mdi_list),
     ])
@@ -781,8 +1260,15 @@ async def start(app_runners):
 
 
 async def main():
-    global SHARED_SESSION
+    global SHARED_SESSION, ESPHOME_DEVICE
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    if PANEL_SETUP_PATH.exists():
+        try:
+            saved_dev = json.loads(PANEL_SETUP_PATH.read_text()).get("device_name")
+            if saved_dev:
+                ESPHOME_DEVICE = re.sub(r"[^a-z0-9_]+", "_", saved_dev.lower()).strip("_") or ESPHOME_DEVICE
+        except Exception:
+            pass
     runners = []
     async with aiohttp.ClientSession() as session:
         SHARED_SESSION = session
