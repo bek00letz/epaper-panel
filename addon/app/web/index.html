@@ -1429,42 +1429,287 @@ function syncOrientUI() {
 function reflowPageElements(p, toPortrait) {
   const list = p && p.elements;
   if (!Array.isArray(list) || !list.length) return;
+
   const disp = curDisplay();
-  const dw = disp.w, dh = disp.h;
+  const TW = toPortrait ? Math.min(disp.w, disp.h) : Math.max(disp.w, disp.h);
+  const TH = toPortrait ? Math.max(disp.w, disp.h) : Math.min(disp.w, disp.h);
+  const fsz = TH < 200 ? 14 : (TH < 400 ? 18 : 20);
+  const footerH = Math.round(fsz * 1.8);
+  const safeH = TH - footerH;
+  const margin = TW < 400 ? Math.min(disp.margin || 24, 16) : (disp.margin || 32);
+  const usableW = TW - (margin * 2);
+
+  // Group elements by type
+  const icons = list.filter(e => e.type === "icon");
+  const curves = list.filter(e => e.type === "curve");
+  const lines = list.filter(e => e.type === "line");
+  const numbers = list.filter(e => e.type === "number");
+  const texts = list.filter(e => e.type === "text");
+
+  // Detect Clock page: single prominent time template + date
+  const isClock = texts.some(t => String(t.value || "").includes("%H:%M") || String(t.value || "").includes("%I:%M"));
+
+  // Detect 2-stat comparison page (e.g. temps: 2 numbers + 2 labels)
+  const isTwoStat = (numbers.length === 2 && texts.length === 2) || (numbers.length === 2 && texts.length <= 3 && curves.length === 0);
+
   if (toPortrait) {
-    const items = list.map((el, idx) => ({ el, idx })).sort((a, b) => (Math.round(a.el.y / 28) - Math.round(b.el.y / 28)) || (a.el.x - b.el.x));
-    let yCursor = Math.round(dh * 0.08);
-    const targetW = dh - 40;
-    for (const { el } of items) {
-      if (el.type === "line") {
-        el.x = 20; el.w = targetW; el.h = Math.max(2, Math.min(8, el.h || 2));
-        el.y = Math.min(dw - 50, yCursor);
-        yCursor += el.h + 14;
-      } else if (el.type === "icon") {
-        const side = Math.min(Math.round(dh * 0.35), Math.max(36, el.w || 64));
-        el.x = 20; el.y = Math.min(dw - 50 - side, yCursor); el.w = side; el.h = side;
-        yCursor += side + 10;
-      } else if (el.type === "curve") {
-        const h = Math.min(Math.round(dw * 0.2), Math.max(56, el.h || 80));
-        el.x = 20; el.w = targetW; el.y = Math.min(dw - 50 - h, yCursor); el.h = h;
-        yCursor += h + 14;
-      } else {
-        const h = Math.min(Math.round(dw * 0.18), Math.max(26, Math.round((el.h || 44) * 0.82)));
-        el.x = 20; el.w = targetW; el.y = Math.min(dw - 50 - h, yCursor); el.h = h;
-        if (el.size && el.size > 72) el.size = Math.round(el.size * 0.72);
-        yCursor += h + 10;
+    // ==========================================
+    // === REFLOW TO PORTRAIT (272w × 792h) ===
+    // ==========================================
+    if (isTwoStat) {
+      // Two stacked cards with horizontal divider between them
+      const sortedNums = [...numbers].sort((a, b) => a.x - b.x || a.y - b.y);
+      const sortedTexts = [...texts].sort((a, b) => a.x - b.x || a.y - b.y);
+
+      const cardH = Math.round((safeH - 40) / 2);
+      const topMid = Math.round(cardH / 2);
+      const botMid = cardH + 40 + Math.round(cardH / 2);
+
+      // Card 1
+      if (sortedTexts[0]) {
+        sortedTexts[0].x = margin; sortedTexts[0].w = usableW; sortedTexts[0].align = "center";
+        sortedTexts[0].y = Math.max(16, topMid - 60); sortedTexts[0].h = 36;
+        if (sortedTexts[0].size && sortedTexts[0].size > 30) sortedTexts[0].size = 28;
       }
+      if (sortedNums[0]) {
+        sortedNums[0].x = margin; sortedNums[0].w = usableW; sortedNums[0].align = "center";
+        sortedNums[0].y = topMid - 16; sortedNums[0].h = 92;
+        if (sortedNums[0].size && sortedNums[0].size > 72) sortedNums[0].size = 68;
+      }
+
+      // Horizontal Divider
+      const divLine = lines[0] || (lines.length ? lines[0] : null);
+      if (divLine) {
+        divLine.x = margin + 16; divLine.w = usableW - 32; divLine.h = 2;
+        divLine.y = cardH + 18;
+      }
+
+      // Card 2
+      if (sortedTexts[1]) {
+        sortedTexts[1].x = margin; sortedTexts[1].w = usableW; sortedTexts[1].align = "center";
+        sortedTexts[1].y = botMid - 60; sortedTexts[1].h = 36;
+        if (sortedTexts[1].size && sortedTexts[1].size > 30) sortedTexts[1].size = 28;
+      }
+      if (sortedNums[1]) {
+        sortedNums[1].x = margin; sortedNums[1].w = usableW; sortedNums[1].align = "center";
+        sortedNums[1].y = botMid - 16; sortedNums[1].h = 92;
+        if (sortedNums[1].size && sortedNums[1].size > 72) sortedNums[1].size = 68;
+      }
+      return;
     }
-  } else {
-    for (const el of list) {
-      if (el.type === "line" && el.w >= 200) {
-        el.x = disp.margin; el.w = dw - (disp.margin * 2); el.y = Math.min(dh - 48, Math.max(16, Math.round(el.y * (dh / dw))));
-      } else {
-        el.x = Math.min(dw - 60, Math.max(0, Math.round(el.x * (dw / dh))));
-        el.y = Math.min(dh - 62, Math.max(0, Math.round(el.y * (dh / dw))));
-        el.w = Math.min(dw - el.x, Math.max(24, Math.round(el.w * (dw / dh) * 0.65)));
-        el.h = Math.min(dh - 40 - el.y, Math.max(18, el.h));
+
+    if (isClock) {
+      // Clock layout in portrait: Icon top, Time centered, Date below
+      const timeEl = texts.find(t => String(t.value || "").includes("%H:%M") || String(t.value || "").includes("%I:%M"));
+      const dateEl = texts.find(t => t !== timeEl);
+      const iconEl = icons[0];
+
+      const sections = [];
+      if (iconEl) {
+        const sz = Math.min(90, Math.round(TW * 0.32));
+        iconEl.w = sz; iconEl.h = sz;
+        iconEl.x = Math.round((TW - sz) / 2);
+        sections.push({ el: iconEl, h: sz });
       }
+      if (timeEl) {
+        timeEl.x = margin; timeEl.w = usableW; timeEl.align = "center";
+        timeEl.h = 96;
+        timeEl.size = Math.min(timeEl.size || 88, 76);
+        timeEl.bold = true;
+        sections.push({ el: timeEl, h: 96 });
+      }
+      if (dateEl) {
+        dateEl.x = margin; dateEl.w = usableW; dateEl.align = "center";
+        dateEl.h = 42;
+        dateEl.size = Math.min(dateEl.size || 32, 26);
+        sections.push({ el: dateEl, h: 42 });
+      }
+
+      const totH = sections.reduce((s, x) => s + x.h, 0);
+      const gap = Math.max(16, Math.min(36, Math.round((safeH - totH) / (sections.length + 1))));
+      let yC = Math.max(margin, Math.round((safeH - (totH + gap * (sections.length - 1))) / 2));
+      for (const s of sections) {
+        s.el.y = yC;
+        yC += s.h + gap;
+      }
+      return;
+    }
+
+    // Standard Hero Stat + Icon + Subtitle + Curve / Secondary
+    const heroIcon = icons[0];
+    const heroStat = numbers[0] || texts.find(t => (t.bold || (t.size || 0) >= 50)) || texts[0];
+    const subtitle = texts.find(t => t !== heroStat && (t.size || 30) <= 36);
+    const heroCurve = curves[0];
+    const secondaries = [...numbers, ...texts].filter(e => e !== heroStat && e !== subtitle);
+
+    const sections = [];
+
+    // 1. Icon Section (Hero Visual)
+    if (heroIcon) {
+      const iconSide = Math.min(92, Math.max(64, Math.round(TW * 0.33)));
+      heroIcon.w = iconSide; heroIcon.h = iconSide;
+      heroIcon.x = Math.round((TW - iconSide) / 2);
+      sections.push({ el: heroIcon, h: iconSide, gapAfter: 14 });
+    }
+
+    // 2. Hero Stat Section
+    if (heroStat) {
+      heroStat.x = margin; heroStat.w = usableW; heroStat.align = "center";
+      heroStat.h = Math.min(100, Math.max(76, Math.round(TH * 0.12)));
+      if (heroStat.size && heroStat.size > 72) heroStat.size = 68;
+      sections.push({ el: heroStat, h: heroStat.h, gapAfter: 4 });
+    }
+
+    // 3. Subtitle Section
+    if (subtitle) {
+      subtitle.x = margin; subtitle.w = usableW; subtitle.align = "center";
+      subtitle.h = 36;
+      if (subtitle.size && subtitle.size > 28) subtitle.size = 26;
+      sections.push({ el: subtitle, h: 36, gapAfter: 18 });
+    }
+
+    // 4. Divider Line (if lines exist or between stat and curve)
+    if (lines.length > 0) {
+      const lineEl = lines[0];
+      lineEl.x = margin + 16; lineEl.w = usableW - 32; lineEl.h = 2;
+      sections.push({ el: lineEl, h: 2, gapAfter: 18 });
+    }
+
+    // 5. Curve / Graph Section
+    if (heroCurve) {
+      heroCurve.x = margin; heroCurve.w = usableW;
+      heroCurve.h = Math.min(150, Math.max(100, Math.round(TH * 0.18)));
+      sections.push({ el: heroCurve, h: heroCurve.h, gapAfter: 16 });
+    }
+
+    // 6. Secondary Stats Section
+    for (const sec of secondaries) {
+      sec.x = margin; sec.w = usableW; sec.align = "center";
+      sec.h = 36;
+      if (sec.size && sec.size > 30) sec.size = 26;
+      sections.push({ el: sec, h: 36, gapAfter: 12 });
+    }
+
+    // Cleanly distribute sections vertically within safe area
+    const totalH = sections.reduce((sum, s) => sum + s.h, 0);
+    const totalGaps = sections.reduce((sum, s, idx) => idx < sections.length - 1 ? sum + (s.gapAfter || 14) : sum, 0);
+    const remSpace = safeH - (totalH + totalGaps);
+    const extraPerGap = remSpace > 0 ? Math.min(18, Math.round(remSpace / (sections.length + 1))) : 0;
+    let yC = Math.max(margin, Math.round((safeH - (totalH + totalGaps + extraPerGap * (sections.length - 1))) / 2));
+
+    for (let i = 0; i < sections.length; i++) {
+      const s = sections[i];
+      s.el.y = Math.min(safeH - s.h, yC);
+      yC += s.h + (s.gapAfter || 14) + extraPerGap;
+    }
+
+  } else {
+    // ==========================================
+    // === REFLOW TO LANDSCAPE (792w × 272h) ===
+    // ==========================================
+    if (isTwoStat) {
+      // 2 horizontal columns with vertical divider
+      const sortedNums = [...numbers].sort((a, b) => a.y - b.y || a.x - b.x);
+      const sortedTexts = [...texts].sort((a, b) => a.y - b.y || a.x - b.x);
+      const colW = Math.round((usableW - 40) / 2);
+      const midX = margin + colW + 20;
+
+      // Col 1 (left)
+      if (sortedTexts[0]) {
+        sortedTexts[0].x = margin + 16; sortedTexts[0].w = colW - 32; sortedTexts[0].align = "left";
+        sortedTexts[0].y = 40; sortedTexts[0].h = 36; sortedTexts[0].size = 30;
+      }
+      if (sortedNums[0]) {
+        sortedNums[0].x = margin + 10; sortedNums[0].w = colW - 20; sortedNums[0].align = "left";
+        sortedNums[0].y = 86; sortedNums[0].h = 114;
+      }
+
+      // Vertical Divider
+      const divLine = lines[0] || (lines.length ? lines[0] : null);
+      if (divLine) {
+        divLine.x = midX - 2; divLine.w = 4; divLine.y = 36; divLine.h = 160;
+      }
+
+      // Col 2 (right)
+      if (sortedTexts[1]) {
+        sortedTexts[1].x = midX + 24; sortedTexts[1].w = colW - 32; sortedTexts[1].align = "left";
+        sortedTexts[1].y = 40; sortedTexts[1].h = 36; sortedTexts[1].size = 30;
+      }
+      if (sortedNums[1]) {
+        sortedNums[1].x = midX + 18; sortedNums[1].w = colW - 20; sortedNums[1].align = "left";
+        sortedNums[1].y = 86; sortedNums[1].h = 114;
+      }
+      return;
+    }
+
+    if (isClock) {
+      const timeEl = texts.find(t => String(t.value || "").includes("%H:%M") || String(t.value || "").includes("%I:%M"));
+      const dateEl = texts.find(t => t !== timeEl);
+      const iconEl = icons[0];
+
+      if (timeEl) {
+        timeEl.x = margin + 8; timeEl.y = 20; timeEl.w = Math.round(usableW * 0.62);
+        timeEl.h = 138; timeEl.size = 110; timeEl.bold = true; timeEl.align = "left";
+      }
+      if (dateEl) {
+        dateEl.x = margin + 12; dateEl.y = 166; dateEl.w = Math.round(usableW * 0.65);
+        dateEl.h = 44; dateEl.size = 36; dateEl.align = "left";
+      }
+      if (iconEl) {
+        iconEl.w = 120; iconEl.h = 120;
+        iconEl.x = TW - margin - 120; iconEl.y = 36;
+      }
+      return;
+    }
+
+    // Standard Landscape layout
+    const heroIcon = icons[0];
+    const heroStat = numbers[0] || texts.find(t => (t.bold || (t.size || 0) >= 50)) || texts[0];
+    const subtitle = texts.find(t => t !== heroStat && (t.size || 30) <= 36);
+    const heroCurve = curves[0];
+    const secondaries = [...numbers, ...texts].filter(e => e !== heroStat && e !== subtitle);
+
+    let leftCursor = margin;
+
+    // 1. Icon on left
+    if (heroIcon) {
+      const iconSide = Math.min(116, Math.max(80, Math.round(TH * 0.44)));
+      heroIcon.w = iconSide; heroIcon.h = iconSide;
+      heroIcon.x = margin;
+      heroIcon.y = Math.round((safeH - iconSide) / 2);
+      leftCursor += iconSide + 20;
+    }
+
+    // 2. Middle column: Hero Stat + Subtitle
+    const midW = heroCurve ? Math.round(usableW * 0.44) : (TW - margin - leftCursor);
+    if (heroStat) {
+      heroStat.x = leftCursor; heroStat.y = 28; heroStat.w = midW; heroStat.h = 126;
+      heroStat.align = "left";
+      if (heroStat.size && heroStat.size < 80) heroStat.size = 96;
+    }
+    if (subtitle) {
+      subtitle.x = leftCursor + 4; subtitle.y = 164; subtitle.w = midW; subtitle.h = 42;
+      subtitle.align = "left"; subtitle.size = 30;
+    }
+
+    // 3. Right column: Curve or Secondary Stat
+    if (heroCurve) {
+      const curveW = Math.min(280, Math.round(usableW * 0.38));
+      heroCurve.x = TW - margin - curveW;
+      heroCurve.y = 92;
+      heroCurve.w = curveW;
+      heroCurve.h = 90;
+    }
+
+    if (secondaries.length > 0) {
+      const sec = secondaries[0];
+      const secW = Math.min(300, Math.round(usableW * 0.38));
+      sec.x = TW - margin - secW;
+      sec.y = 164;
+      sec.w = secW;
+      sec.h = 42;
+      sec.align = "right";
+      sec.size = 28;
     }
   }
 }
