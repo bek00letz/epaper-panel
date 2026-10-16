@@ -406,6 +406,16 @@ canvas.addEventListener("drop",e=>{
   sel=els().length-1; paint(); preview();
 });
 
+async function loadAttributes(entity){
+  const dl=$("attrlist"); if(!dl) return;
+  try{
+    const list=await fetch("api/attributes?entity="+encodeURIComponent(entity)).then(r=>r.json());
+    dl.innerHTML=list.map(a=>
+      `<option value="${esc(a.name)}">${a.kind==="list"?"list — ":a.kind==="object"?"object — ":""}${esc(a.sample)}</option>`
+    ).join("");
+  }catch(_){}
+}
+
 /* ---------- content binding ---------- */
 const SHOWS=[["state","State"],["attribute","Attribute"],
              ["last_changed","When it last changed"],["last_updated","When it last updated"]];
@@ -431,7 +441,10 @@ function contentRows(el){
         placeholder="drag one from the list below"></div>
       <div class="row"><label>show</label><select data-k="show">${opts(SHOWS,show)}</select></div>`;
   if(show==="attribute")
-    h+=`<div class="row"><label>attribute</label><input data-k="attribute" value="${esc(el.attribute||"")}"></div>`;
+    h+=`<div class="row"><label>attribute</label>
+        <input data-k="attribute" list="attrlist" value="${esc(el.attribute||"")}"
+               placeholder="click to see what this entity has"></div>
+        <datalist id="attrlist"></datalist>`;
   if(show==="last_changed"||show==="last_updated")
     h+=`<div class="row"><label>as</label><select data-k="format">${opts(FORMATS,el.format||"relative")}</select></div>`;
 
@@ -497,8 +510,14 @@ function props(){
       h+=`<div class="row"><label>align</label><select data-k="align">
           ${["left","center","right"].map(a=>`<option${el.align===a?" selected":""}>${a}</option>`).join("")}</select></div>`;
     const m=metrics.find(x=>x.i===sel);
-    if(m) h+=`<div class="chip${m.mm>=13?"":" bad"}">Renders at <b>${m.size} px</b> = <b>${m.mm} mm</b> —
+    if(m){
+      if(m.collection)
+        h+=`<div class="chip bad"><b>That is a list, not a single value.</b>
+             It will render as <code>['a', 'b']</code>. Pick a different attribute,
+             or switch <b>show</b> to <b>State</b>.</div>`;
+      h+=`<div class="chip${m.mm>=13?"":" bad"}">Renders at <b>${m.size} px</b> = <b>${m.mm} mm</b> —
          <span class="${m.mm>=13?"ok":"warn"}">${m.verdict}</span>${m.overflow?' · <span class="warn">overflows its box</span>':""}</div>`;
+    }
     h+="</div>";
   }
   h+=`<div class="grp"><div class="lbl">Box</div>
@@ -524,6 +543,7 @@ function props(){
         if(m&&$("mdiprev")) $("mdiprev").textContent=String.fromCodePoint(m.c);}).catch(()=>{});
   }
   wireContent(el,box);
+  if(el.show==="attribute" && el.entity) loadAttributes(el.entity);
   $("dup").onclick=duplicate;
   $("del").onclick=()=>{snapshot();els().splice(sel,1);sel=-1;paint();preview();};
 }
@@ -587,6 +607,8 @@ function drawSources(){
     <div class="card"><div class="body">
       <div class="row"><strong style="flex:1">${esc(s.type)}</strong>
         <button data-test="${i}">Test</button><button data-del="${i}">Remove</button></div>
+      <div class="chip">Creates <code>sensor.epaper_${esc(s.name||"<name>")}</code>${
+        s.type==="jellyfin"?` and <code>sensor.epaper_${esc(s.name||"<name>")}_count</code>`:""}</div>
       ${(SRC_FIELDS[s.type]||[]).map(([k,label,type])=>
         `<div class="row"><label>${label}</label>
          <input data-si="${i}" data-sk="${k}" type="${type||"text"}" value="${esc(s[k]??"")}"></div>`).join("")}
@@ -597,6 +619,7 @@ function drawSources(){
   $("srclist").querySelectorAll("[data-si]").forEach(inp=>inp.onchange=()=>{
     const s=srcs[+inp.dataset.si], k=inp.dataset.sk;
     s[k]= inp.type==="number" ? Number(inp.value)||0 : inp.value;
+    if(k==="name") drawSources();        // keep the "creates…" line honest
   });
   $("srclist").querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{
     srcs.splice(+b.dataset.del,1); drawSources();

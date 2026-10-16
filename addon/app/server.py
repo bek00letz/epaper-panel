@@ -422,6 +422,28 @@ async def api_entities(request):
     return web.json_response(items)
 
 
+async def api_attributes(request):
+    """Attribute names and sample values for one entity.
+
+    The attribute field used to be free text, so you had to guess -- and a
+    plausible guess like "titles" yields a list that renders as rubbish.
+    """
+    eid = request.query.get("entity", "")
+    if not eid:
+        return web.json_response([])
+    async with aiohttp.ClientSession() as session:
+        try:
+            st = await ha_json(session, f"/states/{eid}")
+        except Exception:
+            return web.json_response([])
+    out = []
+    for k, v in (st.get("attributes") or {}).items():
+        kind = "list" if isinstance(v, (list, tuple)) else \
+               "object" if isinstance(v, dict) else "value"
+        out.append({"name": k, "sample": str(v)[:60], "kind": kind})
+    return web.json_response(sorted(out, key=lambda a: a["name"]))
+
+
 async def api_preview(request):
     """Render one page spec through the real engine, so WYSIWYG cannot lie."""
     body = await request.json()
@@ -516,6 +538,7 @@ async def start(app_runners):
         web.get("/api/layouts", api_layouts_get),
         web.put("/api/layouts", api_layouts_put),
         web.get("/api/entities", api_entities),
+        web.get("/api/attributes", api_attributes),
         web.post("/api/preview", api_preview),
         web.post("/api/push", api_push),
         web.get("/api/sources", api_sources_get),

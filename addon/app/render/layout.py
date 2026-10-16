@@ -87,8 +87,12 @@ def _draw_text(img, d, el, text, metrics=None):
     f = T.font(size, bold=bold)
     if metrics is not None:
         mm, verdict = legibility(size)
+        t = text.strip()
         metrics.append({"size": size, "mm": mm, "verdict": verdict,
-                        "overflow": T.text_width(text, f) > w})
+                        "overflow": T.text_width(text, f) > w,
+                        # A list or dict rendered as a string is almost always
+                        # the wrong attribute picked, not a deliberate choice.
+                        "collection": t.startswith(("[", "{")) and t.endswith(("]", "}"))})
     ax = _anchor_x(align, int(el["x"]), w)
     anchor = {"left": "lm", "center": "mm", "right": "rm"}.get(align, "lm")
     d.text((ax, int(el["y"]) + h // 2), text, font=f, fill=T.BLACK, anchor=anchor)
