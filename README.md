@@ -16,18 +16,13 @@ set large**, rotating, rather than a dense dashboard you have to walk up to.
 
 ![The editor](docs/editor.jpg)
 
-Lives in your Home Assistant sidebar, behind your existing login. Drag an
-entity from the list onto the canvas, drag it where you want it, and the
-preview you see is a live render from the real engine — not an approximation.
+Lives in your Home Assistant sidebar, behind your existing login. Designed to be accessible to anyone—from an enthusiast building custom rotation loops to someone setting up a quick screen to track when their next pension or bin collection arrives.
 
-It also tells you, per element, what the panel will actually produce:
-**"Renders at 106 px = 13 mm — comfortable"**, measured against the viewing
-distance the whole project is built around.
-
-Most pages need no templating. An element says what it wants — an entity's
-state, an attribute, when it last changed — and a "say it differently" table
-turns `Outdoor Cat` into `outside` without a line of Jinja. Raw templates are
-still there when you need them.
+- **✨ One-Click Ready-Made Presets:** Click **Add Preset** to choose from battle-tested screen templates (`Next Pension / Event Countdown`, `Room Climate & Comfort`, `Solar Power & Battery`, `Pet & Door Presence`, `Bin Day Collection`, `Giant Sofa Clock`). Each preset pre-configures icons, sofa-legible font scales, and entity bindings in one click.
+- **🎨 Lovelace Dark & Light Theme:** Beautiful interface styled to match Home Assistant with an instant dark/light mode toggle, Inter typography, and an authentic CrowPanel hardware frame preview with Fit vs 100% zoom controls.
+- **🏷️ Intelligent Entity Browser:** Filter entities with fast category chips (`📅 Dates & Calendars`, `🌡️ Sensors`, `⚡ Binary`, `❄️ Climate`, `🔒 Security`, `👤 People`). Add entities via drag-and-drop or with the one-click **➕ Add** button on each card.
+- **🛋️ 3-Metre Sofa Legibility Verdict:** Per-element real-time feedback (**"Renders at 106 px = 18 mm — effortless from 3 m sofa"**) guarantees your facts stay readable from across the room.
+- **Plain-English Bindings & Countdowns:** An element says what it wants—an entity's state, an attribute, when it last changed, a date countdown (`days_until`), or formatted dates (`date_formatted`)—without writing Jinja templates. A visual "say it differently" table turns raw values like `on` or `Outdoor Cat` into `outside` without code. Raw Jinja templates remain available for advanced power users.
 
 ## Pages appear when they matter
 

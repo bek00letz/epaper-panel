@@ -16,7 +16,10 @@ breaks and power users keep the full language.
 
 TIME_FORMATS = {
     "time":     "%H:%M",
+    "time_12":  "%-I:%M %p",
     "date":     "%-d %b",
+    "day_date": "%a, %-d %b",
+    "day_full": "%A, %-d %B",
     "datetime": "%-d %b %H:%M",
 }
 
@@ -57,6 +60,23 @@ def template_for(el):
         else:
             pattern = TIME_FORMATS.get(fmt, TIME_FORMATS["time"])
             core = f"as_timestamp({src}) | timestamp_custom('{pattern}')"
+    elif show == "days_until":
+        # Days remaining until a calendar event or future date sensor
+        if ent.startswith("calendar."):
+            src = f"state_attr('{_quote(ent)}', 'start_time')"
+        else:
+            src = f"states('{_quote(ent)}')"
+        core = f"((as_timestamp({src}) - as_timestamp(now())) / 86400) | round(0, 'ceil') | int"
+    elif show == "date_formatted":
+        fmt = el.get("format") or "date"
+        pattern = TIME_FORMATS.get(fmt, TIME_FORMATS["date"])
+        if ent.startswith("calendar."):
+            src = f"state_attr('{_quote(ent)}', 'start_time')"
+        else:
+            src = f"states('{_quote(ent)}')"
+        core = f"as_timestamp({src}) | timestamp_custom('{pattern}')"
+    elif show == "calendar_title":
+        core = f"state_attr('{_quote(ent)}', 'message')"
     else:
         core = f"states('{_quote(ent)}')"
 

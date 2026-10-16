@@ -110,11 +110,41 @@ def eval_fixture_template(tpl: str) -> str:
     m_attr = re.search(r"state_attr\(\s*'([^']+)'\s*,\s*'([^']+)'\s*\)", expr)
     m_prop = re.search(r"states\[\s*'([^']+)'\s*\]\.(last_changed|last_updated)", expr)
 
+    # Check if calculating days until a date/event
+    if "/ 86400" in expr and "as_timestamp" in expr:
+        m_attr = re.search(r"state_attr\(\s*'([^']+)'\s*,\s*'([^']+)'\s*\)", expr)
+        m_state = re.search(r"states\(\s*'([^']+)'\s*\)", expr)
+        raw_date = None
+        if m_attr:
+            raw_date = (states.get(m_attr.group(1)) or {}).get(m_attr.group(2))
+        elif m_state:
+            raw_date = (states.get(m_state.group(1)) or {}).get("state")
+        if raw_date:
+            try:
+                from datetime import timezone
+                target_dt = datetime.fromisoformat(str(raw_date).replace("Z", "+00:00"))
+                now_dt = datetime.now(timezone.utc if target_dt.tzinfo else None)
+                delta = target_dt - now_dt
+                val = str(max(0, int(round(delta.total_seconds() / 86400))))
+            except Exception:
+                val = "4"
+        else:
+            val = "4"
+        return val
+
     if m_attr:
         eid, attr = m_attr.group(1), m_attr.group(2)
         raw = (states.get(eid) or {}).get(attr)
         val = "" if raw is None else str(raw)
-        if "[:-3]" in expr and len(val) > 3:
+        if "timestamp_custom" in expr:
+            m_fmt = re.search(r"timestamp_custom\(\s*'([^']+)'\s*\)", expr)
+            fmt = m_fmt.group(1) if m_fmt else "%-d %b"
+            try:
+                dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+                val = dt.strftime(fmt)
+            except Exception:
+                val = str(raw)
+        elif "[:-3]" in expr and len(val) > 3:
             val = val[:-3]
     elif m_prop:
         eid, prop = m_prop.group(1), m_prop.group(2)
@@ -135,6 +165,14 @@ def eval_fixture_template(tpl: str) -> str:
         eid = m_state.group(1)
         raw = (states.get(eid) or {}).get("state")
         val = "" if raw is None else str(raw)
+        if "timestamp_custom" in expr:
+            m_fmt = re.search(r"timestamp_custom\(\s*'([^']+)'\s*\)", expr)
+            fmt = m_fmt.group(1) if m_fmt else "%-d %b"
+            try:
+                dt = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+                val = dt.strftime(fmt)
+            except Exception:
+                val = str(raw)
 
     # Apply any chained `| replace('find', 'repl')`
     for m_rep in re.finditer(r"\|\s*replace\(\s*'((?:\\'|[^'])*)'\s*,\s*'((?:\\'|[^'])*)'\s*\)", expr):

@@ -205,3 +205,11 @@ in the top-right margin that every page leaves free.
 **Rotation order as a single string.** `solar,cat,watch,cat,temps,dryer` —
 repeating a name weights it, removing it disables it. Editable directly in the
 editor's top bar with no ambiguity between "enabled" and "in the list".
+
+**Structured bindings over raw Jinja.** Rather than requiring users to write
+complex Jinja expressions (`{{ ((as_timestamp(...) - as_timestamp(now())) / 86400) | round(0, 'ceil') | int }}`),
+elements declare structured intent (`show: days_until`, `date_formatted`, `attribute`,
+`last_changed`). `binding.py` compiles and sanitizes the Jinja expression, while
+`prefix` and `suffix` are applied in Python so numeric formatting and fallbacks
+remain predictable and resilient.
+

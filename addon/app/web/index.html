@@ -1,272 +1,1059 @@
 <!doctype html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>E-paper editor</title>
+<title>E-Paper Studio · Home Assistant</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-:root{
-  --bg:#f2f2ef; --card:#fff; --line:#e3e2dd; --line2:#cfcec8;
-  --ink:#1b1b19; --mut:#6e6d66; --faint:#97968f;
-  --accent:#2f6fd0; --accent-bg:#eaf1fb; --danger:#b3261e; --good:#1d7a4c;
-  --r-out:10px; --r-in:6px;
+:root {
+  /* Dark Theme (Default) - Home Assistant Lovelace Aesthetic */
+  --bg-app: #0d1117;
+  --bg-surface: #161b22;
+  --bg-card: #21262d;
+  --bg-card-hover: #292f38;
+  --bg-input: #0d1117;
+  --border: #30363d;
+  --border-subtle: #21262d;
+  --border-focus: #58a6ff;
+  --text-primary: #f0f6fc;
+  --text-secondary: #8b949e;
+  --text-muted: #6e7681;
+  --accent: #0284c7;
+  --accent-hover: #0369a1;
+  --accent-glow: rgba(2, 132, 199, 0.25);
+  --accent-subtle: rgba(2, 132, 199, 0.12);
+  --success: #238636;
+  --success-subtle: rgba(35, 134, 54, 0.15);
+  --warning: #d29922;
+  --warning-subtle: rgba(210, 153, 34, 0.15);
+  --danger: #f85149;
+  --danger-subtle: rgba(248, 81, 73, 0.15);
+  --paper-bg: #fcfcfb;
+  --paper-ink: #111110;
+  --radius-sm: 6px;
+  --radius-md: 9px;
+  --radius-lg: 14px;
+  --radius-full: 9999px;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 12px 36px rgba(0, 0, 0, 0.5);
 }
-*{box-sizing:border-box}
-html,body{height:100%}
-body{margin:0;font:14px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;
-     background:var(--bg);color:var(--ink);-webkit-font-smoothing:antialiased}
 
-/* chrome sits quiet so the canvas keeps the eye */
-header{display:flex;gap:8px;align-items:center;padding:10px 16px;background:var(--card);
-       border-bottom:1px solid var(--line);flex-wrap:wrap;position:sticky;top:0;z-index:10}
-.brand{font-weight:600;letter-spacing:-.01em;margin-right:4px}
-.sep{width:1px;height:24px;background:var(--line);margin:0 4px}
-select,input,button,textarea{font:inherit;color:inherit;background:#fff;border:1px solid var(--line2);
-                    border-radius:var(--r-in);padding:7px 10px;min-height:36px}
-select{padding-right:26px}
-button{cursor:pointer;transition:background .12s,border-color .12s}
-button:hover{background:#f7f7f5}
-button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-button:disabled{opacity:.4;cursor:default}
-button.primary{background:var(--accent);color:#fff;border-color:var(--accent);font-weight:500}
-button.primary:hover{background:#2a63ba}
-button.icon{min-width:36px;padding:7px 9px;font-size:15px}
-button.sm{min-height:28px;padding:3px 8px;font-size:12px}
-button.active{background:var(--accent-bg);border-color:var(--accent);color:var(--accent);font-weight:500}
-.spacer{margin-left:auto}
+[data-theme="light"] {
+  --bg-app: #f4f6f8;
+  --bg-surface: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f8fafc;
+  --bg-input: #ffffff;
+  --border: #d0d7de;
+  --border-subtle: #e2e8f0;
+  --border-focus: #0969da;
+  --text-primary: #1f2328;
+  --text-secondary: #57606a;
+  --text-muted: #8c959f;
+  --accent: #0284c7;
+  --accent-hover: #0369a1;
+  --accent-glow: rgba(2, 132, 199, 0.2);
+  --accent-subtle: #e0f2fe;
+  --success: #1a7f37;
+  --success-subtle: #dafbe1;
+  --warning: #9a6700;
+  --warning-subtle: #fff8c5;
+  --danger: #cf222e;
+  --danger-subtle: #ffebe9;
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.12);
+}
 
-/* status pill in header */
-.status-pill{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;padding:5px 11px;
-             border-radius:999px;background:#f7f7f4;border:1px solid var(--line2);color:var(--mut);
-             cursor:pointer;min-height:32px}
-.status-pill:hover{background:var(--accent-bg);border-color:var(--accent);color:var(--ink)}
-.status-dot{width:8px;height:8px;border-radius:50%;background:var(--good);flex:none}
-.status-dot.warn{background:#d97706}
-.status-dot.err{background:var(--danger)}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body {
+  font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13.5px;
+  line-height: 1.5;
+  background: var(--bg-app);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  display: flex;
+  flex-direction: column;
+}
 
-main{display:grid;grid-template-columns:minmax(0,1fr) 326px;gap:14px;padding:14px;align-items:start}
-@media(max-width:940px){main{grid-template-columns:1fr}}
+/* Custom Scrollbars */
+::-webkit-scrollbar { width: 7px; height: 7px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
 
-/* canvas: the task, so it gets the weight */
-#stage{background:var(--card);border:1px solid var(--line);border-radius:var(--r-out);padding:16px}
-#frame{background:#3a3a37;border-radius:8px;padding:7px;transition:max-width .18s}
-#frame.portrait{max-width:310px;margin:0 auto}
-#canvas{position:relative;width:100%;aspect-ratio:792/272;background:#fff no-repeat center/100% 100%;
-        user-select:none;touch-action:none;border-radius:2px;overflow:hidden}
-#canvas.portrait{aspect-ratio:272/792}
-.el{position:absolute;border:1px dashed rgba(0,0,0,.3);cursor:move;border-radius:2px}
-.el:hover{border-color:rgba(0,0,0,.55)}
-.el.sel{border:2px solid var(--accent);background:rgba(47,111,208,.07)}
-.el .hd{position:absolute;right:-6px;bottom:-6px;width:13px;height:13px;background:var(--accent);
-        border:2px solid #fff;border-radius:3px;cursor:nwse-resize;box-shadow:0 1px 3px rgba(0,0,0,.25)}
-.guide{position:absolute;background:#e0439b;pointer-events:none;z-index:5}
-.guide.v{width:1px;top:0;bottom:0}.guide.h{height:1px;left:0;right:0}
+/* Common form controls */
+select, input, button, textarea {
+  font: inherit;
+  color: var(--text-primary);
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 7px 11px;
+  min-height: 34px;
+  transition: all 0.14s ease;
+}
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--accent-subtle);
+}
+select { cursor: pointer; padding-right: 28px; }
 
-/* safe-area overlay (footer + held-page padlock margin) */
-.safe-zone{position:absolute;pointer-events:none;z-index:4;display:none}
-#canvas.show-safe .safe-zone{display:block}
-.safe-footer{left:0;right:0;top:85.29%;bottom:0;border-top:1px dashed rgba(47,111,208,.55);
-             background:rgba(47,111,208,.04)}
-#canvas.portrait .safe-footer{top:94.95%}
-.safe-lock{right:0;top:0;width:5.05%;height:24%;border-left:1px dashed rgba(47,111,208,.55);
-           border-bottom:1px dashed rgba(47,111,208,.55);background:rgba(47,111,208,.04)}
-#canvas.portrait .safe-lock{width:14.7%;height:8.2%}
-.safe-tag{position:absolute;font-size:10px;color:var(--accent);background:rgba(255,255,255,.88);
-          padding:1px 5px;border-radius:3px;font-weight:500}
+button {
+  cursor: pointer;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  user-select: none;
+  transition: all 0.12s cubic-bezier(0.4, 0, 0.2, 1);
+}
+button:hover { background: var(--bg-card-hover); border-color: var(--text-muted); }
+button:active { transform: scale(0.98); }
+button:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+button.primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+button.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); box-shadow: 0 2px 8px var(--accent-glow); }
+button.icon-btn { min-width: 34px; padding: 6px 8px; font-size: 14px; }
+button.sm { min-height: 28px; padding: 3px 9px; font-size: 12px; }
+button.active {
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+button.badge-btn {
+  background: linear-gradient(135deg, rgba(2, 132, 199, 0.15), rgba(147, 51, 234, 0.15));
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+button.badge-btn:hover {
+  background: linear-gradient(135deg, rgba(2, 132, 199, 0.25), rgba(147, 51, 234, 0.25));
+}
 
-/* condition & rotation bars below canvas */
-.bar-box{margin-top:12px;padding:10px 12px;background:#f9f9f7;border:1px solid var(--line);
-         border-radius:var(--r-in);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.bar-box>label{color:var(--mut);font-size:12.5px;font-weight:500;min-width:62px}
-.rot-pills{display:flex;gap:6px;align-items:center;flex-wrap:wrap;flex:1}
-.rpill{display:inline-flex;align-items:center;gap:4px;background:#fff;border:1px solid var(--line2);
-       border-radius:999px;padding:3px 9px;font-size:12.5px;cursor:pointer;user-select:none}
-.rpill:hover{border-color:var(--accent)}
-.rpill.cur{background:var(--accent-bg);border-color:var(--accent);color:var(--accent);font-weight:500}
-.rpill .tag{font-size:10px;color:var(--mut);background:#eee;padding:0 5px;border-radius:999px}
-.rpill button{border:0;background:transparent;padding:0 3px;min-height:0;font-size:12px;color:var(--faint);line-height:1}
-.rpill button:hover{color:var(--danger);background:transparent}
-.hint{color:var(--faint);font-size:12.5px;margin:10px 0 0}
+/* Header & Control Center */
+header {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 18px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  flex-wrap: wrap;
+}
+.brand-group {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin-right: 4px;
+}
+.brand-icon {
+  width: 28px;
+  height: 28px;
+  background: var(--accent);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  box-shadow: 0 2px 8px var(--accent-glow);
+}
+.brand-title {
+  font-weight: 700;
+  font-size: 15px;
+  letter-spacing: -0.02em;
+}
+.brand-pill {
+  font-size: 10.5px;
+  padding: 2px 6px;
+  border-radius: var(--radius-full);
+  background: var(--accent-subtle);
+  color: var(--accent);
+  font-weight: 600;
+}
+.sep {
+  width: 1px;
+  height: 22px;
+  background: var(--border);
+  margin: 0 2px;
+}
+.spacer { margin-left: auto; }
 
-/* right rail: chunked, so nothing is a wall of controls */
-aside{display:flex;flex-direction:column;gap:12px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r-out);overflow:hidden}
-.card>h3{margin:0;padding:11px 14px 9px;font-size:11px;font-weight:600;color:var(--mut);
-         text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid var(--line)}
-.card>.body{padding:12px 14px}
-.pal{display:grid;grid-template-columns:1fr 1fr;gap:7px}
-.pal button{justify-content:flex-start;text-align:left;font-size:13px}
+/* Status Pill */
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  padding: 5px 12px;
+  border-radius: var(--radius-full);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.status-pill:hover { border-color: var(--accent); color: var(--text-primary); }
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 6px rgba(35, 134, 54, 0.6);
+  flex: none;
+}
+.status-dot.warn { background: var(--warning); box-shadow: 0 0 6px rgba(210, 153, 34, 0.6); }
+.status-dot.err { background: var(--danger); box-shadow: 0 0 6px rgba(248, 81, 73, 0.6); }
 
-/* entity rows: name first, id second, value right — scannable, not a wall of slugs */
-#ents{max-height:196px;overflow:auto;margin:0 -4px}
-.ent{display:flex;gap:9px;align-items:baseline;padding:7px 8px;border-radius:var(--r-in);cursor:grab}
-.ent:hover{background:var(--accent-bg)}
-.ent .nm{font-weight:500;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ent .id{font:11px/1.3 ui-monospace,SFMono-Regular,monospace;color:var(--faint);
-         white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ent .col{min-width:0;flex:1}
-.ent .val{font-size:12px;color:var(--mut);white-space:nowrap;flex:none;max-width:84px;
-          overflow:hidden;text-overflow:ellipsis}
+/* Main Layout Grid */
+main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 350px;
+  gap: 16px;
+  padding: 16px;
+  align-items: start;
+  flex: 1;
+}
+@media (max-width: 1020px) {
+  main { grid-template-columns: 1fr; }
+}
 
-/* properties: grouped rather than one long list */
-.grp{padding-top:4px}
-.grp+.grp{margin-top:10px;padding-top:10px;border-top:1px solid var(--line)}
-.grp>.lbl{font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:7px}
-.row{display:flex;gap:7px;align-items:center;margin-bottom:7px}
-.row:last-child{margin-bottom:0}
-.row>label{width:66px;flex:none;color:var(--mut);font-size:13px}
-.row input,.row select{flex:1;min-width:0}
-.row input[type=number]{max-width:92px}
-.chip{display:block;margin-top:9px;padding:8px 10px;border-radius:var(--r-in);
-      background:var(--accent-bg);font-size:12.5px;line-height:1.45}
-.chip.bad{background:#fcecea}
-.chip.good{background:#e7f6ed}
-.chip b{font-weight:600}
-.ok{color:var(--good)}.warn{color:var(--danger)}
-.empty{color:var(--faint);font-size:13px;padding:2px 0}
+/* Stage / Canvas Container */
+#stage {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 18px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.stage-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.screen-meta {
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.badge-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  font-size: 11px;
+  font-family: ui-monospace, monospace;
+}
 
-/* modals */
-.modal-wrap{position:fixed;inset:0;background:rgba(20,20,18,.45);display:none;
-            align-items:center;justify-content:center;z-index:30;padding:16px}
-.modal-card{background:#fff;border-radius:14px;padding:18px;width:min(740px,95vw);
-            max-height:88vh;display:flex;flex-direction:column;gap:12px;box-shadow:0 16px 48px rgba(0,0,0,.22)}
-.codebox{font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,monospace;background:#1e1e1c;color:#f2f2ef;
-         padding:12px;border-radius:var(--r-in);overflow:auto;max-height:240px;white-space:pre;
-         border:1px solid #333;width:100%;resize:vertical}
-.steps{margin:0;padding-left:20px;font-size:13px;color:var(--ink);line-height:1.55}
-.steps li+li{margin-top:4px}
+/* CrowPanel Hardware Frame Simulation */
+#bezel-wrapper {
+  background: #18191c;
+  background-image: radial-gradient(circle at 50% 0%, #2a2c33 0%, #15161a 100%);
+  border-radius: 14px;
+  padding: 16px 20px 22px;
+  border: 1px solid #33363f;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.45), inset 0 1px 1px rgba(255,255,255,0.1);
+  transition: all 0.22s ease;
+  position: relative;
+}
+#bezel-wrapper.portrait {
+  max-width: 340px;
+  margin: 0 auto;
+}
+.bezel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 9px;
+  padding: 0 4px;
+}
+.bezel-logo {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: #717580;
+  text-transform: uppercase;
+}
+.bezel-dots {
+  display: flex;
+  gap: 5px;
+}
+.bezel-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: #353841;
+}
 
-/* feedback that is actually noticed */
-#toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(8px);
-       background:#24241f;color:#fff;padding:11px 16px;border-radius:999px;font-size:13.5px;
-       display:flex;gap:12px;align-items:center;box-shadow:0 6px 24px rgba(0,0,0,.26);
-       opacity:0;pointer-events:none;transition:opacity .16s,transform .16s;z-index:40;max-width:92vw}
-#toast.on{opacity:1;transform:translateX(-50%) translateY(0);pointer-events:auto}
-#toast button{background:transparent;border:1px solid rgba(255,255,255,.4);color:#fff;
-              min-height:28px;padding:3px 11px;font-size:13px}
-#toast button:hover{background:rgba(255,255,255,.14)}
-@media(prefers-reduced-motion:reduce){#toast{transition:none}}
+/* Canvas Screen */
+#canvas-housing {
+  background: #0a0a0c;
+  padding: 5px;
+  border-radius: 6px;
+  box-shadow: inset 0 2px 8px rgba(0,0,0,0.8), 0 1px 0 rgba(255,255,255,0.05);
+}
+#canvas {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 792 / 272;
+  background: var(--paper-bg) no-repeat center / 100% 100%;
+  user-select: none;
+  touch-action: none;
+  border-radius: 3px;
+  overflow: hidden;
+  box-shadow: inset 0 0 12px rgba(0,0,0,0.08);
+}
+#canvas.portrait { aspect-ratio: 272 / 792; }
 
-@font-face{font-family:mdi;src:url("api/mdi/font") format("truetype")}
-#picks{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:7px;overflow:auto}
-#picks button{font-family:mdi;font-size:27px;line-height:1.1;padding:9px 4px;height:70px;
-              display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;
-              border-color:var(--line)}
-#picks button span{font-family:system-ui,sans-serif;font-size:9.5px;color:var(--mut);
-                   max-width:68px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mdiprev{font-family:mdi;font-size:22px;margin-left:8px;color:var(--ink)}
+/* Elements on canvas */
+.el {
+  position: absolute;
+  border: 1px dashed rgba(0, 0, 0, 0.35);
+  cursor: move;
+  border-radius: 2px;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: border-color 0.1s;
+}
+.el:hover { border-color: rgba(2, 132, 199, 0.7); }
+.el.sel {
+  border: 2px solid var(--accent);
+  background: rgba(2, 132, 199, 0.08);
+}
+.el .hd {
+  position: absolute;
+  right: -6px;
+  bottom: -6px;
+  width: 13px;
+  height: 13px;
+  background: var(--accent);
+  border: 2px solid #fff;
+  border-radius: 3px;
+  cursor: nwse-resize;
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+}
+.guide {
+  position: absolute;
+  background: #ec4899;
+  pointer-events: none;
+  z-index: 10;
+}
+.guide.v { width: 1px; top: 0; bottom: 0; }
+.guide.h { height: 1px; left: 0; right: 0; }
+
+/* Safe-area overlays */
+.safe-zone {
+  position: absolute;
+  pointer-events: none;
+  z-index: 4;
+  display: none;
+}
+#canvas.show-safe .safe-zone { display: block; }
+.safe-footer {
+  left: 0; right: 0; top: 85.29%; bottom: 0;
+  border-top: 1px dashed rgba(2, 132, 199, 0.65);
+  background: rgba(2, 132, 199, 0.05);
+}
+#canvas.portrait .safe-footer { top: 94.95%; }
+.safe-lock {
+  right: 0; top: 0; width: 5.05%; height: 24%;
+  border-left: 1px dashed rgba(2, 132, 199, 0.65);
+  border-bottom: 1px dashed rgba(2, 132, 199, 0.65);
+  background: rgba(2, 132, 199, 0.05);
+}
+#canvas.portrait .safe-lock { width: 14.7%; height: 8.2%; }
+.safe-tag {
+  position: absolute;
+  font-size: 10px;
+  color: var(--accent);
+  background: rgba(255, 255, 255, 0.95);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+/* Page Behavior & Rotation Bar */
+.bar-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.bar-title {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.rot-pills {
+  display: flex;
+  gap: 7px;
+  align-items: center;
+  flex-wrap: wrap;
+  flex: 1;
+}
+.rpill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-full);
+  padding: 4px 11px;
+  font-size: 12.5px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.12s;
+}
+.rpill:hover { border-color: var(--accent); }
+.rpill.cur {
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.rpill .tag {
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  background: var(--border);
+  color: var(--text-secondary);
+}
+.rpill.cur .tag {
+  background: rgba(2, 132, 199, 0.2);
+  color: var(--accent);
+}
+.rpill button {
+  border: 0;
+  background: transparent;
+  padding: 0 2px;
+  min-height: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.rpill button:hover { color: var(--danger); background: transparent; }
+.hint {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* Sidebar Rail */
+aside {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+.card > h3 {
+  margin: 0;
+  padding: 11px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.015);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.card > .body { padding: 14px 16px; }
+
+/* Palette Buttons */
+.pal {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 7px;
+}
+.pal button {
+  padding: 9px 8px;
+  font-size: 12.5px;
+  flex-direction: column;
+  gap: 3px;
+  min-height: 52px;
+}
+.pal button span.icon { font-size: 16px; }
+
+/* Entity browser */
+.cat-tabs {
+  display: flex;
+  gap: 5px;
+  overflow-x: auto;
+  padding-bottom: 7px;
+  margin-bottom: 8px;
+}
+.cat-chip {
+  padding: 3px 9px;
+  font-size: 11.5px;
+  border-radius: var(--radius-full);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.cat-chip.active, .cat-chip:hover {
+  background: var(--accent-subtle);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 500;
+}
+#ents {
+  max-height: 260px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-right: 2px;
+}
+.ent-card {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  cursor: grab;
+  transition: all 0.12s;
+}
+.ent-card:hover {
+  background: var(--bg-card-hover);
+  border-color: var(--accent);
+  transform: translateX(2px);
+}
+.ent-icon {
+  font-size: 16px;
+  color: var(--accent);
+  width: 22px;
+  text-align: center;
+  flex: none;
+}
+.ent-details { min-width: 0; flex: 1; }
+.ent-name {
+  font-weight: 600;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+}
+.ent-id {
+  font: 11px/1.2 ui-monospace, monospace;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ent-val {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 2px 7px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  white-space: nowrap;
+  flex: none;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: right;
+}
+.ent-add-btn {
+  padding: 3px 6px;
+  min-height: 26px;
+  font-size: 11px;
+  border-radius: var(--radius-sm);
+}
+
+/* Property Inspector Groups */
+.grp { padding-top: 4px; }
+.grp + .grp {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.grp > .lbl {
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.row:last-child { margin-bottom: 0; }
+.row > label {
+  width: 72px;
+  flex: none;
+  color: var(--text-secondary);
+  font-size: 12.5px;
+}
+.row input, .row select { flex: 1; min-width: 0; }
+.row input[type=number] { max-width: 88px; }
+
+/* Status & Feedback Chips */
+.chip {
+  display: block;
+  margin-top: 9px;
+  padding: 9px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--accent-subtle);
+  border-left: 3px solid var(--accent);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--text-primary);
+}
+.chip.good {
+  background: var(--success-subtle);
+  border-left-color: var(--success);
+}
+.chip.bad {
+  background: var(--danger-subtle);
+  border-left-color: var(--danger);
+}
+.chip b { font-weight: 600; }
+.ok { color: var(--success); font-weight: 600; }
+.warn { color: var(--danger); font-weight: 600; }
+.empty { color: var(--text-muted); font-size: 13px; text-align: center; padding: 12px 0; }
+
+/* Modals */
+.modal-wrap {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(5px);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 16px;
+  overflow: hidden;
+  overscroll-behavior: contain;
+}
+.modal-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 22px;
+  width: min(780px, 95vw);
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  box-shadow: var(--shadow-lg);
+  overscroll-behavior: contain;
+}
+.codebox {
+  font: 12px/1.45 ui-monospace, monospace;
+  background: #0d1117;
+  color: #e6edf3;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  overflow: auto;
+  max-height: 220px;
+  white-space: pre;
+  border: 1px solid var(--border);
+  width: 100%;
+  resize: vertical;
+}
+.steps {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+.steps li + li { margin-top: 5px; }
+
+/* Templates Grid */
+.template-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 12px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding: 4px;
+}
+.template-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.14s ease;
+  text-align: left;
+}
+.template-card:hover {
+  border-color: var(--accent);
+  background: var(--bg-card-hover);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+.template-icon {
+  font-size: 28px;
+  color: var(--accent);
+}
+.template-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+.template-desc {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* Toast */
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%) translateY(12px);
+  background: #1f2328;
+  color: #fff;
+  border: 1px solid #30363d;
+  padding: 10px 18px;
+  border-radius: var(--radius-full);
+  font-size: 13px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  box-shadow: var(--shadow-lg);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.16s, transform 0.16s;
+  z-index: 120;
+  max-width: 92vw;
+}
+#toast.on {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+#toast button {
+  background: rgba(255, 255, 255, 0.15);
+  border: 0;
+  color: #fff;
+  min-height: 26px;
+  padding: 2px 10px;
+  font-size: 12px;
+  border-radius: var(--radius-full);
+}
+#toast button:hover { background: rgba(255, 255, 255, 0.3); }
+
+/* MDI font and picker */
+@font-face {
+  font-family: mdi;
+  src: url("api/mdi/font") format("truetype");
+}
+#picks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+  gap: 8px;
+  overflow-y: auto;
+  max-height: 55vh;
+}
+#picks button {
+  font-family: mdi;
+  font-size: 26px;
+  line-height: 1;
+  padding: 10px 4px;
+  height: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-color: var(--border);
+}
+#picks button span {
+  font-family: 'Inter', system-ui, sans-serif;
+  font-size: 10px;
+  color: var(--text-secondary);
+  max-width: 68px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mdiprev {
+  font-family: mdi;
+  font-size: 22px;
+  margin-left: 8px;
+  color: var(--text-primary);
+}
 </style>
+</head>
+<body data-theme="dark">
 
 <header>
-  <span class="brand">E-paper</span>
-  <select id="page" title="Page"></select>
-  <select id="tier" title="When this page appears">
-    <option value="rotate">in rotation</option>
-    <option value="when">only when true</option>
-    <option value="alert">interrupt only</option>
-  </select>
-  <button id="addpage" title="New page">+</button>
-  <button id="delpage" title="Delete this page">Delete</button>
+  <div class="brand-group">
+    <div class="brand-icon">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="2" y="4" width="20" height="16" rx="2"></rect>
+        <path d="M6 8h12M6 12h8M6 16h5"></path>
+      </svg>
+    </div>
+    <span class="brand-title">E-Paper Studio</span>
+    <span class="brand-pill">CrowPanel 5.79"</span>
+  </div>
+
   <span class="sep"></span>
-  <button id="undo" class="icon" title="Undo (Cmd/Ctrl+Z)">&#8630;</button>
-  <button id="redo" class="icon" title="Redo (Cmd/Ctrl+Shift+Z)">&#8631;</button>
-  <select id="orient" title="Panel mounting orientation (rotates rendered output to match how your panel is mounted)">
+
+  <select id="page" title="Current Page"></select>
+  <button id="templatebtn" class="badge-btn" title="Add page from ready-made presets">✨ Add Preset</button>
+  <button id="addpage" title="New blank page">＋ Blank</button>
+  <button id="delpage" title="Delete current page">Delete</button>
+
+  <span class="sep"></span>
+
+  <button id="undo" class="icon-btn" title="Undo (Cmd/Ctrl+Z)">&#8630;</button>
+  <button id="redo" class="icon-btn" title="Redo (Cmd/Ctrl+Shift+Z)">&#8631;</button>
+
+  <select id="orient" title="Mounting orientation">
     <option value="0">Landscape (0°)</option>
     <option value="180">Upside-down (180°)</option>
     <option value="90">Portrait CW (90°)</option>
     <option value="270">Portrait CCW (270°)</option>
   </select>
-  <button id="reflowbtn" class="sm" title="Reflow current page elements to fit the current Landscape/Portrait orientation">Reflow</button>
-  <button id="safebtn" class="sm" title="Show footer &amp; held-page padlock margins on canvas">Guides</button>
+
+  <button id="reflowbtn" class="sm" title="Reflow current elements between Landscape and Portrait">Reflow</button>
+  <button id="safebtn" class="sm" title="Toggle footer &amp; held-page padlock margins">Guides</button>
+
   <span class="spacer"></span>
+
   <button id="statuspill" class="status-pill" title="Click to preview the full rendered panel strip">
     <span id="statusdot" class="status-dot"></span>
     <span id="statustext">Loading…</span>
   </button>
-  <button id="setupbtn" title="Configure &amp; generate ESPHome firmware for your panel">Panel setup</button>
-  <button id="datasrc" title="Things Home Assistant cannot provide on its own">Data sources</button>
+
+  <button id="themetoggle" class="icon-btn" title="Toggle Dark/Light Mode">🌙</button>
+  <button id="setupbtn" title="Configure &amp; generate ESPHome firmware">Panel setup</button>
+  <button id="datasrc" title="External feeds (Jellyfin, JSON, Long-term stats)">Data sources</button>
   <button id="push" title="Make the panel fetch and redraw now">Push to panel</button>
-  <button id="save" class="primary">Save</button>
+  <button id="save" class="primary">Save Changes</button>
 </header>
 
 <datalist id="entities-dl"></datalist>
 
 <main>
   <div id="stage">
-    <div id="frame">
-      <div id="canvas">
-        <div class="safe-zone safe-footer"><span id="safefootertag" class="safe-tag" style="right:8px;top:4px">footer zone (y &ge; 232)</span></div>
-        <div class="safe-zone safe-lock"><span class="safe-tag" style="right:4px;bottom:4px">lock</span></div>
+    <div class="stage-toolbar">
+      <div class="screen-meta">
+        <span class="badge-tag" id="res-badge">792 × 272 px</span>
+        <span class="badge-tag">1-Bit Monochrome</span>
+        <span class="badge-tag" id="view-distance-tag">Designed for 3m sofa viewing</span>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button id="zoomfit" class="sm active">Fit</button>
+        <button id="zoom100" class="sm">100%</button>
       </div>
     </div>
 
-    <div id="belt" class="bar-box" style="display:none">
-      <label id="showiflab">Show if</label>
-      <select id="condmode" style="max-width:140px">
-        <option value="simple">Entity check</option>
-        <option value="raw">Custom Jinja</option>
-      </select>
-      <div id="condsimple" style="display:flex;gap:6px;align-items:center;flex:1;flex-wrap:wrap">
-        <input id="condent" list="entities-dl" placeholder="entity (e.g. timer.dryer_cycle)" style="flex:1;min-width:180px">
-        <select id="condop" style="max-width:136px">
-          <option value="eq">is</option>
-          <option value="ne">is not</option>
-          <option value="gt">&gt; greater than</option>
-          <option value="lt">&lt; less than</option>
-          <option value="ge">&ge; at least</option>
-          <option value="le">&le; at most</option>
+    <!-- CrowPanel Hardware Bezel -->
+    <div id="bezel-wrapper">
+      <div class="bezel-header">
+        <span class="bezel-logo">ELECROW CROWPANEL E-PAPER</span>
+        <div class="bezel-dots">
+          <span class="bezel-dot"></span>
+          <span class="bezel-dot"></span>
+          <span class="bezel-dot"></span>
+        </div>
+      </div>
+      <div id="canvas-housing">
+        <div id="canvas">
+          <div class="safe-zone safe-footer"><span id="safefootertag" class="safe-tag" style="right:8px;top:4px">footer zone (y &ge; 232)</span></div>
+          <div class="safe-zone safe-lock"><span class="safe-tag" style="right:4px;bottom:4px">lock</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Behavior & Rotation Bar -->
+    <div class="bar-box">
+      <div style="display:flex;align-items:center;gap:10px;width:100%;margin-bottom:4px">
+        <span class="bar-title">Page Tier</span>
+        <select id="tier" style="max-width:210px" title="When this page appears">
+          <option value="rotate">🔄 Always in rotation</option>
+          <option value="when">⚡ Show only when active</option>
+          <option value="alert">🚨 Urgent interruption</option>
         </select>
-        <input id="condval" placeholder="value (e.g. active)" style="max-width:140px">
+        <span class="hint" id="tierhint" style="margin:0">Shows every few minutes in the rotation cycle.</span>
       </div>
-      <input id="showif" placeholder="e.g. {{ is_state('timer.dryer_cycle','active') }}" style="display:none;flex:1;min-width:220px">
-      <label for="hold" id="holdlab" style="display:none;min-width:auto;margin-left:6px">Hold (min)</label>
-      <input id="hold" type="number" min="1" max="1440" style="display:none;max-width:74px;flex:none">
+
+      <div id="belt" style="display:none;width:100%;gap:8px;align-items:center;flex-wrap:wrap;padding-top:6px;border-top:1px solid var(--border)">
+        <span class="bar-title" id="showiflab">Show when</span>
+        <select id="condmode" style="max-width:130px">
+          <option value="simple">Entity check</option>
+          <option value="raw">Custom Jinja</option>
+        </select>
+        <div id="condsimple" style="display:flex;gap:6px;align-items:center;flex:1;flex-wrap:wrap">
+          <input id="condent" list="entities-dl" placeholder="entity (e.g. calendar.pension, timer.dryer)" style="flex:1;min-width:180px">
+          <select id="condop" style="max-width:130px">
+            <option value="eq">is</option>
+            <option value="ne">is not</option>
+            <option value="gt">&gt; greater than</option>
+            <option value="lt">&lt; less than</option>
+            <option value="ge">&ge; at least</option>
+            <option value="le">&le; at most</option>
+          </select>
+          <input id="condval" placeholder="value (e.g. active, on, 0)" style="max-width:140px">
+        </div>
+        <input id="showif" placeholder="e.g. {{ is_state('timer.dryer_cycle','active') }}" style="display:none;flex:1;min-width:220px">
+        <label for="hold" id="holdlab" style="display:none;color:var(--text-secondary);font-size:12px;margin-left:6px">Hold (min)</label>
+        <input id="hold" type="number" min="1" max="1440" style="display:none;max-width:74px">
+      </div>
     </div>
 
+    <!-- Rotation Strip -->
     <div id="rotbelt" class="bar-box">
-      <label title="Pages shown in rotation; click a pill to switch, arrows to reorder, + to add/weight">Rotation</label>
+      <span class="bar-title">Active Rotation</span>
       <div id="rotpills" class="rot-pills"></div>
-      <button id="rotadd" class="sm" title="Add another slot for the current page in rotation">+ Add current page</button>
-      <button id="stripbtn" class="sm" title="Preview all live rotation pages stacked as the panel receives them">Full strip</button>
+      <button id="rotadd" class="sm" title="Add another slot for current page">+ Add slot</button>
+      <button id="stripbtn" class="sm" title="Preview all stacked pages">Full strip</button>
     </div>
 
-    <p class="hint">Drag an entity onto the canvas, or add an element. Drag to move, corner to resize.
-       Arrows nudge, Shift+arrows by ten. Hold Alt to ignore snapping.</p>
+    <p class="hint">💡 <b>Tip:</b> Click an entity card or drag it onto the canvas. Use arrows to nudge, Shift+arrows by 10px. Hold Alt to ignore grid snapping.</p>
   </div>
 
+  <!-- Sidebar Rail -->
   <aside>
-    <div class="card"><h3>Selected element</h3><div class="body" id="props"></div></div>
+    <!-- Element Properties Card -->
+    <div class="card">
+      <h3>
+        <span>Selected Element</span>
+        <span id="selbadge" class="badge-tag" style="display:none"></span>
+      </h3>
+      <div class="body" id="props"></div>
+    </div>
 
-    <div class="card"><h3>Add element</h3><div class="body">
-      <div class="pal">
-        <button data-add="number">Number</button>
-        <button data-add="text">Text</button>
-        <button data-add="icon">Icon</button>
-        <button data-add="curve">Curve</button>
-        <button data-add="line">Line</button>
+    <!-- Quick Add Elements Card -->
+    <div class="card">
+      <h3>Add New Element</h3>
+      <div class="body">
+        <div class="pal">
+          <button data-add="number"><span class="icon">#️⃣</span><span>Number</span></button>
+          <button data-add="text"><span class="icon">🔤</span><span>Text</span></button>
+          <button data-add="icon"><span class="icon">⭐</span><span>Icon</span></button>
+          <button data-add="curve"><span class="icon">📈</span><span>Graph</span></button>
+          <button data-add="line"><span class="icon">➖</span><span>Divider</span></button>
+          <button id="quickpensionbtn"><span class="icon">💰</span><span>Pension</span></button>
+        </div>
       </div>
-    </div></div>
+    </div>
 
-    <div class="card"><h3>Entities</h3><div class="body">
-      <input id="search" placeholder="Search by name or id…" style="width:100%;margin-bottom:8px">
-      <div id="ents"></div>
-    </div></div>
+    <!-- Entities Explorer Card -->
+    <div class="card">
+      <h3>
+        <span>Entities</span>
+        <span class="badge-tag" id="entcount">0</span>
+      </h3>
+      <div class="body">
+        <!-- Filter chips for fast zero-friction discovery -->
+        <div class="cat-tabs" id="domain-filters">
+          <span class="cat-chip active" data-domain="">All</span>
+          <span class="cat-chip" data-domain="calendar">📅 Dates</span>
+          <span class="cat-chip" data-domain="sensor">🌡️ Sensors</span>
+          <span class="cat-chip" data-domain="binary_sensor">⚡ Binary</span>
+          <span class="cat-chip" data-domain="climate">❄️ Climate</span>
+          <span class="cat-chip" data-domain="lock">🔒 Security</span>
+          <span class="cat-chip" data-domain="person">👤 People</span>
+        </div>
+        <input id="search" placeholder="Search friendly name or id…" style="width:100%;margin-bottom:8px">
+        <div id="ents"></div>
+      </div>
+    </div>
   </aside>
 </main>
 
-<!-- Icon Picker Modal -->
-<div id="pickwrap" class="modal-wrap"><div class="modal-card" style="width:min(660px,94vw)">
-  <div class="row" style="margin:0">
-    <input id="picksearch" placeholder="Search icons…" style="flex:1">
-    <button id="pickclose">Close</button>
+<!-- Preset / Template Library Modal -->
+<div id="templatewrap" class="modal-wrap">
+  <div class="modal-card">
+    <div class="row" style="margin:0">
+      <strong style="font-size:16px;flex:1">✨ Ready-Made Page Presets</strong>
+      <button id="templateclose">Close</button>
+    </div>
+    <p class="hint" style="margin:0">Pick a preset to quickly create a beautiful, sofa-legible page. Ideal for pensions, bin days, solar generation, or room temperatures.</p>
+    <div class="template-grid" id="templategrid">
+      <!-- Injected via JS -->
+    </div>
   </div>
-  <div id="picks"></div>
-</div></div>
+</div>
+
+<!-- Icon Picker Modal -->
+<div id="pickwrap" class="modal-wrap">
+  <div class="modal-card" style="width:min(680px,94vw)">
+    <div class="row" style="margin:0">
+      <input id="picksearch" placeholder="Search Material Design icons…" style="flex:1">
+      <button id="pickclose">Close</button>
+    </div>
+    <div id="picks"></div>
+  </div>
+</div>
 
 <!-- Data Sources Modal -->
 <div id="srcwrap" class="modal-wrap">
-  <div class="modal-card" style="width:min(620px,94vw)">
+  <div class="modal-card" style="width:min(640px,94vw)">
     <div class="row" style="margin:0">
-      <strong style="flex:1">Data sources</strong>
-      <select id="srcadd" style="max-width:190px">
+      <strong style="flex:1;font-size:15px">Data sources</strong>
+      <select id="srcadd" style="max-width:200px">
         <option value="">Add a source…</option>
         <option value="jellyfin">Jellyfin — new and unwatched</option>
         <option value="rest">Any JSON API</option>
@@ -274,12 +1061,12 @@ aside{display:flex;flex-direction:column;gap:12px}
       </select>
       <button id="srcclose">Close</button>
     </div>
-    <div id="srclist" style="overflow:auto;display:flex;flex-direction:column;gap:12px"></div>
-    <div class="chip">Each source publishes <code>sensor.epaper_&lt;name&gt;</code> into Home
-      Assistant. Pages then bind to it like any other entity. With none configured the
-      add-on simply renders the entities you already have.</div>
-    <div class="row" style="margin:0"><span id="srcmsg" style="flex:1;color:var(--mut);font-size:13px"></span>
-      <button id="srcsave" class="primary">Save sources</button></div>
+    <div id="srclist" style="overflow-y:auto;display:flex;flex-direction:column;gap:12px;max-height:55vh"></div>
+    <div class="chip">Each source publishes <code>sensor.epaper_&lt;name&gt;</code> into Home Assistant. Pages then bind to it like any other entity.</div>
+    <div class="row" style="margin:0">
+      <span id="srcmsg" style="flex:1;color:var(--text-secondary);font-size:13px"></span>
+      <button id="srcsave" class="primary">Save sources</button>
+    </div>
   </div>
 </div>
 
@@ -291,7 +1078,7 @@ aside{display:flex;flex-direction:column;gap:12px}
       <button id="setupclose">Close</button>
     </div>
     <div id="setupconn" class="chip" style="margin:0">Checking panel connection…</div>
-    <div style="overflow:auto;display:flex;flex-direction:column;gap:12px;padding-right:2px">
+    <div style="overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding-right:2px;max-height:60vh">
       <div class="card"><div class="body">
         <div class="row">
           <label style="width:130px">HA host / IP</label>
@@ -308,7 +1095,7 @@ aside{display:flex;flex-direction:column;gap:12px}
           <label style="width:130px">Device name</label>
           <input id="cfg_dev" placeholder="crowpanel-epaper">
           <label style="width:auto;margin-left:6px">Mount</label>
-          <select id="cfg_orient" style="max-width:170px" title="Panel mounting orientation (also swaps Next/Prev button pins when mounted 180° or 270°)">
+          <select id="cfg_orient" style="max-width:170px" title="Panel mounting orientation">
             <option value="0">Landscape (0°)</option>
             <option value="180">Upside-down (180°)</option>
             <option value="90">Portrait CW (90°)</option>
@@ -317,12 +1104,12 @@ aside{display:flex;flex-direction:column;gap:12px}
         </div>
         <div class="row">
           <label style="width:130px">Wi-Fi SSID</label>
-          <input id="cfg_ssid" placeholder="Leave blank to use ESPHome !secret wifi_ssid">
+          <input id="cfg_ssid" placeholder="Leave blank to use !secret wifi_ssid">
           <input id="cfg_pw" type="password" placeholder="Wi-Fi password" style="max-width:190px">
         </div>
         <div class="row">
           <label style="width:130px">API encryption key</label>
-          <input id="cfg_apikey" readonly style="font-family:ui-monospace,monospace;font-size:12px;background:#f7f7f5">
+          <input id="cfg_apikey" readonly style="font-family:ui-monospace,monospace;font-size:12px;background:var(--bg-input)">
           <button id="copyapikey" class="sm" title="Copy key for Home Assistant adoption">Copy key</button>
         </div>
         <div class="row">
@@ -332,7 +1119,7 @@ aside{display:flex;flex-direction:column;gap:12px}
         </div>
         <div class="row" style="margin-top:4px">
           <label style="width:130px"></label>
-          <label style="width:auto;display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--ink)">
+          <label style="width:auto;display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--text-primary)">
             <input id="cfg_secrets" type="checkbox" style="min-height:0;width:16px;height:16px;flex:none">
             Use <code>!secret</code> references instead of embedding credentials in YAML
           </label>
@@ -358,8 +1145,8 @@ aside{display:flex;flex-direction:column;gap:12px}
         <textarea id="secretsout" class="codebox" style="max-height:110px" readonly></textarea>
       </div>
 
-      <div class="card"><div class="body" style="background:#f9f9f7">
-        <div class="lbl" style="font-size:11px;color:var(--mut);text-transform:uppercase;margin-bottom:6px">How to flash in Home Assistant</div>
+      <div class="card"><div class="body" style="background:var(--bg-card)">
+        <div class="lbl" style="font-size:11px;color:var(--text-secondary);text-transform:uppercase;margin-bottom:6px">How to flash in Home Assistant</div>
         <ol class="steps">
           <li>Open the <b>ESPHome</b> add-on → click <b>New Device</b> → name it and pick <b>ESP32-S3</b> → click <b>Skip</b>.</li>
           <li>Click <b>Edit</b> on the newly created device card, replace the file with the YAML above, and click <b>Install</b> (use USB-C for the first flash; updates after that are wireless OTA).</li>
@@ -372,927 +1159,1305 @@ aside{display:flex;flex-direction:column;gap:12px}
 
 <!-- Full Strip Preview Modal -->
 <div id="stripwrap" class="modal-wrap">
-  <div class="modal-card" style="width:min(840px,95vw)">
+  <div class="modal-card" style="width:min(880px,95vw)">
     <div class="row" style="margin:0">
       <strong style="flex:1">Live panel strip (<code>/frames.png</code>)</strong>
-      <span id="stripmeta" style="font-size:12.5px;color:var(--mut)"></span>
+      <span id="stripmeta" style="font-size:12.5px;color:var(--text-secondary)"></span>
       <button id="striprefresh" class="sm">Re-render</button>
       <button id="stripclose">Close</button>
     </div>
-    <div style="overflow:auto;background:#3a3a37;padding:12px;border-radius:8px;text-align:center">
+    <div style="overflow:auto;background:#0d1117;padding:16px;border-radius:10px;text-align:center">
       <img id="stripimg" alt="Rendered strip" style="max-width:100%;height:auto;background:#fff;border-radius:2px;display:block;margin:0 auto">
     </div>
   </div>
 </div>
 
+<!-- Toast Feedback -->
 <div id="toast"><span id="toasttext"></span><button id="toastact" style="display:none"></button></div>
 
 <script>
-const SNAP=6;
-let spec={orientation:0,rotation:[],pages:{}}, cur=null, sel=-1, ents=[], timer=null, prevBlobUrl=null;
-let hist=[], hpos=-1, metrics=[], liveStatus={pages:[]};
-const $=id=>document.getElementById(id);
-const canvas=$("canvas"), frame=$("frame");
-const isPortrait=()=>[90,270].includes(Number(spec.orientation||0));
-const curW=()=>isPortrait()?272:792;
-const curH=()=>isPortrait()?792:272;
-const curSafeH=()=>isPortrait()?752:232;
-const curMargin=()=>isPortrait()?20:40;
-const api=(p,o)=>fetch(p,o).then(r=>r.ok?r:Promise.reject(new Error(r.status+" "+r.statusText)));
-const esc=t=>String(t??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-let toastT=null;
-function msg(text,action){
+const SNAP = 6;
+let spec = { orientation: 0, rotation: [], pages: {} }, cur = null, sel = -1, ents = [], timer = null, prevBlobUrl = null;
+let hist = [], hpos = -1, metrics = [], liveStatus = { pages: [] };
+let activeDomainFilter = "";
+
+const $ = id => document.getElementById(id);
+const canvas = $("canvas"), bezel = $("bezel-wrapper");
+const isPortrait = () => [90, 270].includes(Number(spec.orientation || 0));
+const curW = () => isPortrait() ? 272 : 792;
+const curH = () => isPortrait() ? 792 : 272;
+const curSafeH = () => isPortrait() ? 752 : 232;
+const curMargin = () => isPortrait() ? 20 : 40;
+const api = (p, o) => fetch(p, o).then(r => r.ok ? r : Promise.reject(new Error(r.status + " " + r.statusText)));
+const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+/* Theme Toggle */
+let curTheme = localStorage.getItem("epaper_theme") || "dark";
+document.body.setAttribute("data-theme", curTheme);
+$("themetoggle").textContent = curTheme === "dark" ? "☀️" : "🌙";
+$("themetoggle").onclick = () => {
+  curTheme = curTheme === "dark" ? "light" : "dark";
+  document.body.setAttribute("data-theme", curTheme);
+  $("themetoggle").textContent = curTheme === "dark" ? "☀️" : "🌙";
+  localStorage.setItem("epaper_theme", curTheme);
+};
+
+/* Zoom Controls */
+$("zoomfit").onclick = () => {
+  bezel.style.maxWidth = isPortrait() ? "340px" : "100%";
+  $("zoomfit").classList.add("active");
+  $("zoom100").classList.remove("active");
+};
+$("zoom100").onclick = () => {
+  bezel.style.maxWidth = isPortrait() ? "300px" : "840px";
+  $("zoom100").classList.add("active");
+  $("zoomfit").classList.remove("active");
+};
+
+/* Toast Messages */
+let toastT = null;
+function msg(text, action) {
   clearTimeout(toastT);
-  $("toasttext").textContent=text;
-  const b=$("toastact");
-  if(action){ b.style.display=""; b.textContent=action.label;
-              b.onclick=()=>{ action.run(); hideToast(); }; }
-  else b.style.display="none";
+  $("toasttext").textContent = text;
+  const b = $("toastact");
+  if (action) {
+    b.style.display = "";
+    b.textContent = action.label;
+    b.onclick = () => { action.run(); hideToast(); };
+  } else b.style.display = "none";
   $("toast").classList.add("on");
-  toastT=setTimeout(hideToast, action?7000:3000);
+  toastT = setTimeout(hideToast, action ? 7000 : 3200);
 }
-const hideToast=()=>$("toast").classList.remove("on");
+const hideToast = () => $("toast").classList.remove("on");
 
-function syncOrientUI(){
-  const o=String(Number(spec.orientation||0));
-  if($("orient")) $("orient").value=o;
-  if($("cfg_orient")) $("cfg_orient").value=o;
-  const port=isPortrait();
-  frame.classList.toggle("portrait",port);
-  canvas.classList.toggle("portrait",port);
-  if($("safefootertag")) $("safefootertag").innerHTML=`footer zone (y &ge; ${port?752:232})`;
+function syncOrientUI() {
+  const o = String(Number(spec.orientation || 0));
+  if ($("orient")) $("orient").value = o;
+  if ($("cfg_orient")) $("cfg_orient").value = o;
+  const port = isPortrait();
+  bezel.classList.toggle("portrait", port);
+  canvas.classList.toggle("portrait", port);
+  $("res-badge").textContent = port ? "272 × 792 px" : "792 × 272 px";
+  if ($("safefootertag")) $("safefootertag").innerHTML = `footer zone (y &ge; ${port ? 752 : 232})`;
 }
 
-/* ---------- smart page reflow between Landscape (792x272) and Portrait (272x792) ---------- */
-function reflowPageElements(p, toPortrait){
-  const list=p&&p.elements;
-  if(!Array.isArray(list)||!list.length) return;
-  if(toPortrait){
-    // Stack / adapt elements cleanly into 272x792 (safe height 752, margin 20, inner width 232)
-    const items=list.map((el,idx)=>({el,idx})).sort((a,b)=>(Math.round(a.el.y/28)-Math.round(b.el.y/28))||(a.el.x-b.el.x));
-    let yCursor=24;
-    for(const {el} of items){
-      if(el.type==="line"){
-        el.x=20; el.w=232; el.h=Math.max(2,Math.min(8,el.h||2));
-        el.y=Math.min(740,yCursor);
-        yCursor+=el.h+14;
-      }else if(el.type==="icon"){
-        const side=Math.min(96,Math.max(36,el.w||64));
-        el.x=20; el.y=Math.min(740-side,yCursor); el.w=side; el.h=side;
-        yCursor+=side+10;
-      }else if(el.type==="curve"){
-        const h=Math.min(140,Math.max(56,el.h||80));
-        el.x=20; el.w=232; el.y=Math.min(740-h,yCursor); el.h=h;
-        yCursor+=h+14;
-      }else{
-        const h=Math.min(130,Math.max(26,Math.round((el.h||44)*0.82)));
-        el.x=20; el.w=232; el.y=Math.min(740-h,yCursor); el.h=h;
-        if(el.size && el.size>72) el.size=Math.round(el.size*0.72);
-        yCursor+=h+10;
+/* Page reflow between orientations */
+function reflowPageElements(p, toPortrait) {
+  const list = p && p.elements;
+  if (!Array.isArray(list) || !list.length) return;
+  if (toPortrait) {
+    const items = list.map((el, idx) => ({ el, idx })).sort((a, b) => (Math.round(a.el.y / 28) - Math.round(b.el.y / 28)) || (a.el.x - b.el.x));
+    let yCursor = 24;
+    for (const { el } of items) {
+      if (el.type === "line") {
+        el.x = 20; el.w = 232; el.h = Math.max(2, Math.min(8, el.h || 2));
+        el.y = Math.min(740, yCursor);
+        yCursor += el.h + 14;
+      } else if (el.type === "icon") {
+        const side = Math.min(96, Math.max(36, el.w || 64));
+        el.x = 20; el.y = Math.min(740 - side, yCursor); el.w = side; el.h = side;
+        yCursor += side + 10;
+      } else if (el.type === "curve") {
+        const h = Math.min(140, Math.max(56, el.h || 80));
+        el.x = 20; el.w = 232; el.y = Math.min(740 - h, yCursor); el.h = h;
+        yCursor += h + 14;
+      } else {
+        const h = Math.min(130, Math.max(26, Math.round((el.h || 44) * 0.82)));
+        el.x = 20; el.w = 232; el.y = Math.min(740 - h, yCursor); el.h = h;
+        if (el.size && el.size > 72) el.size = Math.round(el.size * 0.72);
+        yCursor += h + 10;
       }
     }
-  }else{
-    // Adapt from Portrait (272x792) back to Landscape (792x272)
-    for(const el of list){
-      if(el.type==="line" && el.w>=200){
-        el.x=40; el.w=712; el.y=Math.min(224,Math.max(16,Math.round(el.y*(232/752))));
-      }else{
-        el.x=Math.min(732,Math.max(0,Math.round(el.x*(792/272))));
-        el.y=Math.min(210,Math.max(0,Math.round(el.y*(232/752))));
-        el.w=Math.min(792-el.x,Math.max(24,Math.round(el.w*(792/272)*0.65)));
-        el.h=Math.min(232-el.y,Math.max(18,el.h));
+  } else {
+    for (const el of list) {
+      if (el.type === "line" && el.w >= 200) {
+        el.x = 40; el.w = 712; el.y = Math.min(224, Math.max(16, Math.round(el.y * (232 / 752))));
+      } else {
+        el.x = Math.min(732, Math.max(0, Math.round(el.x * (792 / 272))));
+        el.y = Math.min(210, Math.max(0, Math.round(el.y * (232 / 752))));
+        el.w = Math.min(792 - el.x, Math.max(24, Math.round(el.w * (792 / 272) * 0.65)));
+        el.h = Math.min(232 - el.y, Math.max(18, el.h));
       }
     }
   }
 }
 
-function reflowCurrentPage(){
-  if(!cur||!page()) return;
+function reflowCurrentPage() {
+  if (!cur || !page()) return;
   snapshot();
   reflowPageElements(page(), isPortrait());
   paint(); preview();
-  msg(`Reflowed "${cur}" for ${isPortrait()?"Portrait (272×792)":"Landscape (792×272)"}.`, {label:"Undo", run:undo});
+  msg(`Reflowed "${cur}" for ${isPortrait() ? "Portrait" : "Landscape"}.`, { label: "Undo", run: undo });
 }
 
-/* ---------- history ---------- */
-function snapshot(){
-  hist=hist.slice(0,hpos+1);
+/* History */
+function snapshot() {
+  hist = hist.slice(0, hpos + 1);
   hist.push(JSON.stringify(spec));
-  if(hist.length>60) hist.shift();
-  hpos=hist.length-1; buttons();
+  if (hist.length > 60) hist.shift();
+  hpos = hist.length - 1;
+  buttons();
 }
-function restore(i){
-  if(i<0||i>=hist.length) return;
-  hpos=i; spec=JSON.parse(hist[hpos]);
-  if(!spec.pages[cur]) cur=Object.keys(spec.pages)[0];
+function restore(i) {
+  if (i < 0 || i >= hist.length) return;
+  hpos = i;
+  spec = JSON.parse(hist[hpos]);
+  if (!spec.pages[cur]) cur = Object.keys(spec.pages)[0];
   syncOrientUI();
-  fillPages(); $("page").value=cur; sel=-1; holdRow(); paint(); preview(); buttons();
+  fillPages();
+  $("page").value = cur;
+  sel = -1;
+  holdRow(); paint(); preview(); buttons();
 }
-const undo=()=>restore(hpos-1), redo=()=>restore(hpos+1);
-function buttons(){ $("undo").disabled=hpos<=0; $("redo").disabled=hpos>=hist.length-1; }
+const undo = () => restore(hpos - 1), redo = () => restore(hpos + 1);
+function buttons() {
+  $("undo").disabled = hpos <= 0;
+  $("redo").disabled = hpos >= hist.length - 1;
+}
 
-/* ---------- boot & live status ---------- */
-async function refreshStatus(){
-  try{
-    liveStatus=await api("api/status").then(r=>r.json());
-    const dot=$("statusdot"), txt=$("statustext");
-    if(liveStatus.error){
-      dot.className="status-dot err";
-      txt.textContent="Render error";
-    }else if(liveStatus.active_alert){
-      dot.className="status-dot warn";
-      txt.textContent=`Alert active: ${liveStatus.active_alert}`;
-    }else{
-      dot.className="status-dot";
-      const n=(liveStatus.pages||[]).length;
-      const kb=((liveStatus.strip_bytes||0)/1024).toFixed(1);
-      const o=Number(spec.orientation||0);
-      const otag=o?` · ${o}°`:"";
-      txt.textContent=`${n} page${n===1?"":"s"} live${otag} · ${kb} KB`;
+/* Status */
+async function refreshStatus() {
+  try {
+    liveStatus = await api("api/status").then(r => r.json());
+    const dot = $("statusdot"), txt = $("statustext");
+    if (liveStatus.error) {
+      dot.className = "status-dot err";
+      txt.textContent = "Render error";
+    } else if (liveStatus.active_alert) {
+      dot.className = "status-dot warn";
+      txt.textContent = `Alert: ${liveStatus.active_alert}`;
+    } else {
+      dot.className = "status-dot";
+      const n = (liveStatus.pages || []).length;
+      const kb = ((liveStatus.strip_bytes || 0) / 1024).toFixed(1);
+      const o = Number(spec.orientation || 0);
+      const otag = o ? ` · ${o}°` : "";
+      txt.textContent = `${n} page${n === 1 ? "" : "s"} live${otag} · ${kb} KB`;
     }
     drawRotationPills();
-  }catch(_){}
+  } catch (_) {}
 }
 
-async function boot(){
-  spec=await api("api/layouts").then(r=>r.json());
-  if(spec.orientation===undefined) spec.orientation=0;
+async function boot() {
+  spec = await api("api/layouts").then(r => r.json());
+  if (spec.orientation === undefined) spec.orientation = 0;
   syncOrientUI();
-  ents=await api("api/entities").then(r=>r.json()).catch(()=>[]);
-  $("entities-dl").innerHTML=ents.map(e=>`<option value="${esc(e.entity_id)}">${esc(e.name)} (${esc(e.state)})</option>`).join("");
-  drawEntities(""); fillPages(); snapshot();
+  ents = await api("api/entities").then(r => r.json()).catch(() => []);
+  $("entcount").textContent = ents.length;
+  $("entities-dl").innerHTML = ents.map(e => `<option value="${esc(e.entity_id)}">${esc(e.name)} (${esc(e.state)})</option>`).join("");
+  drawEntities("");
+  fillPages();
+  snapshot();
   select(Object.keys(spec.pages)[0]);
+  buildTemplateLibrary();
   await refreshStatus();
   setInterval(refreshStatus, 15000);
 }
 
-const fillPages=()=>{
-  $("page").innerHTML=Object.keys(spec.pages).map(n=>{
-    const t=spec.pages[n].tier||"rotate";
-    const badge=t==="alert"?" [alert]":t==="when"?" [when]":"";
+const fillPages = () => {
+  $("page").innerHTML = Object.keys(spec.pages).map(n => {
+    const t = spec.pages[n].tier || "rotate";
+    const badge = t === "alert" ? " [🚨 alert]" : t === "when" ? " [⚡ when]" : "";
     return `<option value="${esc(n)}">${esc(n)}${badge}</option>`;
   }).join("");
   drawRotationPills();
 };
-const page=()=>spec.pages[cur];
-const els=()=>page().elements||(page().elements=[]);
+const page = () => spec.pages[cur];
+const els = () => page().elements || (page().elements = []);
 
-function drawRotationPills(){
-  const box=$("rotpills"); if(!box) return;
-  const rot=spec.rotation||[];
-  if(!rot.length){
-    box.innerHTML='<span class="empty">No pages in rotation.</span>';
+function drawRotationPills() {
+  const box = $("rotpills");
+  if (!box) return;
+  const rot = spec.rotation || [];
+  if (!rot.length) {
+    box.innerHTML = '<span class="empty">No pages in rotation.</span>';
     return;
   }
-  box.innerHTML=rot.map((n,i)=>{
-    const p=spec.pages[n]||{};
-    const isWhen=p.tier==="when";
-    const isLive=(liveStatus.pages||[]).includes(n);
-    return `<span class="rpill${n===cur?" cur":""}" data-ri="${i}" data-rn="${esc(n)}" title="${isWhen?(isLive?"Condition true (currently in strip)":"Condition false (currently skipped)"):"Always in rotation"}">
+  box.innerHTML = rot.map((n, i) => {
+    const p = spec.pages[n] || {};
+    const isWhen = p.tier === "when";
+    const isLive = (liveStatus.pages || []).includes(n);
+    return `<span class="rpill${n === cur ? " cur" : ""}" data-ri="${i}" data-rn="${esc(n)}" title="${isWhen ? (isLive ? "Condition true (in strip)" : "Condition false (skipped)") : "In rotation"}">
       <button data-rmv="${i}:-1" title="Move earlier">&lsaquo;</button>
       <span class="rname">${esc(n)}</span>
-      ${isWhen?`<span class="tag">${isLive?"when · on":"when"}</span>`:""}
+      ${isWhen ? `<span class="tag">${isLive ? "active" : "when"}</span>` : ""}
       <button data-rmv="${i}:1" title="Move later">&rsaquo;</button>
       <button data-rdel="${i}" title="Remove from rotation">&times;</button>
     </span>`;
   }).join("");
-  box.querySelectorAll(".rpill").forEach(el=>el.onclick=e=>{
-    if(e.target.tagName==="BUTTON") return;
-    const rn=el.dataset.rn;
-    if(spec.pages[rn]) select(rn);
+  box.querySelectorAll(".rpill").forEach(el => el.onclick = e => {
+    if (e.target.tagName === "BUTTON") return;
+    const rn = el.dataset.rn;
+    if (spec.pages[rn]) select(rn);
   });
-  box.querySelectorAll("[data-rmv]").forEach(b=>b.onclick=e=>{
+  box.querySelectorAll("[data-rmv]").forEach(b => b.onclick = e => {
     e.stopPropagation();
-    const [idx,dir]=b.dataset.rmv.split(":").map(Number);
-    const j=idx+dir;
-    if(j<0||j>=spec.rotation.length) return;
+    const [idx, dir] = b.dataset.rmv.split(":").map(Number);
+    const j = idx + dir;
+    if (j < 0 || j >= spec.rotation.length) return;
     snapshot();
-    const tmp=spec.rotation[idx];
-    spec.rotation[idx]=spec.rotation[j];
-    spec.rotation[j]=tmp;
+    const tmp = spec.rotation[idx];
+    spec.rotation[idx] = spec.rotation[j];
+    spec.rotation[j] = tmp;
     drawRotationPills();
   });
-  box.querySelectorAll("[data-rdel]").forEach(b=>b.onclick=e=>{
+  box.querySelectorAll("[data-rdel]").forEach(b => b.onclick = e => {
     e.stopPropagation();
     snapshot();
-    spec.rotation.splice(+b.dataset.rdel,1);
+    spec.rotation.splice(+b.dataset.rdel, 1);
     drawRotationPills();
   });
 }
 
-$("rotadd").onclick=()=>{
-  if(!cur||!page()) return;
-  if(page().tier==="alert"){
-    msg("Alert pages interrupt automatically and do not sit in the rotation.");
+$("rotadd").onclick = () => {
+  if (!cur || !page()) return;
+  if (page().tier === "alert") {
+    msg("Alert pages interrupt automatically and do not sit in rotation.");
     return;
   }
   snapshot();
-  (spec.rotation||(spec.rotation=[])).push(cur);
+  (spec.rotation || (spec.rotation = [])).push(cur);
   drawRotationPills();
 };
 
-/* ---------- structured Show-If condition builder ---------- */
-function parseShowIf(expr){
-  const s=String(expr||"").trim();
-  if(!s) return {mode:"simple",ent:"",op:"eq",val:"active"};
-  const inner=(s.startswith?.("{{")||s.startsWith("{{"))&&s.endsWith("}}") ? s.slice(2,-2).trim() : s;
-  let m=inner.match(/^is_state\(\s*'([^']+)'\s*,\s*'([^']*)'\s*\)$/);
-  if(m) return {mode:"simple",ent:m[1],op:"eq",val:m[2]};
-  m=inner.match(/^not\s+is_state\(\s*'([^']+)'\s*,\s*'([^']*)'\s*\)$/);
-  if(m) return {mode:"simple",ent:m[1],op:"ne",val:m[2]};
-  m=inner.match(/^states\(\s*'([^']+)'\s*\)\s*\|\s*(?:int|float)\([^)]*\)\s*(>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)$/);
-  if(m){
-    const map={">":"gt","<":"lt",">=":"ge","<=":"le"};
-    return {mode:"simple",ent:m[1],op:map[m[2]]||"gt",val:m[3]};
+/* Structured Show-If Condition Builder */
+function parseShowIf(expr) {
+  const s = String(expr || "").trim();
+  if (!s) return { mode: "simple", ent: "", op: "eq", val: "active" };
+  const inner = (s.startsWith?.("{{") || s.startsWith("{{")) && s.endsWith("}}") ? s.slice(2, -2).trim() : s;
+  let m = inner.match(/^is_state\(\s*'([^']+)'\s*,\s*'([^']*)'\s*\)$/);
+  if (m) return { mode: "simple", ent: m[1], op: "eq", val: m[2] };
+  m = inner.match(/^not\s+is_state\(\s*'([^']+)'\s*,\s*'([^']*)'\s*\)$/);
+  if (m) return { mode: "simple", ent: m[1], op: "ne", val: m[2] };
+  m = inner.match(/^states\(\s*'([^']+)'\s*\)\s*\|\s*(?:int|float)\([^)]*\)\s*(>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)$/);
+  if (m) {
+    const map = { ">": "gt", "<": "lt", ">=": "ge", "<=": "le" };
+    return { mode: "simple", ent: m[1], op: map[m[2]] || "gt", val: m[3] };
   }
-  return {mode:"raw",raw:s};
+  return { mode: "raw", raw: s };
 }
 
-function compileShowIf(){
-  if($("condmode").value==="raw") return $("showif").value.trim();
-  const ent=$("condent").value.trim().replace(/'/g,"");
-  const op=$("condop").value;
-  const val=$("condval").value.trim().replace(/'/g,"");
-  if(!ent) return "";
-  if(op==="eq") return `{{ is_state('${ent}','${val}') }}`;
-  if(op==="ne") return `{{ not is_state('${ent}','${val}') }}`;
-  const sym={gt:">",lt:"<",ge:">=",le:"<="}[op]||">";
-  const num=Number(val);
-  const rhs=isNaN(num)?0:num;
+function compileShowIf() {
+  if ($("condmode").value === "raw") return $("showif").value.trim();
+  const ent = $("condent").value.trim().replace(/'/g, "");
+  const op = $("condop").value;
+  const val = $("condval").value.trim().replace(/'/g, "");
+  if (!ent) return "";
+  if (op === "eq") return `{{ is_state('${ent}','${val}') }}`;
+  if (op === "ne") return `{{ not is_state('${ent}','${val}') }}`;
+  const sym = { gt: ">", lt: "<", ge: ">=", le: "<=" }[op] || ">";
+  const num = Number(val);
+  const rhs = isNaN(num) ? 0 : num;
   return `{{ states('${ent}') | float(0) ${sym} ${rhs} }}`;
 }
 
-function syncShowIfUI(){
-  const raw=(page()&&page().show_if)||"";
-  $("showif").value=raw;
-  const parsed=parseShowIf(raw);
-  $("condmode").value=parsed.mode;
-  $("condsimple").style.display=parsed.mode==="simple"?"flex":"none";
-  $("showif").style.display=parsed.mode==="raw"?"":"none";
-  if(parsed.mode==="simple"){
-    $("condent").value=parsed.ent||"";
-    $("condop").value=parsed.op||"eq";
-    $("condval").value=parsed.val??"";
+function syncShowIfUI() {
+  const raw = (page() && page().show_if) || "";
+  $("showif").value = raw;
+  const parsed = parseShowIf(raw);
+  $("condmode").value = parsed.mode;
+  $("condsimple").style.display = parsed.mode === "simple" ? "flex" : "none";
+  $("showif").style.display = parsed.mode === "raw" ? "" : "none";
+  if (parsed.mode === "simple") {
+    $("condent").value = parsed.ent || "";
+    $("condop").value = parsed.op || "eq";
+    $("condval").value = parsed.val ?? "";
   }
 }
 
-function commitShowIf(){
+function commitShowIf() {
   snapshot();
-  const compiled=compileShowIf();
-  $("showif").value=compiled;
-  if(compiled) page().show_if=compiled;
+  const compiled = compileShowIf();
+  $("showif").value = compiled;
+  if (compiled) page().show_if = compiled;
   else delete page().show_if;
 }
 
-$("condmode").onchange=()=>{
-  const m=$("condmode").value;
-  $("condsimple").style.display=m==="simple"?"flex":"none";
-  $("showif").style.display=m==="raw"?"":"none";
-  if(m==="raw" && !$("showif").value.trim()){
-    $("showif").value=compileShowIf();
+$("condmode").onchange = () => {
+  const m = $("condmode").value;
+  $("condsimple").style.display = m === "simple" ? "flex" : "none";
+  $("showif").style.display = m === "raw" ? "" : "none";
+  if (m === "raw" && !$("showif").value.trim()) {
+    $("showif").value = compileShowIf();
   }
 };
-$("condent").onchange=commitShowIf;
-$("condop").onchange=commitShowIf;
-$("condval").onchange=commitShowIf;
-$("showif").onchange=e=>{snapshot();const v=e.target.value.trim(); v?page().show_if=v:delete page().show_if;};
+$("condent").onchange = commitShowIf;
+$("condop").onchange = commitShowIf;
+$("condval").onchange = commitShowIf;
+$("showif").onchange = e => {
+  snapshot();
+  const v = e.target.value.trim();
+  v ? page().show_if = v : delete page().show_if;
+};
 
-function select(name){
-  cur=name; sel=-1; if(!cur||!page()) return;
-  $("page").value=cur;
-  $("tier").value=page().tier||"rotate";
-  $("hold").value=page().hold_minutes??10;
+function select(name) {
+  cur = name;
+  sel = -1;
+  if (!cur || !page()) return;
+  $("page").value = cur;
+  $("tier").value = page().tier || "rotate";
+  $("hold").value = page().hold_minutes ?? 10;
   syncShowIfUI();
   drawRotationPills();
   holdRow();
   paint(); preview();
 }
 
-function paint(){
-  canvas.querySelectorAll(".el,.guide").forEach(n=>n.remove());
-  if(!cur||!page()) return;
-  const cw=curW(), ch=curH();
-  els().forEach((el,i)=>{
-    const d=document.createElement("div");
-    d.className="el"+(i===sel?" sel":"");
-    d.style.left=(el.x/cw*100)+"%"; d.style.top=(el.y/ch*100)+"%";
-    d.style.width=(el.w/cw*100)+"%"; d.style.height=(el.h/ch*100)+"%";
-    d.dataset.i=i; d.innerHTML='<div class="hd"></div>';
+function paint() {
+  canvas.querySelectorAll(".el,.guide").forEach(n => n.remove());
+  if (!cur || !page()) return;
+  const cw = curW(), ch = curH();
+  els().forEach((el, i) => {
+    const d = document.createElement("div");
+    d.className = "el" + (i === sel ? " sel" : "");
+    d.style.left = (el.x / cw * 100) + "%";
+    d.style.top = (el.y / ch * 100) + "%";
+    d.style.width = (el.w / cw * 100) + "%";
+    d.style.height = (el.h / ch * 100) + "%";
+    d.dataset.i = i;
+    d.innerHTML = '<div class="hd"></div>';
     canvas.appendChild(d);
   });
   props();
 }
 
-function preview(){
+function preview() {
   clearTimeout(timer);
-  if(!cur||!page()) return;
-  timer=setTimeout(async()=>{
-    try{
-      const r=await api("api/preview",{method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({page:page(),label:cur,orientation:Number(spec.orientation||0)})});
-      try{ metrics=JSON.parse(r.headers.get("X-Metrics")||"[]"); }catch(_){ metrics=[]; }
-      const nextUrl=URL.createObjectURL(await r.blob());
-      if(prevBlobUrl) URL.revokeObjectURL(prevBlobUrl);
-      prevBlobUrl=nextUrl;
-      canvas.style.backgroundImage=`url(${nextUrl})`;
+  if (!cur || !page()) return;
+  timer = setTimeout(async () => {
+    try {
+      const r = await api("api/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ page: page(), label: cur, orientation: Number(spec.orientation || 0) })
+      });
+      try { metrics = JSON.parse(r.headers.get("X-Metrics") || "[]"); } catch (_) { metrics = []; }
+      const nextUrl = URL.createObjectURL(await r.blob());
+      if (prevBlobUrl) URL.revokeObjectURL(prevBlobUrl);
+      prevBlobUrl = nextUrl;
+      canvas.style.backgroundImage = `url(${nextUrl})`;
       props();
-    }catch(e){ msg("preview failed: "+e.message); }
-  },220);
+    } catch (e) { msg("Preview failed: " + e.message); }
+  }, 200);
 }
 
-/* ---------- orientation & safe-area guides ---------- */
-$("orient").onchange=e=>{
-  const prevPort=isPortrait();
-  snapshot();
-  spec.orientation=Number(e.target.value)||0;
-  syncOrientUI();
-  paint(); preview();
-  const nextPort=isPortrait();
-  if(prevPort!==nextPort){
-    msg(`Switched to ${nextPort?"Portrait (272×792)":"Landscape (792×272)"}.`, {
-      label:"Reflow elements",
-      run:()=>{ reflowPageElements(page(), nextPort); paint(); preview(); }
-    });
-  }else{
-    msg(`Orientation set to ${spec.orientation}°. Click Save to update the panel strip.`);
+/* Snapping Guides */
+function guides(el, i) {
+  const cw = curW(), ch = curH(), m = curMargin(), sh = curSafeH();
+  const xs = [0, m, cw / 2, cw - m, cw], ys = [0, 26, ch / 2, sh, ch];
+  els().forEach((o, j) => {
+    if (j !== i) {
+      xs.push(o.x, o.x + o.w / 2, o.x + o.w);
+      ys.push(o.y, o.y + o.h / 2, o.y + o.h);
+    }
+  });
+  const near = (v, list) => {
+    for (const t of list) if (Math.abs(v - t) <= SNAP) return t;
+    return null;
+  };
+  let gx = null, gy = null;
+  for (const [val, set] of [[el.x, "l"], [el.x + el.w / 2, "c"], [el.x + el.w, "r"]]) {
+    const t = near(val, xs);
+    if (t !== null) { el.x = Math.round(t - (set === "c" ? el.w / 2 : set === "r" ? el.w : 0)); gx = t; break; }
   }
-};
-$("reflowbtn").onclick=reflowCurrentPage;
-
-$("safebtn").onclick=()=>{
-  canvas.classList.toggle("show-safe");
-  $("safebtn").classList.toggle("active", canvas.classList.contains("show-safe"));
-};
-
-/* ---------- snapping ---------- */
-function guides(el,i){
-  const cw=curW(), ch=curH(), m=curMargin(), sh=curSafeH();
-  const xs=[0,m,cw/2,cw-m,cw], ys=[0,26,ch/2,sh,ch];
-  els().forEach((o,j)=>{ if(j!==i){ xs.push(o.x,o.x+o.w/2,o.x+o.w); ys.push(o.y,o.y+o.h/2,o.y+o.h); }});
-  const near=(v,list)=>{ for(const t of list) if(Math.abs(v-t)<=SNAP) return t; return null; };
-  let gx=null,gy=null;
-  for(const [val,set] of [[el.x,"l"],[el.x+el.w/2,"c"],[el.x+el.w,"r"]]){
-    const t=near(val,xs);
-    if(t!==null){ el.x=Math.round(t-(set==="c"?el.w/2:set==="r"?el.w:0)); gx=t; break; }
+  for (const [val, set] of [[el.y, "t"], [el.y + el.h / 2, "m"], [el.y + el.h, "b"]]) {
+    const t = near(val, ys);
+    if (t !== null) { el.y = Math.round(t - (set === "m" ? el.h / 2 : set === "b" ? el.h : 0)); gy = t; break; }
   }
-  for(const [val,set] of [[el.y,"t"],[el.y+el.h/2,"m"],[el.y+el.h,"b"]]){
-    const t=near(val,ys);
-    if(t!==null){ el.y=Math.round(t-(set==="m"?el.h/2:set==="b"?el.h:0)); gy=t; break; }
+  canvas.querySelectorAll(".guide").forEach(n => n.remove());
+  if (gx !== null) {
+    const g = document.createElement("div");
+    g.className = "guide v";
+    g.style.left = (gx / cw * 100) + "%";
+    canvas.appendChild(g);
   }
-  canvas.querySelectorAll(".guide").forEach(n=>n.remove());
-  if(gx!==null){const g=document.createElement("div");g.className="guide v";g.style.left=(gx/cw*100)+"%";canvas.appendChild(g);}
-  if(gy!==null){const g=document.createElement("div");g.className="guide h";g.style.top=(gy/ch*100)+"%";canvas.appendChild(g);}
+  if (gy !== null) {
+    const g = document.createElement("div");
+    g.className = "guide h";
+    g.style.top = (gy / ch * 100) + "%";
+    canvas.appendChild(g);
+  }
 }
 
-function guidesResize(el,i){
-  const cw=curW(), ch=curH(), m=curMargin(), sh=curSafeH();
-  const xs=[m,cw/2,cw-m], ys=[26,ch/2,sh];
-  els().forEach((o,j)=>{ if(j!==i){ xs.push(o.x,o.x+o.w); ys.push(o.y,o.y+o.h); }});
-  const near=(v,list)=>{ for(const t of list) if(Math.abs(v-t)<=SNAP) return t; return null; };
-  let gx=near(el.x+el.w,xs), gy=near(el.y+el.h,ys);
-  if(gx!==null) el.w=Math.round(gx-el.x);
-  if(gy!==null) el.h=Math.round(gy-el.y);
-  canvas.querySelectorAll(".guide").forEach(n=>n.remove());
-  if(gx!==null){const g=document.createElement("div");g.className="guide v";g.style.left=(gx/cw*100)+"%";canvas.appendChild(g);}
-  if(gy!==null){const g=document.createElement("div");g.className="guide h";g.style.top=(gy/ch*100)+"%";canvas.appendChild(g);}
+function guidesResize(el, i) {
+  const cw = curW(), ch = curH(), m = curMargin(), sh = curSafeH();
+  const xs = [m, cw / 2, cw - m], ys = [26, ch / 2, sh];
+  els().forEach((o, j) => { if (j !== i) { xs.push(o.x, o.x + o.w); ys.push(o.y, o.y + o.h); } });
+  const near = (v, list) => { for (const t of list) if (Math.abs(v - t) <= SNAP) return t; return null; };
+  let gx = near(el.x + el.w, xs), gy = near(el.y + el.h, ys);
+  if (gx !== null) el.w = Math.round(gx - el.x);
+  if (gy !== null) el.h = Math.round(gy - el.y);
+  canvas.querySelectorAll(".guide").forEach(n => n.remove());
+  if (gx !== null) { const g = document.createElement("div"); g.className = "guide v"; g.style.left = (gx / cw * 100) + "%"; canvas.appendChild(g); }
+  if (gy !== null) { const g = document.createElement("div"); g.className = "guide h"; g.style.top = (gy / ch * 100) + "%"; canvas.appendChild(g); }
 }
 
-/* ---------- drag & resize ---------- */
-let drag=null;
-canvas.addEventListener("pointerdown",e=>{
-  const box=e.target.closest(".el"); if(!box){ sel=-1; paint(); return; }
-  sel=+box.dataset.i; paint();
-  const scale=curW()/canvas.getBoundingClientRect().width;
-  drag={i:sel,mode:e.target.classList.contains("hd")?"size":"move",
-        sx:e.clientX,sy:e.clientY,el:{...els()[sel]},scale,moved:false};
+/* Pointer drag & resize */
+let drag = null;
+function endDrag() {
+  if (drag) {
+    canvas.querySelectorAll(".guide").forEach(n => n.remove());
+    drag = null;
+    preview();
+  }
+}
+canvas.addEventListener("pointerdown", e => {
+  if (e.button !== 0) return;
+  const box = e.target.closest(".el");
+  if (!box) { sel = -1; paint(); return; }
+  sel = +box.dataset.i;
+  paint();
+  const scale = curW() / canvas.getBoundingClientRect().width;
+  drag = {
+    i: sel, mode: e.target.classList.contains("hd") ? "size" : "move",
+    sx: e.clientX, sy: e.clientY, el: { ...els()[sel] }, scale, moved: false
+  };
   canvas.setPointerCapture(e.pointerId);
 });
-canvas.addEventListener("pointermove",e=>{
-  if(!drag) return;
-  if(!drag.moved){ snapshot(); drag.moved=true; }
-  const cw=curW(), ch=curH();
-  const dx=(e.clientX-drag.sx)*drag.scale, dy=(e.clientY-drag.sy)*drag.scale;
-  const el=els()[drag.i], o=drag.el;
-  if(drag.mode==="move"){
-    el.x=Math.max(0,Math.min(cw-o.w,Math.round(o.x+dx)));
-    el.y=Math.max(0,Math.min(ch-o.h,Math.round(o.y+dy)));
-    if(!e.altKey) guides(el,drag.i);
-  }else{
-    el.w=Math.max(16,Math.min(cw-o.x,Math.round(o.w+dx)));
-    el.h=Math.max(10,Math.min(ch-o.y,Math.round(o.h+dy)));
-    if(!e.altKey) guidesResize(el,drag.i);
+canvas.addEventListener("pointermove", e => {
+  if (!drag) return;
+  if (!drag.moved) { snapshot(); drag.moved = true; }
+  const cw = curW(), ch = curH();
+  const dx = (e.clientX - drag.sx) * drag.scale, dy = (e.clientY - drag.sy) * drag.scale;
+  const el = els()[drag.i], o = drag.el;
+  if (drag.mode === "move") {
+    el.x = Math.max(0, Math.min(cw - o.w, Math.round(o.x + dx)));
+    el.y = Math.max(0, Math.min(ch - o.h, Math.round(o.y + dy)));
+    if (!e.altKey) guides(el, drag.i);
+  } else {
+    el.w = Math.max(16, Math.min(cw - o.x, Math.round(o.w + dx)));
+    el.h = Math.max(10, Math.min(ch - o.y, Math.round(o.h + dy)));
+    if (!e.altKey) guidesResize(el, drag.i);
   }
-  canvas.querySelectorAll(".el").forEach(n=>{
-    const q=els()[+n.dataset.i];
-    n.style.left=(q.x/cw*100)+"%"; n.style.top=(q.y/ch*100)+"%";
-    n.style.width=(q.w/cw*100)+"%"; n.style.height=(q.h/ch*100)+"%";
+  canvas.querySelectorAll(".el").forEach(n => {
+    const q = els()[+n.dataset.i];
+    n.style.left = (q.x / cw * 100) + "%";
+    n.style.top = (q.y / ch * 100) + "%";
+    n.style.width = (q.w / cw * 100) + "%";
+    n.style.height = (q.h / ch * 100) + "%";
   });
   props();
 });
-canvas.addEventListener("pointerup",()=>{
-  if(drag){ canvas.querySelectorAll(".guide").forEach(n=>n.remove()); drag=null; preview(); }
-});
+canvas.addEventListener("pointerup", endDrag);
+canvas.addEventListener("lostpointercapture", endDrag);
 
-/* ---------- keyboard ---------- */
-addEventListener("keydown",e=>{
-  if(/input|select|textarea/i.test(e.target.tagName)) return;
-  const mod=e.metaKey||e.ctrlKey;
-  if(mod&&e.key.toLowerCase()==="z"){ e.preventDefault(); e.shiftKey?redo():undo(); return; }
-  if(mod&&e.key.toLowerCase()==="d"){ e.preventDefault(); duplicate(); return; }
-  if(sel<0) return;
-  if(e.key==="Backspace"||e.key==="Delete"){ e.preventDefault(); snapshot(); els().splice(sel,1); sel=-1; paint(); preview(); return; }
-  const step=e.shiftKey?10:1, el=els()[sel];
-  const map={ArrowLeft:[-step,0],ArrowRight:[step,0],ArrowUp:[0,-step],ArrowDown:[0,step]};
-  if(map[e.key]){
+/* Keyboard shortcuts */
+addEventListener("keydown", e => {
+  if (e.key === "Escape") {
+    document.querySelectorAll(".modal-wrap").forEach(m => m.style.display = "none");
+    return;
+  }
+  if (/input|select|textarea/i.test(e.target.tagName)) return;
+  const mod = e.metaKey || e.ctrlKey;
+  if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
+  if (mod && e.key.toLowerCase() === "d") { e.preventDefault(); duplicate(); return; }
+  if (sel < 0) return;
+  if (e.key === "Backspace" || e.key === "Delete") {
+    e.preventDefault(); snapshot(); els().splice(sel, 1); sel = -1; paint(); preview(); return;
+  }
+  const step = e.shiftKey ? 10 : 1, el = els()[sel];
+  const map = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
+  if (map[e.key]) {
     e.preventDefault(); snapshot();
-    el.x=Math.max(0,Math.min(curW()-el.w,el.x+map[e.key][0]));
-    el.y=Math.max(0,Math.min(curH()-el.h,el.y+map[e.key][1]));
+    el.x = Math.max(0, Math.min(curW() - el.w, el.x + map[e.key][0]));
+    el.y = Math.max(0, Math.min(curH() - el.h, el.y + map[e.key][1]));
     paint(); preview();
   }
 });
-function duplicate(){
-  if(sel<0) return; snapshot();
-  const c=JSON.parse(JSON.stringify(els()[sel]));
-  c.x=Math.min(curW()-c.w,c.x+12); c.y=Math.min(curH()-c.h,c.y+12);
-  els().push(c); sel=els().length-1; paint(); preview();
+function duplicate() {
+  if (sel < 0) return;
+  snapshot();
+  const c = JSON.parse(JSON.stringify(els()[sel]));
+  c.x = Math.min(curW() - c.w, c.x + 12);
+  c.y = Math.min(curH() - c.h, c.y + 12);
+  els().push(c); sel = els().length - 1; paint(); preview();
 }
 
-/* ---------- palette ---------- */
-document.querySelectorAll("[data-add]").forEach(b=>b.onclick=()=>{
+/* Palette Quick Add */
+document.querySelectorAll("[data-add]").forEach(b => b.onclick = () => {
   snapshot();
-  const t=b.dataset.add;
-  const m=curMargin(), maxW=curW()-m*2;
-  const base={type:t,x:m,y:60,w:Math.min(t==="line"?240:260,maxW),h:t==="line"?4:90};
-  if(t==="number"){base.entity="";base.show="state";base.decimals=1;base.align="left";}
-  if(t==="text"){base.value="label";base.size=30;base.bold=false;base.align="left";}
-  if(t==="icon"){base.icon="mdi:home";base.w=110;base.h=110;}
-  if(t==="curve"){base.entity="sensor.example";base.hours=24;}
-  els().push(base); sel=els().length-1; paint(); preview();
+  const t = b.dataset.add;
+  const m = curMargin(), maxW = curW() - m * 2;
+  const base = { type: t, x: m, y: 60, w: Math.min(t === "line" ? 240 : 260, maxW), h: t === "line" ? 4 : 90 };
+  if (t === "number") { base.entity = ""; base.show = "state"; base.decimals = 1; base.align = "left"; }
+  if (t === "text") { base.value = "Label"; base.size = 30; base.bold = false; base.align = "left"; }
+  if (t === "icon") { base.icon = "mdi:home"; base.w = 110; base.h = 110; }
+  if (t === "curve") { base.entity = "sensor.example"; base.hours = 24; }
+  els().push(base); sel = els().length - 1; paint(); preview();
 });
 
-/* ---------- entities ---------- */
-$("search").oninput=e=>drawEntities(e.target.value);
-function drawEntities(q){
-  const f=ents.filter(e=>!q||e.entity_id.includes(q)||(e.name||"").toLowerCase().includes(q.toLowerCase())).slice(0,120);
-  $("ents").innerHTML=f.map(e=>`<div class="ent" draggable="true" data-e="${esc(e.entity_id)}">
-      <div class="col"><div class="nm">${esc(e.name)}</div><div class="id">${esc(e.entity_id)}</div></div>
-      <div class="val">${esc(e.state)}${e.unit?" "+esc(e.unit):""}</div></div>`).join("")
-    || '<div class="empty">No entity matches that.</div>';
-  $("ents").querySelectorAll(".ent").forEach(d=>d.ondragstart=ev=>ev.dataTransfer.setData("text/plain",d.dataset.e));
+/* Entities Explorer */
+$("search").oninput = e => drawEntities(e.target.value);
+document.querySelectorAll(".cat-chip").forEach(chip => chip.onclick = () => {
+  document.querySelectorAll(".cat-chip").forEach(c => c.classList.remove("active"));
+  chip.classList.add("active");
+  activeDomainFilter = chip.dataset.domain || "";
+  drawEntities($("search").value);
+});
+
+function getEntityDomainIcon(domain) {
+  const map = {
+    calendar: "📅",
+    sensor: "🌡️",
+    binary_sensor: "⚡",
+    climate: "❄️",
+    light: "💡",
+    switch: "🔌",
+    lock: "🔒",
+    person: "👤",
+    weather: "☀️",
+    timer: "⏱️"
+  };
+  return map[domain] || "🏷️";
 }
-canvas.addEventListener("dragover",e=>e.preventDefault());
-canvas.addEventListener("drop",e=>{
-  e.preventDefault();
-  const id=e.dataTransfer.getData("text/plain"); if(!id) return;
+
+function drawEntities(q) {
+  const f = ents.filter(e => {
+    if (activeDomainFilter && !e.entity_id.startsWith(activeDomainFilter + ".")) return false;
+    if (!q) return true;
+    const lq = q.toLowerCase();
+    return e.entity_id.toLowerCase().includes(lq) || (e.name || "").toLowerCase().includes(lq);
+  }).slice(0, 100);
+
+  $("ents").innerHTML = f.map(e => {
+    const domain = e.entity_id.split(".")[0];
+    const icon = getEntityDomainIcon(domain);
+    return `<div class="ent-card" draggable="true" data-e="${esc(e.entity_id)}">
+      <div class="ent-icon">${icon}</div>
+      <div class="ent-details">
+        <div class="ent-name">${esc(e.name || e.entity_id)}</div>
+        <div class="ent-id">${esc(e.entity_id)}</div>
+      </div>
+      <div class="ent-val">${esc(e.state)}${e.unit ? " " + esc(e.unit) : ""}</div>
+      <button class="ent-add-btn sm" data-add-ent="${esc(e.entity_id)}" title="Add to current page">＋</button>
+    </div>`;
+  }).join("") || '<div class="empty">No matching entities found.</div>';
+
+  $("ents").querySelectorAll(".ent-card").forEach(d => {
+    d.ondragstart = ev => ev.dataTransfer.setData("text/plain", d.dataset.e);
+  });
+  $("ents").querySelectorAll("[data-add-ent]").forEach(b => {
+    b.onclick = e => {
+      e.stopPropagation();
+      addEntityToCanvas(b.dataset.addEnt);
+    };
+  });
+}
+
+function addEntityToCanvas(id, posX, posY) {
   snapshot();
-  const cw=curW(), ch=curH(), m=curMargin();
-  const r=canvas.getBoundingClientRect(), s=cw/r.width;
-  const known=ents.find(x=>x.entity_id===id);
-  const numeric=known && known.state!=="" && !isNaN(Number(known.state));
-  const w=Math.min(260, cw-m*2);
-  const el={type:numeric?"number":"text",entity:id,show:"state",align:"left",
-            x:Math.max(0,Math.min(cw-w,Math.round((e.clientX-r.left)*s))),
-            y:Math.max(0,Math.min(ch-90,Math.round((e.clientY-r.top)*s))),w,h:90};
-  if(numeric){
+  const cw = curW(), ch = curH(), m = curMargin();
+  const known = ents.find(x => x.entity_id === id);
+  const numeric = known && known.state !== "" && !isNaN(Number(known.state));
+  const isCalendar = id.startsWith("calendar.");
+  const w = Math.min(260, cw - m * 2);
+  const x = posX !== undefined ? Math.max(0, Math.min(cw - w, posX)) : m;
+  const y = posY !== undefined ? Math.max(0, Math.min(ch - 90, posY)) : 60;
+
+  const el = {
+    type: numeric ? "number" : "text",
+    entity: id,
+    show: isCalendar ? "days_until" : "state",
+    align: "left",
+    x, y, w, h: 90
+  };
+  if (numeric) {
     el.decimals = String(known.state).includes(".") ? 1 : 0;
-    if(known.unit) el.suffix=" "+known.unit;
+    if (known.unit) el.suffix = " " + known.unit;
+  }
+  if (isCalendar) {
+    el.suffix = " days";
   }
   els().push(el);
-  sel=els().length-1; paint(); preview();
-});
-
-async function loadAttributes(entity){
-  const dl=$("attrlist"); if(!dl) return;
-  try{
-    const list=await fetch("api/attributes?entity="+encodeURIComponent(entity)).then(r=>r.json());
-    dl.innerHTML=list.map(a=>
-      `<option value="${esc(a.name)}">${a.kind==="list"?"list — ":a.kind==="object"?"object — ":""}${esc(a.sample)}</option>`
-    ).join("");
-  }catch(_){}
+  sel = els().length - 1;
+  paint(); preview();
 }
 
-/* ---------- content binding ---------- */
-const SHOWS=[["state","State"],["attribute","Attribute"],
-             ["last_changed","When it last changed"],["last_updated","When it last updated"]];
-const FORMATS=[["relative","Relative — 2 hours ago"],["time","Time — 14:05"],
-               ["date","Date — 3 Mar"],["datetime","Date and time"]];
-const opts=(list,cur)=>list.map(([v,l])=>`<option value="${v}"${cur===v?" selected":""}>${l}</option>`).join("");
+canvas.addEventListener("dragover", e => e.preventDefault());
+canvas.addEventListener("drop", e => {
+  e.preventDefault();
+  const id = e.dataTransfer.getData("text/plain");
+  if (!id) return;
+  const r = canvas.getBoundingClientRect(), s = curW() / r.width;
+  addEntityToCanvas(id, Math.round((e.clientX - r.left) * s), Math.round((e.clientY - r.top) * s));
+});
 
-function contentRows(el){
+/* Attributes Loader */
+async function loadAttributes(entity) {
+  const dl = $("attrlist");
+  if (!dl) return;
+  try {
+    const list = await fetch("api/attributes?entity=" + encodeURIComponent(entity)).then(r => r.json());
+    dl.innerHTML = list.map(a =>
+      `<option value="${esc(a.name)}">${a.kind === "list" ? "list — " : a.kind === "object" ? "object — " : ""}${esc(a.sample)}</option>`
+    ).join("");
+  } catch (_) {}
+}
+
+/* Content Binding Options */
+const SHOWS = [
+  ["state", "Standard State / Value"],
+  ["days_until", "📅 Days countdown ('4 days')"],
+  ["date_formatted", "🕒 Formatted Date ('24 Oct')"],
+  ["attribute", "Entity Attribute"],
+  ["last_changed", "When it last changed ('2 hrs ago')"],
+  ["last_updated", "When it last updated"]
+];
+const FORMATS = [
+  ["relative", "Relative (2 hours ago)"],
+  ["date", "Date (3 Mar)"],
+  ["day_date", "Day & Date (Thu, 24 Oct)"],
+  ["day_full", "Full Day (Thursday, 24 Oct)"],
+  ["time", "24h Time (14:05)"],
+  ["time_12", "12h Time (2:05 PM)"],
+  ["datetime", "Date and time"]
+];
+const opts = (list, cur) => list.map(([v, l]) => `<option value="${v}"${cur === v ? " selected" : ""}>${l}</option>`).join("");
+
+function contentRows(el) {
   const tplMode = !!(el.value && String(el.value).trim());
-  let h=`<div class="row"><label>kind</label><select data-kind>
-      <option value="text"${el.type==="text"?" selected":""}>Text</option>
-      <option value="number"${el.type==="number"?" selected":""}>Number</option>
+  let h = `<div class="row"><label>kind</label><select data-kind>
+      <option value="text"${el.type === "text" ? " selected" : ""}>Text</option>
+      <option value="number"${el.type === "number" ? " selected" : ""}>Number</option>
       </select></div>
     <div class="row"><label>source</label><select data-src>
-      <option value="entity"${tplMode?"":" selected"}>An entity</option>
-      <option value="template"${tplMode?" selected":""}>A template</option></select></div>`;
+      <option value="entity"${tplMode ? "" : " selected"}>Home Assistant Entity</option>
+      <option value="template"${tplMode ? " selected" : ""}>Custom Jinja Template</option></select></div>`;
 
-  if(tplMode){
-    h+=`<div class="row"><label>template</label><input data-k="value" value="${esc(el.value)}"></div>
+  if (tplMode) {
+    h += `<div class="row"><label>template</label><input data-k="value" value="${esc(el.value)}"></div>
         <div class="chip">Full Jinja. Anything Home Assistant can render.</div>`;
     return h;
   }
 
-  const show=el.show||"state";
-  h+=`<div class="row"><label>entity</label><input data-k="entity" list="entities-dl" value="${esc(el.entity||"")}"
-        placeholder="search or drag from below"></div>
-      <div class="row"><label>show</label><select data-k="show">${opts(SHOWS,show)}</select></div>`;
-  if(show==="attribute")
-    h+=`<div class="row"><label>attribute</label>
-        <input data-k="attribute" list="attrlist" value="${esc(el.attribute||"")}"
-               placeholder="click to see what this entity has"></div>
+  const show = el.show || "state";
+  h += `<div class="row"><label>entity</label><input data-k="entity" list="entities-dl" value="${esc(el.entity || "")}"
+        placeholder="search or drag from entities list"></div>
+      <div class="row"><label>show as</label><select data-k="show">${opts(SHOWS, show)}</select></div>`;
+
+  if (show === "attribute") {
+    h += `<div class="row"><label>attribute</label>
+        <input data-k="attribute" list="attrlist" value="${esc(el.attribute || "")}"
+               placeholder="pick an attribute"></div>
         <datalist id="attrlist"></datalist>`;
-  if(show==="last_changed"||show==="last_updated")
-    h+=`<div class="row"><label>as</label><select data-k="format">${opts(FORMATS,el.format||"relative")}</select></div>`;
+  }
+  if (show === "last_changed" || show === "last_updated" || show === "date_formatted") {
+    h += `<div class="row"><label>format</label><select data-k="format">${opts(FORMATS, el.format || (show === "date_formatted" ? "date" : "relative"))}</select></div>`;
+  }
 
-  h+=`<div class="row"><label>before</label><input data-k="prefix" value="${esc(el.prefix||"")}" placeholder="e.g. since "></div>
-      <div class="row"><label>after</label><input data-k="suffix" value="${esc(el.suffix||"")}" placeholder="e.g.  %"></div>`;
-  if(el.type==="number")
-    h+=`<div class="row"><label>decimals</label><input data-k="decimals" type="number" value="${esc(el.decimals??1)}"></div>
-        <div class="row"><label>if error</label><input data-k="fallback" value="${esc(el.fallback||"")}" placeholder="--"></div>`;
+  h += `<div class="row"><label>before</label><input data-k="prefix" value="${esc(el.prefix || "")}" placeholder="e.g. in "></div>
+      <div class="row"><label>after</label><input data-k="suffix" value="${esc(el.suffix || "")}" placeholder="e.g.  days, °C, %"></div>`;
 
-  const reps=Object.entries(el.replace||{});
-  h+=`<div class="lbl" style="margin-top:9px">Say it differently</div>`;
-  reps.concat([["",""]]).forEach(([k,v],i)=>{
-    h+=`<div class="row"><input data-rep-k="${i}" value="${esc(k)}" placeholder="when it says…">
-        <input data-rep-v="${i}" value="${esc(v)}" placeholder="show this"></div>`;
+  if (el.type === "number") {
+    h += `<div class="row"><label>decimals</label><input data-k="decimals" type="number" value="${esc(el.decimals ?? 1)}"></div>
+        <div class="row"><label>if error</label><input data-k="fallback" value="${esc(el.fallback || "")}" placeholder="--"></div>`;
+  }
+
+  const reps = Object.entries(el.replace || {});
+  h += `<div class="lbl" style="margin-top:10px">Say It Differently (Friendly Translation)</div>`;
+  reps.concat([["", ""]]).forEach(([k, v], i) => {
+    h += `<div class="row"><input data-rep-k="${i}" value="${esc(k)}" placeholder="when it says… (e.g. on)">
+        <input data-rep-v="${i}" value="${esc(v)}" placeholder="show this (e.g. Active)"></div>`;
   });
   return h;
 }
 
-function wireContent(el,box){
-  const kindSel=box.querySelector("[data-kind]");
-  if(kindSel) kindSel.onchange=()=>{
-    snapshot(); el.type=kindSel.value;
-    if(el.type==="number" && el.decimals===undefined) el.decimals=1;
+function wireContent(el, box) {
+  const kindSel = box.querySelector("[data-kind]");
+  if (kindSel) kindSel.onchange = () => {
+    snapshot(); el.type = kindSel.value;
+    if (el.type === "number" && el.decimals === undefined) el.decimals = 1;
     paint(); preview();
   };
-  const srcSel=box.querySelector("[data-src]");
-  if(srcSel) srcSel.onchange=()=>{
+  const srcSel = box.querySelector("[data-src]");
+  if (srcSel) srcSel.onchange = () => {
     snapshot();
-    if(srcSel.value==="template"){ el.value=el.value||"{{ states('sensor.example') }}"; }
+    if (srcSel.value === "template") { el.value = el.value || "{{ states('sensor.example') }}"; }
     else { delete el.value; }
     paint(); preview();
   };
-  const reps=box.querySelectorAll("[data-rep-k]");
-  const commit=()=>{
+  const reps = box.querySelectorAll("[data-rep-k]");
+  const commit = () => {
     snapshot();
-    const out={};
-    reps.forEach(inp=>{
-      const i=inp.dataset.repK;
-      const k=inp.value.trim();
-      const v=(box.querySelector(`[data-rep-v="${i}"]`)||{}).value||"";
-      if(k) out[k]=v;
+    const out = {};
+    reps.forEach(inp => {
+      const i = inp.dataset.repK;
+      const k = inp.value.trim();
+      const v = (box.querySelector(`[data-rep-v="${i}"]`) || {}).value || "";
+      if (k) out[k] = v;
     });
-    Object.keys(out).length?el.replace=out:delete el.replace;
+    Object.keys(out).length ? el.replace = out : delete el.replace;
     paint(); preview();
   };
-  reps.forEach(inp=>inp.onchange=commit);
-  box.querySelectorAll("[data-rep-v]").forEach(inp=>inp.onchange=commit);
+  reps.forEach(inp => inp.onchange = commit);
+  box.querySelectorAll("[data-rep-v]").forEach(inp => inp.onchange = commit);
 }
 
-/* ---------- properties ---------- */
-function props(){
-  const box=$("props");
-  if(sel<0||!els()[sel]){
-    box.innerHTML='<div class="empty">Nothing selected. Click an element on the canvas.</div>';return;}
-  const el=els()[sel];
-  const f=(k,label,type="text",ph="",dl="")=>`<div class="row"><label>${label}</label>
-    <input data-k="${k}" type="${type}"${dl?` list="${dl}"`:""} placeholder="${ph}" value="${esc(el[k]??"")}"></div>`;
-  let h='<div class="grp"><div class="lbl">Content</div>';
-  if(el.type==="text"||el.type==="number") h+=contentRows(el);
-  else if(el.type==="icon"){
-    h+=f("icon","mdi name")+`<div class="row"><label></label><button id="browse">Browse icons…</button>
+/* Properties Inspector */
+function props() {
+  const box = $("props"), badge = $("selbadge");
+  if (sel < 0 || !els()[sel]) {
+    badge.style.display = "none";
+    box.innerHTML = '<div class="empty">No element selected.<br>Click an element on the canvas to inspect, or click <b>✨ Add Preset</b> to build a screen.</div>';
+    return;
+  }
+  const el = els()[sel];
+  badge.style.display = "";
+  badge.textContent = el.type.toUpperCase();
+
+  const f = (k, label, type = "text", ph = "", dl = "") => `<div class="row"><label>${label}</label>
+    <input data-k="${k}" type="${type}"${dl ? ` list="${dl}"` : ""} placeholder="${ph}" value="${esc(el[k] ?? "")}"></div>`;
+
+  let h = '<div class="grp"><div class="lbl">Content &amp; Source</div>';
+  if (el.type === "text" || el.type === "number") h += contentRows(el);
+  else if (el.type === "icon") {
+    h += f("icon", "icon name") + `<div class="row"><label></label><button id="browse" class="sm">Browse Material Icons…</button>
       <span class="mdiprev" id="mdiprev"></span></div>`;
+  } else if (el.type === "curve") {
+    h += f("entity", "entity", "text", "", "entities-dl") + f("hours", "hours", "number") +
+      `<div class="chip">24h history curve (sparkline) of that sensor's values. Ideal for solar output or power draw.</div>`;
+  } else if (el.type === "line") {
+    h += f("thickness", "thickness", "number");
   }
-  else if(el.type==="curve")h+=f("entity","entity","text","","entities-dl")+f("hours","hours","number")+
-    `<div class="chip">A sparkline of that entity's recent history — the shape of the
-     day rather than a number. Good for solar output or power draw.</div>`;
-  else if(el.type==="line")h+=f("thickness","thickness","number");
-  h+="</div>";
-  if(["text","number","icon"].includes(el.type)){
-    h+='<div class="grp"><div class="lbl">Appearance</div>'+f("size","size","number","auto");
-    if(el.type!=="icon")
-      h+=`<div class="row"><label>align</label><select data-k="align">
-          ${["left","center","right"].map(a=>`<option${el.align===a?" selected":""}>${a}</option>`).join("")}</select></div>`;
-    const m=metrics.find(x=>x.i===sel);
-    if(m){
-      if(m.not_a_number!==undefined)
-        h+=`<div class="chip bad"><b>“${esc(m.not_a_number)}” is not a number</b>, so the panel
-             draws the fallback. Switch <b>kind</b> to <b>Text</b>.</div>`;
-      if(m.collection)
-        h+=`<div class="chip bad"><b>That is a list, not a single value.</b>
-             It will render as <code>['a', 'b']</code>. Pick a different attribute,
-             or switch <b>show</b> to <b>State</b>.</div>`;
-      h+=`<div class="chip${m.mm>=13?"":" bad"}">Renders at <b>${esc(m.size)} px</b> = <b>${esc(m.mm)} mm</b> —
-         <span class="${m.mm>=13?"ok":"warn"}">${esc(m.verdict)}</span>${m.overflow?' · <span class="warn">overflows its box</span>':""}</div>`;
+  h += "</div>";
+
+  if (["text", "number", "icon"].includes(el.type)) {
+    h += '<div class="grp"><div class="lbl">Typography &amp; Legibility</div>' + f("size", "size (px)", "number", "auto");
+    if (el.type !== "icon") {
+      h += `<div class="row"><label>align</label><select data-k="align">
+          ${["left", "center", "right"].map(a => `<option${el.align === a ? " selected" : ""}>${a}</option>`).join("")}</select></div>`;
     }
-    h+="</div>";
+    const m = metrics.find(x => x.i === sel);
+    if (m) {
+      if (m.not_a_number !== undefined) {
+        h += `<div class="chip bad"><b>“${esc(m.not_a_number)}” is not a number.</b> Switch <b>kind</b> to <b>Text</b>.</div>`;
+      }
+      if (m.collection) {
+        h += `<div class="chip bad"><b>That is a list, not a single value.</b> Pick a different attribute, or switch show to State.</div>`;
+      }
+      const isComfortable = m.mm >= 13;
+      h += `<div class="chip ${isComfortable ? "good" : "bad"}">
+         <b>🛋️ 3m Sofa Check:</b> Renders at <b>${esc(m.size)} px</b> = <b>${esc(m.mm)} mm</b> —
+         <span class="${isComfortable ? "ok" : "warn"}">${esc(m.verdict)}</span>
+         ${m.overflow ? ' · <span class="warn">overflows box</span>' : ''}
+      </div>`;
+    }
+    h += "</div>";
   }
-  h+=`<div class="grp"><div class="lbl">Box</div>
-      <div class="row"><label>position</label>
-        <input data-k="x" type="number" value="${esc(el.x)}" title="x">
-        <input data-k="y" type="number" value="${esc(el.y)}" title="y"></div>
-      <div class="row"><label>size</label>
-        <input data-k="w" type="number" value="${esc(el.w)}" title="width">
-        <input data-k="h" type="number" value="${esc(el.h)}" title="height"></div>
+
+  h += `<div class="grp"><div class="lbl">Position &amp; Alignment</div>
       <div class="row"><label>quick</label>
         <button id="aligncx" class="sm" title="Center horizontally">Center X</button>
-        <button id="aligncy" class="sm" title="Center vertically (above footer)">Center Y</button>
-        <button id="alignfw" class="sm" title="Span full safe width">Full W</button>
+        <button id="aligncy" class="sm" title="Center vertically">Center Y</button>
+        <button id="alignfw" class="sm" title="Full safe width">Full Width</button>
+      </div>
+      <details style="margin-top:8px">
+        <summary style="font-size:11.5px;color:var(--text-muted);cursor:pointer">Advanced Pixel Coordinates</summary>
+        <div style="margin-top:6px">
+          <div class="row"><label>position</label>
+            <input data-k="x" type="number" value="${esc(el.x)}" title="x">
+            <input data-k="y" type="number" value="${esc(el.y)}" title="y"></div>
+          <div class="row"><label>size</label>
+            <input data-k="w" type="number" value="${esc(el.w)}" title="width">
+            <input data-k="h" type="number" value="${esc(el.h)}" title="height"></div>
+        </div>
+      </details>
+    </div>`;
+
+  h += `<div class="grp"><div class="row">
+        <button id="layerup" class="sm" title="Bring forward">&uarr; Layer</button>
+        <button id="layerdn" class="sm" title="Send backward">&darr; Layer</button>
+        <button id="dup" class="sm" style="flex:1">Duplicate</button>
+        <button id="del" class="sm" style="flex:1;color:var(--danger)">Remove</button>
       </div></div>`;
-  h+=`<div class="grp"><div class="row">
-        <button id="layerup" class="sm" title="Bring forward">&uarr;</button>
-        <button id="layerdn" class="sm" title="Send backward">&darr;</button>
-        <button id="dup" style="flex:1">Duplicate</button>
-        <button id="del" style="flex:1">Remove</button>
-      </div></div>`;
-  box.innerHTML=h;
-  box.querySelectorAll("[data-k]").forEach(inp=>inp.onchange=()=>{
+
+  box.innerHTML = h;
+
+  box.querySelectorAll("[data-k]").forEach(inp => inp.onchange = () => {
     snapshot();
-    const k=inp.dataset.k, v=inp.value;
-    if(v===""){ delete el[k]; } else { el[k]=(inp.type==="number")?Number(v):v; }
+    const k = inp.dataset.k, v = inp.value;
+    if (v === "") { delete el[k]; } else { el[k] = (inp.type === "number") ? Number(v) : v; }
     paint(); preview();
   });
-  if($("browse")){
-    const cp=(el.icon||"").toString();
-    $("browse").onclick=()=>openPicker(el);
-    fetch("api/mdi/list?q="+encodeURIComponent(cp.replace("mdi:","")))
-      .then(r=>r.json()).then(l=>{const m=l.find(x=>"mdi:"+x.n===cp||x.n===cp);
-        if(m&&$("mdiprev")) $("mdiprev").textContent=String.fromCodePoint(m.c);}).catch(()=>{});
+
+  if ($("browse")) {
+    const cp = (el.icon || "").toString();
+    $("browse").onclick = () => openPicker(el);
+    fetch("api/mdi/list?q=" + encodeURIComponent(cp.replace("mdi:", "")))
+      .then(r => r.json()).then(l => {
+        const m = l.find(x => "mdi:" + x.n === cp || x.n === cp);
+        if (m && $("mdiprev")) $("mdiprev").textContent = String.fromCodePoint(m.c);
+      }).catch(() => {});
   }
-  wireContent(el,box);
-  if(el.show==="attribute" && el.entity) loadAttributes(el.entity);
-  $("aligncx").onclick=()=>{snapshot();el.x=Math.round((curW()-el.w)/2);paint();preview();};
-  $("aligncy").onclick=()=>{snapshot();el.y=Math.round((curSafeH()-el.h)/2);paint();preview();};
-  $("alignfw").onclick=()=>{snapshot();const m=curMargin();el.x=m;el.w=curW()-m*2;paint();preview();};
-  $("layerup").onclick=()=>{
-    if(sel>=els().length-1) return;
-    snapshot(); const t=els()[sel]; els()[sel]=els()[sel+1]; els()[sel+1]=t; sel++; paint(); preview();
+
+  wireContent(el, box);
+  if (el.show === "attribute" && el.entity) loadAttributes(el.entity);
+  $("aligncx").onclick = () => { snapshot(); el.x = Math.round((curW() - el.w) / 2); paint(); preview(); };
+  $("aligncy").onclick = () => { snapshot(); el.y = Math.round((curSafeH() - el.h) / 2); paint(); preview(); };
+  $("alignfw").onclick = () => { snapshot(); const m = curMargin(); el.x = m; el.w = curW() - m * 2; paint(); preview(); };
+  $("layerup").onclick = () => {
+    if (sel >= els().length - 1) return;
+    snapshot(); const t = els()[sel]; els()[sel] = els()[sel + 1]; els()[sel + 1] = t; sel++; paint(); preview();
   };
-  $("layerdn").onclick=()=>{
-    if(sel<=0) return;
-    snapshot(); const t=els()[sel]; els()[sel]=els()[sel-1]; els()[sel-1]=t; sel--; paint(); preview();
+  $("layerdn").onclick = () => {
+    if (sel <= 0) return;
+    snapshot(); const t = els()[sel]; els()[sel] = els()[sel - 1]; els()[sel - 1] = t; sel--; paint(); preview();
   };
-  $("dup").onclick=duplicate;
-  $("del").onclick=()=>{snapshot();els().splice(sel,1);sel=-1;paint();preview();};
+  $("dup").onclick = duplicate;
+  $("del").onclick = () => { snapshot(); els().splice(sel, 1); sel = -1; paint(); preview(); };
 }
 
-/* ---------- page level ---------- */
-$("undo").onclick=undo; $("redo").onclick=redo;
-$("page").onchange=e=>select(e.target.value);
-function holdRow(){
+/* Page Level Actions */
+$("undo").onclick = undo;
+$("redo").onclick = redo;
+$("page").onchange = e => select(e.target.value);
+
+function holdRow() {
   const t = (page() && page().tier) || "rotate";
   const isAlert = t === "alert";
   const hasCond = t === "when" || t === "alert";
   $("belt").style.display = hasCond ? "flex" : "none";
   $("hold").style.display = isAlert ? "" : "none";
   $("holdlab").style.display = isAlert ? "" : "none";
+  const hints = {
+    rotate: "Shows every few minutes in the rotation cycle.",
+    when: "Appears in rotation only while the condition above evaluates to true.",
+    alert: "Never rotates. Immediately seizes the display when triggered, then releases it."
+  };
+  $("tierhint").textContent = hints[t] || "";
 }
-$("tier").onchange=e=>{
+
+$("tier").onchange = e => {
   snapshot();
-  const nextTier=e.target.value;
-  page().tier=nextTier;
-  if(nextTier==="alert"){
-    spec.rotation=(spec.rotation||[]).filter(n=>n!==cur);
-  }else if(cur && !(spec.rotation||[]).includes(cur)){
-    (spec.rotation||(spec.rotation=[])).push(cur);
+  const nextTier = e.target.value;
+  page().tier = nextTier;
+  if (nextTier === "alert") {
+    spec.rotation = (spec.rotation || []).filter(n => n !== cur);
+  } else if (cur && !(spec.rotation || []).includes(cur)) {
+    (spec.rotation || (spec.rotation = [])).push(cur);
   }
   fillPages();
-  $("page").value=cur;
+  $("page").value = cur;
   holdRow();
 };
-$("hold").onchange=e=>{snapshot();page().hold_minutes=Number(e.target.value)||10;};
-$("addpage").onclick=()=>{
-  const raw=prompt("Page name (lowercase letters, numbers, underscores)"); if(!raw) return;
-  const n=raw.trim().toLowerCase().replace(/[^a-z0-9_-]+/g,"_").replace(/^_+|_+$/g,"");
-  if(!n){ msg("Invalid page name."); return; }
-  snapshot(); spec.pages[n]={tier:"rotate",elements:[]};
-  if(!spec.rotation.includes(n)) spec.rotation.push(n);
+$("hold").onchange = e => { snapshot(); page().hold_minutes = Number(e.target.value) || 10; };
+
+$("addpage").onclick = () => {
+  const raw = prompt("Page name (lowercase letters, numbers, underscores):");
+  if (!raw) return;
+  const n = raw.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "");
+  if (!n) { msg("Invalid page name."); return; }
+  snapshot();
+  spec.pages[n] = { tier: "rotate", elements: [] };
+  if (!spec.rotation.includes(n)) spec.rotation.push(n);
   fillPages(); select(n);
 };
-$("delpage").onclick=()=>{
-  if(!cur) return;
-  const gone=cur;
-  snapshot(); delete spec.pages[gone];
-  spec.rotation=spec.rotation.filter(n=>n!==gone);
-  fillPages(); select(Object.keys(spec.pages)[0]);
-  msg(`Deleted "${gone}".`, {label:"Undo", run:undo});
-};
-$("save").onclick=async()=>{
-  try{
-    const res=await api("api/layouts",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(spec)}).then(r=>r.json());
-    if(res.rotation){ spec.rotation=res.rotation; drawRotationPills(); }
-    if(res.orientation!==undefined){ spec.orientation=res.orientation; syncOrientUI(); }
-    await refreshStatus();
-    msg("Saved and rendered.", {label:"Push now", run:()=>$("push").click()});
-  }catch(e){ msg("save failed: "+e.message); }
+
+$("delpage").onclick = () => {
+  if (!cur) return;
+  const gone = cur;
+  snapshot();
+  delete spec.pages[gone];
+  spec.rotation = spec.rotation.filter(n => n !== gone);
+  fillPages();
+  select(Object.keys(spec.pages)[0]);
+  msg(`Deleted "${gone}".`, { label: "Undo", run: undo });
 };
 
-/* ---------- Full Strip Preview Modal ---------- */
-async function openStripPreview(){
-  $("stripwrap").style.display="flex";
+$("save").onclick = async () => {
+  try {
+    const res = await api("api/layouts", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(spec)
+    }).then(r => r.json());
+    if (res.rotation) { spec.rotation = res.rotation; drawRotationPills(); }
+    if (res.orientation !== undefined) { spec.orientation = res.orientation; syncOrientUI(); }
+    await refreshStatus();
+    msg("Saved and rendered.", { label: "Push now", run: () => $("push").click() });
+  } catch (e) { msg("Save failed: " + e.message); }
+};
+
+/* Orientation & Guides */
+$("orient").onchange = e => {
+  const prevPort = isPortrait();
+  snapshot();
+  spec.orientation = Number(e.target.value) || 0;
+  syncOrientUI();
+  paint(); preview();
+  const nextPort = isPortrait();
+  if (prevPort !== nextPort) {
+    msg(`Switched to ${nextPort ? "Portrait (272×792)" : "Landscape (792×272)"}.`, {
+      label: "Reflow elements",
+      run: () => { reflowPageElements(page(), nextPort); paint(); preview(); }
+    });
+  } else {
+    msg(`Orientation set to ${spec.orientation}°. Click Save to push to panel.`);
+  }
+};
+$("reflowbtn").onclick = reflowCurrentPage;
+$("safebtn").onclick = () => {
+  canvas.classList.toggle("show-safe");
+  $("safebtn").classList.toggle("active", canvas.classList.contains("show-safe"));
+};
+
+/* Full Strip Preview */
+async function openStripPreview() {
+  $("stripwrap").style.display = "flex";
   await refreshStatus();
-  const pages=(liveStatus.pages||[]).join(" → ")||"none";
-  $("stripmeta").textContent=`Pages: ${pages}`;
-  $("stripimg").src="api/strip.png?t="+Date.now();
+  const pages = (liveStatus.pages || []).join(" → ") || "none";
+  $("stripmeta").textContent = `Pages: ${pages}`;
+  $("stripimg").src = "api/strip.png?t=" + Date.now();
 }
-$("statuspill").onclick=openStripPreview;
-$("stripbtn").onclick=openStripPreview;
-$("stripclose").onclick=()=>$("stripwrap").style.display="none";
-$("stripwrap").onclick=e=>{ if(e.target.id==="stripwrap") $("stripwrap").style.display="none"; };
-$("striprefresh").onclick=async()=>{
-  await api("api/layouts",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(spec)});
+$("statuspill").onclick = openStripPreview;
+$("stripbtn").onclick = openStripPreview;
+$("stripclose").onclick = () => $("stripwrap").style.display = "none";
+$("stripwrap").onclick = e => { if (e.target.id === "stripwrap") $("stripwrap").style.display = "none"; };
+$("striprefresh").onclick = async () => {
+  await api("api/layouts", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
   await openStripPreview();
 };
 
-/* ---------- Panel Setup / ESPHome Firmware Wizard ---------- */
-function applySetupResponse(r){
-  const c=r.config||{};
-  $("cfg_host").value=c.ha_host||window.location.hostname||"homeassistant.local";
-  $("cfg_dev").value=c.device_name||"crowpanel-epaper";
-  $("cfg_interval").value=c.refresh_interval||"5min";
-  $("cfg_orient").value=String(Number(spec.orientation||0));
-  $("cfg_ssid").value=c.wifi_ssid||"";
-  $("cfg_pw").value=c.wifi_password||"";
-  $("cfg_apikey").value=c.api_encryption_key||"";
-  $("cfg_otapw").value=c.ota_password||"";
-  $("cfg_secrets").checked=!!c.use_secrets;
-  $("yamlout").value=r.yaml||"";
-  $("secretsout").value=r.secrets_yaml||"";
-  $("secretsbox").style.display=(c.use_secrets||!c.wifi_ssid)?"block":"none";
-  const p=r.panel||{};
-  const conn=$("setupconn");
-  if(p.connected){
-    conn.className="chip good";
-    conn.innerHTML=`<b>Panel connected in Home Assistant</b>${p.ip?` · IP <code>${esc(p.ip)}</code>`:""}${p.rssi?` · Wi-Fi ${esc(p.rssi)} dBm`:""}`;
-  }else{
-    conn.className="chip";
-    conn.innerHTML=`<b>Ready to set up:</b> generate your ESPHome YAML below, flash it in ESPHome Dashboard, and adopt the device in Home Assistant.`;
+/* Panel Setup Wizard */
+function applySetupResponse(r) {
+  const c = r.config || {};
+  $("cfg_host").value = c.ha_host || window.location.hostname || "homeassistant.local";
+  $("cfg_dev").value = c.device_name || "crowpanel-epaper";
+  $("cfg_interval").value = c.refresh_interval || "5min";
+  $("cfg_orient").value = String(Number(spec.orientation || 0));
+  $("cfg_ssid").value = c.wifi_ssid || "";
+  $("cfg_pw").value = c.wifi_password || "";
+  $("cfg_apikey").value = c.api_encryption_key || "";
+  $("cfg_otapw").value = c.ota_password || "";
+  $("cfg_secrets").checked = !!c.use_secrets;
+  $("yamlout").value = r.yaml || "";
+  $("secretsout").value = r.secrets_yaml || "";
+  $("secretsbox").style.display = (c.use_secrets || !c.wifi_ssid) ? "block" : "none";
+  const p = r.panel || {};
+  const conn = $("setupconn");
+  if (p.connected) {
+    conn.className = "chip good";
+    conn.innerHTML = `<b>Panel connected in Home Assistant</b>${p.ip ? ` · IP <code>${esc(p.ip)}</code>` : ""}${p.rssi ? ` · Wi-Fi ${esc(p.rssi)} dBm` : ""}`;
+  } else {
+    conn.className = "chip";
+    conn.innerHTML = `<b>Ready to set up:</b> generate your ESPHome YAML below, flash it in ESPHome Dashboard, and adopt the device in Home Assistant.`;
   }
 }
 
-async function savePanelSetup(extra={}){
-  const chosenOrient=Number($("cfg_orient").value)||0;
-  if(chosenOrient!==Number(spec.orientation||0)){
-    spec.orientation=chosenOrient;
+async function savePanelSetup(extra = {}) {
+  const chosenOrient = Number($("cfg_orient").value) || 0;
+  if (chosenOrient !== Number(spec.orientation || 0)) {
+    spec.orientation = chosenOrient;
     syncOrientUI();
-    await api("api/layouts",{method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(spec)});
+    await api("api/layouts", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
     paint(); preview();
   }
-  const body={
-    ha_host:$("cfg_host").value.trim()||window.location.hostname||"homeassistant.local",
-    device_name:$("cfg_dev").value.trim()||"crowpanel-epaper",
-    refresh_interval:$("cfg_interval").value,
-    wifi_ssid:$("cfg_ssid").value.trim(),
-    wifi_password:$("cfg_pw").value,
-    api_encryption_key:$("cfg_apikey").value.trim(),
-    ota_password:$("cfg_otapw").value.trim(),
-    use_secrets:$("cfg_secrets").checked,
+  const body = {
+    ha_host: $("cfg_host").value.trim() || window.location.hostname || "homeassistant.local",
+    device_name: $("cfg_dev").value.trim() || "crowpanel-epaper",
+    refresh_interval: $("cfg_interval").value,
+    wifi_ssid: $("cfg_ssid").value.trim(),
+    wifi_password: $("cfg_pw").value,
+    api_encryption_key: $("cfg_apikey").value.trim(),
+    ota_password: $("cfg_otapw").value.trim(),
+    use_secrets: $("cfg_secrets").checked,
     ...extra
   };
-  const r=await api("api/panel-setup",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)}).then(x=>x.json());
+  const r = await api("api/panel-setup", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(x => x.json());
   applySetupResponse(r);
   await refreshStatus();
 }
 
-$("setupbtn").onclick=async()=>{
-  $("setupwrap").style.display="flex";
-  try{
-    const r=await api("api/panel-setup").then(x=>x.json());
-    if((!r.config.ha_host || r.config.ha_host==="homeassistant.local") && window.location.hostname && !["localhost","127.0.0.1"].includes(window.location.hostname)){
-      r.config.ha_host=window.location.hostname;
+$("setupbtn").onclick = async () => {
+  $("setupwrap").style.display = "flex";
+  try {
+    const r = await api("api/panel-setup").then(x => x.json());
+    if ((!r.config.ha_host || r.config.ha_host === "homeassistant.local") && window.location.hostname && !["localhost", "127.0.0.1"].includes(window.location.hostname)) {
+      r.config.ha_host = window.location.hostname;
     }
     applySetupResponse(r);
-  }catch(e){ msg("Failed to load panel setup: "+e.message); }
+  } catch (e) { msg("Failed to load panel setup: " + e.message); }
 };
-$("setupclose").onclick=()=>$("setupwrap").style.display="none";
-$("setupwrap").onclick=e=>{ if(e.target.id==="setupwrap") $("setupwrap").style.display="none"; };
-$("cfgsave").onclick=()=>savePanelSetup().then(()=>msg("ESPHome YAML updated."));
-$("cfg_secrets").onchange=()=>savePanelSetup();
-$("cfg_orient").onchange=()=>savePanelSetup().then(()=>msg(`Mount set to ${$("cfg_orient").value}° and YAML updated.`));
-$("regenkeys").onclick=()=>savePanelSetup({regenerate_keys:true}).then(()=>msg("Generated new API key and OTA password."));
-$("copyapikey").onclick=()=>{
+$("setupclose").onclick = () => $("setupwrap").style.display = "none";
+$("setupwrap").onclick = e => { if (e.target.id === "setupwrap") $("setupwrap").style.display = "none"; };
+$("cfgsave").onclick = () => savePanelSetup().then(() => msg("ESPHome YAML updated."));
+$("cfg_secrets").onchange = () => savePanelSetup();
+$("cfg_orient").onchange = () => savePanelSetup().then(() => msg(`Mount set to ${$("cfg_orient").value}° and YAML updated.`));
+$("regenkeys").onclick = () => savePanelSetup({ regenerate_keys: true }).then(() => msg("Generated new API key and OTA password."));
+$("copyapikey").onclick = () => {
   navigator.clipboard.writeText($("cfg_apikey").value);
   msg("Copied API encryption key.");
 };
-$("copyyaml").onclick=async()=>{
+$("copyyaml").onclick = async () => {
   await savePanelSetup();
   navigator.clipboard.writeText($("yamlout").value);
   msg("Copied ESPHome YAML to clipboard.");
 };
-$("copysecrets").onclick=async()=>{
+$("copysecrets").onclick = async () => {
   await savePanelSetup();
   navigator.clipboard.writeText($("secretsout").value);
   msg("Copied secrets.yaml snippet.");
 };
-$("dlyaml").onclick=async()=>{
+$("dlyaml").onclick = async () => {
   await savePanelSetup();
-  const blob=new Blob([$("yamlout").value],{type:"text/yaml"});
-  const a=document.createElement("a");
-  a.href=URL.createObjectURL(blob);
-  a.download=($("cfg_dev").value.trim()||"crowpanel-epaper")+".yaml";
+  const blob = new Blob([$("yamlout").value], { type: "text/yaml" });
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = ($("cfg_dev").value.trim() || "crowpanel-epaper") + ".yaml";
   a.click();
-  setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 };
 
-/* ---------- data sources ---------- */
-const SRC_FIELDS={
-  jellyfin:[["name","name"],["base","server"],["key","api key","password"],
-            ["user","user"],["days","new within","number"]],
-  rest:[["name","name"],["url","url"],["headers","headers","password"],["pick","json path"],
-        ["unit","unit"],["icon","mdi icon"]],
-  statistics:[["name","name"],["entity","statistic","text","entities-dl"],["period","period"],
-              ["unit","unit"],["icon","mdi icon"]],
+/* Data Sources */
+const SRC_FIELDS = {
+  jellyfin: [["name", "name"], ["base", "server"], ["key", "api key", "password"], ["user", "user"], ["days", "new within", "number"]],
+  rest: [["name", "name"], ["url", "url"], ["headers", "headers", "password"], ["pick", "json path"], ["unit", "unit"], ["icon", "mdi icon"]],
+  statistics: [["name", "name"], ["entity", "statistic", "text", "entities-dl"], ["period", "period"], ["unit", "unit"], ["icon", "mdi icon"]],
 };
-let srcs=[];
-$("datasrc").onclick=async()=>{
-  srcs=await api("api/sources").then(r=>r.json()).catch(()=>[]);
-  drawSources(); $("srcwrap").style.display="flex";
+let srcs = [];
+$("datasrc").onclick = async () => {
+  srcs = await api("api/sources").then(r => r.json()).catch(() => []);
+  drawSources();
+  $("srcwrap").style.display = "flex";
 };
-$("srcclose").onclick=()=>$("srcwrap").style.display="none";
-$("srcwrap").onclick=e=>{ if(e.target.id==="srcwrap") $("srcwrap").style.display="none"; };
-$("srcadd").onchange=e=>{
-  const t=e.target.value; if(!t) return;
-  const base={type:t,name:""};
-  if(t==="jellyfin") base.days=30;
-  if(t==="statistics") base.period="month";
-  srcs.push(base); e.target.value=""; drawSources();
+$("srcclose").onclick = () => $("srcwrap").style.display = "none";
+$("srcwrap").onclick = e => { if (e.target.id === "srcwrap") $("srcwrap").style.display = "none"; };
+$("srcadd").onchange = e => {
+  const t = e.target.value; if (!t) return;
+  const base = { type: t, name: "" };
+  if (t === "jellyfin") base.days = 30;
+  if (t === "statistics") base.period = "month";
+  srcs.push(base); e.target.value = ""; drawSources();
 };
-function drawSources(){
-  $("srclist").innerHTML = srcs.length ? srcs.map((s,i)=>`
+function drawSources() {
+  $("srclist").innerHTML = srcs.length ? srcs.map((s, i) => `
     <div class="card"><div class="body">
       <div class="row"><strong style="flex:1">${esc(s.type)}</strong>
-        <button data-test="${i}">Test</button><button data-del="${i}">Remove</button></div>
-      <div class="chip">Creates <code>sensor.epaper_${esc(s.name||"<name>")}</code>${
-        s.type==="jellyfin"?` and <code>sensor.epaper_${esc(s.name||"<name>")}_count</code>`:""}</div>
-      ${(SRC_FIELDS[s.type]||[]).map(([k,label,type,dl])=>
+        <button data-test="${i}" class="sm">Test</button><button data-del="${i}" class="sm" style="color:var(--danger)">Remove</button></div>
+      <div class="chip">Creates <code>sensor.epaper_${esc(s.name || "<name>")}</code>${s.type === "jellyfin" ? ` and <code>sensor.epaper_${esc(s.name || "<name>")}_count</code>` : ""}</div>
+      ${(SRC_FIELDS[s.type] || []).map(([k, label, type, dl]) =>
         `<div class="row"><label>${label}</label>
-         <input data-si="${i}" data-sk="${k}" type="${type||"text"}"${dl?` list="${dl}"`:""} value="${esc(s[k]??"")}"></div>`).join("")}
+         <input data-si="${i}" data-sk="${k}" type="${type || "text"}"${dl ? ` list="${dl}"` : ""} value="${esc(s[k] ?? "")}"></div>`).join("")}
       <div class="chip" data-out="${i}" style="display:none"></div>
     </div></div>`).join("")
-    : '<div class="empty">No sources. The add-on will render your Home Assistant entities only.</div>';
+    : '<div class="empty">No external data sources configured.</div>';
 
-  $("srclist").querySelectorAll("[data-si]").forEach(inp=>inp.onchange=()=>{
-    const s=srcs[+inp.dataset.si], k=inp.dataset.sk;
-    s[k]= inp.type==="number" ? Number(inp.value)||0 : inp.value;
-    if(k==="name"){
-      s.name=s.name.trim().toLowerCase().replace(/[^a-z0-9_]+/g,"_").replace(/^_+|_+$/g,"");
+  $("srclist").querySelectorAll("[data-si]").forEach(inp => inp.onchange = () => {
+    const s = srcs[+inp.dataset.si], k = inp.dataset.sk;
+    s[k] = inp.type === "number" ? Number(inp.value) || 0 : inp.value;
+    if (k === "name") {
+      s.name = s.name.trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_").replace(/^_+|_+$/g, "");
       drawSources();
     }
   });
-  $("srclist").querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{
-    srcs.splice(+b.dataset.del,1); drawSources();
+  $("srclist").querySelectorAll("[data-del]").forEach(b => b.onclick = () => {
+    srcs.splice(+b.dataset.del, 1); drawSources();
   });
-  $("srclist").querySelectorAll("[data-test]").forEach(b=>b.onclick=async()=>{
-    const i=+b.dataset.test, out=$("srclist").querySelector(`[data-out="${i}"]`);
-    out.style.display=""; out.textContent="Testing…";
-    try{
-      const r=await api("api/sources/test",{method:"POST",
-        headers:{"Content-Type":"application/json"},body:JSON.stringify(srcs[i])}).then(r=>r.json());
-      out.className="chip";
+  $("srclist").querySelectorAll("[data-test]").forEach(b => b.onclick = async () => {
+    const i = +b.dataset.test, out = $("srclist").querySelector(`[data-out="${i}"]`);
+    out.style.display = ""; out.textContent = "Testing…";
+    try {
+      const r = await api("api/sources/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(srcs[i])
+      }).then(r => r.json());
+      out.className = "chip";
       out.textContent = r.published.length
-        ? r.published.map(p=>`${p.entity_id} = ${p.state}`).join("  ·  ")
+        ? r.published.map(p => `${p.entity_id} = ${p.state}`).join("  ·  ")
         : "Nothing came back. Check the settings above.";
-      if(!r.published.length) out.className="chip bad";
-    }catch(e){ out.className="chip bad"; out.textContent="Failed: "+e.message; }
+      if (!r.published.length) out.className = "chip bad";
+    } catch (e) { out.className = "chip bad"; out.textContent = "Failed: " + e.message; }
   });
 }
-$("srcsave").onclick=async()=>{
-  try{
-    const res=await api("api/sources",{method:"PUT",headers:{"Content-Type":"application/json"},
-      body:JSON.stringify(srcs)}).then(r=>r.json());
-    if(res.sources){ srcs=res.sources; drawSources(); }
-    $("srcmsg").textContent="Saved.";
-    setTimeout(()=>$("srcmsg").textContent="",2500);
-  }catch(e){ $("srcmsg").textContent="Save failed: "+e.message; }
+$("srcsave").onclick = async () => {
+  try {
+    const res = await api("api/sources", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(srcs) }).then(r => r.json());
+    if (res.sources) { srcs = res.sources; drawSources(); }
+    $("srcmsg").textContent = "Saved.";
+    setTimeout(() => $("srcmsg").textContent = "", 2500);
+  } catch (e) { $("srcmsg").textContent = "Save failed: " + e.message; }
 };
 
-/* ---------- icon picker ---------- */
-let pickTarget=null;
-function openPicker(el){ pickTarget=el; $("pickwrap").style.display="flex";
-  $("picksearch").value=""; loadIcons(""); $("picksearch").focus(); }
-$("pickclose").onclick=()=>$("pickwrap").style.display="none";
-$("pickwrap").onclick=e=>{ if(e.target.id==="pickwrap") $("pickwrap").style.display="none"; };
-$("picksearch").oninput=e=>loadIcons(e.target.value);
-async function loadIcons(q){
-  const list=await fetch("api/mdi/list?q="+encodeURIComponent(q)).then(r=>r.json()).catch(()=>[]);
-  $("picks").innerHTML=list.map(i=>
+/* Icon Picker */
+let pickTarget = null;
+function openPicker(el) {
+  pickTarget = el;
+  $("pickwrap").style.display = "flex";
+  $("picksearch").value = "";
+  loadIcons("");
+  $("picksearch").focus();
+}
+$("pickclose").onclick = () => $("pickwrap").style.display = "none";
+$("pickwrap").onclick = e => { if (e.target.id === "pickwrap") $("pickwrap").style.display = "none"; };
+$("picksearch").oninput = e => loadIcons(e.target.value);
+async function loadIcons(q) {
+  const list = await fetch("api/mdi/list?q=" + encodeURIComponent(q)).then(r => r.json()).catch(() => []);
+  $("picks").innerHTML = list.map(i =>
     `<button data-n="${esc(i.n)}" title="mdi:${esc(i.n)}">${String.fromCodePoint(i.c)}<span>${esc(i.n)}</span></button>`).join("");
-  $("picks").querySelectorAll("button").forEach(b=>b.onclick=()=>{
-    snapshot(); pickTarget.icon="mdi:"+b.dataset.n;
-    $("pickwrap").style.display="none"; paint(); preview();
+  $("picks").querySelectorAll("button").forEach(b => b.onclick = () => {
+    snapshot();
+    pickTarget.icon = "mdi:" + b.dataset.n;
+    $("pickwrap").style.display = "none";
+    paint(); preview();
   });
 }
 
-$("push").onclick=async()=>{
-  try{
-    await api("api/push",{method:"POST"});
+$("push").onclick = async () => {
+  try {
+    await api("api/push", { method: "POST" });
     await refreshStatus();
-    msg("Pushed — the panel is fetching now.");
-  }catch(e){ msg("push failed: "+e.message); }
+    msg("Pushed — the panel is fetching and redrawing now.");
+  } catch (e) { msg("Push failed: " + e.message); }
 };
 
-boot().catch(e=>msg("load failed: "+e.message));
+/* =====================================================================
+   ✨ PENSIONER & ULTRA-INTUITIVE TEMPLATE LIBRARY
+   ===================================================================== */
+const PRESETS = [
+  {
+    id: "pension",
+    icon: "💰",
+    title: "Next Pension Countdown",
+    desc: "Huge sofa-readable countdown ('in 4 days') and pension arrival date banner.",
+    suggestedDomain: "calendar",
+    makeElements: (ent) => {
+      const isCal = ent && ent.startsWith("calendar.");
+      return [
+        { type: "icon", icon: "mdi:cash-clock", x: 32, y: 40, w: 110, h: 110 },
+        { type: "number", entity: ent || "calendar.pension", show: isCal ? "days_until" : "state",
+          suffix: " days", decimals: 0, x: 160, y: 24, w: 340, h: 130, align: "left" },
+        { type: "text", value: "until next pension", size: 30, bold: false, x: 164, y: 166, w: 320, h: 42, align: "left" },
+        { type: "text", entity: ent || "calendar.pension", show: isCal ? "date_formatted" : "state",
+          prefix: "arrival: ", format: "day_date", size: 28, bold: false, x: 450, y: 166, w: 300, h: 42, align: "right" }
+      ];
+    }
+  },
+  {
+    id: "climate",
+    icon: "🌡️",
+    title: "Room Climate & Comfort",
+    desc: "Big temperature stat with comfort status and humidity from your room thermostat.",
+    suggestedDomain: "climate",
+    makeElements: (ent) => [
+      { type: "icon", icon: "mdi:thermometer", x: 32, y: 44, w: 116, h: 116 },
+      { type: "number", entity: ent || "sensor.living_room_temperature", show: "state",
+        suffix: " °C", decimals: 1, x: 160, y: 30, w: 320, h: 128, align: "left" },
+      { type: "text", value: "living room comfort", size: 30, bold: false, x: 164, y: 170, w: 320, h: 40, align: "left" },
+      { type: "curve", entity: ent || "sensor.living_room_temperature", hours: 24, x: 490, y: 100, w: 270, h: 86 }
+    ]
+  },
+  {
+    id: "solar",
+    icon: "☀️",
+    title: "Solar Power & Generation",
+    desc: "Active solar generation wattage, today's kWh total, and 24h solar curve.",
+    suggestedDomain: "sensor",
+    makeElements: (ent) => [
+      { type: "icon", icon: "mdi:white-balance-sunny", x: 32, y: 44, w: 116, h: 116 },
+      { type: "number", entity: ent || "sensor.solar_today_production", show: "state",
+        suffix: " kWh", decimals: 1, x: 160, y: 30, w: 310, h: 128, align: "left" },
+      { type: "text", value: "produced today", size: 30, bold: false, x: 164, y: 170, w: 320, h: 40, align: "left" },
+      { type: "curve", entity: "sensor.solar_pv_power", hours: 24, x: 490, y: 100, w: 270, h: 86 }
+    ]
+  },
+  {
+    id: "pet_door",
+    icon: "🐾",
+    title: "Pet or Door Presence",
+    desc: "Bold status ('Inside' / 'Closed') with time since it last changed.",
+    suggestedDomain: "binary_sensor",
+    makeElements: (ent) => [
+      { type: "icon", icon: "mdi:cat", x: 32, y: 44, w: 116, h: 116 },
+      { type: "text", entity: ent || "binary_sensor.front_door", show: "state",
+        replace: { "on": "Outside", "off": "Inside", "open": "Open", "closed": "Closed" },
+        size: 80, bold: true, x: 164, y: 30, w: 360, h: 128, align: "left" },
+      { type: "text", entity: ent || "binary_sensor.front_door", show: "last_changed",
+        format: "relative", prefix: "since ", size: 30, bold: false, x: 164, y: 170, w: 420, h: 40, align: "left" }
+    ]
+  },
+  {
+    id: "bin_day",
+    icon: "🗑️",
+    title: "Bin & Waste Collection",
+    desc: "Reminds when the bin collection or recycling truck arrives.",
+    suggestedDomain: "calendar",
+    makeElements: (ent) => [
+      { type: "icon", icon: "mdi:trash-can", x: 32, y: 40, w: 110, h: 110 },
+      { type: "number", entity: ent || "calendar.bins", show: "days_until",
+        suffix: " days", decimals: 0, x: 160, y: 24, w: 340, h: 130, align: "left" },
+      { type: "text", value: "until bin collection", size: 30, bold: false, x: 164, y: 166, w: 320, h: 42, align: "left" },
+      { type: "text", entity: ent || "calendar.bins", show: "calendar_title",
+        prefix: "type: ", size: 28, bold: false, x: 450, y: 166, w: 300, h: 42, align: "right" }
+    ]
+  },
+  {
+    id: "clock",
+    icon: "🕒",
+    title: "Giant Sofa Clock & Day",
+    desc: "Giant 110px digital clock and today's day & date for easy reading across the room.",
+    suggestedDomain: "sensor",
+    makeElements: () => [
+      { type: "text", value: "{{ now().strftime('%H:%M') }}", size: 110, bold: true, x: 40, y: 20, w: 450, h: 140, align: "left" },
+      { type: "text", value: "{{ now().strftime('%A, %-d %B') }}", size: 36, bold: false, x: 44, y: 168, w: 500, h: 46, align: "left" },
+      { type: "icon", icon: "mdi:clock-outline", x: 620, y: 40, w: 120, h: 120 }
+    ]
+  }
+];
+
+function buildTemplateLibrary() {
+  const grid = $("templategrid");
+  grid.innerHTML = PRESETS.map(p => `
+    <div class="template-card" data-tid="${p.id}">
+      <span class="template-icon">${p.icon}</span>
+      <div class="template-title">${esc(p.title)}</div>
+      <div class="template-desc">${esc(p.desc)}</div>
+    </div>
+  `).join("");
+
+  grid.querySelectorAll(".template-card").forEach(c => c.onclick = () => {
+    const tid = c.dataset.tid;
+    const p = PRESETS.find(x => x.id === tid);
+    if (!p) return;
+    applyPresetToPage(p);
+  });
+}
+
+function applyPresetToPage(preset) {
+  // Find a matching entity from HA
+  let matched = ents.find(e => e.entity_id.startsWith(preset.suggestedDomain + "."));
+  if (preset.id === "pension") {
+    matched = ents.find(e => e.entity_id.includes("pension") || e.entity_id.includes("payday")) || matched;
+  }
+  const entityId = matched ? matched.entity_id : "";
+
+  // Prompt friendly page name
+  const pageName = prompt(`Create page for "${preset.title}":`, preset.id);
+  if (!pageName) return;
+  const n = pageName.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "");
+  if (!n) return;
+
+  snapshot();
+  spec.pages[n] = {
+    tier: "rotate",
+    elements: preset.makeElements(entityId)
+  };
+  if (!spec.rotation.includes(n)) spec.rotation.push(n);
+  fillPages();
+  select(n);
+  $("templatewrap").style.display = "none";
+  msg(`Created "${preset.title}" page!`, { label: "Push now", run: () => $("push").click() });
+}
+
+$("templatebtn").onclick = () => $("templatewrap").style.display = "flex";
+$("templateclose").onclick = () => $("templatewrap").style.display = "none";
+$("templatewrap").onclick = e => { if (e.target.id === "templatewrap") $("templatewrap").style.display = "none"; };
+$("quickpensionbtn").onclick = () => {
+  const p = PRESETS.find(x => x.id === "pension");
+  if (p) applyPresetToPage(p);
+};
+
+boot().catch(e => msg("Load failed: " + e.message));
 </script>
+</body>
+</html>

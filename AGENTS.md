@@ -42,9 +42,11 @@ Never expose port `8099` or the panel's endpoints to the public internet.
   algorithm, because the editor produces absolute positions.
 - **Prefer a structured binding over raw Jinja** (`render/binding.py`). An
   element says `{entity, show, format, prefix, suffix, replace}` and the engine
-  builds the template. `prefix` and `suffix` are applied in Python after Jinja
-  evaluation and number formatting so they never break `float()` or inject
-  template syntax. A literal `value` still wins as the escape hatch.
+  builds the template. Supports `show: state`, `attribute`, `last_changed`, `last_updated`,
+  `days_until` (days until date/calendar event), `date_formatted`, and `calendar_title`.
+  `prefix` and `suffix` are applied in Python after Jinja evaluation and number formatting
+  so they never break `float()` or inject template syntax. A literal `value` still wins
+  as the escape hatch.
 - **A page or element that cannot render must not take the panel down.**
   `resolve_templates` batches templates in one request for speed, but falls
   back to per-template evaluation if any expression in the batch has a syntax
