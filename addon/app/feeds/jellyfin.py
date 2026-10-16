@@ -26,31 +26,39 @@ def human_ago(dt, now=None):
 
 async def _get(session, base, key, path, **params):
     url = f"{base}{path}?" + urllib.parse.urlencode(params)
-    async with session.get(url, headers={"X-Emby-Token": key}) as r:
+    timeout = aiohttp.ClientTimeout(total=15)
+    async with session.get(url, headers={"X-Emby-Token": key}, timeout=timeout) as r:
         r.raise_for_status()
         return await r.json()
 
 
-async def fetch(src, ctx):
-    base, key = (src.get("base") or "").rstrip("/"), src.get("key")
-    if not base or not key:
+async def _fetch_items(s, src, base, key):
+    user = (src.get("user") or "").strip()
+    if not user or (len(user) != 32 and "-" not in user):
+        users = await _get(s, base, key, "/Users")
+        match = next((u for u in users
+                      if user and user.lower() == (u.get("Name", "") or "").lower()), None)
+        user = (match or (users[0] if users else {})).get("Id", "")
+    if not user:
         return []
-    days = int(src.get("days", 30))
+    return await _get(s, base, key, "/Items/Latest", userId=user, Limit=20,
+                      IsPlayed="false", IncludeItemTypes="Movie,Episode",
+                      GroupItems="true", Fields="SeriesName,DateCreated,ChildCount")
 
-    timeout = aiohttp.ClientTimeout(total=15)
-    async with aiohttp.ClientSession(timeout=timeout) as s:
-        user = src.get("user") or ""
-        if not user or (len(user) != 32 and "-" not in user):
-            users = await _get(s, base, key, "/Users")
-            match = next((u for u in users
-                          if user and user.lower() in (u.get("Name", "").lower(),)), None)
-            user = (match or (users[0] if users else {})).get("Id", "")
-        if not user:
-            return []
 
-        items = await _get(s, base, key, "/Items/Latest", userId=user, Limit=20,
-                           IsPlayed="false", IncludeItemTypes="Movie,Episode",
-                           GroupItems="true", Fields="SeriesName,DateCreated,ChildCount")
+async def fetch(src, ctx):
+    base = (src.get("base") or "").strip().rstrip("/")
+    key = src.get("key")
+    if not base or not key or not base.startswith(("http://", "https://")):
+        return []
+    days = max(1, min(3650, int(src.get("days") or 30)))
+
+    shared = (ctx or {}).get("session")
+    if shared is not None:
+        items = await _fetch_items(shared, src, base, key)
+    else:
+        async with aiohttp.ClientSession() as s:
+            items = await _fetch_items(s, src, base, key)
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
     out = []

@@ -68,6 +68,8 @@ logger:
 # Lets Home Assistant push the panel instead of it only ever pulling on a
 # timer -- so "Re-render now" on the dashboard updates the screen at once.
 api:
+  encryption:
+    key: !secret api_encryption_key
   actions:
     - action: refresh_now
       then:
@@ -98,6 +100,7 @@ api:
 
 ota:
   - platform: esphome
+    password: !secret ota_password
 
 wifi:
   ssid: !secret wifi_ssid

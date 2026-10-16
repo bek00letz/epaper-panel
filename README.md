@@ -39,7 +39,7 @@ Each page has a tier:
 | **Only when true** | joins the rotation only while a condition holds |
 | **Interrupt** | never rotates; seizes the screen when something happens, holds, then hands it back |
 
-So a dryer page exists only while the dryer is running, and an "she's nearly
+So a dryer page exists only while the dryer is running, and an "arriving
 home" page can take over the panel for fifteen minutes and then vanish.
 
 ## Hardware
@@ -64,11 +64,15 @@ in PSRAM and blits a slice.
    `https://github.com/bek00letz/epaper-panel`
 2. Install **E-paper panel** and start it.
 3. Open **E-paper** in the sidebar.
-4. Point your panel at `http://<home-assistant>:8099/frames.png` — see
-   [`esphome/crowpanel-epaper.yaml`](esphome/crowpanel-epaper.yaml).
+4. Copy [`esphome/secrets.example.yaml`](esphome/secrets.example.yaml) to
+   `esphome/secrets.yaml`, fill in your Wi-Fi, API encryption key, and OTA
+   password, and flash [`esphome/crowpanel-epaper.yaml`](esphome/crowpanel-epaper.yaml)
+   (pointing at `http://<home-assistant>:8099/frames.png`).
 
-There is nothing to configure. With no data sources set up the add-on simply
-renders the entities you already have.
+With no data sources set up the add-on simply renders the entities you already
+have. Optional add-on settings let you customize `esphome_device` (default
+`crowpanel_epaper`, used when pushing page changes or alerts) and `frame_token`
+(optional token authentication on port `8099`).
 
 ## Data sources (optional)
 

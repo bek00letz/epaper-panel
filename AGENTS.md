@@ -6,7 +6,7 @@ This file is about not stepping on rakes.
 ## Deploying
 
 **The project is a Home Assistant add-on, installed from git.** No files get
-copied by hand any more.
+copied by hand.
 
 ```bash
 git push                      # from here
@@ -19,25 +19,15 @@ The add-on repository is https://github.com/bek00letz/epaper-panel, added in
 HA as a custom add-on repository. `repository.yaml` at the root makes it one;
 the add-on itself lives in `addon/`.
 
-> Earlier versions ran `render.py` from `/config/epaper/` and were deployed by
-> curling files from a laptop. That caused two outages that both looked like
-> hardware faults and were stale code. If you find references to
-> `shell_command.epaper_update` or `/config/www/epaper/`, they are obsolete.
+## Endpoints & Ports
 
-## Addresses
-
-| | |
+| Endpoint | Purpose |
 |---|---|
-| Home Assistant | `homeassistant.local:8123` (Proxmox VM on a Dell OptiPlex 7070 Ultra, SSD — not resource-constrained) |
-| Panel | `crowpanel-epaper.local`, hostname `crowpanel-epaper` |
-| Jellyfin | `jellyfin.local:8096` |
-| Add-on frame port | `<ha>:7410` — the panel fetches here, no auth, LAN only |
-| **Port 8099 is taken** | the Homegar adaptation. Leave it alone; that is why the panel is on 7410 |
-| Editor | HA sidebar → E-paper (ingress, behind your HA login) |
+| HA Sidebar (`:8080` via Ingress) | Drag-and-drop visual editor and JSON API, behind Home Assistant authentication |
+| `<homeassistant>:8099` | Frame server (`/frames.png`, `/frame.png`, `/status`) for the ESP32 panel on the LAN (can be remapped in HA Add-on network settings if port `8099` is already in use on the host, or protected via `frame_token`) |
+| ESPHome node (`crowpanel-epaper`) | Exposes `refresh_now`, `show_page`, `page_step`, and `hold_toggle` actions over the encrypted ESPHome native API |
 
-Never route the panel through the Cloudflare tunnel (`homeassistant.example.com`). It would
-make a living-room display depend on the internet and expose the webhook
-publicly.
+Never expose port `8099` or the panel's endpoints to the public internet.
 
 ## Conventions
 
@@ -52,18 +42,21 @@ publicly.
   algorithm, because the editor produces absolute positions.
 - **Prefer a structured binding over raw Jinja** (`render/binding.py`). An
   element says `{entity, show, format, prefix, suffix, replace}` and the engine
-  builds the template. A literal `value` still wins, as the escape hatch for
-  things the model cannot express. Shipped pages should demonstrate the easy
-  path, not the ninja path.
-- **A page that cannot render must not take the panel down.** `sources` returns
-  `None` rather than raising, and pages draw `--`.
-- **Fonts ship with the project** (`fonts/Lato-*.ttf`, SIL OFL). Do not depend
-  on system fonts — the HA container has a different set from a Mac.
+  builds the template. `prefix` and `suffix` are applied in Python after Jinja
+  evaluation and number formatting so they never break `float()` or inject
+  template syntax. A literal `value` still wins as the escape hatch.
+- **A page or element that cannot render must not take the panel down.**
+  `resolve_templates` batches templates in one request for speed, but falls
+  back to per-template evaluation if any expression in the batch has a syntax
+  error.
+- **Fonts ship with the project** (`fonts/Lato-*.ttf`, SIL OFL) and are cached
+  in memory (`@lru_cache`). Do not depend on system fonts — the HA container
+  has a different set from macOS.
 
 ## Verifying a change
 
 ```bash
-# run the service locally; it falls back to the fixture with no HA token
+# run the service locally; it falls back to render/fixture.json with no HA token
 DATA_DIR=/tmp/epaper-data ./.venv/bin/python addon/app/server.py
 ```
 
@@ -73,8 +66,8 @@ Then open `http://127.0.0.1:8080/` for the editor and
 tail, a stray dash on the dryer icon, a missing ear — were invisible in code and
 obvious in the image. Render it and open it.
 
-For firmware, `esphome config` catches schema errors but not behaviour. A full
-`esphome run` compiles and OTAs in about 20 s once the toolchain is cached.
+For firmware, copy `esphome/secrets.example.yaml` to `esphome/secrets.yaml` and
+run `esphome config esphome/crowpanel-epaper.yaml` to validate the schema.
 
 ## Firmware gotchas
 
@@ -125,18 +118,14 @@ wiki's pin table is unverified and its page is headed "5.19-inch".
 When touching display code, `it.image()` at a negative offset is a trap: see
 [ARCHITECTURE.md](ARCHITECTURE.md#measured-numbers).
 
-## Things deliberately not done
+## Security & data hygiene
 
-- **`utility_meter` for monthly solar.** The recorder already has it.
-- **Per-page enable toggles.** The rotation string is the single source of
-  truth; two controls would create an "enabled but not listed" ambiguity.
-- **Posters on the watch page.** At 24 × 37 mm they carry nothing at 3 m. The
-  title set large does the work.
-- **Deep sleep**, so far — it costs instant OTA, which everything has leaned on.
-
-## Hazards
-
-- The add-on gets a supervisor token automatically (`homeassistant_api: true`),
-  so there is no long-lived token to store. The Jellyfin key is add-on config,
-  not a file in the repo.
-- The recorder DB is opened **read-only** (`mode=ro`). Keep it that way.
+- The add-on gets a supervisor token automatically (`homeassistant_api: true`).
+  All entity IDs and source slugs interpolated into Home Assistant API paths
+  must be validated (`valid_entity_id` / `feeds.clean_slug`).
+- Data source secrets (`key`, `headers` in `/data/sources.json`) are stored with
+  `0600` permissions and masked (`••••••••`) when served via `GET /api/sources`.
+- Never interpolate unescaped user or entity strings into `innerHTML` in
+  `web/index.html` — the editor runs inside Home Assistant Ingress on the same
+  origin as Home Assistant.
+- Never commit real IP addresses, domain names, API keys, or personal names.

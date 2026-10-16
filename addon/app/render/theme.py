@@ -7,6 +7,7 @@ There is no grey on a 1-bit panel: hierarchy is carried by SIZE, not tone.
 Small secondary text is solid black and simply smaller. Only text above
 ~90 px can be screened (see screen) and still read as a deliberate grey.
 """
+from functools import lru_cache
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
@@ -41,8 +42,14 @@ BOLD    = _font_file("Lato-Bold.ttf", "DejaVuSans-Bold.ttf")
 REGULAR = _font_file("Lato-Regular.ttf", "DejaVuSans.ttf")
 
 
+@lru_cache(maxsize=128)
+def _cached_font(path: str, size: int):
+    return ImageFont.truetype(path, size)
+
+
 def font(size, bold=True):
-    return ImageFont.truetype(BOLD if bold else REGULAR, size)
+    clamped = max(8, min(H, int(size)))
+    return _cached_font(BOLD if bold else REGULAR, clamped)
 
 
 def new_canvas():
@@ -63,7 +70,7 @@ def text_width(s, f):
 
 def fit_size(s, max_w, max_h, start, floor=24, bold=True):
     """Largest point size at which s fits max_w x max_h. Binary search."""
-    lo, hi, best = floor, start, floor
+    lo, hi, best = floor, max(floor, min(H, int(start))), floor
     while lo <= hi:
         mid = (lo + hi) // 2
         f = font(mid, bold)
@@ -102,9 +109,10 @@ def screen(img, box):
             px[x, y] = WHITE
 
 
-def footer(draw, *, clock, label, battery_pct):
+def footer(draw, *, clock, label, battery_pct=None):
     f = font(FOOTER_SIZE, bold=False)
     draw.line([(MARGIN, FOOTER_RULE), (W - MARGIN, FOOTER_RULE)], fill=BLACK, width=1)
     draw.text((MARGIN, FOOTER_BASE), clock, font=f, fill=BLACK, anchor="ls")
     draw.text((W // 2, FOOTER_BASE), label, font=f, fill=BLACK, anchor="ms")
-    draw.text((W - MARGIN, FOOTER_BASE), f"{battery_pct} %", font=f, fill=BLACK, anchor="rs")
+    if battery_pct is not None and battery_pct > 0:
+        draw.text((W - MARGIN, FOOTER_BASE), f"{battery_pct} %", font=f, fill=BLACK, anchor="rs")

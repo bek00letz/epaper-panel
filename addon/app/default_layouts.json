@@ -5,7 +5,8 @@
     "cat",
     "watch",
     "cat",
-    "temps"
+    "temps",
+    "dryer"
   ],
   "pages": {
     "solar": {
@@ -145,7 +146,7 @@
       "elements": [
         {
           "type": "text",
-          "value": "yard",
+          "value": "outside",
           "size": 30,
           "bold": false,
           "x": 62,
@@ -248,7 +249,7 @@
         },
         {
           "type": "text",
-          "value": "{{ state_attr('timer.dryer_cycle','remaining')[:-3] }}",
+          "value": "{{ (state_attr('timer.dryer_cycle','remaining') or '0:00:00')[:-3] }}",
           "x": 190,
           "y": 40,
           "w": 320,

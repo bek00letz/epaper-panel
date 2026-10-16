@@ -28,30 +28,28 @@ walk-past layer: a timestamp so you can tell a live panel from a frozen one.
 ## Data flow
 
 ```
-   ┌── panel ──────────────┐        ┌── Home Assistant ──────────────┐
-   │ wake / timer          │        │                                │
-   │   POST webhook  ──────┼───────►│ automation → shell_command     │
-   │                       │        │   → render.py                  │
-   │                       │        │       ├ REST   states          │
-   │                       │        │       ├ REST   history (curve) │
-   │                       │        │       ├ sqlite recorder (month)│
-   │                       │        │       └ HTTP   Jellyfin        │
-   │   GET frames.png ◄────┼────────┤ /config/www/epaper/*.png       │
-   │   blit slice          │        │                                │
-   └───────────────────────┘        └────────────────────────────────┘
+   ┌── panel (ESPHome) ────┐        ┌── E-paper Add-on (server.py) ──────────┐
+   │ timer / button / push │        │ :8098 Ingress UI & API                 │
+   │                       │        │ :8099 LAN Frame Server                 │
+   │   GET /frames.png ◄───┼────────┤   in-memory FRAMES (ETag / 304)        │
+   │   blit slice          │        │     ▲                                  │
+   │                       │        │     │ frame_loop (60s) / save / push   │
+   │   POST show_page  ◄───┼────────┤     ├ feeds/ (Jellyfin, REST, WS stats)│
+   └───────────────────────┘        │     ├ HA REST /api/template            │
+                                    │     └ HA REST /api/history/period      │
+                                    └────────────────────────────────────────┘
 ```
 
-The panel asks HA to render *then* fetches, in that order, so the two can never
-drift: the frame is always rendered for the fetch about to happen. The panel
-carries no credentials — `/local/` and webhooks are both unauthenticated on the
-LAN.
+The add-on runs two HTTP listeners inside the same event loop:
+- **Port `8098` (Ingress-only):** serves the drag-and-drop layout editor and REST API (`X-Ingress-Path` aware), protected by Home Assistant's authentication.
+- **Port `8099` (LAN frame server):** exposes `/frames.png`, `/frame.png`, and `/status` to the ESP32 panel on the local network (with `ETag` / `304 Not Modified` support and optional `frame_token` authentication).
 
-`render.py` writes two files every run:
+Every 60 seconds (and immediately on layout save or panel push), `server.py` runs `refresh_frames()`:
 
-- `frames.png` — every rotation page stacked vertically (792 × 272·N). The
-  panel holds it in PSRAM and blits a slice, so paging needs no network.
-- `frame.png` — the slice for the current slot, reused rather than re-rendered.
-  Drives the dashboard preview and the single-page fallback.
+- Polls configured `feeds/` (`jellyfin`, `rest`, `statistics`) and publishes their results back to Home Assistant as `sensor.epaper_<name>` entities.
+- Evaluates `alert` and `when` page conditions (`show_if`) and builds two in-memory PNG buffers:
+  - `frames.png` — every active rotation page stacked vertically (`792 × 272·N`). The panel holds it in PSRAM and blits a 272 px slice, so paging with the hardware buttons needs no network round trip. When an `alert` (interrupt) page triggers, `frames.png` shrinks to a 1-page strip containing only that alert for `hold_minutes` and calls `esphome.<device>_show_page`, decoding in ~1 s and preventing the panel's 5-minute timer from rotating away during the hold window.
+  - `frame.png` — the single-page slice for the current slot, driving dashboard previews and single-page wake flows.
 
 ## Measured numbers
 
@@ -169,11 +167,12 @@ and keeps the data logic where it is debuggable.
 1-bit, it needs headless Chromium on the HA box, and it breaks on frontend
 updates.
 
-**Monthly solar from the recorder database, not a `utility_meter`.** The
-long-term statistics already hold it, with history, so a helper would have
-started from zero and added nothing. `sources._month_kwh` reads
-`statistics` / `statistics_meta` directly, read-only, and degrades to `--` if
-the schema moves.
+**Long-term statistics over WebSocket, not a `utility_meter`.** The recorder's
+long-term statistics already hold monthly/yearly totals with history, so a
+helper would have started from zero and added nothing. `feeds/statistics.py`
+queries `recorder/statistics_during_period` over the Home Assistant WebSocket
+API and publishes the aggregated value as a `sensor.epaper_<name>` entity, so
+pages can bind to it without direct SQLite file access.
 
 **Jellyfin over its own API, not the HA integration.** The integration reports
 who is watching; it knows nothing about the library. "New and unwatched" is
@@ -182,25 +181,27 @@ one entry with a count. Sonarr/Radarr cannot answer it — they know what was
 downloaded, not what was watched.
 
 **A 30-day recency window.** Without it the rotation cycles a backlog forever
-(58 unwatched Heroes episodes, 32 of The Voice). Settable from the dashboard.
+(58 unwatched Heroes episodes, 32 of The Voice). Settable in the data source
+configuration.
 
-**Conditional pages.** The rotation is rebuilt every run from pages that
-currently have something to say. `watch` drops out when nothing is new rather
-than showing "nothing new" on the wall; `dryer` exists only while the timer
-runs. The cycle shortens by itself.
+**Conditional and interrupt pages.** The rotation is rebuilt every run from
+pages that currently have something to say. `watch` drops out when nothing is
+new rather than showing "nothing new" on the wall; `dryer` exists only while the
+timer runs. When an `alert` page fires, the server replaces the strip with a
+single-page alert frame for `hold_minutes` and pushes a refresh to the panel.
 
 **The panel owns which page is shown; the server owns what the pages are.**
 Paging had to move onto the device to be quick, which means display state
 (current page, held or not) lives on the panel and is lost on reboot. The
 server still decides the rotation's contents and order. The cost is that the
 dashboard can no longer step the panel's page directly — it pushes through
-`esphome.crowpanel_epaper_show_page` instead.
+`esphome.<device>_show_page` instead.
 
 **Held state is drawn on the device, not baked into the image.** The pages are
 pre-rendered server-side and the panel does not know which it will show when
 one is rendered, so the padlock is drawn by the display lambda over the slice,
 in the top-right margin that every page leaves free.
 
-**Rotation order as a single string.** `solar,cat,watch,cat,temps` — repeating
-a name weights it, removing it disables it. One control, no ambiguity between
-"enabled" and "in the list".
+**Rotation order as a single string.** `solar,cat,watch,cat,temps,dryer` —
+repeating a name weights it, removing it disables it. Editable directly in the
+editor's top bar with no ambiguity between "enabled" and "in the list".

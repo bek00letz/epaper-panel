@@ -1,5 +1,5 @@
 name: E-paper panel
-version: "0.3.3"
+version: "0.4.0"
 slug: epaper_panel
 description: Render Home Assistant onto an Elecrow CrowPanel e-paper display, with a visual editor
 url: https://github.com/bek00letz/epaper-panel
@@ -14,12 +14,12 @@ ingress_port: 8080
 panel_icon: mdi:tablet-dashboard
 panel_title: E-paper
 
-# A second, unauthenticated port purely so the panel can fetch frames.
-# The panel has no credentials and cannot use ingress.
+# A second port so the panel can fetch frames over the LAN without ingress.
+# Optionally protected by `frame_token` (?token=...).
 ports:
   8099/tcp: 8099
 ports_description:
-  8099/tcp: Frame fetches from the panel (LAN only, no auth)
+  8099/tcp: Frame fetches from the panel (LAN)
 
 # Supervisor injects a token for the API and websocket -- nothing to create.
 homeassistant_api: true
@@ -29,8 +29,11 @@ homeassistant_api: true
 # for anyone who just wants their existing HA entities on a panel.
 options:
   refresh_seconds: 60
+  esphome_device: "crowpanel_epaper"
 schema:
   refresh_seconds: "int(10,3600)"
+  esphome_device: "str?"
+  frame_token: "password?"
   # DEPRECATED, kept only so an existing install migrates its Jellyfin
   # settings into the editor's Data sources on first start. Safe to clear
   # afterwards; a later version drops them.

@@ -1,22 +1,22 @@
 {
-  "_comment": "Live snapshot pulled from Home Assistant 2026-10-15T19:25+03:00. Used so the renderer can be developed without a long-lived token. Replace with live API calls on the HA box.",
-  "taken_at": "2026-10-15T19:25:00+03:00",
+  "_comment": "Sample snapshot used when running server.py locally without HA_TOKEN.",
+  "taken_at": "2026-10-15T19:25:00+00:00",
   "states": {
-    "sensor.solar_today_production":                    {"state": "10.6",        "unit": "kWh"},
-    "sensor.solar_pv_power":                            {"state": "13",          "unit": "W"},
-    "sensor.home_battery":                             {"state": "67",          "unit": "%"},
-    "sensor.home_battery_power_2":                     {"state": "1435",        "unit": "W"},
-    "sensor.home_battery_state":                       {"state": "discharging", "unit": null},
-    "sensor.solar_load_power":                          {"state": "1426",        "unit": "W"},
-    "sensor.solcast_pv_forecast_forecast_today":       {"state": "12.6869",     "unit": "kWh"},
-    "sensor.cat_location":                          {"state": "Outdoor Cat", "unit": null, "last_changed": "2026-10-14T23:34:43+03:00"},
-    "sensor.outdoor_temperature":      {"state": "10.3",        "unit": "°C"},
-    "sensor.indoor_temperature": {"state": "unavailable", "unit": "°C"},
-    "timer.dryer_cycle":                     {"state": "idle",        "unit": null, "remaining": null, "duration": "0:00:00"}
+    "sensor.solar_today_production": {"state": "10.6", "unit": "kWh", "friendly_name": "Solar Today"},
+    "sensor.solar_pv_power":         {"state": "420", "unit": "W", "friendly_name": "Solar Power"},
+    "sensor.epaper_solar_month":     {"state": "287", "unit": "kWh", "friendly_name": "Solar This Month"},
+    "sensor.home_battery":           {"state": "67", "unit": "%", "friendly_name": "Home Battery"},
+    "sensor.cat_location":           {"state": "Outdoor Cat", "unit": null, "friendly_name": "Cat Location", "last_changed": "2026-10-15T14:30:00+00:00"},
+    "sensor.outdoor_temperature":    {"state": "12.4", "unit": "°C", "friendly_name": "Outdoor Temperature"},
+    "sensor.indoor_temperature":     {"state": "21.2", "unit": "°C", "friendly_name": "Indoor Temperature"},
+    "sensor.epaper_watch":           {"state": "Severance", "unit": null, "friendly_name": "Next to watch", "detail": "2 new episodes · yesterday", "count": 2},
+    "sensor.epaper_watch_count":     {"state": "2", "unit": null, "friendly_name": "Next to watch count"},
+    "timer.dryer_cycle":             {"state": "idle", "unit": null, "friendly_name": "Dryer Timer", "remaining": "0:42:00", "duration": "1:00:00"},
+    "person.partner":                {"state": "home", "unit": null, "friendly_name": "Partner", "in_zones": ["zone.home"]},
+    "sensor.partner_distance":       {"state": "450", "unit": "m", "friendly_name": "Partner Distance"}
   },
   "pv_curve_w": [1.8, 1.8, 1.0, 2.0, 2.1, 2.1, 1.1, 13.1, 219.1, 817.7, 806.7, 738.4,
                  1038.7, 1398.7, 2905.8, 1710.6, 563.4, 342.0, 70.1],
-  "pv_curve_start_hour": 0,
   "month_kwh": 287.3,
-  "panel": {"battery_pct": 86, "rssi": -62}
+  "panel": {"battery_pct": 0, "rssi": -62}
 }

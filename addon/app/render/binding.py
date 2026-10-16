@@ -22,11 +22,22 @@ TIME_FORMATS = {
 
 
 def _quote(s):
-    return str(s).replace("\\", "\\\\").replace("'", "\\'")
+    return (
+        str(s)
+        .replace("\\", "\\\\")
+        .replace("'", "\\'")
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+    )
 
 
 def template_for(el):
-    """The Jinja a text/number element should render, or "" if it has none."""
+    """The Jinja a text/number element should render, or "" if it has none.
+
+    Note: `prefix` and `suffix` are applied in Python after template
+    resolution and number formatting (`layout.element_text`), so they can
+    neither break `float()` on numeric elements nor inject Jinja syntax.
+    """
     raw = el.get("value")
     if isinstance(raw, str) and raw.strip():
         return raw                                   # explicit template wins
@@ -54,5 +65,4 @@ def template_for(el):
     for find, repl in (el.get("replace") or {}).items():
         core = f"({core}) | replace('{_quote(find)}', '{_quote(repl)}')"
 
-    expr = "{{ " + core + " }}"
-    return f"{el.get('prefix', '')}{expr}{el.get('suffix', '')}"
+    return "{{ " + core + " }}"
