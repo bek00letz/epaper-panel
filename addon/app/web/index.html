@@ -930,6 +930,16 @@ aside {
   <div id="stage">
     <div class="stage-toolbar">
       <div class="screen-meta">
+        <label class="badge-tag" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">
+          <span>Model:</span>
+          <select id="disp-select" style="padding:1px 6px;font-size:11px;height:22px;border:none;background:transparent;color:inherit;font-weight:600;cursor:pointer">
+            <option value="crowpanel_579">CrowPanel 5.79" (DIS08792E)</option>
+            <option value="crowpanel_420">CrowPanel 4.2" (DIS08042E)</option>
+            <option value="crowpanel_290">CrowPanel 2.9" (DIS08029E)</option>
+            <option value="crowpanel_750">CrowPanel 7.5" (DIS08075E)</option>
+            <option value="crowpanel_102">CrowPanel 10.2" (DIS08102E)</option>
+          </select>
+        </label>
         <span class="badge-tag" id="res-badge">792 × 272 px</span>
         <span class="badge-tag">1-Bit Monochrome</span>
         <label class="badge-tag" style="display:inline-flex;align-items:center;gap:6px;cursor:pointer">
@@ -952,7 +962,7 @@ aside {
     <!-- CrowPanel Hardware Bezel -->
     <div id="bezel-wrapper">
       <div class="bezel-header">
-        <span class="bezel-logo">ELECROW CROWPANEL E-PAPER</span>
+        <span class="bezel-logo" id="bezel-title">ELECROW CROWPANEL 5.79" E-PAPER</span>
         <div class="bezel-dots">
           <span class="bezel-dot"></span>
           <span class="bezel-dot"></span>
@@ -1121,6 +1131,16 @@ aside {
     <div style="overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding-right:2px;max-height:60vh">
       <div class="card"><div class="body">
         <div class="row">
+          <label style="width:130px">Hardware Model</label>
+          <select id="cfg_model" style="flex:1">
+            <option value="crowpanel_579">CrowPanel 5.79" (792×272) — DIS08792E (Tested default)</option>
+            <option value="crowpanel_420">CrowPanel 4.2" (400×300) — DIS08042E</option>
+            <option value="crowpanel_290">CrowPanel 2.9" (296×128) — DIS08029E</option>
+            <option value="crowpanel_750">CrowPanel 7.5" (800×480) — DIS08075E</option>
+            <option value="crowpanel_102">CrowPanel 10.2" (960×640) — DIS08102E</option>
+          </select>
+        </div>
+        <div class="row">
           <label style="width:130px">HA host / IP</label>
           <input id="cfg_host" placeholder="homeassistant.local or 192.168.1.x">
           <label style="width:auto;margin-left:6px">Refresh</label>
@@ -1217,7 +1237,15 @@ aside {
 
 <script>
 const SNAP = 6;
-let spec = { orientation: 0, rotation: [], pages: {} }, cur = null, sel = -1, ents = [], timer = null, prevBlobUrl = null;
+const DISPLAYS = {
+  crowpanel_579: { id: "crowpanel_579", name: "CrowPanel 5.79\"", sku: "DIS08792E", w: 792, h: 272, mm_w: 139.1, mm_h: 47.7, margin: 40 },
+  crowpanel_420: { id: "crowpanel_420", name: "CrowPanel 4.2\"", sku: "DIS08042E", w: 400, h: 300, mm_w: 84.8, mm_h: 63.6, margin: 24 },
+  crowpanel_290: { id: "crowpanel_290", name: "CrowPanel 2.9\"", sku: "DIS08029E", w: 296, h: 128, mm_w: 66.9, mm_h: 29.1, margin: 16 },
+  crowpanel_750: { id: "crowpanel_750", name: "CrowPanel 7.5\"", sku: "DIS08075E", w: 800, h: 480, mm_w: 163.2, mm_h: 97.9, margin: 40 },
+  crowpanel_102: { id: "crowpanel_102", name: "CrowPanel 10.2\"", sku: "DIS08102E", w: 960, h: 640, mm_w: 215.0, mm_h: 143.4, margin: 48 }
+};
+
+let spec = { display: "crowpanel_579", orientation: 0, rotation: [], pages: {} }, cur = null, sel = -1, ents = [], timer = null, prevBlobUrl = null;
 let hist = [], hpos = -1, metrics = [], liveStatus = { pages: [] };
 let activeDomainFilter = "";
 let advCoordsOpen = localStorage.getItem("epaper_adv_coords") === "true";
@@ -1225,11 +1253,21 @@ let viewDist = localStorage.getItem("epaper_view_dist") || "3.0";
 
 const $ = id => document.getElementById(id);
 const canvas = $("canvas"), bezel = $("bezel-wrapper");
+const curDisplay = () => DISPLAYS[spec.display] || DISPLAYS.crowpanel_579;
 const isPortrait = () => [90, 270].includes(Number(spec.orientation || 0));
-const curW = () => isPortrait() ? 272 : 792;
-const curH = () => isPortrait() ? 792 : 272;
-const curSafeH = () => isPortrait() ? 752 : 232;
-const curMargin = () => isPortrait() ? 20 : 40;
+const curW = () => isPortrait() ? curDisplay().h : curDisplay().w;
+const curH = () => isPortrait() ? curDisplay().w : curDisplay().h;
+const curFooterH = () => {
+  const ch = curH();
+  const fsz = ch < 200 ? 14 : (ch < 400 ? 18 : 20);
+  return Math.round(fsz * 1.8);
+};
+const curSafeH = () => curH() - curFooterH();
+const curMargin = () => {
+  const cw = curW();
+  const m = curDisplay().margin;
+  return cw < 400 ? Math.min(m, 16) : m;
+};
 const api = (p, o) => fetch(p, o).then(r => r.ok ? r : Promise.reject(new Error(r.status + " " + r.statusText)));
 const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
@@ -1286,36 +1324,54 @@ function syncOrientUI() {
   const o = String(Number(spec.orientation || 0));
   if ($("orient")) $("orient").value = o;
   if ($("cfg_orient")) $("cfg_orient").value = o;
+  if ($("disp-select")) $("disp-select").value = curDisplay().id;
+  if ($("cfg_model")) $("cfg_model").value = curDisplay().id;
   const port = isPortrait();
   bezel.classList.toggle("portrait", port);
   canvas.classList.toggle("portrait", port);
-  $("res-badge").textContent = port ? "272 × 792 px" : "792 × 272 px";
-  if ($("safefootertag")) $("safefootertag").innerHTML = `footer zone (y &ge; ${port ? 752 : 232})`;
+  const cw = curW(), ch = curH();
+  canvas.style.aspectRatio = `${cw} / ${ch}`;
+  $("res-badge").textContent = `${cw} × ${ch} px`;
+  if ($("bezel-title")) $("bezel-title").textContent = `ELECROW ${curDisplay().name.toUpperCase()} E-PAPER`;
+  const safeH = curSafeH();
+  if ($("safefootertag")) $("safefootertag").innerHTML = `footer zone (y &ge; ${safeH})`;
+  const safeFoot = document.querySelector(".safe-footer");
+  if (safeFoot) {
+    safeFoot.style.top = `${safeH}px`;
+    safeFoot.style.height = `${curFooterH()}px`;
+  }
+  const safeLock = document.querySelector(".safe-lock");
+  if (safeLock) {
+    safeLock.style.left = `${cw - 44}px`;
+  }
 }
 
 /* Page reflow between orientations */
 function reflowPageElements(p, toPortrait) {
   const list = p && p.elements;
   if (!Array.isArray(list) || !list.length) return;
+  const disp = curDisplay();
+  const dw = disp.w, dh = disp.h;
   if (toPortrait) {
     const items = list.map((el, idx) => ({ el, idx })).sort((a, b) => (Math.round(a.el.y / 28) - Math.round(b.el.y / 28)) || (a.el.x - b.el.x));
-    let yCursor = 24;
+    let yCursor = Math.round(dh * 0.08);
+    const targetW = dh - 40;
     for (const { el } of items) {
       if (el.type === "line") {
-        el.x = 20; el.w = 232; el.h = Math.max(2, Math.min(8, el.h || 2));
-        el.y = Math.min(740, yCursor);
+        el.x = 20; el.w = targetW; el.h = Math.max(2, Math.min(8, el.h || 2));
+        el.y = Math.min(dw - 50, yCursor);
         yCursor += el.h + 14;
       } else if (el.type === "icon") {
-        const side = Math.min(96, Math.max(36, el.w || 64));
-        el.x = 20; el.y = Math.min(740 - side, yCursor); el.w = side; el.h = side;
+        const side = Math.min(Math.round(dh * 0.35), Math.max(36, el.w || 64));
+        el.x = 20; el.y = Math.min(dw - 50 - side, yCursor); el.w = side; el.h = side;
         yCursor += side + 10;
       } else if (el.type === "curve") {
-        const h = Math.min(140, Math.max(56, el.h || 80));
-        el.x = 20; el.w = 232; el.y = Math.min(740 - h, yCursor); el.h = h;
+        const h = Math.min(Math.round(dw * 0.2), Math.max(56, el.h || 80));
+        el.x = 20; el.w = targetW; el.y = Math.min(dw - 50 - h, yCursor); el.h = h;
         yCursor += h + 14;
       } else {
-        const h = Math.min(130, Math.max(26, Math.round((el.h || 44) * 0.82)));
-        el.x = 20; el.w = 232; el.y = Math.min(740 - h, yCursor); el.h = h;
+        const h = Math.min(Math.round(dw * 0.18), Math.max(26, Math.round((el.h || 44) * 0.82)));
+        el.x = 20; el.w = targetW; el.y = Math.min(dw - 50 - h, yCursor); el.h = h;
         if (el.size && el.size > 72) el.size = Math.round(el.size * 0.72);
         yCursor += h + 10;
       }
@@ -1323,16 +1379,17 @@ function reflowPageElements(p, toPortrait) {
   } else {
     for (const el of list) {
       if (el.type === "line" && el.w >= 200) {
-        el.x = 40; el.w = 712; el.y = Math.min(224, Math.max(16, Math.round(el.y * (232 / 752))));
+        el.x = disp.margin; el.w = dw - (disp.margin * 2); el.y = Math.min(dh - 48, Math.max(16, Math.round(el.y * (dh / dw))));
       } else {
-        el.x = Math.min(732, Math.max(0, Math.round(el.x * (792 / 272))));
-        el.y = Math.min(210, Math.max(0, Math.round(el.y * (232 / 752))));
-        el.w = Math.min(792 - el.x, Math.max(24, Math.round(el.w * (792 / 272) * 0.65)));
-        el.h = Math.min(232 - el.y, Math.max(18, el.h));
+        el.x = Math.min(dw - 60, Math.max(0, Math.round(el.x * (dw / dh))));
+        el.y = Math.min(dh - 62, Math.max(0, Math.round(el.y * (dh / dw))));
+        el.w = Math.min(dw - el.x, Math.max(24, Math.round(el.w * (dw / dh) * 0.65)));
+        el.h = Math.min(dh - 40 - el.y, Math.max(18, el.h));
       }
     }
   }
 }
+
 
 function reflowCurrentPage() {
   if (!cur || !page()) return;
@@ -1392,6 +1449,7 @@ async function refreshStatus() {
 
 async function boot() {
   spec = await api("api/layouts").then(r => r.json());
+  if (!spec.display) spec.display = "crowpanel_579";
   if (spec.orientation === undefined) spec.orientation = 0;
   syncOrientUI();
   ents = await api("api/entities").then(r => r.json()).catch(() => []);
@@ -1585,7 +1643,8 @@ function preview() {
           page: page(),
           label: cur,
           orientation: Number(spec.orientation || 0),
-          distance: Number(viewDist)
+          distance: Number(viewDist),
+          display: curDisplay().id
         })
       });
       try { metrics = JSON.parse(r.headers.get("X-Metrics") || "[]"); } catch (_) { metrics = []; }
@@ -2209,7 +2268,9 @@ $("save").onclick = async () => {
       body: JSON.stringify(spec)
     }).then(r => r.json());
     if (res.rotation) { spec.rotation = res.rotation; drawRotationPills(); }
-    if (res.orientation !== undefined) { spec.orientation = res.orientation; syncOrientUI(); }
+    if (res.orientation !== undefined) { spec.orientation = res.orientation; }
+    if (res.display !== undefined) { spec.display = res.display; }
+    syncOrientUI();
     await refreshStatus();
     msg("Saved and rendered.", { label: "Push now", run: () => $("push").click() });
   } catch (e) { msg("Save failed: " + e.message); }
@@ -2223,8 +2284,9 @@ $("orient").onchange = e => {
   syncOrientUI();
   paint(); preview();
   const nextPort = isPortrait();
+  const cw = curW(), ch = curH();
   if (prevPort !== nextPort) {
-    msg(`Switched to ${nextPort ? "Portrait (272×792)" : "Landscape (792×272)"}.`, {
+    msg(`Switched to ${nextPort ? `Portrait (${cw}×${ch})` : `Landscape (${cw}×${ch})`}.`, {
       label: "Reflow elements",
       run: () => { reflowPageElements(page(), nextPort); paint(); preview(); }
     });
@@ -2232,6 +2294,15 @@ $("orient").onchange = e => {
     msg(`Orientation set to ${spec.orientation}°. Click Save to push to panel.`);
   }
 };
+if ($("disp-select")) {
+  $("disp-select").onchange = e => {
+    snapshot();
+    spec.display = e.target.value;
+    syncOrientUI();
+    paint(); preview();
+    msg(`Switched to ${curDisplay().name} (${curDisplay().w}×${curDisplay().h}). Click Save Changes to commit.`);
+  };
+}
 $("reflowbtn").onclick = reflowCurrentPage;
 $("safebtn").onclick = () => {
   canvas.classList.toggle("show-safe");
@@ -2258,6 +2329,9 @@ $("striprefresh").onclick = async () => {
 /* Panel Setup Wizard */
 function applySetupResponse(r) {
   const c = r.config || {};
+  if (c.display && $("cfg_model")) {
+    $("cfg_model").value = c.display;
+  }
   $("cfg_host").value = c.ha_host || window.location.hostname || "homeassistant.local";
   $("cfg_dev").value = c.device_name || "crowpanel-epaper";
   $("cfg_interval").value = c.refresh_interval || "5min";
@@ -2282,14 +2356,24 @@ function applySetupResponse(r) {
 }
 
 async function savePanelSetup(extra = {}) {
+  const chosenModel = $("cfg_model") ? $("cfg_model").value : (spec.display || "crowpanel_579");
+  let needLayoutSave = false;
+  if (chosenModel !== spec.display) {
+    spec.display = chosenModel;
+    needLayoutSave = true;
+  }
   const chosenOrient = Number($("cfg_orient").value) || 0;
   if (chosenOrient !== Number(spec.orientation || 0)) {
     spec.orientation = chosenOrient;
+    needLayoutSave = true;
+  }
+  if (needLayoutSave) {
     syncOrientUI();
     await api("api/layouts", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
     paint(); preview();
   }
   const body = {
+    display: chosenModel,
     ha_host: $("cfg_host").value.trim() || window.location.hostname || "homeassistant.local",
     device_name: $("cfg_dev").value.trim() || "crowpanel-epaper",
     refresh_interval: $("cfg_interval").value,
@@ -2320,11 +2404,15 @@ $("setupwrap").onclick = e => { if (e.target.id === "setupwrap") $("setupwrap").
 $("cfgsave").onclick = () => savePanelSetup().then(() => msg("ESPHome YAML updated."));
 $("cfg_secrets").onchange = () => savePanelSetup();
 $("cfg_orient").onchange = () => savePanelSetup().then(() => msg(`Mount set to ${$("cfg_orient").value}° and YAML updated.`));
+if ($("cfg_model")) {
+  $("cfg_model").onchange = () => savePanelSetup().then(() => msg(`Model set to ${curDisplay().name} and YAML updated.`));
+}
 $("regenkeys").onclick = () => savePanelSetup({ regenerate_keys: true }).then(() => msg("Generated new API key and OTA password."));
 $("copyapikey").onclick = () => {
   navigator.clipboard.writeText($("cfg_apikey").value);
   msg("Copied API encryption key.");
 };
+
 $("copyyaml").onclick = async () => {
   await savePanelSetup();
   navigator.clipboard.writeText($("yamlout").value);

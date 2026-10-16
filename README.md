@@ -40,33 +40,37 @@ Each page has a tier:
 So a dryer page exists only while the dryer is running, and an "arriving
 home" page can take over the panel for fifteen minutes and then vanish.
 
-## Hardware
+## Hardware & Supported Models
 
-Built and tested on the **CrowPanel 5.79"** (`DIS08792E`) — ESP32-S3, 792×272,
-1-bit, about 139 × 48 mm. The firmware is ESPHome and lives in
-[`esphome/`](esphome/).
+The add-on is designed for the **Elecrow CrowPanel E-Paper** family (ESP32-S3).
 
-It needs the external component
-[`ESPBoards/esphome-lvgl-crowpanel-epaper-5.79-4.2`](https://github.com/ESPBoards/esphome-lvgl-crowpanel-epaper-5.79-4.2);
-stock `waveshare_epaper` has no model for this panel. The other CrowPanel
-e-paper sizes should be a matter of resolution and model string, but are
-untested.
+### Compatibility Matrix
 
-The five buttons are **discrete push-buttons**, not a rotary encoder, whatever
-Elecrow's wiki calls them. Paging is instant because the panel holds every page
-in PSRAM and blits a slice.
+| Model | SKU | Resolution | Active Area | Aspect Ratio | Driver Component | Status |
+|---|---|---|---|---|---|---|
+| **CrowPanel 5.79"** | `DIS08792E` | 792 × 272 px | 139.1 × 47.7 mm | ~2.9:1 (panoramic) | `crowpanel_epaper` (`5.79in`) | **Primary / Fully Tested** |
+| **CrowPanel 4.2"** | `DIS08042E` | 400 × 300 px | 84.8 × 63.6 mm | 4:3 | `crowpanel_epaper` (`4.2in`) | Supported |
+| **CrowPanel 2.9"** | `DIS08029E` | 296 × 128 px | 66.9 × 29.1 mm | ~2.3:1 (compact) | `waveshare_epaper` (`2.90inv2`) | Supported |
+| **CrowPanel 7.5"** | `DIS08075E` | 800 × 480 px | 163.2 × 97.9 mm | 5:3 | `waveshare_epaper` (`7.50inv2`) | Supported |
+| **CrowPanel 10.2"** | `DIS08102E` | 960 × 640 px | 215.0 × 143.4 mm | 3:2 (large) | `waveshare_epaper` (`10.2in`) | Supported |
 
-Whether you mount the panel normally, **upside-down (`180°`)** to route the
-USB-C cable cleanly, or **vertically in portrait (`90°` / `270°`)**, the editor
-header and **Panel setup** wizard let you pick your mounting orientation:
-- The canvas switches between **792×272** (landscape) and **272×792** (portrait)
-  with a one-click **Reflow** helper to restack existing elements.
-- The server pre-rotates each page into the physical `792×272` framebuffer
-  before serving `/frames.png`, so changing orientation in the editor works
-  immediately on **Save / Push to panel** without reflashing ESPHome.
-- When generating new ESPHome firmware for `180°` or `270°` mounts, the wizard
-  also swaps the `Next` and `Prev` button pins (`GPIO 4` and `GPIO 6`) so the
-  physical rocker matches how the board is mounted.
+> [!NOTE]
+> The **CrowPanel 5.79"** is the primary reference board on which the rendering pipeline and firmware were originally developed. You can switch models at any time using the **Model** selector in the editor toolbar or inside the **Panel setup** wizard; the editor and firmware generator will automatically adjust dimensions, aspect ratios, component platforms, and DPI legibility metrics.
+
+### Firmware & ESPHome Integration
+
+The firmware is ESPHome and sample configurations live in [`esphome/`](esphome/). The built-in **Panel setup** wizard generates ready-to-paste YAML for your selected model:
+- Models **5.79"** and **4.2"** use the [`ESPBoards/esphome-lvgl-crowpanel-epaper-5.79-4.2`](https://github.com/ESPBoards/esphome-lvgl-crowpanel-epaper-5.79-4.2) external component.
+- Models **2.9"**, **7.5"**, and **10.2"** use ESPHome's standard `waveshare_epaper` platform.
+
+The physical buttons on the device are **discrete push-buttons**, not a rotary encoder. Paging is instantaneous because the panel holds every page in ESP32 PSRAM and blits a slice.
+
+### Mounting Orientations (`0°`, `90°`, `180°`, `270°`)
+
+Whether you mount the panel normally, **upside-down (`180°`)** to route the USB-C cable cleanly, or **vertically in portrait (`90°` / `270°`)**, the editor toolbar and **Panel setup** wizard let you configure mounting orientation:
+- The canvas adapts to your model's logical aspect ratio (e.g. **792×272** landscape or **272×792** portrait on the 5.79") with a one-click **Reflow** helper to restack existing elements.
+- The server pre-rotates each page into the panel's native framebuffer before serving `/frames.png`, so changing orientation in the editor works immediately on **Save / Push to panel** without reflashing ESPHome.
+- When generating new ESPHome firmware for `180°` or `270°` mounts, the wizard also swaps the `Next` and `Prev` button pins (`GPIO 4` and `GPIO 6`) so the physical buttons match the board's orientation.
 
 ## Install
 

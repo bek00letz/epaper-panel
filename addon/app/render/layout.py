@@ -31,12 +31,18 @@ _MDI_MAP = _FONTS / "mdi-codepoints.json"
 
 _mdi_codepoints = None
 
-MM_PER_PX = 139.1 / T.W          # ~0.176 mm; the panel is 139mm wide
+def mm_per_px(display=None):
+    disp = T.get_display(display)
+    return disp["mm_w"] / disp["w"]
+
+
+MM_PER_PX = 139.1 / T.W          # ~0.176 mm; CrowPanel 5.79" default
 
 
 # Cap height is ~0.7em, and legibility bands scale with viewing distance.
-def legibility(size_px, distance_m=3.0):
-    mm = size_px * 0.7 * MM_PER_PX
+def legibility(size_px, distance_m=3.0, display=None):
+    ratio = mm_per_px(display)
+    mm = size_px * 0.7 * ratio
     d = max(0.1, float(distance_m or 3.0))
     factor = d / 3.0
     if mm < 4.4 * factor:
@@ -110,8 +116,9 @@ def _anchor_x(align, x, w):
     return {"left": x, "center": x + w // 2, "right": x + w}.get(align, x)
 
 
-def _clamp_box(el, default_w=200, default_h=60):
-    max_dim = max(T.W, T.H)
+def _clamp_box(el, default_w=200, default_h=60, display=None):
+    disp = T.get_display(display)
+    max_dim = max(disp["w"], disp["h"])
     x = max(-max_dim, min(max_dim * 2, int(el.get("x", 0))))
     y = max(-max_dim, min(max_dim * 2, int(el.get("y", 0))))
     w = max(1, min(max_dim * 2, int(el.get("w", default_w))))
@@ -119,10 +126,10 @@ def _clamp_box(el, default_w=200, default_h=60):
     return x, y, w, h
 
 
-def _draw_text(img, d, el, text, metrics=None, distance_m=3.0):
+def _draw_text(img, d, el, text, metrics=None, distance_m=3.0, display=None):
     if not text:
         return
-    x, y, w, h = _clamp_box(el, 200, 60)
+    x, y, w, h = _clamp_box(el, 200, 60, display=display)
     align = el.get("align", "left")
     bold = el.get("bold") not in (False, "false", 0, "0")
     family = str(el.get("font") or "lato").lower()
@@ -130,7 +137,7 @@ def _draw_text(img, d, el, text, metrics=None, distance_m=3.0):
     size = max(8, min(360, int(el["size"]))) if el.get("size") else T.fit_size(text, w, h, 200, bold=bold, family=family)
     f = T.font(size, bold=bold, family=family)
     if metrics is not None:
-        mm, verdict = legibility(size, distance_m=distance_m)
+        mm, verdict = legibility(size, distance_m=distance_m, display=display)
         t = text.strip()
         metrics.append({"size": size, "mm": mm, "verdict": verdict,
                         "overflow": T.text_width(text, f) > w,
@@ -142,9 +149,9 @@ def _draw_text(img, d, el, text, metrics=None, distance_m=3.0):
     d.text((ax, y + h // 2), text, font=f, fill=T.BLACK, anchor=anchor)
 
 
-def _draw_icon(img, d, el, _text):
+def _draw_icon(img, d, el, _text, display=None):
     name = str(el.get("icon", ""))
-    x, y, w, h = _clamp_box(el, 100, 100)
+    x, y, w, h = _clamp_box(el, 100, 100, display=display)
     if name.startswith("custom:"):
         art = CUSTOM_ICONS.get(name.removeprefix("custom:"))
         if art:
@@ -159,8 +166,8 @@ def _draw_icon(img, d, el, _text):
     d.text((x + w // 2, y + h // 2), ch, font=f, fill=T.BLACK, anchor="mm")
 
 
-def _draw_line(img, d, el, _text):
-    x, y, w, h = _clamp_box(el, 200, 2)
+def _draw_line(img, d, el, _text, display=None):
+    x, y, w, h = _clamp_box(el, 200, 2, display=display)
     thick = max(1, min(32, int(el.get("thickness", 2))))
     if h >= w:                                   # taller than wide -> vertical
         d.line([(x + w // 2, y), (x + w // 2, y + h)], fill=T.BLACK, width=thick)
@@ -168,13 +175,14 @@ def _draw_line(img, d, el, _text):
         d.line([(x, y + h // 2), (x + w, y + h // 2)], fill=T.BLACK, width=thick)
 
 
-def _draw_curve(img, d, el, _text, series=None):
+def _draw_curve(img, d, el, _text, series=None, display=None):
     """Filled area chart, dot-screened, with a solid top edge."""
     pts = [float(p) for p in (series or el.get("_series") or []) if p is not None]
     if len(pts) < 2:
         return
-    x0, y0, w, h = _clamp_box(el, 250, 100)
+    x0, y0, w, h = _clamp_box(el, 250, 100, display=display)
     x1, y1 = x0 + w, y0 + h
+
     lo = min(0.0, min(pts))
     hi = max(pts)
     span = (hi - lo) or 1.0
@@ -229,19 +237,19 @@ def element_text(el, vals, idx):
 
 
 def render_page(page, vals, *, clock="", label="", battery_pct=None, series=None,
-                metrics=None, orientation=0, distance_m=3.0):
+                metrics=None, orientation=0, distance_m=3.0, display=None):
     """Draw one page. `vals` maps element index -> resolved template result."""
-    img, d = T.new_canvas(orientation=orientation)
+    img, d = T.new_canvas(orientation=orientation, display=display)
     for i, el in enumerate(page.get("elements", [])):
         drawer = DRAWERS.get(el.get("type"))
         if drawer is None:
             continue
         try:
             if el["type"] == "curve":
-                drawer(img, d, el, "", (series or {}).get(i))
+                drawer(img, d, el, "", (series or {}).get(i), display=display)
             elif el["type"] in ("text", "number"):
                 got = []
-                drawer(img, d, el, element_text(el, vals, i), got, distance_m=distance_m)
+                drawer(img, d, el, element_text(el, vals, i), got, distance_m=distance_m, display=display)
                 if metrics is not None and got:
                     entry = {"i": i, **got[0]}
                     if el["type"] == "number":
@@ -254,11 +262,11 @@ def render_page(page, vals, *, clock="", label="", battery_pct=None, series=None
                             entry["not_a_number"] = str(raw)[:60]
                     metrics.append(entry)
             else:
-                drawer(img, d, el, element_text(el, vals, i))
+                drawer(img, d, el, element_text(el, vals, i), display=display)
         except Exception:
             # One bad element must never cost the whole page.
             continue
-    T.footer(d, clock=clock, label=label, battery_pct=battery_pct, orientation=orientation)
+    T.footer(d, clock=clock, label=label, battery_pct=battery_pct, orientation=orientation, display=display)
     return img
 
 

@@ -243,7 +243,9 @@ def sanitize_layouts(spec: dict) -> dict:
         orient = 0
     if orient not in (0, 90, 180, 270):
         orient = 0
-    return {"orientation": orient, "rotation": rotation, "pages": pages}
+    display = spec.get("display")
+    disp_id = T.get_display(display)["id"]
+    return {"display": disp_id, "orientation": orient, "rotation": rotation, "pages": pages}
 
 
 def save_layouts(spec):
@@ -509,6 +511,9 @@ async def build_frames(session):
     orient = int(spec.get("orientation") or 0)
     if orient not in (0, 90, 180, 270):
         orient = 0
+    display = spec.get("display", T.DEFAULT_DISPLAY)
+    disp = T.get_display(display)
+    dw, dh = disp["w"], disp["h"]
     alert = await check_alerts(session, spec)
     if alert and alert in spec.get("pages", {}):
         # Serve a 1-page strip while an alert is active: decodes in ~1s on
@@ -518,12 +523,12 @@ async def build_frames(session):
         live = await eligible_pages(session, spec)
 
     if not live:
-        cw, _ = T.canvas_dims(orient)
+        cw, _ = T.canvas_dims(orient, display=display)
         empty_page = {"elements": [{"type": "text", "value": "no pages", "x": 24, "y": 60, "w": cw - 48, "h": 120}]}
         img = await asyncio.to_thread(
             layout.render_page, empty_page, {},
-            clock=datetime.now().strftime("%H:%M"), label="empty", orientation=orient)
-        one = T.orient_for_panel(T.to_1bit(img), orient)
+            clock=datetime.now().strftime("%H:%M"), label="empty", orientation=orient, display=display)
+        one = T.orient_for_panel(T.to_1bit(img), orient, display=display)
         png = _png(one)
         return png, png, []
 
@@ -542,12 +547,12 @@ async def build_frames(session):
             layout.render_page, spec["pages"][name], vals.get(name, {}),
             clock=datetime.now().strftime("%H:%M"),
             label=f"{name.replace('_', ' ')} \u00b7 {i + 1}/{len(live)}",
-            battery_pct=None, series=series.get(name), orientation=orient)
-        imgs.append(T.orient_for_panel(T.to_1bit(img), orient))
+            battery_pct=None, series=series.get(name), orientation=orient, display=display)
+        imgs.append(T.orient_for_panel(T.to_1bit(img), orient, display=display))
 
-    strip = Image.new("1", (T.W, T.H * len(imgs)), 1)
+    strip = Image.new("1", (dw, dh * len(imgs)), 1)
     for i, im in enumerate(imgs):
-        strip.paste(im, (0, i * T.H))
+        strip.paste(im, (0, i * dh))
     return _png(strip), _png(imgs[0]), live
 
 
@@ -642,6 +647,7 @@ async def status(request):
         "esphome_device": ESPHOME_DEVICE,
         "active_alert": ALERT.get("name"),
         "frame_port": FRAME_PORT,
+        "display": spec.get("display", T.DEFAULT_DISPLAY),
         "orientation": int(spec.get("orientation") or 0),
     })
 
@@ -665,6 +671,7 @@ async def api_layouts_put(request):
         print(f"immediate render after save failed: {exc!r}", flush=True)
     return web.json_response({
         "saved": True,
+        "display": clean.get("display", T.DEFAULT_DISPLAY),
         "pages": list(clean["pages"]),
         "rotation": clean["rotation"],
         "orientation": clean["orientation"],
@@ -738,6 +745,7 @@ async def api_preview(request):
         orient = 0
     if orient not in (0, 90, 180, 270):
         orient = 0
+    display = body.get("display") or load_layouts().get("display", T.DEFAULT_DISPLAY)
     tpls = layout.collect_templates(page)
     vals = await resolve_templates(SHARED_SESSION, tpls) if tpls else {}
     series = {}
@@ -752,7 +760,7 @@ async def api_preview(request):
         clock=datetime.now().strftime("%H:%M"),
         label=str(body.get("label") or "preview")[:40],
         battery_pct=None, series=series, metrics=metrics, orientation=orient,
-        distance_m=dist)
+        distance_m=dist, display=display)
     # Effective font sizes ride back on a header so the editor can report
     # what you actually got, in millimetres, rather than what you asked for.
     return web.Response(body=_png(T.to_1bit(img)), content_type="image/png",
@@ -814,6 +822,7 @@ def load_panel_setup(default_host: str = "homeassistant.local") -> dict:
     changed = False
     defaults = {
         "device_name": ESPHOME_DEVICE.replace("_", "-"),
+        "display": load_layouts().get("display", T.DEFAULT_DISPLAY),
         "ha_host": default_host,
         "wifi_ssid": "",
         "wifi_password": "",
@@ -854,6 +863,9 @@ def _yaml_str(s: str) -> str:
 
 def generate_esphome_yaml(cfg: dict) -> tuple[str, str]:
     """Build ready-to-flash crowpanel-epaper.yaml and companion secrets.yaml."""
+    display_id = cfg.get("display") or load_layouts().get("display", T.DEFAULT_DISPLAY)
+    disp = T.get_display(display_id)
+    dw, dh = disp["w"], disp["h"]
     dev_name = cfg.get("device_name") or "crowpanel-epaper"
     raw_host = (cfg.get("ha_host") or "homeassistant.local").strip()
     if raw_host.startswith(("http://", "https://")):
@@ -890,14 +902,48 @@ def generate_esphome_yaml(cfg: dict) -> tuple[str, str]:
         wifi_ssid_line = _yaml_str(ssid)
         wifi_pw_line = _yaml_str(pw)
 
-    yaml_text = f"""# CrowPanel 5.79" e-paper panel — generated by the E-paper add-on wizard.
+    lock_x = dw - 31
+
+    if disp["esphome_component"].startswith("github://"):
+        ext_comp_block = f"""external_components:
+  - source: {disp["esphome_component"]}
+"""
+        display_platform_block = f"""display:
+  - platform: crowpanel_epaper
+    id: epd
+    model: "{disp["esphome_model"]}"
+    clk_pin: 12
+    mosi_pin: 11
+    cs_pin: 45
+    dc_pin: 46
+    reset_pin: 47
+    busy_pin: 48
+    invert_colors: true
+    full_update_every: 10
+    update_interval: never
+    auto_clear_enabled: false"""
+    else:
+        ext_comp_block = ""
+        display_platform_block = f"""display:
+  - platform: waveshare_epaper
+    id: epd
+    model: "{disp["esphome_model"]}"
+    cs_pin: 45
+    dc_pin: 46
+    busy_pin: 48
+    reset_pin: 47
+    reset_duration: 2ms
+    update_interval: never
+    auto_clear_enabled: false"""
+
+    yaml_text = f"""# {disp["name"]} ({disp["sku"]}, {dw}x{dh}) e-paper panel — generated by the E-paper add-on wizard.
 # Paste into ESPHome Dashboard (New Device -> Edit -> Install).
 
 substitutions:
   name: {dev_name}
   frames_url: {_yaml_str(frames_url)}
   frame_url:  {_yaml_str(frame_url)}
-  page_h: "272"
+  page_h: "{dh}"
 
 esphome:
   name: ${{name}}
@@ -916,10 +962,7 @@ psram:
   mode: octal
   speed: 80MHz
 
-external_components:
-  - source: github://ESPBoards/esphome-lvgl-crowpanel-epaper-5.79-4.2
-
-globals:
+{ext_comp_block}globals:
   - id: have_frames
     type: bool
     restore_value: false
@@ -994,35 +1037,22 @@ switch:
     restore_mode: ALWAYS_ON
     internal: true
 
-display:
-  - platform: crowpanel_epaper
-    id: epd
-    model: "5.79in"
-    clk_pin: 12
-    mosi_pin: 11
-    cs_pin: 45
-    dc_pin: 46
-    reset_pin: 47
-    busy_pin: 48
-    invert_colors: true
-    full_update_every: 10
-    update_interval: never
-    auto_clear_enabled: false
+{display_platform_block}
     lambda: |-
       if (id(have_frames)) {{
         const int off = ${{page_h}} * id(page);
         for (int y = 0; y < ${{page_h}}; y++) {{
-          for (int x = 0; x < 792; x++) {{
+          for (int x = 0; x < {dw}; x++) {{
             it.draw_pixel_at(x, y, id(frames).get_pixel(x, y + off));
           }}
         }}
         if (id(pinned)) {{
-          it.filled_rectangle(761, 12, 5, 20);
-          it.filled_rectangle(778, 12, 5, 20);
-          it.filled_rectangle(761, 12, 22, 5);
-          it.filled_rectangle(754, 30, 36, 26);
-          it.filled_circle(772, 40, 4, COLOR_OFF);
-          it.filled_rectangle(770, 40, 4, 10, COLOR_OFF);
+          it.filled_rectangle({lock_x}, 12, 5, 20);
+          it.filled_rectangle({lock_x + 17}, 12, 5, 20);
+          it.filled_rectangle({lock_x}, 12, 22, 5);
+          it.filled_rectangle({lock_x - 7}, 30, 36, 26);
+          it.filled_circle({lock_x + 11}, 40, 4, COLOR_OFF);
+          it.filled_rectangle({lock_x + 9}, 40, 4, 10, COLOR_OFF);
         }}
       }} else if (id(have_single)) {{
         it.image(0, 0, id(frame));
@@ -1221,9 +1251,18 @@ async def api_panel_setup_post(request):
     if body.get("regenerate_keys"):
         cur["api_encryption_key"] = _new_api_key()
         cur["ota_password"] = _new_ota_password()
-    for k in ("device_name", "ha_host", "wifi_ssid", "refresh_interval"):
+    for k in ("device_name", "ha_host", "wifi_ssid", "refresh_interval", "display"):
         if k in body and isinstance(body[k], str):
             cur[k] = body[k].strip()
+    if cur.get("display"):
+        cur["display"] = T.get_display(cur["display"])["id"]
+        try:
+            lay = load_layouts()
+            if lay.get("display") != cur["display"]:
+                lay["display"] = cur["display"]
+                save_layouts(lay)
+        except Exception:
+            pass
     if "use_secrets" in body:
         cur["use_secrets"] = bool(body["use_secrets"])
     if "wifi_password" in body and isinstance(body["wifi_password"], str):
@@ -1285,6 +1324,14 @@ async def api_mdi_list(request):
     return web.json_response([{"n": n, "c": cps[n]} for n in names[:400]])
 
 
+async def api_displays(request):
+    """Catalog of supported CrowPanel e-paper hardware models."""
+    return web.json_response({
+        "displays": list(T.DISPLAYS.values()),
+        "default": T.DEFAULT_DISPLAY,
+    })
+
+
 async def editor_index(request):
     index = WEB_DIR / "index.html"
     if not index.exists():
@@ -1305,6 +1352,7 @@ async def start(app_runners):
     editor.add_routes([
         web.get("/", editor_index),
         web.get("/api/status", status),
+        web.get("/api/displays", api_displays),
         web.get("/api/strip.png", editor_strip_png),
         web.get("/api/layouts", api_layouts_get),
         web.put("/api/layouts", api_layouts_put),

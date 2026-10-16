@@ -11,6 +11,79 @@ from functools import lru_cache
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
+DISPLAYS = {
+    "crowpanel_579": {
+        "id": "crowpanel_579",
+        "name": "CrowPanel 5.79\"",
+        "sku": "DIS08792E",
+        "w": 792,
+        "h": 272,
+        "mm_w": 139.1,
+        "mm_h": 47.7,
+        "margin": 40,
+        "esphome_model": "5.79in",
+        "esphome_component": "github://ESPBoards/esphome-lvgl-crowpanel-epaper-5.79-4.2",
+    },
+    "crowpanel_420": {
+        "id": "crowpanel_420",
+        "name": "CrowPanel 4.2\"",
+        "sku": "DIS08042E",
+        "w": 400,
+        "h": 300,
+        "mm_w": 84.8,
+        "mm_h": 63.6,
+        "margin": 24,
+        "esphome_model": "4.2in",
+        "esphome_component": "github://ESPBoards/esphome-lvgl-crowpanel-epaper-5.79-4.2",
+    },
+    "crowpanel_290": {
+        "id": "crowpanel_290",
+        "name": "CrowPanel 2.9\"",
+        "sku": "DIS08029E",
+        "w": 296,
+        "h": 128,
+        "mm_w": 66.9,
+        "mm_h": 29.1,
+        "margin": 16,
+        "esphome_model": "2.90inv2",
+        "esphome_component": "waveshare_epaper",
+    },
+    "crowpanel_750": {
+        "id": "crowpanel_750",
+        "name": "CrowPanel 7.5\"",
+        "sku": "DIS08075E",
+        "w": 800,
+        "h": 480,
+        "mm_w": 163.2,
+        "mm_h": 97.9,
+        "margin": 40,
+        "esphome_model": "7.50inv2",
+        "esphome_component": "waveshare_epaper",
+    },
+    "crowpanel_102": {
+        "id": "crowpanel_102",
+        "name": "CrowPanel 10.2\"",
+        "sku": "DIS08102E",
+        "w": 960,
+        "h": 640,
+        "mm_w": 215.0,
+        "mm_h": 143.4,
+        "margin": 48,
+        "esphome_model": "10.2in",
+        "esphome_component": "waveshare_epaper",
+    },
+}
+
+DEFAULT_DISPLAY = "crowpanel_579"
+
+
+def get_display(key=None):
+    """Retrieve display profile by model key; defaults to CrowPanel 5.79\"."""
+    if not key or str(key).lower() not in DISPLAYS:
+        return DISPLAYS[DEFAULT_DISPLAY]
+    return DISPLAYS[str(key).lower()]
+
+
 W, H = 792, 272
 WHITE, BLACK = 255, 0
 
@@ -69,16 +142,18 @@ def font(size, bold=True, family="lato"):
     return _cached_font(path, clamped)
 
 
-def canvas_dims(orientation=0):
+def canvas_dims(orientation=0, display=None):
     """Logical (width, height) for the editor and renderer before panel rotation."""
+    disp = get_display(display)
+    dw, dh = disp["w"], disp["h"]
     if int(orientation or 0) in (90, 270):
-        return H, W
-    return W, H
+        return dh, dw
+    return dw, dh
 
 
-def new_canvas(orientation=0):
+def new_canvas(orientation=0, display=None):
     """8-bit greyscale working canvas; converted to 1-bit on save."""
-    cw, ch = canvas_dims(orientation)
+    cw, ch = canvas_dims(orientation, display)
     img = Image.new("L", (cw, ch), WHITE)
     return img, ImageDraw.Draw(img)
 
@@ -88,8 +163,8 @@ def to_1bit(img):
     return img.convert("1", dither=Image.Dither.NONE)
 
 
-def orient_for_panel(img, orientation=0):
-    """Rotate a rendered logical page into the physical 792x272 panel buffer."""
+def orient_for_panel(img, orientation=0, display=None):
+    """Rotate a rendered logical page into the physical panel buffer."""
     deg = int(orientation or 0) % 360
     if deg == 180:
         return img.transpose(Image.Transpose.ROTATE_180)
@@ -147,12 +222,14 @@ def screen(img, box):
             px[x, y] = WHITE
 
 
-def footer(draw, *, clock, label, battery_pct=None, orientation=0):
-    cw, ch = canvas_dims(orientation)
-    margin = 20 if cw < 400 else MARGIN
-    rule_y = ch - 36
-    base_y = ch - 14
-    f = font(FOOTER_SIZE, bold=False)
+def footer(draw, *, clock, label, battery_pct=None, orientation=0, display=None):
+    cw, ch = canvas_dims(orientation, display=display)
+    disp = get_display(display)
+    margin = disp["margin"] if cw >= 400 else min(disp["margin"], 16)
+    footer_size = 14 if ch < 200 else (18 if ch < 400 else FOOTER_SIZE)
+    rule_y = ch - int(footer_size * 1.8)
+    base_y = ch - int(footer_size * 0.7)
+    f = font(footer_size, bold=False)
     draw.line([(margin, rule_y), (cw - margin, rule_y)], fill=BLACK, width=1)
     draw.text((margin, base_y), clock, font=f, fill=BLACK, anchor="ls")
     draw.text((cw // 2, base_y), label, font=f, fill=BLACK, anchor="ms")
