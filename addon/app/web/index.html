@@ -407,7 +407,12 @@ canvas.addEventListener("drop",e=>{
   const numeric=known && known.state!=="" && !isNaN(Number(known.state));
   const el={type:numeric?"number":"text",entity:id,show:"state",align:"left",
             x:Math.round((e.clientX-r.left)*s),y:Math.round((e.clientY-r.top)*s),w:260,h:90};
-  if(numeric){ el.decimals=1; if(known.unit) el.suffix=" "+known.unit; }
+  if(numeric){
+    // A whole number is usually a count, and "2.0" is wrong for a count.
+    // Take the lead from how the entity reports itself.
+    el.decimals = String(known.state).includes(".") ? 1 : 0;
+    if(known.unit) el.suffix=" "+known.unit;
+  }
   els().push(el);
   sel=els().length-1; paint(); preview();
 });
