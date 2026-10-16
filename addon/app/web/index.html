@@ -1147,7 +1147,9 @@ aside {
         </div>
         <div class="row">
           <label style="width:130px">HA host / IP</label>
-          <input id="cfg_host" placeholder="homeassistant.local or 192.168.1.x">
+          <input id="cfg_host" placeholder="homeassistant.local or 192.168.1.x" style="flex:1">
+          <label style="width:auto;margin-left:6px" title="Host port for frame fetches (default 8099, or custom if remapped in HA add-on settings)">Port</label>
+          <input id="cfg_port" type="number" placeholder="8099" style="max-width:80px">
           <label style="width:auto;margin-left:6px" title="Initial default interval. Can also be adjusted dynamically via Home Assistant slider anytime without reflashing!">Default Refresh</label>
           <select id="cfg_interval" style="max-width:100px">
             <option value="1min">1 min</option>
@@ -2413,6 +2415,9 @@ function applySetupResponse(r) {
     $("cfg_model").value = c.display;
   }
   $("cfg_host").value = c.ha_host || window.location.hostname || "homeassistant.local";
+  if ($("cfg_port")) {
+    $("cfg_port").value = c.frame_port || r.frame_port || 8099;
+  }
   $("cfg_dev").value = c.device_name || "crowpanel-epaper";
   updateRefreshUI(c.refresh_interval || "5min");
   $("cfg_orient").value = String(Number(spec.orientation || 0));
@@ -2455,6 +2460,7 @@ async function savePanelSetup(extra = {}) {
   const body = {
     display: chosenModel,
     ha_host: $("cfg_host").value.trim() || window.location.hostname || "homeassistant.local",
+    frame_port: $("cfg_port") ? (parseInt($("cfg_port").value, 10) || 8099) : 8099,
     device_name: $("cfg_dev").value.trim() || "crowpanel-epaper",
     refresh_interval: $("cfg_interval").value,
     wifi_ssid: $("cfg_ssid").value.trim(),

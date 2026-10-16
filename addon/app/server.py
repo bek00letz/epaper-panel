@@ -905,15 +905,26 @@ def generate_esphome_yaml(cfg: dict) -> tuple[str, str]:
     dw, dh = disp["w"], disp["h"]
     dev_name = cfg.get("device_name") or "crowpanel-epaper"
     raw_host = (cfg.get("ha_host") or "homeassistant.local").strip()
+    port = cfg.get("frame_port") or FRAME_PORT
     if raw_host.startswith(("http://", "https://")):
         parsed = urllib.parse.urlsplit(raw_host)
         host_only = parsed.hostname or "homeassistant.local"
+        if parsed.port:
+            port = parsed.port
         scheme = parsed.scheme
     else:
-        host_only = raw_host.split("/")[0].split(":")[0] or "homeassistant.local"
+        if ":" in raw_host:
+            parts = raw_host.split(":")
+            host_only = parts[0]
+            try:
+                port = int(parts[1])
+            except ValueError:
+                pass
+        else:
+            host_only = raw_host.split("/")[0] or "homeassistant.local"
         scheme = "http"
 
-    base_url = f"{scheme}://{host_only}:{FRAME_PORT}"
+    base_url = f"{scheme}://{host_only}:{port}"
     token_q = f"?token={urllib.parse.quote(FRAME_TOKEN)}" if FRAME_TOKEN else ""
     frames_url = f"{base_url}/frames.png{token_q}"
     frame_url = f"{base_url}/frame.png{token_q}"
@@ -1289,12 +1300,37 @@ async def _detect_panel_connection(device_slug: str) -> dict:
     return {"connected": bool(ip_val or rssi_val), "ip": ip_val, "rssi": rssi_val}
 
 
+async def _detect_external_port(session: aiohttp.ClientSession | None = None) -> int:
+    if not HA_TOKEN:
+        return FRAME_PORT
+    try:
+        sess = session or SHARED_SESSION
+        if sess:
+            async with sess.get(
+                "http://supervisor/addons/self/info",
+                headers={"Authorization": f"Bearer {HA_TOKEN}"},
+                timeout=aiohttp.ClientTimeout(total=2.0)
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    net = (data.get("data") or {}).get("network") or {}
+                    p = net.get(f"{FRAME_PORT}/tcp") or net.get("8099/tcp")
+                    if p:
+                        return int(p)
+    except Exception as exc:
+        print(f"could not query supervisor for external port: {exc!r}", flush=True)
+    return FRAME_PORT
+
+
 async def api_panel_setup_get(request):
     fwd = request.headers.get("X-Forwarded-Host") or request.headers.get("Host") or ""
     host_guess = fwd.split(",")[0].strip().split(":")[0]
     if not host_guess or host_guess in ("localhost", "127.0.0.1", "0.0.0.0"):
         host_guess = "homeassistant.local"
     cfg = load_panel_setup(default_host=host_guess)
+    detected_port = await _detect_external_port(SHARED_SESSION)
+    if "frame_port" not in cfg:
+        cfg["frame_port"] = detected_port
     yaml_text, secrets_text = generate_esphome_yaml(cfg)
     conn = await _detect_panel_connection(cfg["device_name"])
     masked_cfg = dict(cfg)
@@ -1304,7 +1340,7 @@ async def api_panel_setup_get(request):
         "config": masked_cfg,
         "yaml": yaml_text,
         "secrets_yaml": secrets_text,
-        "frame_port": FRAME_PORT,
+        "frame_port": cfg.get("frame_port", detected_port),
         "has_frame_token": bool(FRAME_TOKEN),
         "panel": conn,
     })
@@ -1321,6 +1357,11 @@ async def api_panel_setup_post(request):
     for k in ("device_name", "ha_host", "wifi_ssid", "refresh_interval", "display"):
         if k in body and isinstance(body[k], str):
             cur[k] = body[k].strip()
+    if "frame_port" in body:
+        try:
+            cur["frame_port"] = int(body["frame_port"])
+        except (ValueError, TypeError):
+            pass
     if cur.get("display"):
         cur["display"] = T.get_display(cur["display"])["id"]
         try:
@@ -1350,7 +1391,7 @@ async def api_panel_setup_post(request):
         "config": masked_cfg,
         "yaml": yaml_text,
         "secrets_yaml": secrets_text,
-        "frame_port": FRAME_PORT,
+        "frame_port": saved.get("frame_port", FRAME_PORT),
         "has_frame_token": bool(FRAME_TOKEN),
         "panel": conn,
     })
