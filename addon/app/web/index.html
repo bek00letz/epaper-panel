@@ -870,6 +870,50 @@ aside {
   margin-left: 8px;
   color: var(--text-primary);
 }
+.icon-pick-btn {
+  font-family: mdi;
+  font-size: 19px;
+  line-height: 1;
+  min-width: 34px;
+  height: 30px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  cursor: pointer;
+  color: var(--text-primary);
+  flex-shrink: 0;
+  transition: transform 0.1s ease, border-color 0.15s ease, background 0.15s ease;
+}
+.icon-pick-btn:hover {
+  border-color: var(--accent);
+  background: rgba(255, 255, 255, 0.08);
+  transform: scale(1.05);
+}
+.pick-cat-btn {
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 4px 10px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+.pick-cat-btn:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+.pick-cat-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
 </style>
 </head>
 <body data-theme="dark">
@@ -1095,12 +1139,28 @@ aside {
 
 <!-- Icon Picker Modal -->
 <div id="pickwrap" class="modal-wrap">
-  <div class="modal-card" style="width:min(680px,94vw)">
-    <div class="row" style="margin:0">
-      <input id="picksearch" placeholder="Search Material Design icons…" style="flex:1">
+  <div class="modal-card" style="width:min(720px,94vw);max-height:86vh;display:flex;flex-direction:column">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <strong style="font-size:16px;flex:1">Choose Icon</strong>
+      <span id="pickmeta" style="font-size:12px;color:var(--text-secondary)">Search 7,000+ Material Design icons</span>
       <button id="pickclose">Close</button>
     </div>
-    <div id="picks"></div>
+    <div class="row" style="margin:0 0 10px 0">
+      <input id="picksearch" type="search" placeholder="Type to search (e.g. cat, paw, radiator, bed, light, power, heat, sun)..." style="flex:1" autofocus>
+    </div>
+    <div id="pickcategories" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+      <button class="sm pick-cat-btn active" data-q="">Popular</button>
+      <button class="sm pick-cat-btn" data-q="cat">🐱 Cat &amp; Pets</button>
+      <button class="sm pick-cat-btn" data-q="paw">🐾 Paw</button>
+      <button class="sm pick-cat-btn" data-q="radiator">♨️ Heating</button>
+      <button class="sm pick-cat-btn" data-q="bed">🛏️ Bed &amp; Furniture</button>
+      <button class="sm pick-cat-btn" data-q="power">⚡ Power</button>
+      <button class="sm pick-cat-btn" data-q="light">💡 Lights</button>
+      <button class="sm pick-cat-btn" data-q="home">🏠 Home</button>
+      <button class="sm pick-cat-btn" data-q="weather">☀️ Weather</button>
+      <button class="sm pick-cat-btn" data-q="thermometer">🌡️ Climate</button>
+    </div>
+    <div id="picks" style="flex:1;overflow-y:auto"></div>
   </div>
 </div>
 
@@ -1787,6 +1847,7 @@ async function refreshStatus() {
 }
 
 async function boot() {
+  initMdiMap();
   spec = await api("api/layouts").then(r => r.json());
   if (!spec.display) spec.display = "crowpanel_579";
   if (spec.orientation === undefined) spec.orientation = 0;
@@ -2373,6 +2434,52 @@ function wireContent(el, box) {
   box.querySelectorAll("[data-rep-v]").forEach(inp => inp.onchange = commit);
 }
 
+/* MDI Icon Map & Helpers */
+const MDI_MAP = {};
+let mdiLoaded = false;
+async function initMdiMap() {
+  if (mdiLoaded) return;
+  try {
+    const data = await fetch("api/mdi/all").then(r => r.json());
+    if (data && typeof data === "object") {
+      Object.assign(MDI_MAP, data);
+      mdiLoaded = true;
+      if (sel >= 0) props();
+    }
+  } catch (_) {
+    try {
+      const list = await fetch("api/mdi/list").then(r => r.json());
+      list.forEach(i => { MDI_MAP[i.n] = i.c; });
+      mdiLoaded = true;
+      if (sel >= 0) props();
+    } catch (_) {}
+  }
+}
+
+function getMdiGlyph(name) {
+  if (!name) return "";
+  const clean = String(name).replace(/^mdi:/, "").trim().toLowerCase();
+  const cp = MDI_MAP[clean];
+  if (cp !== undefined) return String.fromCodePoint(cp);
+  return "";
+}
+
+function suggestIconForEntity(entityId, friendlyName = "") {
+  const s = (entityId + " " + friendlyName).toLowerCase();
+  if (s.includes("paw") || s.includes("cat") || s.includes("pet") || s.includes("dog")) return "mdi:paw";
+  if (s.includes("bed") || s.includes("sleep") || s.includes("crib")) return "mdi:bed";
+  if (s.includes("radiator") || s.includes("heater") || s.includes("heat") || s.includes("warm") || s.includes("blanket")) return "mdi:radiator";
+  if (s.includes("floor") || s.includes("wall")) return "mdi:radiator";
+  if (s.includes("light") || s.includes("lamp") || s.includes("spot")) return "mdi:lightbulb";
+  if (s.includes("plug") || s.includes("outlet") || s.includes("socket")) return "mdi:power-socket-eu";
+  if (s.includes("battery")) return "mdi:battery-charging";
+  if (s.includes("solar") || s.includes("pv") || s.includes("sun")) return "mdi:white-balance-sunny";
+  if (s.includes("temp") || s.includes("climate")) return "mdi:thermometer";
+  if (s.includes("fan")) return "mdi:fan";
+  if (s.includes("door") || s.includes("gate")) return "mdi:door";
+  return "mdi:power";
+}
+
 /* Properties Inspector */
 function props() {
   const box = $("props"), badge = $("selbadge");
@@ -2391,8 +2498,13 @@ function props() {
   let h = '<div class="grp"><div class="lbl">Content &amp; Source</div>';
   if (el.type === "text" || el.type === "number") h += contentRows(el);
   else if (el.type === "icon") {
-    h += f("icon", "icon name") + `<div class="row"><label></label><button id="browse" class="sm">Browse Material Icons…</button>
-      <span class="mdiprev" id="mdiprev"></span></div>`;
+    h += `<div class="row"><label>icon</label>
+      <div style="display:flex;gap:6px;align-items:center;flex:1">
+        <button id="browse_icon_btn" class="icon-pick-btn" title="Click to choose icon visually">${getMdiGlyph(el.icon) || "󰀲"}</button>
+        <input data-k="icon" id="el_icon_inp" type="text" placeholder="mdi:home" value="${esc(el.icon || "")}" style="flex:1">
+        <button id="browse" class="sm">Browse…</button>
+      </div>
+    </div>`;
   } else if (el.type === "curve") {
     h += f("entity", "entity", "text", "", "entities-dl") + f("hours", "hours", "number") +
       `<div class="chip">24h history curve (sparkline) of that sensor's values. Ideal for solar output or power draw.</div>`;
@@ -2401,7 +2513,13 @@ function props() {
   } else if (el.type === "dynamic_grid") {
     if (!Array.isArray(el.items)) el.items = [];
     h += f("header_title", "header title", "text", "e.g. Active Blanket Zones") +
-      f("header_icon", "header icon", "text", "e.g. mdi:cat") +
+      `<div class="row"><label>header icon</label>
+        <div style="display:flex;gap:6px;align-items:center;flex:1">
+          <button id="dg_hdricon_btn" class="icon-pick-btn" title="Click to choose header icon visually">${getMdiGlyph(el.header_icon) || "󰀲"}</button>
+          <input data-k="header_icon" id="dg_hdricon_inp" type="text" placeholder="e.g. mdi:cat" value="${esc(el.header_icon || "")}" style="flex:1">
+          <button id="dg_browse_hdr" class="sm">Browse…</button>
+        </div>
+      </div>` +
       `<div class="row"><label>filter state</label>
         <select data-k="filter_state">
           <option value="on"${(el.filter_state || "on") === "on" ? " selected" : ""}>on (Show when Active)</option>
@@ -2444,8 +2562,12 @@ function props() {
         <div class="row" style="margin-bottom:4px;"><label>name</label>
           <input class="dgentinp" data-dgi="${idx}" data-field="name" type="text" placeholder="Auto (friendly name)" value="${esc(it.name || "")}">
         </div>
-        <div class="row"><label>icon</label>
-          <input class="dgentinp" data-dgi="${idx}" data-field="icon" type="text" placeholder="mdi:radiator" value="${esc(it.icon || "")}">
+        <div class="row" style="margin-bottom:4px;"><label>icon</label>
+          <div style="display:flex;gap:6px;align-items:center;flex:1">
+            <button class="icon-pick-btn dgspoticonbtn" data-dgi="${idx}" title="Click to choose icon visually for Spot #${idx + 1}">${getMdiGlyph(it.icon) || "󰀲"}</button>
+            <input class="dgentinp" data-dgi="${idx}" data-field="icon" type="text" placeholder="mdi:radiator" value="${esc(it.icon || "")}" style="flex:1">
+            <button class="sm dgspoticonbrowse" data-dgi="${idx}" title="Browse icon library">Browse…</button>
+          </div>
         </div>
       </div>`;
     });
@@ -2585,6 +2707,9 @@ function props() {
     if (k === "filter_state" && page() && page().tier === "when") {
       syncDynamicGridShowIf(el);
     }
+    if (k === "icon" || k === "header_icon") {
+      props();
+    }
     paint(); preview();
   });
 
@@ -2599,7 +2724,7 @@ function props() {
         icon: "mdi:radiator"
       });
       syncDynamicGridShowIf(el);
-      paint(); preview();
+      paint(); preview(); props();
     };
   }
   box.querySelectorAll(".dgdelitem").forEach(b => {
@@ -2608,7 +2733,7 @@ function props() {
       const idx = +b.dataset.dgi;
       el.items.splice(idx, 1);
       syncDynamicGridShowIf(el);
-      paint(); preview();
+      paint(); preview(); props();
     };
   });
   box.querySelectorAll(".dgentinp").forEach(inp => {
@@ -2618,21 +2743,52 @@ function props() {
       const fld = inp.dataset.field;
       if (el.items[idx]) {
         el.items[idx][fld] = inp.value;
-        if (fld === "entity") syncDynamicGridShowIf(el);
+        if (fld === "entity") {
+          syncDynamicGridShowIf(el);
+          const val = (inp.value || "").trim();
+          const match = ents.find(x => x.entity_id === val);
+          const friendly = match ? (match.name || "") : "";
+          if ((!el.items[idx].name || /^Spot \d+$/i.test(el.items[idx].name)) && friendly) {
+            el.items[idx].name = friendly;
+          }
+          if (!el.items[idx].icon || el.items[idx].icon === "mdi:radiator" || el.items[idx].icon === "mdi:power") {
+            el.items[idx].icon = suggestIconForEntity(val, friendly);
+          }
+          props();
+        } else if (fld === "icon") {
+          props();
+        }
         paint(); preview();
       }
     };
   });
 
-  if ($("browse")) {
-    const cp = (el.icon || "").toString();
-    $("browse").onclick = () => openPicker(el);
-    fetch("api/mdi/list?q=" + encodeURIComponent(cp.replace("mdi:", "")))
-      .then(r => r.json()).then(l => {
-        const m = l.find(x => "mdi:" + x.n === cp || x.n === cp);
-        if (m && $("mdiprev")) $("mdiprev").textContent = String.fromCodePoint(m.c);
-      }).catch(() => {});
-  }
+  // Icon element picker buttons
+  const pickElIcon = () => openPicker(el.icon || "", (ic) => {
+    snapshot(); el.icon = ic; paint(); preview(); props();
+  });
+  if ($("browse_icon_btn")) $("browse_icon_btn").onclick = pickElIcon;
+  if ($("browse")) $("browse").onclick = pickElIcon;
+
+  // Dynamic grid header icon picker buttons
+  const pickDgHdrIcon = () => openPicker(el.header_icon || "", (ic) => {
+    snapshot(); el.header_icon = ic; paint(); preview(); props();
+  });
+  if ($("dg_hdricon_btn")) $("dg_hdricon_btn").onclick = pickDgHdrIcon;
+  if ($("dg_browse_hdr")) $("dg_browse_hdr").onclick = pickDgHdrIcon;
+
+  // Dynamic grid spots icon picker buttons
+  box.querySelectorAll(".dgspoticonbtn, .dgspoticonbrowse").forEach(btn => {
+    btn.onclick = () => {
+      const idx = +btn.dataset.dgi;
+      if (!el.items || !el.items[idx]) return;
+      openPicker(el.items[idx].icon || "", (ic) => {
+        snapshot();
+        el.items[idx].icon = ic;
+        paint(); preview(); props();
+      });
+    };
+  });
 
   wireContent(el, box);
   if (el.show === "attribute" && el.entity) loadAttributes(el.entity);
@@ -3014,26 +3170,119 @@ $("srcsave").onclick = async () => {
 };
 
 /* Icon Picker */
-let pickTarget = null;
-function openPicker(el) {
-  pickTarget = el;
+let pickOnSelect = null;
+const CATEGORY_TERMS = {
+  cat: ["cat", "paw", "dog", "pet", "bone"],
+  paw: ["paw"],
+  radiator: ["radiator", "heat", "fire", "warm", "blanket"],
+  bed: ["bed", "sofa", "chair", "couch", "seat", "sleep"],
+  power: ["power", "lightning", "socket", "outlet", "plug", "battery"],
+  light: ["light", "lamp", "bulb", "brightness"],
+  home: ["home", "house", "door", "window", "gate", "garage"],
+  weather: ["weather", "sun", "cloud", "rain", "snowflake", "wind"],
+  thermometer: ["thermometer", "temperature", "hvac", "climate"]
+};
+
+function openPicker(initialVal, onSelect) {
+  if (typeof initialVal === "object" && initialVal !== null && !onSelect) {
+    const el = initialVal;
+    initialVal = el.icon || "";
+    onSelect = (ic) => {
+      snapshot();
+      el.icon = ic;
+      paint();
+      preview();
+      props();
+    };
+  }
+  pickOnSelect = onSelect;
   $("pickwrap").style.display = "flex";
   $("picksearch").value = "";
+  document.querySelectorAll(".pick-cat-btn").forEach(b => b.classList.toggle("active", b.dataset.q === ""));
   loadIcons("");
   $("picksearch").focus();
 }
+
 $("pickclose").onclick = () => $("pickwrap").style.display = "none";
 $("pickwrap").onclick = e => { if (e.target.id === "pickwrap") $("pickwrap").style.display = "none"; };
-$("picksearch").oninput = e => loadIcons(e.target.value);
+$("picksearch").oninput = e => {
+  document.querySelectorAll(".pick-cat-btn").forEach(b => b.classList.remove("active"));
+  loadIcons(e.target.value);
+};
+
+document.querySelectorAll(".pick-cat-btn").forEach(b => {
+  b.onclick = () => {
+    document.querySelectorAll(".pick-cat-btn").forEach(x => x.classList.remove("active"));
+    b.classList.add("active");
+    $("picksearch").value = b.dataset.q ? b.dataset.q : "";
+    loadIcons(b.dataset.q || "");
+  };
+});
+
 async function loadIcons(q) {
-  const list = await fetch("api/mdi/list?q=" + encodeURIComponent(q)).then(r => r.json()).catch(() => []);
-  $("picks").innerHTML = list.map(i =>
+  q = (q || "").trim().toLowerCase().replace(/^mdi:/, "");
+  let items = [];
+  const keys = Object.keys(MDI_MAP);
+  if (keys.length > 0) {
+    if (!q) {
+      const pop = [
+        "paw", "cat", "dog", "radiator", "bed", "radiator-disabled",
+        "lightning-bolt", "power", "lightbulb", "home", "door", "thermometer",
+        "fan", "solar-power", "battery-charging", "clock-outline", "fire", "water",
+        "television", "wifi", "shield-check", "account", "bell", "calendar"
+      ];
+      items = pop.filter(n => MDI_MAP[n] !== undefined).map(n => ({ n, c: MDI_MAP[n] }));
+      for (const k of keys) {
+        if (items.length >= 80) break;
+        if (!pop.includes(k)) items.push({ n: k, c: MDI_MAP[k] });
+      }
+    } else {
+      const terms = CATEGORY_TERMS[q] || [q];
+      const seen = new Set();
+      for (const t of terms) {
+        if (MDI_MAP[t] !== undefined && !seen.has(t)) {
+          seen.add(t);
+          items.push({ n: t, c: MDI_MAP[t] });
+        }
+      }
+      for (const t of terms) {
+        for (const k of keys) {
+          if (!seen.has(k) && (k.startsWith(t) || k.endsWith(t) || k.includes("-" + t) || k.includes(t + "-"))) {
+            seen.add(k);
+            items.push({ n: k, c: MDI_MAP[k] });
+            if (items.length > 250) break;
+          }
+        }
+      }
+      if (items.length < 250) {
+        for (const t of terms) {
+          for (const k of keys) {
+            if (!seen.has(k) && k.includes(t)) {
+              seen.add(k);
+              items.push({ n: k, c: MDI_MAP[k] });
+              if (items.length > 250) break;
+            }
+          }
+        }
+      }
+    }
+  } else {
+    items = await fetch("api/mdi/list?q=" + encodeURIComponent(q)).then(r => r.json()).catch(() => []);
+  }
+
+  const meta = $("pickmeta");
+  if (meta) {
+    meta.textContent = q ? `${items.length} matching icons` : "Popular & Quick Categories";
+  }
+
+  $("picks").innerHTML = items.map(i =>
     `<button data-n="${esc(i.n)}" title="mdi:${esc(i.n)}">${String.fromCodePoint(i.c)}<span>${esc(i.n)}</span></button>`).join("");
   $("picks").querySelectorAll("button").forEach(b => b.onclick = () => {
-    snapshot();
-    pickTarget.icon = "mdi:" + b.dataset.n;
+    const chosen = "mdi:" + b.dataset.n;
     $("pickwrap").style.display = "none";
-    paint(); preview();
+    if (typeof pickOnSelect === "function") {
+      pickOnSelect(chosen);
+    }
   });
 }
 

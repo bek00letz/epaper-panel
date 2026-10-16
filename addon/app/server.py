@@ -1453,6 +1453,14 @@ async def api_mdi_list(request):
     return web.json_response([{"n": n, "c": cps[n]} for n in names[:400]])
 
 
+async def api_mdi_all(request):
+    """Serve full icon map for client-side instant search and glyph preview."""
+    f = Path(__file__).parent / "fonts" / "mdi-codepoints.json"
+    if not f.exists():
+        raise web.HTTPNotFound()
+    return web.FileResponse(f, headers={"Cache-Control": "public, max-age=86400"})
+
+
 async def api_displays(request):
     """Catalog of supported CrowPanel e-paper hardware models."""
     return web.json_response({
@@ -1497,6 +1505,7 @@ async def start(app_runners):
         web.post("/api/panel-refresh", api_panel_refresh),
         web.get("/api/mdi/font", api_mdi_font),
         web.get("/api/mdi/list", api_mdi_list),
+        web.get("/api/mdi/all", api_mdi_all),
     ])
     if WEB_DIR.exists():
         editor.router.add_static("/static/", WEB_DIR)
