@@ -21,13 +21,14 @@
         },
         {
           "type": "number",
-          "value": "{{ states('sensor.solar_today_production') }}",
           "decimals": 1,
           "x": 160,
           "y": 30,
           "w": 310,
           "h": 128,
-          "align": "left"
+          "align": "left",
+          "entity": "sensor.solar_today_production",
+          "show": "state"
         },
         {
           "type": "text",
@@ -64,13 +65,14 @@
         },
         {
           "type": "number",
-          "value": "{{ states('sensor.epaper_solar_month') }}",
           "decimals": 0,
           "x": 160,
           "y": 30,
           "w": 310,
           "h": 128,
-          "align": "left"
+          "align": "left",
+          "entity": "sensor.epaper_solar_month",
+          "show": "state"
         },
         {
           "type": "text",
@@ -85,7 +87,9 @@
         },
         {
           "type": "text",
-          "value": "battery {{ states('sensor.home_battery') }} %",
+          "entity": "sensor.home_battery",
+          "prefix": "battery ",
+          "suffix": " %",
           "size": 30,
           "bold": false,
           "x": 452,
@@ -109,7 +113,11 @@
         },
         {
           "type": "text",
-          "value": "{{ states('sensor.cat_location') | replace('Outdoor Cat','outside') | replace('Indoor Cat','inside') }}",
+          "entity": "sensor.cat_location",
+          "replace": {
+            "Outdoor Cat": "outside",
+            "Indoor Cat": "inside"
+          },
           "x": 320,
           "y": 60,
           "w": 430,
@@ -118,7 +126,10 @@
         },
         {
           "type": "text",
-          "value": "since {{ as_timestamp(states.sensor.cat_location.last_changed) | timestamp_custom('%H:%M') }}",
+          "entity": "sensor.cat_location",
+          "show": "last_changed",
+          "format": "time",
+          "prefix": "since ",
           "size": 30,
           "bold": false,
           "x": 324,
@@ -144,13 +155,14 @@
         },
         {
           "type": "number",
-          "value": "{{ states('sensor.outdoor_temperature') }}",
           "decimals": 1,
           "x": 56,
           "y": 86,
           "w": 290,
           "h": 112,
-          "align": "left"
+          "align": "left",
+          "entity": "sensor.outdoor_temperature",
+          "show": "state"
         },
         {
           "type": "line",
@@ -172,13 +184,14 @@
         },
         {
           "type": "number",
-          "value": "{{ states('sensor.indoor_temperature') }}",
           "decimals": 1,
           "x": 430,
           "y": 86,
           "w": 290,
           "h": 112,
-          "align": "left"
+          "align": "left",
+          "entity": "sensor.indoor_temperature",
+          "show": "state"
         }
       ]
     },
@@ -199,7 +212,9 @@
         },
         {
           "type": "text",
-          "value": "{{ state_attr('sensor.epaper_watch','detail') }}",
+          "entity": "sensor.epaper_watch",
+          "show": "attribute",
+          "attribute": "detail",
           "size": 26,
           "bold": false,
           "x": 452,
@@ -210,7 +225,7 @@
         },
         {
           "type": "text",
-          "value": "{{ states('sensor.epaper_watch') }}",
+          "entity": "sensor.epaper_watch",
           "x": 40,
           "y": 74,
           "w": 712,
@@ -277,7 +292,9 @@
         },
         {
           "type": "text",
-          "value": "nearly home · {{ states('sensor.partner_distance') | int(0) }} m away",
+          "entity": "sensor.partner_distance",
+          "prefix": "nearly home · ",
+          "suffix": " m away",
           "size": 34,
           "bold": false,
           "x": 188,

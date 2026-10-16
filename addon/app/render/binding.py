@@ -1,0 +1,58 @@
+"""Turn a structured entity binding into a Jinja template.
+
+Dragging an entity gets you its state. Everything else -- when it last
+changed, an attribute, saying "outside" instead of "Outdoor Cat" -- used to
+mean hand-writing Jinja, which put the editor out of reach for exactly the
+cases people want most.
+
+An element may instead describe what it wants:
+
+    {"entity": "sensor.cat_location", "show": "last_changed",
+     "format": "time", "prefix": "since "}
+
+A raw `value` template still wins when present, so nothing already built
+breaks and power users keep the full language.
+"""
+
+TIME_FORMATS = {
+    "time":     "%H:%M",
+    "date":     "%-d %b",
+    "datetime": "%-d %b %H:%M",
+}
+
+
+def _quote(s):
+    return str(s).replace("\\", "\\\\").replace("'", "\\'")
+
+
+def template_for(el):
+    """The Jinja a text/number element should render, or "" if it has none."""
+    raw = el.get("value")
+    if isinstance(raw, str) and raw.strip():
+        return raw                                   # explicit template wins
+
+    ent = (el.get("entity") or "").strip()
+    if not ent:
+        return ""
+
+    show = el.get("show") or "state"
+    if show == "attribute":
+        core = f"state_attr('{_quote(ent)}', '{_quote(el.get('attribute', ''))}')"
+    elif show in ("last_changed", "last_updated"):
+        src = f"states['{_quote(ent)}'].{show}"
+        fmt = el.get("format") or "relative"
+        if fmt == "relative":
+            core = f"relative_time({src})"
+        else:
+            pattern = TIME_FORMATS.get(fmt, TIME_FORMATS["time"])
+            core = f"as_timestamp({src}) | timestamp_custom('{pattern}')"
+    else:
+        core = f"states('{_quote(ent)}')"
+
+    # Replacements cover the common "say it in my words" case without a
+    # chain of | replace() the user has to write by hand.
+    for find, repl in (el.get("replace") or {}).items():
+        core = f"({core}) | replace('{_quote(find)}', '{_quote(repl)}')"
+
+    expr = "{{ " + core + " }}"
+    return f"{el.get('prefix', '')}{expr}{el.get('suffix', '')}"

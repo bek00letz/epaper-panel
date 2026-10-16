@@ -355,7 +355,7 @@ document.querySelectorAll("[data-add]").forEach(b=>b.onclick=()=>{
   snapshot();
   const t=b.dataset.add;
   const base={type:t,x:60,y:60,w:t==="line"?240:260,h:t==="line"?4:90};
-  if(t==="number"){base.value="{{ states('sensor.example') }}";base.decimals=1;base.align="left";}
+  if(t==="number"){base.entity="";base.show="state";base.decimals=1;base.align="left";}
   if(t==="text"){base.value="label";base.size=30;base.bold=false;base.align="left";}
   if(t==="icon"){base.icon="mdi:home";base.w=110;base.h=110;}
   if(t==="curve"){base.entity="sensor.example";base.hours=24;}
@@ -366,7 +366,6 @@ document.querySelectorAll("[data-add]").forEach(b=>b.onclick=()=>{
 $("search").oninput=e=>drawEntities(e.target.value);
 function drawEntities(q){
   const f=ents.filter(e=>!q||e.entity_id.includes(q)||(e.name||"").toLowerCase().includes(q.toLowerCase())).slice(0,120);
-  const esc=t=>String(t??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
   $("ents").innerHTML=f.map(e=>`<div class="ent" draggable="true" data-e="${esc(e.entity_id)}">
       <div class="col"><div class="nm">${esc(e.name)}</div><div class="id">${esc(e.entity_id)}</div></div>
       <div class="val">${esc(e.state)}${e.unit?" "+esc(e.unit):""}</div></div>`).join("")
@@ -379,10 +378,76 @@ canvas.addEventListener("drop",e=>{
   const id=e.dataTransfer.getData("text/plain"); if(!id) return;
   snapshot();
   const r=canvas.getBoundingClientRect(), s=W/r.width;
-  els().push({type:"number",value:`{{ states('${id}') }}`,decimals:1,align:"left",
+  els().push({type:"number",entity:id,show:"state",decimals:1,align:"left",
               x:Math.round((e.clientX-r.left)*s),y:Math.round((e.clientY-r.top)*s),w:260,h:90});
   sel=els().length-1; paint(); preview();
 });
+
+/* ---------- content binding ---------- */
+const SHOWS=[["state","State"],["attribute","Attribute"],
+             ["last_changed","When it last changed"],["last_updated","When it last updated"]];
+const FORMATS=[["relative","Relative — 2 hours ago"],["time","Time — 14:05"],
+               ["date","Date — 3 Mar"],["datetime","Date and time"]];
+const esc=t=>String(t??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const opts=(list,cur)=>list.map(([v,l])=>`<option value="${v}"${cur===v?" selected":""}>${l}</option>`).join("");
+
+function contentRows(el){
+  const tplMode = !!(el.value && String(el.value).trim());
+  let h=`<div class="row"><label>source</label><select data-src>
+      <option value="entity"${tplMode?"":" selected"}>An entity</option>
+      <option value="template"${tplMode?" selected":""}>A template</option></select></div>`;
+
+  if(tplMode){
+    h+=`<div class="row"><label>template</label><input data-k="value" value="${esc(el.value)}"></div>
+        <div class="chip">Full Jinja. Anything Home Assistant can render.</div>`;
+    return h;
+  }
+
+  const show=el.show||"state";
+  h+=`<div class="row"><label>entity</label><input data-k="entity" value="${esc(el.entity||"")}"
+        placeholder="drag one from the list below"></div>
+      <div class="row"><label>show</label><select data-k="show">${opts(SHOWS,show)}</select></div>`;
+  if(show==="attribute")
+    h+=`<div class="row"><label>attribute</label><input data-k="attribute" value="${esc(el.attribute||"")}"></div>`;
+  if(show==="last_changed"||show==="last_updated")
+    h+=`<div class="row"><label>as</label><select data-k="format">${opts(FORMATS,el.format||"relative")}</select></div>`;
+
+  h+=`<div class="row"><label>before</label><input data-k="prefix" value="${esc(el.prefix||"")}" placeholder="e.g. since "></div>
+      <div class="row"><label>after</label><input data-k="suffix" value="${esc(el.suffix||"")}" placeholder="e.g.  %"></div>`;
+
+  const reps=Object.entries(el.replace||{});
+  h+=`<div class="lbl" style="margin-top:9px">Say it differently</div>`;
+  reps.concat([["",""]]).forEach(([k,v],i)=>{
+    h+=`<div class="row"><input data-rep-k="${i}" value="${esc(k)}" placeholder="when it says…">
+        <input data-rep-v="${i}" value="${esc(v)}" placeholder="show this"></div>`;
+  });
+  return h;
+}
+
+function wireContent(el,box){
+  const srcSel=box.querySelector("[data-src]");
+  if(srcSel) srcSel.onchange=()=>{
+    snapshot();
+    if(srcSel.value==="template"){ el.value=el.value||"{{ states('sensor.example') }}"; }
+    else { delete el.value; }
+    paint(); preview();
+  };
+  const reps=box.querySelectorAll("[data-rep-k]");
+  const commit=()=>{
+    snapshot();
+    const out={};
+    reps.forEach(inp=>{
+      const i=inp.dataset.repK;
+      const k=inp.value.trim();
+      const v=(box.querySelector(`[data-rep-v="${i}"]`)||{}).value||"";
+      if(k) out[k]=v;
+    });
+    Object.keys(out).length?el.replace=out:delete el.replace;
+    paint(); preview();
+  };
+  reps.forEach(inp=>inp.onchange=commit);
+  box.querySelectorAll("[data-rep-v]").forEach(inp=>inp.onchange=commit);
+}
 
 /* ---------- properties ---------- */
 function props(){
@@ -393,8 +458,7 @@ function props(){
   const f=(k,label,type="text",ph="")=>`<div class="row"><label>${label}</label>
     <input data-k="${k}" type="${type}" placeholder="${ph}" value="${(el[k]??"").toString().replace(/"/g,"&quot;")}"></div>`;
   let h='<div class="grp"><div class="lbl">Content</div>';
-  if(el.type==="number")h+=f("value","value")+f("decimals","decimals","number")+f("fallback","if error");
-  else if(el.type==="text")h+=f("value","value");
+  if(el.type==="text"||el.type==="number") h+=contentRows(el);
   else if(el.type==="icon"){
     h+=f("icon","mdi name")+`<div class="row"><label></label><button id="browse">Browse icons…</button>
       <span class="mdiprev" id="mdiprev"></span></div>`;
@@ -436,6 +500,7 @@ function props(){
       .then(r=>r.json()).then(l=>{const m=l.find(x=>"mdi:"+x.n===cp||x.n===cp);
         if(m&&$("mdiprev")) $("mdiprev").textContent=String.fromCodePoint(m.c);}).catch(()=>{});
   }
+  wireContent(el,box);
   $("dup").onclick=duplicate;
   $("del").onclick=()=>{snapshot();els().splice(sel,1);sel=-1;paint();preview();};
 }

@@ -47,8 +47,14 @@ publicly.
   dithering: hard edges are what e-ink wants.
 - **No grey.** Size carries hierarchy. `theme.screen()` exists for large text
   only; at small sizes a checkerboard just looks broken.
-- **Pages take `(data, ctx)` and return a canvas.** Register them in
-  `pages.ALWAYS` or `pages.CONDITIONAL`.
+- **Pages are data, not code** — `default_layouts.json`, or the user's own in
+  `/data/layouts.json`. An element carries its own box; there is no layout
+  algorithm, because the editor produces absolute positions.
+- **Prefer a structured binding over raw Jinja** (`render/binding.py`). An
+  element says `{entity, show, format, prefix, suffix, replace}` and the engine
+  builds the template. A literal `value` still wins, as the escape hatch for
+  things the model cannot express. Shipped pages should demonstrate the easy
+  path, not the ninja path.
 - **A page that cannot render must not take the panel down.** `sources` returns
   `None` rather than raising, and pages draw `--`.
 - **Fonts ship with the project** (`fonts/Lato-*.ttf`, SIL OFL). Do not depend
@@ -57,10 +63,13 @@ publicly.
 ## Verifying a change
 
 ```bash
-./.venv/bin/python render.py --catalogue --out out   # all pages and states
+# run the service locally; it falls back to the fixture with no HA token
+DATA_DIR=/tmp/epaper-data ./.venv/bin/python addon/app/server.py
 ```
 
-Then *look at* `out/catalogue.png`. Several layout bugs here — a detached cat
+Then open `http://127.0.0.1:8080/` for the editor and
+`http://127.0.0.1:8099/frames.png` for what the panel would fetch, and
+*look at it*. Several layout bugs here — a detached cat
 tail, a stray dash on the dryer icon, a missing ear — were invisible in code and
 obvious in the image. Render it and open it.
 
@@ -88,8 +97,6 @@ For firmware, `esphome config` catches schema errors but not behaviour. A full
 - **Image fetch cost is per-pixel, not per-byte or per-codec.** Changing format
   or buffer sizes moves it ~10%. Reducing pixel count is the only big lever
   without writing a custom component. Measurements in ARCHITECTURE.md.
-- **Writes to `/config/www/epaper/` must be atomic.** The panel can fetch at any
-  moment; `render.save_atomic()` writes to `.tmp` and renames.
 - **Strokes under ~4 px are invisible on this panel** (145 dpi, so 3 px is
   0.5 mm). Icons drawn in the lambda need chunky geometry.
 

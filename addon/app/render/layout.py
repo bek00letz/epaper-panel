@@ -22,6 +22,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 from . import theme as T
+from .binding import template_for
 
 _FONTS = Path(__file__).parent.parent / "fonts"
 _MDI_TTF = _FONTS / "mdi.ttf"
@@ -171,7 +172,10 @@ def element_text(el, vals, idx):
     if el["type"] == "number":
         return _fmt_number(vals.get(idx, el.get("value", "")), el)
     if el["type"] == "text":
-        return str(vals.get(idx, el.get("value", "")) or "")
+        got = vals.get(idx)
+        if got is not None:
+            return str(got)
+        return str(el.get("value", "") or "")
     return ""
 
 
@@ -201,10 +205,16 @@ def render_page(page, vals, *, clock="", label="", battery_pct=0, series=None,
 
 
 def collect_templates(page):
-    """Every templated string on a page, as {element_index: template}."""
+    """Every templated string on a page, as {element_index: template}.
+
+    Elements may carry a raw `value` template or a structured entity
+    binding; binding.template_for resolves either to Jinja.
+    """
     out = {}
     for i, el in enumerate(page.get("elements", [])):
-        v = el.get("value")
-        if isinstance(v, str) and "{{" in v:
-            out[i] = v
+        if el.get("type") not in ("text", "number"):
+            continue
+        tpl = template_for(el)
+        if tpl and "{{" in tpl:
+            out[i] = tpl
     return out
