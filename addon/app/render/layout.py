@@ -239,6 +239,53 @@ def _draw_icon_glyph(d, name, cx, cy, sz):
         d.text((cx, cy), chr(cp), font=f, fill=T.BLACK, anchor="mm")
 
 
+def _resolve_spot_icon(it, state):
+    st = str(state or "").strip().lower()
+    # 1. Custom state-to-icon mapping
+    si = it.get("state_icons")
+    if isinstance(si, dict):
+        for k, v in si.items():
+            if str(k).strip().lower() == st and v:
+                return str(v)
+    is_inactive = st in ("off", "idle", "closed", "locked", "disarmed", "standby", "0")
+    if is_inactive and it.get("icon_off"):
+        return str(it["icon_off"])
+    base_icon = str(it.get("icon") or "mdi:power")
+    if is_inactive:
+        if base_icon == "mdi:lightbulb":
+            return "mdi:lightbulb-off"
+        elif base_icon == "mdi:radiator":
+            return "mdi:radiator-disabled"
+        elif base_icon == "mdi:power":
+            return "mdi:power-off"
+        elif base_icon == "mdi:lock":
+            return "mdi:lock-open"
+        elif base_icon == "mdi:door-closed":
+            return "mdi:door-open"
+        elif base_icon == "mdi:window-closed":
+            return "mdi:window-open"
+    return base_icon
+
+
+def _compute_grid_boxes(x, y, w, h, n, cols, rows, gap=10):
+    ch_card = (h - (rows - 1) * gap) // rows
+    boxes = []
+    items_left = n
+    curr_y = y
+    for r in range(rows):
+        items_in_row = min(cols, items_left)
+        if items_in_row <= 0:
+            break
+        cw = (w - (items_in_row - 1) * gap) // items_in_row
+        row_x = x
+        for c in range(items_in_row):
+            boxes.append((row_x, curr_y, cw, ch_card))
+            row_x += cw + gap
+        curr_y += ch_card + gap
+        items_left -= items_in_row
+    return boxes
+
+
 def _draw_dynamic_grid(img, d, el, raw_val, display=None):
     x, y, w, h = _clamp_box(el, 752, 214, display=display)
     has_resolved = False
@@ -265,7 +312,7 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
             continue
         ent = it.get("entity", "").strip()
         name = it.get("name") or ""
-        icon = it.get("icon") or "mdi:power"
+        hide_name = bool(it.get("hide_name", False))
 
         if has_resolved:
             res = info_by_ent.get(ent, {})
@@ -275,20 +322,27 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
 
             is_active = (state and state not in ("unavailable", "unknown")) if filter_state in ("*", "any") else (state.lower() == filter_state)
             if is_active:
+                chosen_icon = _resolve_spot_icon(it, state)
                 active_items.append({
                     "entity": ent,
                     "name": name or friendly or ent.split(".")[-1].replace("_", " ").title(),
-                    "icon": icon,
+                    "icon": chosen_icon,
                     "state": state,
-                    "changed": changed
+                    "changed": changed,
+                    "hide_name": hide_name,
+                    "raw_item": it
                 })
         else:
+            state = it.get("state") or "on"
+            chosen_icon = _resolve_spot_icon(it, state)
             active_items.append({
                 "entity": ent,
                 "name": name or (ent.split(".")[-1].replace("_", " ").title() if ent else "Active Spot"),
-                "icon": icon,
-                "state": "on",
-                "changed": "25m ago"
+                "icon": chosen_icon,
+                "state": state,
+                "changed": "25m ago",
+                "hide_name": hide_name,
+                "raw_item": it
             })
 
     if not configured_items and not active_items:
@@ -297,11 +351,27 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
             "name": "Sample Zone",
             "icon": "mdi:radiator",
             "state": "on",
-            "changed": "30m ago"
+            "changed": "30m ago",
+            "hide_name": False
         }]
 
+    # Global display settings
+    show_labels = str(el.get("show_labels") or "both").lower()
+    icon_sz_setting = str(el.get("icon_size") or "auto").lower()
     sec_mode = el.get("secondary_mode", "runtime")
+
+    if icon_sz_setting == "huge":
+        req_icon_sz = 80
+    elif icon_sz_setting == "large":
+        req_icon_sz = 64
+    elif icon_sz_setting == "medium":
+        req_icon_sz = 48
+    else:
+        req_icon_sz = None
+
     def format_sec(item):
+        if show_labels in ("name_only", "icons_only"):
+            return ""
         if sec_mode == "none":
             return ""
         if sec_mode == "state":
@@ -350,215 +420,153 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
         return
 
     is_wide = (w >= h)
+
+    # 1 Item: Hero Card
     if n == 1:
         it = active_items[0]
         sec = format_sec(it)
+        hide_txt = (show_labels == "icons_only") or it.get("hide_name", False)
         d.rounded_rectangle([(x, y), (x + w, y + h)], radius=12, outline=T.BLACK, width=2)
         if is_wide:
-            isz = min(88, h - 36)
-            _draw_icon_glyph(d, it["icon"], x + 24 + isz // 2, y + h // 2, isz)
-            tx = x + 24 + isz + 24
-            name_f = T.font(32, bold=True)
-            name_txt = _fit_text(it["name"], w - isz - 210, name_f)
-            d.text((tx, y + h // 2 - (14 if sec else 0)), name_txt, font=name_f, fill=T.BLACK, anchor="lm")
-            if sec:
-                sec_f = T.font(18, bold=False)
-                d.text((tx, y + h // 2 + 18), sec, font=sec_f, fill=T.BLACK, anchor="lm")
+            if hide_txt:
+                isz = req_icon_sz or min(110, h - 36)
+                _draw_icon_glyph(d, it["icon"], x + w // 2, y + h // 2, isz)
+            else:
+                isz = req_icon_sz or min(88, h - 36)
+                _draw_icon_glyph(d, it["icon"], x + 24 + isz // 2, y + h // 2, isz)
+                tx = x + 24 + isz + 24
+                name_f = T.font(32, bold=True)
+                name_txt = _fit_text(it["name"], w - isz - 210, name_f)
+                d.text((tx, y + h // 2 - (14 if sec else 0)), name_txt, font=name_f, fill=T.BLACK, anchor="lm")
+                if sec:
+                    sec_f = T.font(18, bold=False)
+                    d.text((tx, y + h // 2 + 18), sec, font=sec_f, fill=T.BLACK, anchor="lm")
             bw, bh = 84, 28
             bx0 = x + w - bw - 24
             by0 = y + (h - bh) // 2
             d.rounded_rectangle([(bx0, by0), (bx0 + bw, by0 + bh)], radius=6, fill=T.BLACK)
             d.text((bx0 + bw // 2, by0 + bh // 2), "ACTIVE", font=T.font(13, bold=True), fill=T.WHITE, anchor="mm")
         else:
-            isz = min(80, w // 3)
             mid_y = y + h // 2
-            _draw_icon_glyph(d, it["icon"], x + w // 2, mid_y - (50 if sec else 30), isz)
-            name_f = T.font(28, bold=True)
-            name_txt = _fit_text(it["name"], w - 32, name_f)
-            d.text((x + w // 2, mid_y + (20 if sec else 30)), name_txt, font=name_f, fill=T.BLACK, anchor="mm")
-            if sec:
-                sec_f = T.font(18, bold=False)
-                d.text((x + w // 2, mid_y + 54), sec, font=sec_f, fill=T.BLACK, anchor="mm")
+            if hide_txt:
+                isz = req_icon_sz or min(100, w // 2)
+                _draw_icon_glyph(d, it["icon"], x + w // 2, mid_y, isz)
+            else:
+                isz = req_icon_sz or min(80, w // 3)
+                _draw_icon_glyph(d, it["icon"], x + w // 2, mid_y - (50 if sec else 30), isz)
+                name_f = T.font(28, bold=True)
+                name_txt = _fit_text(it["name"], w - 32, name_f)
+                d.text((x + w // 2, mid_y + (20 if sec else 30)), name_txt, font=name_f, fill=T.BLACK, anchor="mm")
+                if sec:
+                    sec_f = T.font(18, bold=False)
+                    d.text((x + w // 2, mid_y + 54), sec, font=sec_f, fill=T.BLACK, anchor="mm")
             pw, ph = 36, 18
             d.rounded_rectangle([(x + w - pw - 10, y + 10), (x + w - 10, y + 10 + ph)], radius=4, fill=T.BLACK)
             d.text((x + w - 10 - pw // 2, y + 10 + ph // 2), "ON", font=T.font(10, bold=True), fill=T.WHITE, anchor="mm")
         return
 
-    gap = 12
-    if n == 2:
-        if is_wide:
-            cw = (w - gap) // 2
-            cards = [(x, y, cw, h), (x + cw + gap, y, cw, h)]
-            for it, (cx0, cy0, cw_i, ch_i) in zip(active_items, cards):
-                cx1, cy1 = cx0 + cw_i, cy0 + ch_i
-                d.rounded_rectangle([(cx0, cy0), (cx1, cy1)], radius=10, outline=T.BLACK, width=2)
-                pw, ph = 34, 18
-                d.rounded_rectangle([(cx1 - pw - 8, cy0 + 8), (cx1 - 8, cy0 + 8 + ph)], radius=4, fill=T.BLACK)
-                d.text((cx1 - 8 - pw // 2, cy0 + 8 + ph // 2), "ON", font=T.font(10, bold=True), fill=T.WHITE, anchor="mm")
-                isz = min(56, ch_i - 36)
-                _draw_icon_glyph(d, it["icon"], cx0 + 16 + isz // 2, cy0 + ch_i // 2, isz)
-                tx = cx0 + 16 + isz + 14
-                sec = format_sec(it)
-                name_f = T.font(24, bold=True)
-                name_txt = _fit_text(it["name"], cw_i - isz - 64, name_f)
-                d.text((tx, cy0 + ch_i // 2 - (12 if sec else 0)), name_txt, font=name_f, fill=T.BLACK, anchor="lm")
-                if sec:
-                    sec_f = T.font(15, bold=False)
-                    d.text((tx, cy0 + ch_i // 2 + 16), sec, font=sec_f, fill=T.BLACK, anchor="lm")
-        else:
-            ch_card = (h - gap) // 2
-            cards = [(x, y, w, ch_card), (x, y + ch_card + gap, w, ch_card)]
-            for it, (cx0, cy0, cw_i, ch_i) in zip(active_items, cards):
-                cx1, cy1 = cx0 + cw_i, cy0 + ch_i
-                d.rounded_rectangle([(cx0, cy0), (cx1, cy1)], radius=10, outline=T.BLACK, width=2)
-                pw, ph = 34, 18
-                d.rounded_rectangle([(cx1 - pw - 8, cy0 + 8), (cx1 - 8, cy0 + 8 + ph)], radius=4, fill=T.BLACK)
-                d.text((cx1 - 8 - pw // 2, cy0 + 8 + ph // 2), "ON", font=T.font(10, bold=True), fill=T.WHITE, anchor="mm")
-                sec = format_sec(it)
-                if ch_i > cw_i * 1.1:
-                    isz = min(64, cw_i // 3)
-                    mid_y = cy0 + ch_i // 2
-                    _draw_icon_glyph(d, it["icon"], cx0 + cw_i // 2, mid_y - (40 if sec else 20), isz)
-                    name_f = T.font(24, bold=True)
-                    name_txt = _fit_text(it["name"], cw_i - 24, name_f)
-                    d.text((cx0 + cw_i // 2, mid_y + (16 if sec else 20)), name_txt, font=name_f, fill=T.BLACK, anchor="mm")
-                    if sec:
-                        sec_f = T.font(16, bold=False)
-                        d.text((cx0 + cw_i // 2, mid_y + 46), sec, font=sec_f, fill=T.BLACK, anchor="mm")
-                else:
-                    isz = min(50, ch_i - 28)
-                    _draw_icon_glyph(d, it["icon"], cx0 + 16 + isz // 2, cy0 + ch_i // 2, isz)
-                    tx = cx0 + 16 + isz + 12
-                    name_f = T.font(20, bold=True)
-                    name_txt = _fit_text(it["name"], cw_i - isz - 60, name_f)
-                    d.text((tx, cy0 + ch_i // 2 - (10 if sec else 0)), name_txt, font=name_f, fill=T.BLACK, anchor="lm")
-                    if sec:
-                        sec_f = T.font(14, bold=False)
-                        d.text((tx, cy0 + ch_i // 2 + 14), sec, font=sec_f, fill=T.BLACK, anchor="lm")
-        return
+    # Multi-card layout mode
+    # Legacy layout_4 support: if layout_4 == "columns" and layout_mode not explicitly given, use columns
+    layout_mode = el.get("layout_mode") or ("columns" if el.get("layout_4") == "columns" else "grid")
+    gap = 10 if n <= 4 else 8
 
-    gap = 10
-    if n == 3:
+    # Determine grid rows and cols
+    if layout_mode == "columns" or n <= 3:
         if is_wide:
-            cw = (w - 2 * gap) // 3
-            cards = [(x + k * (cw + gap), y, cw, h) for k in range(3)]
-            for it, (cx0, cy0, cw_i, ch_i) in zip(active_items, cards):
-                cx1, cy1 = cx0 + cw_i, cy0 + ch_i
-                d.rounded_rectangle([(cx0, cy0), (cx1, cy1)], radius=10, outline=T.BLACK, width=2)
-                pw, ph = 30, 16
-                d.rounded_rectangle([(cx1 - pw - 6, cy0 + 6), (cx1 - 6, cy0 + 6 + ph)], radius=4, fill=T.BLACK)
-                d.text((cx1 - 6 - pw // 2, cy0 + 6 + ph // 2), "ON", font=T.font(9, bold=True), fill=T.WHITE, anchor="mm")
-                isz = min(46, ch_i // 3)
-                _draw_icon_glyph(d, it["icon"], cx0 + cw_i // 2, cy0 + ch_i * 0.35, isz)
-                name_f = T.font(20, bold=True)
-                name_txt = _fit_text(it["name"], cw_i - 16, name_f)
-                d.text((cx0 + cw_i // 2, cy0 + ch_i * 0.68), name_txt, font=name_f, fill=T.BLACK, anchor="mm")
-                sec = format_sec(it)
-                if sec:
-                    sec_f = T.font(14, bold=False)
-                    d.text((cx0 + cw_i // 2, cy0 + ch_i * 0.86), sec, font=sec_f, fill=T.BLACK, anchor="mm")
+            cols = n
+            rows = 1
         else:
-            ch_card = (h - 2 * gap) // 3
-            cards = [(x, y + k * (ch_card + gap), w, ch_card) for k in range(3)]
-            for it, (cx0, cy0, cw_i, ch_i) in zip(active_items, cards):
-                cx1, cy1 = cx0 + cw_i, cy0 + ch_i
-                d.rounded_rectangle([(cx0, cy0), (cx1, cy1)], radius=10, outline=T.BLACK, width=2)
-                pw, ph = 30, 16
-                d.rounded_rectangle([(cx1 - pw - 6, cy0 + 6), (cx1 - 6, cy0 + 6 + ph)], radius=4, fill=T.BLACK)
-                d.text((cx1 - 6 - pw // 2, cy0 + 6 + ph // 2), "ON", font=T.font(9, bold=True), fill=T.WHITE, anchor="mm")
-                isz = min(42, ch_i - 20)
+            cols = 1
+            rows = n
+        boxes = _compute_grid_boxes(x, y, w, h, n, cols, rows, gap=gap)
+    else:
+        # 2D Grid Layout (n >= 4)
+        if is_wide:
+            if n == 4:
+                cols, rows = 2, 2
+            elif n <= 6:
+                cols, rows = 3, 2  # 2 rows x 3 cols (2x3)
+            elif n <= 8:
+                cols, rows = 4, 2  # 2 rows x 4 cols (2x4)
+            else:
+                rows = 3
+                cols = math.ceil(n / rows)
+        else:
+            if n == 4:
+                cols, rows = 2, 2
+            elif n <= 6:
+                cols, rows = 2, 3  # 3 rows x 2 cols (3x2)
+            elif n <= 8:
+                cols, rows = 2, 4  # 4 rows x 2 cols (4x2)
+            else:
+                cols = 2
+                rows = math.ceil(n / cols)
+        boxes = _compute_grid_boxes(x, y, w, h, n, cols, rows, gap=gap)
+
+    # Render each card
+    for it, (cx0, cy0, cw_i, ch_i) in zip(active_items, boxes):
+        cx1, cy1 = cx0 + cw_i, cy0 + ch_i
+        d.rounded_rectangle([(cx0, cy0), (cx1, cy1)], radius=10, outline=T.BLACK, width=2)
+
+        # State Badge
+        st_txt = str(it.get("state") or "on").upper()
+        if len(st_txt) > 6:
+            st_txt = st_txt[:6]
+        f_badge = T.font(9, bold=True)
+        bw = max(28, T.text_width(st_txt, f_badge) + 10)
+        ph = 16
+        bx0 = cx1 - bw - 6
+        by0 = cy0 + 6
+        d.rounded_rectangle([(bx0, by0), (bx0 + bw, by0 + ph)], radius=4, fill=T.BLACK)
+        d.text((bx0 + bw // 2, by0 + ph // 2), st_txt, font=f_badge, fill=T.WHITE, anchor="mm")
+
+        sec = format_sec(it)
+        hide_txt = (show_labels == "icons_only") or it.get("hide_name", False)
+
+        if hide_txt:
+            # Centered Icon Only
+            max_avail = min(cw_i - 20, ch_i - 20)
+            if req_icon_sz:
+                isz = min(req_icon_sz, max_avail)
+            else:
+                isz = min(80, max(42, int(min(cw_i, ch_i) * 0.62)))
+            _draw_icon_glyph(d, it["icon"], cx0 + cw_i // 2, cy0 + ch_i // 2, isz)
+        else:
+            # Icon + Labels
+            if cw_i > ch_i * 1.25:
+                # Horizontal orientation (wide card)
+                max_avail = ch_i - 22
+                if req_icon_sz:
+                    isz = min(req_icon_sz, max_avail)
+                else:
+                    isz = min(54, max(36, ch_i - 32))
                 _draw_icon_glyph(d, it["icon"], cx0 + 14 + isz // 2, cy0 + ch_i // 2, isz)
-                tx = cx0 + 14 + isz + 10
-                sec = format_sec(it)
-                name_f = T.font(19, bold=True)
-                name_txt = _fit_text(it["name"], cw_i - isz - 54, name_f)
+                tx = cx0 + 14 + isz + 12
+                name_f = T.font(min(22, max(15, cw_i // 13)), bold=True)
+                avail_tw = max(30, bx0 - tx - 6)
+                name_txt = _fit_text(it["name"], avail_tw, name_f)
                 d.text((tx, cy0 + ch_i // 2 - (10 if sec else 0)), name_txt, font=name_f, fill=T.BLACK, anchor="lm")
                 if sec:
-                    sec_f = T.font(13, bold=False)
-                    d.text((tx, cy0 + ch_i // 2 + 14), sec, font=sec_f, fill=T.BLACK, anchor="lm")
-        return
-
-    layout_4 = el.get("layout_4", "columns").lower()
-    if n == 4 and layout_4 == "quadrant":
-        gap = 10
-        cw = (w - gap) // 2
-        ch_card = (h - gap) // 2
-        cards = [
-            (x, y, cw, ch_card),
-            (x + cw + gap, y, cw, ch_card),
-            (x, y + ch_card + gap, cw, ch_card),
-            (x + cw + gap, y + ch_card + gap, cw, ch_card)
-        ]
-        for it, (cx0, cy0, cw_i, ch_i) in zip(active_items, cards):
-            cx1, cy1 = cx0 + cw_i, cy0 + ch_i
-            d.rounded_rectangle([(cx0, cy0), (cx1, cy1)], radius=10, outline=T.BLACK, width=2)
-            pw, ph = 30, 16
-            d.rounded_rectangle([(cx1 - pw - 6, cy0 + 6), (cx1 - 6, cy0 + 6 + ph)], radius=4, fill=T.BLACK)
-            d.text((cx1 - 6 - pw // 2, cy0 + 6 + ph // 2), "ON", font=T.font(9, bold=True), fill=T.WHITE, anchor="mm")
-            sec = format_sec(it)
-
-            if ch_i > cw_i * 1.3:
-                # Tall card (e.g. portrait 2x2 grid)
-                isz = min(48, int(cw_i * 0.45))
-                mid_y = cy0 + ch_i // 2
-                _draw_icon_glyph(d, it["icon"], cx0 + cw_i // 2, mid_y - (36 if sec else 20), isz)
-                name_f = T.font(min(22, max(16, cw_i // 6)), bold=True)
-                name_txt = _fit_text(it["name"], cw_i - 16, name_f)
-                d.text((cx0 + cw_i // 2, mid_y + (14 if sec else 20)), name_txt, font=name_f, fill=T.BLACK, anchor="mm")
-                if sec:
-                    sec_f = T.font(13, bold=False)
-                    d.text((cx0 + cw_i // 2, mid_y + 40), sec, font=sec_f, fill=T.BLACK, anchor="mm")
-            else:
-                # Wide card (e.g. landscape 2x2 grid)
-                isz = min(40, ch_i - 20)
-                _draw_icon_glyph(d, it["icon"], cx0 + 14 + isz // 2, cy0 + ch_i // 2, isz)
-                tx = cx0 + 14 + isz + 10
-                name_f = T.font(18, bold=True)
-                name_txt = _fit_text(it["name"], cw_i - isz - 52, name_f)
-                d.text((tx, cy0 + ch_i // 2 - (9 if sec else 0)), name_txt, font=name_f, fill=T.BLACK, anchor="lm")
-                if sec:
-                    sec_f = T.font(13, bold=False)
+                    sec_f = T.font(min(14, max(11, cw_i // 18)), bold=False)
                     d.text((tx, cy0 + ch_i // 2 + 13), sec, font=sec_f, fill=T.BLACK, anchor="lm")
-        return
+            else:
+                # Vertical orientation (square/tall card)
+                max_avail = min(cw_i - 18, int(ch_i * 0.45))
+                if req_icon_sz:
+                    isz = min(req_icon_sz, max_avail)
+                else:
+                    isz = min(50, max(32, int(cw_i * 0.38)))
 
-    gap = 8
-    if is_wide:
-        cw = (w - (n - 1) * gap) // n
-        cards = [(x + k * (cw + gap), y, cw, h) for k in range(n)]
-        for it, (cx0, cy0, cw_i, ch_i) in zip(active_items, cards):
-            cx1, cy1 = cx0 + cw_i, cy0 + ch_i
-            d.rounded_rectangle([(cx0, cy0), (cx1, cy1)], radius=8, outline=T.BLACK, width=2)
-            pw, ph = 28, 15
-            d.rounded_rectangle([(cx1 - pw - 5, cy0 + 5), (cx1 - 5, cy0 + 5 + ph)], radius=3, fill=T.BLACK)
-            d.text((cx1 - 5 - pw // 2, cy0 + 5 + ph // 2), "ON", font=T.font(9, bold=True), fill=T.WHITE, anchor="mm")
-            isz = min(38, ch_i // 3)
-            _draw_icon_glyph(d, it["icon"], cx0 + cw_i // 2, cy0 + ch_i * 0.35, isz)
-            name_f = T.font(16, bold=True)
-            name_txt = _fit_text(it["name"], cw_i - 12, name_f)
-            d.text((cx0 + cw_i // 2, cy0 + ch_i * 0.68), name_txt, font=name_f, fill=T.BLACK, anchor="mm")
-            sec = format_sec(it)
-            if sec:
-                sec_f = T.font(12, bold=False)
-                d.text((cx0 + cw_i // 2, cy0 + ch_i * 0.86), sec, font=sec_f, fill=T.BLACK, anchor="mm")
-    else:
-        ch_card = (h - (n - 1) * gap) // n
-        cards = [(x, y + k * (ch_card + gap), w, ch_card) for k in range(n)]
-        for it, (cx0, cy0, cw_i, ch_i) in zip(active_items, cards):
-            cx1, cy1 = cx0 + cw_i, cy0 + ch_i
-            d.rounded_rectangle([(cx0, cy0), (cx1, cy1)], radius=8, outline=T.BLACK, width=2)
-            pw, ph = 28, 15
-            d.rounded_rectangle([(cx1 - pw - 5, cy0 + 5), (cx1 - 5, cy0 + 5 + ph)], radius=3, fill=T.BLACK)
-            d.text((cx1 - 5 - pw // 2, cy0 + 5 + ph // 2), "ON", font=T.font(9, bold=True), fill=T.WHITE, anchor="mm")
-            isz = min(34, ch_i - 14)
-            _draw_icon_glyph(d, it["icon"], cx0 + 12 + isz // 2, cy0 + ch_i // 2, isz)
-            tx = cx0 + 12 + isz + 8
-            sec = format_sec(it)
-            name_f = T.font(16, bold=True)
-            name_txt = _fit_text(it["name"], cw_i - isz - 46, name_f)
-            d.text((tx, cy0 + ch_i // 2 - (8 if sec else 0)), name_txt, font=name_f, fill=T.BLACK, anchor="lm")
-            if sec:
-                sec_f = T.font(12, bold=False)
-                d.text((tx, cy0 + ch_i // 2 + 12), sec, font=sec_f, fill=T.BLACK, anchor="lm")
+                mid_x = cx0 + cw_i // 2
+                icon_y = cy0 + ch_i * (0.33 if sec else 0.38)
+                _draw_icon_glyph(d, it["icon"], mid_x, icon_y, isz)
+                name_f = T.font(min(18, max(14, cw_i // 10)), bold=True)
+                name_txt = _fit_text(it["name"], cw_i - 16, name_f)
+                d.text((mid_x, cy0 + ch_i * (0.68 if sec else 0.74)), name_txt, font=name_f, fill=T.BLACK, anchor="mm")
+                if sec:
+                    sec_f = T.font(min(13, max(10, cw_i // 13)), bold=False)
+                    d.text((mid_x, cy0 + ch_i * 0.86), sec, font=sec_f, fill=T.BLACK, anchor="mm")
+
 
 
 DRAWERS = {

@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.8.7
+- **Dynamic Multi-Row Grid Scaling (2×2, 2×3, 2×4…):** Dynamic Grid is no longer restricted to 4 spots or squished into a single crowded row when monitoring 5+ devices.
+  - **Balanced 2D Matrices:** When monitoring 5 or 6 items, the display automatically arranges into an elegant 2×3 grid in landscape (or 3×2 in portrait). When monitoring 7 or 8 items, it flows into a balanced 2×4 grid.
+  - **Dynamic Last-Row Balancing:** When odd numbers of items are active (e.g. 5 active zones), the trailing row automatically stretches and balances its cards evenly across the screen width rather than leaving awkward empty holes.
+  - **Single Row/Stack Option:** Users can switch between `Balanced Grid` and `Single Row / Stack` via the new `layout` selector in the inspector.
+- **Large Icons & "Icons Only" Mode:**
+  - **Clean "Icons Only" View:** Added a `show` mode selector (`Icon + Name + Secondary Tag`, `Icon + Name Only`, or `Icons Only`). In `Icons Only` mode, cards suppress all text and display huge, crisp glyphs centered inside Apple squircle cards with high-contrast active state badges.
+  - **Manual Icon Sizing:** Added an `icon size` selector (`Auto`, `Medium (48px)`, `Large (64px)`, `Huge (80px)`) giving users direct control over glyph presence across their layout.
+  - **Per-Spot Text Suppression:** Individual spots can now have their text hidden independently via a `Hide text` checkbox, enabling hybrid screens where primary spots have names while secondary spots show minimalist icons.
+- **Dynamic State-Based & Off Icons:**
+  - **Visual Off / Inactive Icon Picker:** Every spot now provides a dedicated `off icon` field and visual picker alongside the active icon.
+  - **Smart Automatic State Fallbacks:** When entities transition to off or idle states, common icons automatically transform (e.g., `mdi:lightbulb` $\to$ `mdi:lightbulb-off`, `mdi:radiator` $\to$ `mdi:radiator-disabled`, `mdi:lock` $\to$ `mdi:lock-open`, `mdi:power` $\to$ `mdi:power-off`).
+  - **Multi-State Support:** Supports custom state mappings (e.g., heating, cooling, idle, off) displaying corresponding state badges (`HEAT`, `IDLE`, `OFF`) and matching icons.
+
 ## 0.8.6
 - **Proactive Server-Side Push for Hardware Refresh Slider:** The editor toolbar's **Panel Refresh** slider (1–60 min) now actively drives physical panel refreshes directly over Home Assistant's native ESPHome API.
   - **Works Immediately Without Reflashing Firmware:** Previously, changing the slider only updated an internal JSON field and attempted to set a Home Assistant number entity that didn't exist on hardware running initial firmware (which had a fixed 5-minute loop hardcoded). The add-on now actively commands the panel (`esphome.<device>_page_step` and `esphome.<device>_refresh_now`) according to your selected interval.

@@ -2239,7 +2239,9 @@ document.querySelectorAll("[data-add]").forEach(b => b.onclick = () => {
     base.header_icon = "mdi:lightning-bolt";
     base.header_title = "Active Devices";
     base.filter_state = "on";
-    base.layout_4 = "quadrant";
+    base.layout_mode = "grid";
+    base.show_labels = "both";
+    base.icon_size = "auto";
     base.secondary_mode = "runtime";
     base.items = [
       { entity: "switch.zone_1", name: "Zone 1", icon: "mdi:radiator" },
@@ -2551,17 +2553,32 @@ function props() {
           <option value="*"${el.filter_state === "*" ? " selected" : ""}>* (Any State)</option>
         </select>
       </div>
-      <div class="row"><label>4-spot layout</label>
-        <select data-k="layout_4">
-          <option value="quadrant"${(el.layout_4 || "quadrant") === "quadrant" ? " selected" : ""}>2×2 Quadrant Grid</option>
-          <option value="columns"${el.layout_4 === "columns" ? " selected" : ""}>4 Columns / Stack</option>
+      <div class="row"><label>layout</label>
+        <select data-k="layout_mode">
+          <option value="grid"${(el.layout_mode || (el.layout_4 === "columns" ? "columns" : "grid")) === "grid" ? " selected" : ""}>Balanced Grid (2×2, 2×3, 2×4…)</option>
+          <option value="columns"${(el.layout_mode === "columns" || el.layout_4 === "columns") ? " selected" : ""}>Single Row / Stack</option>
+        </select>
+      </div>
+      <div class="row"><label>show</label>
+        <select data-k="show_labels">
+          <option value="both"${(el.show_labels || "both") === "both" ? " selected" : ""}>Icon + Name + Secondary Tag</option>
+          <option value="name_only"${el.show_labels === "name_only" ? " selected" : ""}>Icon + Name (No Secondary Tag)</option>
+          <option value="icons_only"${el.show_labels === "icons_only" ? " selected" : ""}>Icons Only (Large Glyphs)</option>
+        </select>
+      </div>
+      <div class="row"><label>icon size</label>
+        <select data-k="icon_size">
+          <option value="auto"${(el.icon_size || "auto") === "auto" ? " selected" : ""}>Auto (Dynamic Fit)</option>
+          <option value="medium"${el.icon_size === "medium" ? " selected" : ""}>Medium (48px)</option>
+          <option value="large"${el.icon_size === "large" ? " selected" : ""}>Large (64px)</option>
+          <option value="huge"${el.icon_size === "huge" ? " selected" : ""}>Huge (80px)</option>
         </select>
       </div>
       <div class="row"><label>secondary tag</label>
         <select data-k="secondary_mode">
           <option value="runtime"${(el.secondary_mode || "runtime") === "runtime" ? " selected" : ""}>Runtime ("on for Xm")</option>
           <option value="state"${el.secondary_mode === "state" ? " selected" : ""}>Raw State ("on")</option>
-          <option value="none"${el.secondary_mode === "none" ? " selected" : ""}>None (Icon &amp; Name Only)</option>
+          <option value="none"${el.secondary_mode === "none" ? " selected" : ""}>None</option>
         </select>
       </div>
       <div class="row" style="margin-top:6px;border-top:1px solid var(--border);padding-top:6px;">
@@ -2584,13 +2601,26 @@ function props() {
           <input class="dgentinp" data-dgi="${idx}" data-field="entity" type="text" list="entities-dl" placeholder="switch.example" value="${esc(it.entity || "")}">
         </div>
         <div class="row" style="margin-bottom:4px;"><label>name</label>
-          <input class="dgentinp" data-dgi="${idx}" data-field="name" type="text" placeholder="Auto (friendly name)" value="${esc(it.name || "")}">
+          <div style="display:flex;gap:6px;align-items:center;flex:1">
+            <input class="dgentinp" data-dgi="${idx}" data-field="name" type="text" placeholder="Auto (friendly name)" value="${esc(it.name || "")}" style="flex:1">
+            <label style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;gap:3px;cursor:pointer;white-space:nowrap;" title="Hide text and show large centered icon for this spot">
+              <input class="dgentinpcb" data-dgi="${idx}" data-field="hide_name" type="checkbox"${it.hide_name ? " checked" : ""}>
+              Hide text
+            </label>
+          </div>
         </div>
-        <div class="row" style="margin-bottom:4px;"><label>icon</label>
+        <div class="row" style="margin-bottom:4px;"><label>active icon</label>
           <div style="display:flex;gap:6px;align-items:center;flex:1">
             <button class="icon-pick-btn dgspoticonbtn" data-dgi="${idx}" title="Click to choose icon visually for Spot #${idx + 1}">${getMdiGlyph(it.icon) || "󰀲"}</button>
             <input class="dgentinp" data-dgi="${idx}" data-field="icon" type="text" placeholder="mdi:radiator" value="${esc(it.icon || "")}" style="flex:1">
             <button class="sm dgspoticonbrowse" data-dgi="${idx}" title="Browse icon library">Browse…</button>
+          </div>
+        </div>
+        <div class="row" style="margin-bottom:4px;"><label>off icon</label>
+          <div style="display:flex;gap:6px;align-items:center;flex:1">
+            <button class="icon-pick-btn dgspotofficonbtn" data-dgi="${idx}" title="Click to choose inactive/off icon for Spot #${idx + 1}">${getMdiGlyph(it.icon_off) || "󰀲"}</button>
+            <input class="dgentinp" data-dgi="${idx}" data-field="icon_off" type="text" placeholder="Auto / optional off icon" value="${esc(it.icon_off || "")}" style="flex:1">
+            <button class="sm dgspotofficonbrowse" data-dgi="${idx}" title="Browse icon library">Browse…</button>
           </div>
         </div>
       </div>`;
@@ -2764,7 +2794,7 @@ function props() {
           }
           props();
         }
-      } else if (fld === "icon" && isCommit) {
+      } else if ((fld === "icon" || fld === "icon_off") && isCommit) {
         props();
       }
       paint(); preview();
@@ -2775,6 +2805,17 @@ function props() {
     inp.onchange = () => {
       snapshot();
       handleEntityUpdate(true);
+    };
+  });
+
+  box.querySelectorAll(".dgentinpcb").forEach(cb => {
+    cb.onchange = () => {
+      snapshot();
+      const idx = +cb.dataset.dgi;
+      const fld = cb.dataset.field;
+      if (!el.items || !el.items[idx]) return;
+      el.items[idx][fld] = cb.checked;
+      paint(); preview(); props();
     };
   });
 
@@ -2792,7 +2833,7 @@ function props() {
   if ($("dg_hdricon_btn")) $("dg_hdricon_btn").onclick = pickDgHdrIcon;
   if ($("dg_browse_hdr")) $("dg_browse_hdr").onclick = pickDgHdrIcon;
 
-  // Dynamic grid spots icon picker buttons
+  // Dynamic grid spots active icon picker buttons
   box.querySelectorAll(".dgspoticonbtn, .dgspoticonbrowse").forEach(btn => {
     btn.onclick = () => {
       const idx = +btn.dataset.dgi;
@@ -2800,6 +2841,19 @@ function props() {
       openPicker(el.items[idx].icon || "", (ic) => {
         snapshot();
         el.items[idx].icon = ic;
+        paint(); preview(); props();
+      });
+    };
+  });
+
+  // Dynamic grid spots off icon picker buttons
+  box.querySelectorAll(".dgspotofficonbtn, .dgspotofficonbrowse").forEach(btn => {
+    btn.onclick = () => {
+      const idx = +btn.dataset.dgi;
+      if (!el.items || !el.items[idx]) return;
+      openPicker(el.items[idx].icon_off || "", (ic) => {
+        snapshot();
+        el.items[idx].icon_off = ic;
         paint(); preview(); props();
       });
     };
@@ -3330,7 +3384,7 @@ const PRESETS = [
   {
     id: "dynamic_entities",
     title: "Dynamic Entities",
-    desc: "Adaptive responsive panel that monitors multiple devices (1 to 4) and dynamically displays only active spots, resizing to fill the screen.",
+    desc: "Adaptive responsive panel that monitors multiple devices (1 to 8+) and dynamically displays only active spots in a balanced grid or icon view.",
     tier: "when",
     makeElements: (ent) => [
       {
@@ -3339,7 +3393,9 @@ const PRESETS = [
         header_icon: "mdi:lightning-bolt",
         header_title: "Active Devices",
         filter_state: "on",
-        layout_4: "quadrant",
+        layout_mode: "grid",
+        show_labels: "both",
+        icon_size: "auto",
         secondary_mode: "runtime",
         items: [
           { entity: ent || "", name: "Spot 1", icon: "mdi:radiator" },
