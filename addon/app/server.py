@@ -590,21 +590,59 @@ async def refresh_frames(session):
     return nxt
 
 
+LAST_PANEL_PUSH_TIME = time.time()
+
+
+async def push_panel_update(advance_page=True):
+    """Trigger the physical panel to redraw with latest frames, advancing page if rotating."""
+    if not HA_TOKEN:
+        return False
+    candidates = list(dict.fromkeys([
+        ESPHOME_DEVICE,
+        "crowpanel_epaper",
+        "e_paper_panel",
+        "epaper_panel"
+    ]))
+    ok = False
+    for dev in candidates:
+        try:
+            if advance_page:
+                await call_ha_service(SHARED_SESSION, "esphome", f"{dev}_page_step", {"delta": 1})
+            await call_ha_service(SHARED_SESSION, "esphome", f"{dev}_refresh_now")
+            ok = True
+            break
+        except Exception:
+            continue
+    return ok
+
+
 async def render_loop():
+    global LAST_PANEL_PUSH_TIME
     was_alert = None
+    LAST_PANEL_PUSH_TIME = time.time()
     while True:
         try:
             await refresh_frames(SHARED_SESSION)
             cur_alert = ALERT["name"]
             if cur_alert != was_alert:
                 # Immediately push when an alert seizes or releases the screen.
-                await call_ha_service(SHARED_SESSION, "esphome",
-                                      f"{ESPHOME_DEVICE}_refresh_now")
+                await push_panel_update(advance_page=False)
                 was_alert = cur_alert
+                LAST_PANEL_PUSH_TIME = time.time()
+            else:
+                panel_cfg = load_panel_setup()
+                m_int = re.search(r"\d+", str(panel_cfg.get("refresh_interval", "5")))
+                panel_min = int(m_int.group(0)) if m_int else 5
+                panel_sec = max(30, panel_min * 60)
+                now = time.time()
+                if now - LAST_PANEL_PUSH_TIME >= panel_sec:
+                    LAST_PANEL_PUSH_TIME = now
+                    print(f"proactive refresh push to panel ({panel_min} min interval)", flush=True)
+                    await push_panel_update(advance_page=True)
         except Exception as exc:
-            print(f"render failed: {exc!r}", flush=True)
+            print(f"render loop error: {exc!r}", flush=True)
             FRAMES.error = repr(exc)
-        await asyncio.sleep(REFRESH)
+        await asyncio.sleep(min(10, REFRESH))
 
 
 def _check_frame_auth(request):
@@ -679,6 +717,7 @@ async def status(request):
 
 async def api_panel_refresh(request):
     """Update panel refresh rate both in saved panel setup and via HA service if online."""
+    global LAST_PANEL_PUSH_TIME
     body = await request.json()
     raw_val = body.get("interval")
     try:
@@ -690,18 +729,35 @@ async def api_panel_refresh(request):
     cfg["refresh_interval"] = f"{minutes}min"
     save_panel_setup(cfg)
 
-    slug = re.sub(r"[^a-z0-9_]+", "_", cfg.get("device_name", ESPHOME_DEVICE).lower()).strip("_")
-    entity_id = f"number.{slug}_refresh_interval"
-    ha_updated = False
-    if HA_TOKEN:
+    LAST_PANEL_PUSH_TIME = time.time()
+
+    # Pre-render latest frames immediately so the panel gets fresh data
+    try:
+        await refresh_frames(SHARED_SESSION)
+    except Exception:
+        pass
+
+    # Immediately push to the physical panel so the user sees live feedback right away
+    ha_updated = await push_panel_update(advance_page=False)
+
+    # Also attempt setting number entity in HA if device has been flashed with dynamic number entity
+    candidates = list(dict.fromkeys([
+        re.sub(r"[^a-z0-9_]+", "_", cfg.get("device_name", ESPHOME_DEVICE).lower()).strip("_"),
+        "crowpanel_epaper",
+        "e_paper_panel",
+        "epaper_panel"
+    ]))
+    for slug in candidates:
+        entity_id = f"number.{slug}_refresh_interval"
         try:
             await call_ha_service(SHARED_SESSION, "number", "set_value", {
                 "entity_id": entity_id,
                 "value": minutes
             })
             ha_updated = True
-        except Exception as exc:
-            print(f"could not call number.set_value on {entity_id}: {exc!r}", flush=True)
+            break
+        except Exception:
+            pass
 
     return web.json_response({
         "saved": True,
