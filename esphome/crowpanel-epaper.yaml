@@ -208,17 +208,18 @@ display:
         }
         // Held exact page indicator (lock icon)
         if (id(pinned)) {
-          it.filled_rectangle(761, 12, 5, 20);     // shackle, left
-          it.filled_rectangle(778, 12, 5, 20);     // shackle, right
-          it.filled_rectangle(761, 12, 22, 5);     // shackle, top
-          it.filled_rectangle(754, 30, 36, 26);    // body
-          it.filled_circle(772, 40, 4, COLOR_OFF);         // keyhole
-          it.filled_rectangle(770, 40, 4, 10, COLOR_OFF);  // keyhole stem
+          // Padlock indicator (visually top-right for 180° mount)
+          it.filled_rectangle(14, 226, 28, 22);
+          it.filled_rectangle(20, 248, 16, 4);
+          it.filled_rectangle(20, 243, 4, 9);
+          it.filled_rectangle(32, 243, 4, 9);
+          it.filled_circle(28, 237, 3, COLOR_OFF);
+          it.filled_rectangle(27, 232, 3, 6, COLOR_OFF);
         } else if (id(cat_pinned)) {
-          // Pinned category badge (Apple concentric continuous badge)
-          it.filled_rectangle(750, 14, 36, 22);
-          it.filled_rectangle(752, 16, 32, 18, COLOR_OFF);
-          it.filled_rectangle(758, 20, 20, 10);
+          // Category Pin badge (visually top-right for 180° mount)
+          it.filled_rectangle(10, 232, 42, 22);
+          it.filled_rectangle(12, 234, 38, 18, COLOR_OFF);
+          it.filled_rectangle(18, 238, 26, 10);
         }
       } else if (id(have_single)) {
         // Strip missing -- fall back to whatever single frame HA is serving.
@@ -277,11 +278,11 @@ online_image:
 
 binary_sensor:
   # Five discrete push-buttons:
-  # Dial Rotate Right (GPIO 4): Next Category
+  # Dial Rotate Right (GPIO 6 in 180° mount): Next Category
   - platform: gpio
     id: key_next
     internal: true
-    pin: {number: 4, mode: {input: true, pullup: true}, inverted: true}
+    pin: {number: 6, mode: {input: true, pullup: true}, inverted: true}
     filters: [delayed_on: 20ms]
     on_press:
       - logger.log: "KEY next (category right)"
@@ -293,11 +294,11 @@ binary_sensor:
           if (off < id(page_count)) id(page) = off;
       - script.execute: redraw
 
-  # Dial Rotate Left (GPIO 6): Previous Category
+  # Dial Rotate Left (GPIO 4 in 180° mount): Previous Category
   - platform: gpio
     id: key_prev
     internal: true
-    pin: {number: 6, mode: {input: true, pullup: true}, inverted: true}
+    pin: {number: 4, mode: {input: true, pullup: true}, inverted: true}
     filters: [delayed_on: 20ms]
     on_press:
       - logger.log: "KEY prev (category left)"

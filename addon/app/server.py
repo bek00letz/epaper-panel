@@ -1847,6 +1847,36 @@ def generate_esphome_yaml(cfg: dict) -> tuple[str, str]:
         wifi_pw_line = _yaml_str(pw)
 
     lock_x = dw - 31
+    if orient == 180:
+        pin_drawing_code = """        if (id(pinned)) {
+          // Padlock indicator (visually top-right for 180° mount)
+          it.filled_rectangle(14, 226, 28, 22);
+          it.filled_rectangle(20, 248, 16, 4);
+          it.filled_rectangle(20, 243, 4, 9);
+          it.filled_rectangle(32, 243, 4, 9);
+          it.filled_circle(28, 237, 3, COLOR_OFF);
+          it.filled_rectangle(27, 232, 3, 6, COLOR_OFF);
+        } else if (id(cat_pinned)) {
+          // Category Pin badge (visually top-right for 180° mount)
+          it.filled_rectangle(10, 232, 42, 22);
+          it.filled_rectangle(12, 234, 38, 18, COLOR_OFF);
+          it.filled_rectangle(18, 238, 26, 10);
+        }"""
+    else:
+        pin_drawing_code = f"""        if (id(pinned)) {{
+          // Padlock indicator (top-right)
+          it.filled_rectangle({lock_x}, 12, 5, 20);
+          it.filled_rectangle({lock_x + 17}, 12, 5, 20);
+          it.filled_rectangle({lock_x}, 12, 22, 5);
+          it.filled_rectangle({lock_x - 7}, 30, 36, 26);
+          it.filled_circle({lock_x + 11}, 40, 4, COLOR_OFF);
+          it.filled_rectangle({lock_x + 9}, 40, 4, 10, COLOR_OFF);
+        }} else if (id(cat_pinned)) {{
+          // Category Pin badge
+          it.filled_rectangle({lock_x - 11}, 14, 36, 22);
+          it.filled_rectangle({lock_x - 9}, 16, 32, 18, COLOR_OFF);
+          it.filled_rectangle({lock_x - 3}, 20, 20, 10);
+        }}"""
 
     if disp["esphome_component"].startswith("github://"):
         ext_comp_block = f"""external_components:
@@ -2057,18 +2087,7 @@ switch:
             it.draw_pixel_at(x, y, id(frames).get_pixel(x, y + off));
           }}
         }}
-        if (id(pinned)) {{
-          it.filled_rectangle({lock_x}, 12, 5, 20);
-          it.filled_rectangle({lock_x + 17}, 12, 5, 20);
-          it.filled_rectangle({lock_x}, 12, 22, 5);
-          it.filled_rectangle({lock_x - 7}, 30, 36, 26);
-          it.filled_circle({lock_x + 11}, 40, 4, COLOR_OFF);
-          it.filled_rectangle({lock_x + 9}, 40, 4, 10, COLOR_OFF);
-        }} else if (id(cat_pinned)) {{
-          it.filled_rectangle({lock_x - 11}, 14, 36, 22);
-          it.filled_rectangle({lock_x - 9}, 16, 32, 18, COLOR_OFF);
-          it.filled_rectangle({lock_x - 3}, 20, 20, 10);
-        }}
+{pin_drawing_code}
       }} else if (id(have_single)) {{
         it.image(0, 0, id(frame));
       }} else {{

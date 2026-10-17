@@ -207,10 +207,14 @@ def _draw_curve(img, d, el, _text, series=None, display=None):
 
 
 def _fmt_number(raw, el):
+    raw_str = str(raw).strip()
     try:
-        v = float(str(raw).strip())
+        v = float(raw_str)
     except (TypeError, ValueError):
         return el.get("fallback") or "--"
+    # If explicit Jinja template was used in value, preserve its custom precision!
+    if isinstance(el.get("value"), str) and "{{" in el.get("value"):
+        return f"{el.get('prefix', '')}{raw_str}{el.get('suffix', '')}"
     dec = max(0, min(6, int(el.get("decimals", 0))))
     formatted = f"{v:.{dec}f}"
     if not (isinstance(el.get("value"), str) and el.get("value").strip()):

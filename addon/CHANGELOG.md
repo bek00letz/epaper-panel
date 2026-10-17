@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.14
+- **Orientation-Aware Pin Badges & Rocker Button Inversion (180° / 270° Mounts):**
+  - Padlock indicator (`pinned`) and Category Pin badge (`cat_pinned`) are now dynamically mapped to physical screen coordinates and drawn right-side up in the viewer's visual top-right corner, eliminating inverted or clipped badges on 180° mounts.
+  - Rocker dial GPIOs (`4` and `6`) are automatically swapped in the ESPHome configuration for 180° mounts so rotating clockwise/right advances forward regardless of board inversion.
+- **Dynamic Jinja Decimal Precision for Number Elements:**
+  - `_fmt_number()` now respects custom Jinja template decimal formatting when templates dynamically switch between whole integers and floating point units (e.g. Watts to Kilowatts).
+
 ## 0.8.13
 - **Universal Clipboard Fix (HTTP, HTTPS, & Ingress iFrames):**
   - Resolved clipboard copying failures where `navigator.clipboard` was undefined in non-secure HTTP contexts (`http://homeassistant.local:8123` or IP access) or blocked by Ingress iframe security policies.
