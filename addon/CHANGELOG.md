@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.19
+- **Remote & Hierarchical Navigation Actions:**
+  - Added native `action: mode_toggle` to switch between Category mode and Sub-category navigation, supporting remote automations (IKEA Bilresa, Matter/Zigbee remotes) with on-screen active pill inversion sync.
+  - Upgraded `action: page_step` to be context-aware (steps sub-items when in sub-mode; steps categories when in category mode), eliminating 1D/2D state desync and black overhang boxes.
+  - Added `action: lock_toggle` for unified contextual single-click locking (Category lock in category mode, Panel lock in sub-mode).
+  - Ensured `show_page` recalculates `cat_idx` and `sub_idx` from category offsets so absolute page jumps never desynchronize.
+
 ## 0.8.18
 - **Render Loop Fix:**
   - Resolved `TypeError: string indices must be integers, not 'str'` in `build_frames` by using display dictionary `disp["margin"]` instead of string identifier `display["margin"]`.
