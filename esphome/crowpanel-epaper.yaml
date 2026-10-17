@@ -9,8 +9,8 @@
 
 substitutions:
   name: crowpanel-epaper
-  frames_url: "http://homeassistant.local:8099/frames.png"
-  frame_url:  "http://homeassistant.local:8099/frame.png"
+  frames_url: "http://homeassistant.local:7410/frames.png"
+  frame_url:  "http://homeassistant.local:7410/frame.png"
   page_h: "272"
 
 esphome:
