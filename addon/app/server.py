@@ -385,6 +385,10 @@ class Frames:
         self.strip_etag = ""
         self.single_etag = ""
         self.names: list[str] = []
+        self.cat_offsets: list[int] = [0]
+        self.cat_sizes: list[int] = [1]
+        self.cat_names: list[str] = []
+        self.cat_count: int = 1
         self.rendered_at = None
         self.error = None
 
@@ -477,6 +481,7 @@ _weather_cache = {}
 _calendar_cache = {}
 _racing_cache = {}
 _sports_match_cache = {}
+_feed_items_cache = {}
 
 
 def _haversine_km(lat1, lon1, lat2, lon2):
@@ -797,6 +802,53 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None):
         return _racing_cache.get(raw_key, {}).get("data") or event_data
 
 
+def _parse_espn_event(ev, league_title="MATCH"):
+    comp = (ev.get("competitions") or [{}])[0]
+    competitors = comp.get("competitors") or []
+    home = next((c for c in competitors if c.get("homeAway") == "home"), competitors[0] if competitors else {})
+    away = next((c for c in competitors if c.get("homeAway") == "away"), competitors[1] if len(competitors) > 1 else {})
+
+    st_type = comp.get("status", {}).get("type", {})
+    st_state = st_type.get("state") or "pre"
+    st_desc = st_type.get("description") or st_type.get("detail") or "Scheduled"
+    clock_val = comp.get("status", {}).get("displayClock")
+    is_live = (st_state == "in")
+
+    clock_badge = f"{clock_val} · {st_desc}" if (clock_val and clock_val != "0'" and is_live) else st_desc
+    venue_title = comp.get("venue", {}).get("fullName") or ""
+
+    home_id = str(home.get("team", {}).get("id") or "")
+    events_home = []
+    events_away = []
+    for dt in comp.get("details", []):
+        t_txt = dt.get("type", {}).get("text") or ""
+        clk = dt.get("clock", {}).get("displayValue") or ""
+        athletes = dt.get("athletesInvolved") or []
+        p_name = athletes[0].get("displayName") if athletes else ""
+        if p_name and ("Goal" in t_txt or "Point" in t_txt or "Touchdown" in t_txt or "Home Run" in t_txt):
+            entry_str = f"{p_name} ({clk})" if clk else p_name
+            if str(dt.get("team", {}).get("id") or "") == home_id:
+                events_home.append(entry_str)
+            else:
+                events_away.append(entry_str)
+
+    return {
+        "league": league_title,
+        "venue": venue_title,
+        "clock": clock_badge,
+        "status": st_state.upper(),
+        "is_live": is_live,
+        "home_team": home.get("team", {}).get("displayName") or home.get("team", {}).get("shortDisplayName") or "HOME",
+        "home_score": home.get("score") if home.get("score") is not None else "-",
+        "home_stats": (home.get("records") or [{}])[0].get("summary", ""),
+        "away_team": away.get("team", {}).get("displayName") or away.get("team", {}).get("shortDisplayName") or "AWAY",
+        "away_score": away.get("score") if away.get("score") is not None else "-",
+        "away_stats": (away.get("records") or [{}])[0].get("summary", ""),
+        "events_home": ", ".join(events_home[:3]),
+        "events_away": ", ".join(events_away[:3])
+    }
+
+
 async def fetch_sports_match(session, entity_or_league="soccer/eng.1", team=None, fallback=None):
     now = time.time()
     raw_input = str(entity_or_league or "soccer/eng.1").strip()
@@ -824,7 +876,7 @@ async def fetch_sports_match(session, entity_or_league="soccer/eng.1", team=None
         down_dist = attrs.get("down_distance_text") or ""
         venue = attrs.get("venue") or ""
         league_name = attrs.get("league") or "MATCH"
-        return {
+        return [{
             "league": league_name,
             "venue": venue,
             "clock": clock_str,
@@ -837,7 +889,7 @@ async def fetch_sports_match(session, entity_or_league="soccer/eng.1", team=None
             "away_stats": "",
             "events_home": last_play,
             "events_away": ""
-        }
+        }]
 
     # 2. Check in-memory cache
     cached = _sports_match_cache.get(cache_key)
@@ -879,80 +931,29 @@ async def fetch_sports_match(session, entity_or_league="soccer/eng.1", team=None
             if not events:
                 return cached["data"] if cached else None
 
-            # Filter by team name if requested
-            target_ev = None
+            league_title = (data.get("leagues") or [{}])[0].get("name") or "MATCH"
+            parsed_matches = [_parse_espn_event(ev, league_title) for ev in events]
+
             if team:
                 query = str(team).lower().strip()
-                for ev in events:
-                    comp = (ev.get("competitions") or [{}])[0]
-                    for c in comp.get("competitors", []):
-                        tm = c.get("team", {})
-                        if (query in tm.get("displayName", "").lower() or
-                            query in tm.get("shortDisplayName", "").lower() or
-                            query in tm.get("name", "").lower() or
-                            query in tm.get("abbreviation", "").lower()):
-                            target_ev = ev
-                            break
-                    if target_ev:
-                        break
-
-            # If no team match, prefer in-progress event, else first event
-            if not target_ev:
-                for ev in events:
-                    if ev.get("status", {}).get("type", {}).get("state") == "in":
-                        target_ev = ev
-                        break
-                if not target_ev:
-                    target_ev = events[0]
-
-            comp = (target_ev.get("competitions") or [{}])[0]
-            competitors = comp.get("competitors") or []
-            home = next((c for c in competitors if c.get("homeAway") == "home"), competitors[0] if competitors else {})
-            away = next((c for c in competitors if c.get("homeAway") == "away"), competitors[1] if len(competitors) > 1 else {})
-
-            st_type = comp.get("status", {}).get("type", {})
-            st_state = st_type.get("state") or "pre"
-            st_desc = st_type.get("description") or st_type.get("detail") or "Scheduled"
-            clock_val = comp.get("status", {}).get("displayClock")
-            is_live = (st_state == "in")
-
-            clock_badge = f"{clock_val} · {st_desc}" if (clock_val and clock_val != "0'" and is_live) else st_desc
-            league_title = (data.get("leagues") or [{}])[0].get("name") or "MATCH"
-            venue_title = comp.get("venue", {}).get("fullName") or ""
-
-            # Extract scorers / key details
-            home_id = str(home.get("team", {}).get("id") or "")
-            events_home = []
-            events_away = []
-            for dt in comp.get("details", []):
-                t_txt = dt.get("type", {}).get("text") or ""
-                clk = dt.get("clock", {}).get("displayValue") or ""
-                athletes = dt.get("athletesInvolved") or []
-                p_name = athletes[0].get("displayName") if athletes else ""
-                if p_name and ("Goal" in t_txt or "Point" in t_txt or "Touchdown" in t_txt or "Home Run" in t_txt):
-                    entry_str = f"{p_name} ({clk})" if clk else p_name
-                    if str(dt.get("team", {}).get("id") or "") == home_id:
-                        events_home.append(entry_str)
+                matched, others = [], []
+                for m in parsed_matches:
+                    if (query in m["home_team"].lower() or query in m["away_team"].lower()):
+                        matched.append(m)
                     else:
-                        events_away.append(entry_str)
+                        others.append(m)
+                parsed_matches = matched + others
+            else:
+                def _st_sort(m):
+                    st = m.get("status", "")
+                    if st == "IN": return 0
+                    if st == "PRE": return 1
+                    return 2
+                parsed_matches.sort(key=_st_sort)
 
-            result = {
-                "league": league_title,
-                "venue": venue_title,
-                "clock": clock_badge,
-                "status": st_state.upper(),
-                "home_team": home.get("team", {}).get("displayName") or home.get("team", {}).get("shortDisplayName") or "HOME",
-                "home_score": home.get("score") if home.get("score") is not None else "-",
-                "home_stats": (home.get("records") or [{}])[0].get("summary", ""),
-                "away_team": away.get("team", {}).get("displayName") or away.get("team", {}).get("shortDisplayName") or "AWAY",
-                "away_score": away.get("score") if away.get("score") is not None else "-",
-                "away_stats": (away.get("records") or [{}])[0].get("summary", ""),
-                "events_home": ", ".join(events_home[:3]),
-                "events_away": ", ".join(events_away[:3])
-            }
-
-            _sports_match_cache[cache_key] = {"at": now, "data": result, "is_live": is_live}
-            return result
+            is_any_live = any(m.get("is_live") for m in parsed_matches)
+            _sports_match_cache[cache_key] = {"at": now, "data": parsed_matches, "is_live": is_any_live}
+            return parsed_matches
     except Exception as exc:
         print(f"fetch_sports_match error: {exc!r}", flush=True)
         return cached["data"] if cached else None
@@ -1025,12 +1026,31 @@ async def eligible_pages(session, spec):
     return live or [n for n in rotation if n in defs and defs[n].get("tier") != "alert"][:1]
 
 
+async def publish_category_sensors(session, cur_f):
+    if not HA_TOKEN or not cur_f or not cur_f.rendered_at:
+        return
+    try:
+        await publish_entity(session, "sensor.epaper_category_count", cur_f.cat_count,
+                             {"friendly_name": "E-Paper Category Count", "icon": "mdi:view-grid-outline",
+                              "offsets": cur_f.cat_offsets, "sizes": cur_f.cat_sizes, "names": cur_f.cat_names})
+        await publish_entity(session, "sensor.epaper_category_offsets", ",".join(map(str, cur_f.cat_offsets)),
+                             {"friendly_name": "E-Paper Category Offsets", "icon": "mdi:format-list-numbered"})
+        await publish_entity(session, "sensor.epaper_category_sizes", ",".join(map(str, cur_f.cat_sizes)),
+                             {"friendly_name": "E-Paper Category Sizes", "icon": "mdi:format-list-bulleted"})
+        await publish_entity(session, "sensor.epaper_category_names", ",".join(cur_f.cat_names),
+                             {"friendly_name": "E-Paper Category Names", "icon": "mdi:tag-multiple-outline"})
+    except Exception as exc:
+        print(f"publish category sensors error: {exc!r}", flush=True)
+
+
 async def publish_computed(session):
     """Run every configured source and publish what it returns."""
     srcs = load_sources()
     if srcs:
         ctx = {"ha_base": HA_BASE, "ha_token": HA_TOKEN, "session": session}
         for entity_id, state, attrs in await feeds.run_all(srcs, ctx):
+            if attrs and "items" in attrs:
+                _feed_items_cache[entity_id] = attrs["items"]
             await publish_entity(session, entity_id, state, attrs)
 
     # Publish overhead aircraft sensor to Home Assistant
@@ -1071,6 +1091,7 @@ async def publish_computed(session):
                                  {"friendly_name": "E-Paper Last Render", "icon": "mdi:clock-check-outline",
                                   "pages_count": len(cur_f.names), "active_pages": cur_f.names,
                                   "device_class": "timestamp"})
+            await publish_category_sensors(session, cur_f)
             await publish_mqtt_discovery(session, cur_f)
     except Exception as exc:
         pass
@@ -1188,7 +1209,7 @@ async def build_frames(session):
             clock=datetime.now().strftime("%H:%M"), label="empty", orientation=orient, display=display)
         one = T.orient_for_panel(T.to_1bit(img), orient, display=display)
         png = _png(one)
-        return png, png, []
+        return png, png, [], [0], [1], ["empty"]
 
     vals = await gather_values(session, spec, set(live))
 
@@ -1200,30 +1221,107 @@ async def build_frames(session):
                     session, el["entity"], int(el.get("hours", 24)))
 
     imgs = []
-    for i, name in enumerate(live):
-        img = await asyncio.to_thread(
-            layout.render_page, spec["pages"][name], vals.get(name, {}),
-            clock=datetime.now().strftime("%H:%M"),
-            label=f"{name.replace('_', ' ')} \u00b7 {i + 1}/{len(live)}",
-            battery_pct=None, series=series.get(name), orientation=orient, display=display)
-        imgs.append(T.orient_for_panel(T.to_1bit(img), orient, display=display))
+    cat_offsets = []
+    cat_sizes = []
+    cat_names = []
+
+    for cat_i, cat_name in enumerate(live):
+        page_def = spec["pages"][cat_name]
+        page_vals = vals.get(cat_name, {})
+        elements = page_def.get("elements", [])
+
+        # Determine sub_count for this category
+        sub_count = 1
+        sub_type = None
+
+        # 1. Flight tracker element
+        for el_idx, el in enumerate(elements):
+            if el.get("type") == "flight_tracker":
+                fl_list = page_vals.get(el_idx)
+                if isinstance(fl_list, list) and len(fl_list) > 1:
+                    sub_count = max(sub_count, min(len(fl_list), 5))
+                    sub_type = "flight"
+            elif el.get("type") == "sports_match":
+                sm_list = page_vals.get(el_idx)
+                if isinstance(sm_list, list) and len(sm_list) > 1:
+                    sub_count = max(sub_count, min(len(sm_list), 6))
+                    sub_type = "sports"
+
+        # 2. Watch / Feed items
+        feed_items = _feed_items_cache.get("sensor.epaper_watch")
+        if not feed_items and any("epaper_watch" in str(el.get("entity", "")) for el in elements):
+            try:
+                st_data = await ha_json(session, "/states/sensor.epaper_watch")
+                feed_items = (st_data.get("attributes") or {}).get("items")
+                if feed_items:
+                    _feed_items_cache["sensor.epaper_watch"] = feed_items
+            except Exception:
+                pass
+
+        if feed_items and isinstance(feed_items, list) and len(feed_items) > 1:
+            if any("epaper_watch" in str(el.get("entity", "")) for el in elements):
+                sub_count = max(sub_count, min(len(feed_items), 5))
+                sub_type = "watch"
+
+        cat_offsets.append(len(imgs))
+        cat_sizes.append(sub_count)
+        cat_names.append(cat_name)
+
+        # Render each sub-item for this category
+        for s_idx in range(sub_count):
+            cloned_page = {**page_def, "elements": []}
+            cloned_vals = dict(page_vals)
+
+            for el_idx, el in enumerate(elements):
+                el_c = dict(el)
+                if el.get("type") in ("flight_tracker", "sports_match"):
+                    el_c["sub_index"] = s_idx
+                elif sub_type == "watch" and feed_items and s_idx < len(feed_items):
+                    item_data = feed_items[s_idx]
+                    if el.get("entity") == "sensor.epaper_watch":
+                        if el.get("show") == "attribute" and el.get("attribute") == "detail":
+                            cloned_vals[el_idx] = item_data.get("detail", "")
+                        else:
+                            cloned_vals[el_idx] = item_data.get("title", "")
+                    elif el.get("type") == "text" and str(el.get("value", "")).strip().lower() == "new to watch" and sub_count > 1:
+                        el_c["value"] = f"new to watch  [{s_idx + 1}/{sub_count}]"
+
+                cloned_page["elements"].append(el_c)
+
+            cat_display_name = cat_name.replace("_", " ").upper()
+            if sub_count > 1:
+                page_label = f"{cat_display_name} · {s_idx + 1}/{sub_count}"
+            else:
+                page_label = f"{cat_display_name} · {cat_i + 1}/{len(live)}"
+
+            img = await asyncio.to_thread(
+                layout.render_page, cloned_page, cloned_vals,
+                clock=datetime.now().strftime("%H:%M"),
+                label=page_label,
+                battery_pct=None, series=series.get(cat_name), orientation=orient, display=display)
+            imgs.append(T.orient_for_panel(T.to_1bit(img), orient, display=display))
 
     strip = Image.new("1", (dw, dh * len(imgs)), 1)
     for i, im in enumerate(imgs):
         strip.paste(im, (0, i * dh))
-    return _png(strip), _png(imgs[0]), live
+    return _png(strip), _png(imgs[0]), live, cat_offsets, cat_sizes, cat_names
 
 
 async def refresh_frames(session):
     """Build a new Frames snapshot and atomically swap FRAMES."""
-    strip, single, names = await build_frames(session)
+    strip, single, names, cat_offsets, cat_sizes, cat_names = await build_frames(session)
     nxt = Frames()
     nxt.strip, nxt.single, nxt.names = strip, single, names
     nxt.strip_etag = _etag(strip)
     nxt.single_etag = _etag(single)
     nxt.rendered_at = datetime.now().isoformat(timespec="seconds")
+    nxt.cat_offsets = cat_offsets
+    nxt.cat_sizes = cat_sizes
+    nxt.cat_names = cat_names
+    nxt.cat_count = len(cat_offsets)
     globals()["FRAMES"] = nxt
-    print(f"rendered {names} ({len(strip)}B strip)", flush=True)
+    print(f"rendered {names} ({len(strip)}B strip, {nxt.cat_count} cats, offsets: {cat_offsets}, sizes: {cat_sizes})", flush=True)
+    await publish_category_sensors(session, nxt)
     return nxt
 
 
@@ -1290,7 +1388,7 @@ def _check_frame_auth(request):
         raise web.HTTPUnauthorized(text="invalid or missing token")
 
 
-def _frame_headers(etag=None, page_count=1):
+def _frame_headers(f=None, etag=None, page_count=1):
     spec = load_layouts()
     rot_sec = str(spec.get("rotate_seconds", 30))
     panel_cfg = load_panel_setup()
@@ -1303,6 +1401,11 @@ def _frame_headers(etag=None, page_count=1):
         "X-Rotate-Seconds": rot_sec,
         "X-Page-Count": str(page_count),
     }
+    if f is not None:
+        h["X-Cat-Count"] = str(f.cat_count)
+        h["X-Cat-Offsets"] = ",".join(map(str, f.cat_offsets))
+        h["X-Cat-Sizes"] = ",".join(map(str, f.cat_sizes))
+        h["X-Cat-Names"] = ",".join(f.cat_names)
     if etag:
         h["ETag"] = etag
     return h
@@ -1314,8 +1417,8 @@ async def frame_png(request):
     if not f.single:
         raise web.HTTPServiceUnavailable(text="no frame rendered yet")
     if f.single_etag and request.headers.get("If-None-Match") == f.single_etag:
-        raise web.HTTPNotModified(headers=_frame_headers(etag=f.single_etag, page_count=1))
-    return web.Response(body=f.single, content_type="image/png", headers=_frame_headers(etag=f.single_etag, page_count=1))
+        raise web.HTTPNotModified(headers=_frame_headers(f=f, etag=f.single_etag, page_count=1))
+    return web.Response(body=f.single, content_type="image/png", headers=_frame_headers(f=f, etag=f.single_etag, page_count=1))
 
 
 async def frames_png(request):
@@ -1324,8 +1427,21 @@ async def frames_png(request):
     if not f.strip:
         raise web.HTTPServiceUnavailable(text="no frame rendered yet")
     if f.strip_etag and request.headers.get("If-None-Match") == f.strip_etag:
-        raise web.HTTPNotModified(headers=_frame_headers(etag=f.strip_etag, page_count=len(f.names)))
-    return web.Response(body=f.strip, content_type="image/png", headers=_frame_headers(etag=f.strip_etag, page_count=len(f.names)))
+        raise web.HTTPNotModified(headers=_frame_headers(f=f, etag=f.strip_etag, page_count=len(f.names)))
+    return web.Response(body=f.strip, content_type="image/png", headers=_frame_headers(f=f, etag=f.strip_etag, page_count=len(f.names)))
+
+
+async def api_manifest(request):
+    _check_frame_auth(request)
+    f = FRAMES
+    return web.json_response({
+        "page_count": len(f.names),
+        "cat_count": f.cat_count,
+        "cat_offsets": f.cat_offsets,
+        "cat_sizes": f.cat_sizes,
+        "cat_names": f.cat_names,
+        "rendered_at": f.rendered_at,
+    })
 
 
 async def public_status(request):
@@ -1334,6 +1450,10 @@ async def public_status(request):
     return web.json_response({
         "ok": f.error is None and bool(f.strip),
         "page_count": len(f.names),
+        "cat_count": f.cat_count,
+        "cat_offsets": f.cat_offsets,
+        "cat_sizes": f.cat_sizes,
+        "cat_names": f.cat_names,
         "rendered_at": f.rendered_at,
     })
 
@@ -1357,6 +1477,10 @@ async def status(request):
         "pages": f.names,
         "rendered_at": f.rendered_at,
         "strip_bytes": len(f.strip),
+        "cat_count": f.cat_count,
+        "cat_offsets": f.cat_offsets,
+        "cat_sizes": f.cat_sizes,
+        "cat_names": f.cat_names,
         "error": f.error,
         "refresh_seconds": REFRESH,
         "panel_interval": panel_int,
@@ -1795,6 +1919,28 @@ psram:
     type: bool
     restore_value: false
     initial_value: 'false'
+  - id: cat_idx
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: sub_idx
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: cat_pinned
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+  - id: cat_count
+    type: int
+    restore_value: false
+    initial_value: '1'
+  - id: cat_offsets
+    type: std::vector<int>
+    restore_value: false
+  - id: cat_sizes
+    type: std::vector<int>
+    restore_value: false
 
 font:
   - file: "gfonts://Lato@700"
@@ -1820,6 +1966,22 @@ api:
         - lambda: |-
             if (index >= 0 && index < id(page_count)) id(page) = index;
         - script.execute: redraw
+    - action: show_category
+      variables:
+        category: int
+        sub: int
+      then:
+        - lambda: |-
+            int cats = id(cat_count) > 0 ? id(cat_count) : 1;
+            if (category >= 0 && category < cats) {{
+              id(cat_idx) = category;
+              int sz = (category < id(cat_sizes).size()) ? id(cat_sizes)[category] : 1;
+              id(sub_idx) = (sub >= 0 && sub < sz) ? sub : 0;
+              int off = (category < id(cat_offsets).size()) ? id(cat_offsets)[category] : category;
+              int p = off + id(sub_idx);
+              if (p < id(page_count)) id(page) = p;
+            }}
+        - script.execute: redraw
     - action: page_step
       variables:
         delta: int
@@ -1828,9 +1990,38 @@ api:
             int n = id(page_count) > 0 ? id(page_count) : 1;
             id(page) = ((id(page) + delta) % n + n) % n;
         - script.execute: redraw
+    - action: category_step
+      variables:
+        delta: int
+      then:
+        - lambda: |-
+            int cats = id(cat_count) > 0 ? id(cat_count) : 1;
+            id(cat_idx) = ((id(cat_idx) + delta) % cats + cats) % cats;
+            id(sub_idx) = 0;
+            int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
+            if (off < id(page_count)) id(page) = off;
+        - script.execute: redraw
+    - action: sub_step
+      variables:
+        delta: int
+      then:
+        - lambda: |-
+            int c_idx = id(cat_idx);
+            int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
+            if (sz > 1) {{
+              id(sub_idx) = ((id(sub_idx) + delta) % sz + sz) % sz;
+              int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
+              int p = off + id(sub_idx);
+              if (p < id(page_count)) id(page) = p;
+            }}
+        - script.execute: redraw
     - action: hold_toggle
       then:
         - lambda: 'id(pinned) = !id(pinned);'
+        - script.execute: redraw
+    - action: category_pin_toggle
+      then:
+        - lambda: 'id(cat_pinned) = !id(cat_pinned);'
         - script.execute: redraw
 
 ota:
@@ -1865,6 +2056,10 @@ switch:
           it.filled_rectangle({lock_x - 7}, 30, 36, 26);
           it.filled_circle({lock_x + 11}, 40, 4, COLOR_OFF);
           it.filled_rectangle({lock_x + 9}, 40, 4, 10, COLOR_OFF);
+        }} else if (id(cat_pinned)) {{
+          it.filled_rectangle({lock_x - 11}, 14, 36, 22);
+          it.filled_rectangle({lock_x - 9}, 16, 32, 18, COLOR_OFF);
+          it.filled_rectangle({lock_x - 3}, 20, 20, 10);
         }}
       }} else if (id(have_single)) {{
         it.image(0, 0, id(frame));
@@ -1891,7 +2086,16 @@ online_image:
           id(page_count) = (h >= ${{page_h}}) ? h / ${{page_h}} : 1;
           if (id(page) >= id(page_count)) id(page) = 0;
           id(have_frames) = true;
-          ESP_LOGI("panel", "%d pages held locally", id(page_count));
+          if (id(cat_offsets).empty() || id(cat_count) <= 0) {{
+            id(cat_offsets).clear();
+            id(cat_sizes).clear();
+            id(cat_count) = id(page_count);
+            for (int i = 0; i < id(page_count); i++) {{
+              id(cat_offsets).push_back(i);
+              id(cat_sizes).push_back(1);
+            }}
+          }}
+          ESP_LOGI("panel", "%d pages (%d categories) held locally", id(page_count), id(cat_count));
       - component.update: epd
     on_error:
       - logger.log: "frames.png missing - falling back to single frame"
@@ -1918,8 +2122,13 @@ binary_sensor:
     pin: {{number: {next_pin}, mode: {{input: true, pullup: true}}, inverted: true}}
     filters: [delayed_on: 20ms]
     on_press:
-      - logger.log: "KEY next"
-      - lambda: 'id(page) = (id(page) + 1) % id(page_count);'
+      - logger.log: "KEY next (category right)"
+      - lambda: |-
+          int cats = id(cat_count) > 0 ? id(cat_count) : 1;
+          id(cat_idx) = (id(cat_idx) + 1) % cats;
+          id(sub_idx) = 0;
+          int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
+          if (off < id(page_count)) id(page) = off;
       - script.execute: redraw
 
   - platform: gpio
@@ -1928,8 +2137,13 @@ binary_sensor:
     pin: {{number: {prev_pin}, mode: {{input: true, pullup: true}}, inverted: true}}
     filters: [delayed_on: 20ms]
     on_press:
-      - logger.log: "KEY prev"
-      - lambda: 'id(page) = (id(page) - 1 + id(page_count)) % id(page_count);'
+      - logger.log: "KEY prev (category left)"
+      - lambda: |-
+          int cats = id(cat_count) > 0 ? id(cat_count) : 1;
+          id(cat_idx) = (id(cat_idx) - 1 + cats) % cats;
+          id(sub_idx) = 0;
+          int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
+          if (off < id(page_count)) id(page) = off;
       - script.execute: redraw
 
   - platform: gpio
@@ -1937,19 +2151,50 @@ binary_sensor:
     internal: true
     pin: {{number: 5, mode: {{input: true, pullup: true}}, inverted: true}}
     filters: [delayed_on: 20ms]
-    on_press:
-      - logger.log: "KEY ok (hold/release page)"
-      - lambda: 'id(pinned) = !id(pinned);'
-      - script.execute: redraw
+    on_click:
+      - min_length: 30ms
+        max_length: 600ms
+        then:
+          - logger.log: "KEY ok: short click (step sub-item)"
+          - lambda: |-
+              int c_idx = id(cat_idx);
+              int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
+              if (sz > 1) {{
+                id(sub_idx) = (id(sub_idx) + 1) % sz;
+                int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
+                int p = off + id(sub_idx);
+                if (p < id(page_count)) id(page) = p;
+                ESP_LOGI("panel", "Sub-item stepped to %d/%d (page %d)", id(sub_idx) + 1, sz, id(page));
+              }}
+          - script.execute: redraw
+      - min_length: 1000ms
+        max_length: 5000ms
+        then:
+          - logger.log: "KEY ok: long hold (toggle category pin)"
+          - lambda: |-
+              id(cat_pinned) = !id(cat_pinned);
+              ESP_LOGI("panel", "Category pin toggled: %d", id(cat_pinned));
+          - script.execute: redraw
 
   - platform: gpio
     id: key_home
     internal: true
     pin: {{number: 2, mode: {{input: true, pullup: true}}, inverted: true}}
     filters: [delayed_on: 20ms]
-    on_press:
-      - logger.log: "KEY home (refetch)"
-      - script.execute: refetch
+    on_click:
+      - min_length: 30ms
+        max_length: 600ms
+        then:
+          - logger.log: "KEY menu: short click (toggle item pin)"
+          - lambda: |-
+              id(pinned) = !id(pinned);
+              ESP_LOGI("panel", "Item pin toggled: %d", id(pinned));
+          - script.execute: redraw
+      - min_length: 1000ms
+        max_length: 5000ms
+        then:
+          - logger.log: "KEY menu: long hold (force refetch)"
+          - script.execute: refetch
 
   - platform: gpio
     id: key_exit
@@ -1957,8 +2202,13 @@ binary_sensor:
     pin: {{number: 1, mode: {{input: true, pullup: true}}, inverted: true}}
     filters: [delayed_on: 20ms]
     on_press:
-      - logger.log: "KEY exit (back to rotation)"
-      - lambda: 'id(pinned) = false; id(page) = 0;'
+      - logger.log: "KEY exit: reset to category 0, clear pins"
+      - lambda: |-
+          id(pinned) = false;
+          id(cat_pinned) = false;
+          id(cat_idx) = 0;
+          id(sub_idx) = 0;
+          id(page) = 0;
       - script.execute: redraw
 
 sensor:
@@ -1967,11 +2217,51 @@ sensor:
     name: Panel Wi-Fi
     update_interval: 60s
 
+  - platform: homeassistant
+    id: ha_cat_count
+    entity_id: sensor.epaper_category_count
+    on_value:
+      then:
+        - lambda: |-
+            int n = (int)x;
+            if (n > 0) {{
+              id(cat_count) = n;
+              if (id(cat_idx) >= n) id(cat_idx) = 0;
+            }}
+
 text_sensor:
   - platform: wifi_info
     ip_address:
       id: wifi_ip
       name: Panel IP
+
+  - platform: homeassistant
+    id: ha_cat_offsets
+    entity_id: sensor.epaper_category_offsets
+    on_value:
+      then:
+        - lambda: |-
+            id(cat_offsets).clear();
+            std::stringstream ss(x);
+            std::string item;
+            while (std::getline(ss, item, ',')) {{
+              if (!item.empty()) id(cat_offsets).push_back(atoi(item.c_str()));
+            }}
+            if (id(cat_offsets).empty()) id(cat_offsets).push_back(0);
+
+  - platform: homeassistant
+    id: ha_cat_sizes
+    entity_id: sensor.epaper_category_sizes
+    on_value:
+      then:
+        - lambda: |-
+            id(cat_sizes).clear();
+            std::stringstream ss(x);
+            std::string item;
+            while (std::getline(ss, item, ',')) {{
+              if (!item.empty()) id(cat_sizes).push_back(atoi(item.c_str()));
+            }}
+            if (id(cat_sizes).empty()) id(cat_sizes).push_back(1);
 
 script:
   - id: redraw
@@ -2023,7 +2313,28 @@ interval:
                 condition:
                   lambda: 'return !id(pinned);'
                 then:
-                  - lambda: 'id(page) = (id(page) + 1) % id(page_count);'
+                  - if:
+                      condition:
+                        lambda: 'return id(cat_pinned);'
+                      then:
+                        - lambda: |-
+                            int c_idx = id(cat_idx);
+                            int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
+                            if (sz > 1) {{
+                              id(sub_idx) = (id(sub_idx) + 1) % sz;
+                              int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
+                              int p = off + id(sub_idx);
+                              if (p < id(page_count)) id(page) = p;
+                            }}
+                        - script.execute: redraw
+                      else:
+                        - lambda: |-
+                            int cats = id(cat_count) > 0 ? id(cat_count) : 1;
+                            id(cat_idx) = (id(cat_idx) + 1) % cats;
+                            id(sub_idx) = 0;
+                            int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
+                            if (off < id(page_count)) id(page) = off;
+                        - script.execute: redraw
             - script.execute: refetch
 """
 
@@ -2222,6 +2533,8 @@ async def start(app_runners):
         web.get("/frame.png", frame_png),
         web.get("/frames.png", frames_png),
         web.get("/status", public_status),
+        web.get("/manifest.json", api_manifest),
+        web.get("/api/manifest", api_manifest),
         web.get("/fonts/{name}", panel_font),
         web.get("/api/action/refresh", api_action_refresh),
         web.post("/api/action/refresh", api_action_refresh),
@@ -2233,6 +2546,7 @@ async def start(app_runners):
     editor.add_routes([
         web.get("/", editor_index),
         web.get("/api/status", status),
+        web.get("/api/manifest", api_manifest),
         web.get("/api/displays", api_displays),
         web.get("/api/strip.png", editor_strip_png),
         web.get("/api/layouts", api_layouts_get),

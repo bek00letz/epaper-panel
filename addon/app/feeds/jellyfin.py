@@ -89,6 +89,7 @@ async def fetch(src, ctx):
         (f"sensor.epaper_{name}", top["title"] if top else "nothing new",
          {"detail": top["detail"] if top else "", "count": len(out),
           "titles": [i["title"] for i in out],
+          "items": out[:10],
           "friendly_name": src.get("friendly_name") or "Next to watch",
           "icon": "mdi:television-play"}),
         (f"sensor.epaper_{name}_count", len(out),

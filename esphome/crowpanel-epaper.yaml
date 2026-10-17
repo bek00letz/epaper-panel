@@ -54,6 +54,28 @@ globals:
     type: bool
     restore_value: false
     initial_value: 'false'
+  - id: cat_idx
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: sub_idx
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: cat_pinned
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+  - id: cat_count
+    type: int
+    restore_value: false
+    initial_value: '1'
+  - id: cat_offsets
+    type: std::vector<int>
+    restore_value: false
+  - id: cat_sizes
+    type: std::vector<int>
+    restore_value: false
 
 font:
   - file: "../addon/app/fonts/Lato-Bold.ttf"
@@ -81,9 +103,24 @@ api:
         - lambda: |-
             if (index >= 0 && index < id(page_count)) id(page) = index;
         - script.execute: redraw
+    - action: show_category
+      variables:
+        category: int
+        sub: int
+      then:
+        - lambda: |-
+            int cats = id(cat_count) > 0 ? id(cat_count) : 1;
+            if (category >= 0 && category < cats) {
+              id(cat_idx) = category;
+              int sz = (category < id(cat_sizes).size()) ? id(cat_sizes)[category] : 1;
+              id(sub_idx) = (sub >= 0 && sub < sz) ? sub : 0;
+              int off = (category < id(cat_offsets).size()) ? id(cat_offsets)[category] : category;
+              int p = off + id(sub_idx);
+              if (p < id(page_count)) id(page) = p;
+            }
+        - script.execute: redraw
 
-    # Relative paging, for remotes. Home Assistant has no idea which page the
-    # panel is on -- the panel owns that -- so it can only say "move by N".
+    # Relative paging, for remotes.
     - action: page_step
       variables:
         delta: int
@@ -93,9 +130,41 @@ api:
             id(page) = ((id(page) + delta) % n + n) % n;
         - script.execute: redraw
 
+    - action: category_step
+      variables:
+        delta: int
+      then:
+        - lambda: |-
+            int cats = id(cat_count) > 0 ? id(cat_count) : 1;
+            id(cat_idx) = ((id(cat_idx) + delta) % cats + cats) % cats;
+            id(sub_idx) = 0;
+            int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
+            if (off < id(page_count)) id(page) = off;
+        - script.execute: redraw
+
+    - action: sub_step
+      variables:
+        delta: int
+      then:
+        - lambda: |-
+            int c_idx = id(cat_idx);
+            int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
+            if (sz > 1) {
+              id(sub_idx) = ((id(sub_idx) + delta) % sz + sz) % sz;
+              int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
+              int p = off + id(sub_idx);
+              if (p < id(page_count)) id(page) = p;
+            }
+        - script.execute: redraw
+
     - action: hold_toggle
       then:
         - lambda: 'id(pinned) = !id(pinned);'
+        - script.execute: redraw
+
+    - action: category_pin_toggle
+      then:
+        - lambda: 'id(cat_pinned) = !id(cat_pinned);'
         - script.execute: redraw
 
 ota:
@@ -130,18 +199,14 @@ display:
     auto_clear_enabled: false
     lambda: |-
       if (id(have_frames)) {
-        // Read only the rows we need. it.image() at a negative offset works,
-        // but walks all 1.29M pixels of the strip to discard most of them --
-        // about 2s. Copying the 272 rows directly is roughly 6x less work.
+        // Read only the rows we need.
         const int off = ${page_h} * id(page);
         for (int y = 0; y < ${page_h}; y++) {
           for (int x = 0; x < 792; x++) {
             it.draw_pixel_at(x, y, id(frames).get_pixel(x, y + off));
           }
         }
-        // Held pages need to say so, or a stopped rotation reads as a fault.
-        // Top-right margin: every page anchors its content at or inside
-        // x=752, so x>752 is free on all of them.
+        // Held exact page indicator (lock icon)
         if (id(pinned)) {
           it.filled_rectangle(761, 12, 5, 20);     // shackle, left
           it.filled_rectangle(778, 12, 5, 20);     // shackle, right
@@ -149,6 +214,11 @@ display:
           it.filled_rectangle(754, 30, 36, 26);    // body
           it.filled_circle(772, 40, 4, COLOR_OFF);         // keyhole
           it.filled_rectangle(770, 40, 4, 10, COLOR_OFF);  // keyhole stem
+        } else if (id(cat_pinned)) {
+          // Pinned category badge (Apple concentric continuous badge)
+          it.filled_rectangle(750, 14, 36, 22);
+          it.filled_rectangle(752, 16, 32, 18, COLOR_OFF);
+          it.filled_rectangle(758, 20, 20, 10);
         }
       } else if (id(have_single)) {
         // Strip missing -- fall back to whatever single frame HA is serving.
@@ -162,8 +232,6 @@ display:
 http_request:
   verify_ssl: false
   timeout: 15s
-  # Default is 512 bytes on ESP32, which caps throughput around 31 KB/s and
-  # dominates fetch time for anything larger than a few KB.
   buffer_size_rx: 8192
 
 online_image:
@@ -178,7 +246,16 @@ online_image:
           id(page_count) = (h >= ${page_h}) ? h / ${page_h} : 1;
           if (id(page) >= id(page_count)) id(page) = 0;
           id(have_frames) = true;
-          ESP_LOGI("panel", "%d pages held locally", id(page_count));
+          if (id(cat_offsets).empty() || id(cat_count) <= 0) {
+            id(cat_offsets).clear();
+            id(cat_sizes).clear();
+            id(cat_count) = id(page_count);
+            for (int i = 0; i < id(page_count); i++) {
+              id(cat_offsets).push_back(i);
+              id(cat_sizes).push_back(1);
+            }
+          }
+          ESP_LOGI("panel", "%d pages (%d categories) held locally", id(page_count), id(cat_count));
       - component.update: epd
     on_error:
       - logger.log: "frames.png missing - falling back to single frame"
@@ -199,55 +276,107 @@ online_image:
       - script.execute: refetch
 
 binary_sensor:
-  # Five discrete push-buttons, all active-low. Elecrow's demo uses plain
-  # INPUT, so the board carries its own pull-ups; ours are belt and braces.
+  # Five discrete push-buttons:
+  # Dial Rotate Right (GPIO 4): Next Category
   - platform: gpio
     id: key_next
     internal: true
     pin: {number: 4, mode: {input: true, pullup: true}, inverted: true}
     filters: [delayed_on: 20ms]
     on_press:
-      - logger.log: "KEY next"
-      - lambda: 'id(page) = (id(page) + 1) % id(page_count);'
+      - logger.log: "KEY next (category right)"
+      - lambda: |-
+          int cats = id(cat_count) > 0 ? id(cat_count) : 1;
+          id(cat_idx) = (id(cat_idx) + 1) % cats;
+          id(sub_idx) = 0;
+          int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
+          if (off < id(page_count)) id(page) = off;
       - script.execute: redraw
 
+  # Dial Rotate Left (GPIO 6): Previous Category
   - platform: gpio
     id: key_prev
     internal: true
     pin: {number: 6, mode: {input: true, pullup: true}, inverted: true}
     filters: [delayed_on: 20ms]
     on_press:
-      - logger.log: "KEY prev"
-      - lambda: 'id(page) = (id(page) - 1 + id(page_count)) % id(page_count);'
+      - logger.log: "KEY prev (category left)"
+      - lambda: |-
+          int cats = id(cat_count) > 0 ? id(cat_count) : 1;
+          id(cat_idx) = (id(cat_idx) - 1 + cats) % cats;
+          id(sub_idx) = 0;
+          int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
+          if (off < id(page_count)) id(page) = off;
       - script.execute: redraw
 
+  # Dial Center Push (GPIO 5): Short Click = Next Sub-item; Long Hold (>1000ms) = Pin Category
   - platform: gpio
     id: key_ok
     internal: true
     pin: {number: 5, mode: {input: true, pullup: true}, inverted: true}
     filters: [delayed_on: 20ms]
-    on_press:
-      - logger.log: "KEY ok (hold/release page)"
-      - lambda: 'id(pinned) = !id(pinned);'
-      - script.execute: redraw
+    on_click:
+      - min_length: 30ms
+        max_length: 600ms
+        then:
+          - logger.log: "KEY ok: short click (step sub-item)"
+          - lambda: |-
+              int c_idx = id(cat_idx);
+              int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
+              if (sz > 1) {
+                id(sub_idx) = (id(sub_idx) + 1) % sz;
+                int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
+                int p = off + id(sub_idx);
+                if (p < id(page_count)) id(page) = p;
+                ESP_LOGI("panel", "Sub-item stepped to %d/%d (page %d)", id(sub_idx) + 1, sz, id(page));
+              } else {
+                ESP_LOGI("panel", "Category %d has only 1 item", c_idx);
+              }
+          - script.execute: redraw
+      - min_length: 1000ms
+        max_length: 5000ms
+        then:
+          - logger.log: "KEY ok: long hold (toggle category pin)"
+          - lambda: |-
+              id(cat_pinned) = !id(cat_pinned);
+              ESP_LOGI("panel", "Category pin toggled: %d", id(cat_pinned));
+          - script.execute: redraw
 
+  # Menu Button (GPIO 2): Short Click = Pin Exact Page; Long Hold (>1000ms) = Force Refetch Now
   - platform: gpio
     id: key_home
     internal: true
     pin: {number: 2, mode: {input: true, pullup: true}, inverted: true}
     filters: [delayed_on: 20ms]
-    on_press:
-      - logger.log: "KEY home (refetch)"
-      - script.execute: refetch
+    on_click:
+      - min_length: 30ms
+        max_length: 600ms
+        then:
+          - logger.log: "KEY menu: short click (toggle item pin)"
+          - lambda: |-
+              id(pinned) = !id(pinned);
+              ESP_LOGI("panel", "Item pin toggled: %d", id(pinned));
+          - script.execute: redraw
+      - min_length: 1000ms
+        max_length: 5000ms
+        then:
+          - logger.log: "KEY menu: long hold (force refetch)"
+          - script.execute: refetch
 
+  # Exit Button (GPIO 1): Reset to Category 0, Clear All Pins
   - platform: gpio
     id: key_exit
     internal: true
     pin: {number: 1, mode: {input: true, pullup: true}, inverted: true}
     filters: [delayed_on: 20ms]
     on_press:
-      - logger.log: "KEY exit (back to rotation)"
-      - lambda: 'id(pinned) = false; id(page) = 0;'
+      - logger.log: "KEY exit: reset to category 0, clear pins"
+      - lambda: |-
+          id(pinned) = false;
+          id(cat_pinned) = false;
+          id(cat_idx) = 0;
+          id(sub_idx) = 0;
+          id(page) = 0;
       - script.execute: redraw
 
 sensor:
@@ -256,12 +385,51 @@ sensor:
     name: Panel Wi-Fi
     update_interval: 60s
 
+  - platform: homeassistant
+    id: ha_cat_count
+    entity_id: sensor.epaper_category_count
+    on_value:
+      then:
+        - lambda: |-
+            int n = (int)x;
+            if (n > 0) {
+              id(cat_count) = n;
+              if (id(cat_idx) >= n) id(cat_idx) = 0;
+            }
 
 text_sensor:
   - platform: wifi_info
     ip_address:
       id: wifi_ip
       name: Panel IP
+
+  - platform: homeassistant
+    id: ha_cat_offsets
+    entity_id: sensor.epaper_category_offsets
+    on_value:
+      then:
+        - lambda: |-
+            id(cat_offsets).clear();
+            std::stringstream ss(x);
+            std::string item;
+            while (std::getline(ss, item, ',')) {
+              if (!item.empty()) id(cat_offsets).push_back(atoi(item.c_str()));
+            }
+            if (id(cat_offsets).empty()) id(cat_offsets).push_back(0);
+
+  - platform: homeassistant
+    id: ha_cat_sizes
+    entity_id: sensor.epaper_category_sizes
+    on_value:
+      then:
+        - lambda: |-
+            id(cat_sizes).clear();
+            std::stringstream ss(x);
+            std::string item;
+            while (std::getline(ss, item, ',')) {
+              if (!item.empty()) id(cat_sizes).push_back(atoi(item.c_str()));
+            }
+            if (id(cat_sizes).empty()) id(cat_sizes).push_back(1);
 
 script:
   - id: redraw
@@ -294,7 +462,6 @@ number:
     mode: box
 
 interval:
-  # Bring-up only. Under deep sleep the wake itself replaces this.
   - interval: 10s
     then:
       - if:
@@ -314,7 +481,28 @@ interval:
                 condition:
                   lambda: 'return !id(pinned);'
                 then:
-                  - lambda: 'id(page) = (id(page) + 1) % id(page_count);'
+                  - if:
+                      condition:
+                        lambda: 'return id(cat_pinned);'
+                      then:
+                        - lambda: |-
+                            int c_idx = id(cat_idx);
+                            int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
+                            if (sz > 1) {
+                              id(sub_idx) = (id(sub_idx) + 1) % sz;
+                              int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
+                              int p = off + id(sub_idx);
+                              if (p < id(page_count)) id(page) = p;
+                            }
+                        - script.execute: redraw
+                      else:
+                        - lambda: |-
+                            int cats = id(cat_count) > 0 ? id(cat_count) : 1;
+                            id(cat_idx) = (id(cat_idx) + 1) % cats;
+                            id(sub_idx) = 0;
+                            int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
+                            if (off < id(page_count)) id(page) = off;
+                        - script.execute: redraw
             - script.execute: refetch
 
 # ---------------------------------------------------------------------------

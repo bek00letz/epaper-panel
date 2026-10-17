@@ -1111,7 +1111,12 @@ def _draw_flight_tracker(img, d, el, raw_val, display=None):
         d.text((mid_x, mid_y + 38), f"No aircraft overhead within {radius} km", font=T.font(12, bold=False), fill=T.BLACK, anchor="mm")
         return
 
-    ac = aircraft_list[0]
+    sub_idx = int(el.get("sub_index", 0))
+    sub_total = len(aircraft_list) if aircraft_list else 1
+    if sub_idx >= sub_total:
+        sub_idx = 0
+
+    ac = aircraft_list[sub_idx]
     callsign = str(ac.get("callsign") or ac.get("icao24") or "UNKNOWN").strip().upper()
     country = ac.get("country") or "Commercial Flight"
     dist_km = float(ac.get("distance_km") or 0.0)
@@ -1129,7 +1134,10 @@ def _draw_flight_tracker(img, d, el, raw_val, display=None):
         # Pure Circular PPI Radar Scope
         _draw_radar_scope(d, x + 6, y + 6, w - 12, h - 12, radius, aircraft_list, tracked_cs=callsign)
         d.text((x + 16, y + 16), f"AIRSPACE RADAR · {radius} KM", font=T.font(11, bold=True), fill=T.BLACK, anchor="lm")
-        d.text((x + w - 16, y + 16), f"TARGET: {callsign} ({dist_km:.1f} KM {bearing})", font=T.font(11, bold=True), fill=T.BLACK, anchor="rm")
+        target_str = f"TARGET: {callsign} ({dist_km:.1f} KM {bearing})"
+        if sub_total > 1:
+            target_str = f"[{sub_idx + 1}/{sub_total}] {target_str}"
+        d.text((x + w - 16, y + 16), target_str, font=T.font(11, bold=True), fill=T.BLACK, anchor="rm")
         return
 
     if style == "split" and w >= 480:
@@ -1157,6 +1165,14 @@ def _draw_flight_tracker(img, d, el, raw_val, display=None):
         bx0 = bx1 - bw
         d.rounded_rectangle([(bx0, top_y + 4), (bx1, top_y + 4 + bh)], radius=5, fill=T.BLACK)
         d.text((bx0 + bw // 2, top_y + 4 + bh // 2), dist_badge, font=bf, fill=T.WHITE, anchor="mm")
+
+        if sub_total > 1:
+            pag_str = f"{sub_idx + 1}/{sub_total}"
+            pb_w = T.text_width(pag_str, bf) + 12
+            pbx1 = bx0 - 6
+            pbx0 = pbx1 - pb_w
+            d.rounded_rectangle([(pbx0, top_y + 4), (pbx1, top_y + 4 + bh)], radius=5, outline=T.BLACK, width=1)
+            d.text((pbx0 + pb_w // 2, top_y + 4 + bh // 2), pag_str, font=bf, fill=T.BLACK, anchor="mm")
 
         div_y = y + 74
         d.line([(tx0, div_y), (x + w - 16, div_y)], fill=T.BLACK, width=1)
@@ -1202,8 +1218,8 @@ def _draw_flight_tracker(img, d, el, raw_val, display=None):
     d.rounded_rectangle([(bx0, top_y + 6), (bx1, top_y + 6 + bh)], radius=6, fill=T.BLACK)
     d.text((bx0 + bw // 2, top_y + 6 + bh // 2), dist_badge, font=bf, fill=T.WHITE, anchor="mm")
 
-    if len(aircraft_list) > 1:
-        more_txt = f"+{len(aircraft_list) - 1} MORE IN AIRSPACE"
+    if sub_total > 1:
+        more_txt = f"FLIGHT {sub_idx + 1} OF {sub_total}"
         mf = T.font(10, bold=True)
         d.text((bx1, top_y + 40), more_txt, font=mf, fill=T.BLACK, anchor="rm")
 
@@ -1350,8 +1366,18 @@ def _draw_sports_match(img, d, el, raw_val, display=None):
     if show_border:
         d.rounded_rectangle([(x, y), (x + w, y + h)], radius=12, outline=T.BLACK, width=1)
 
-    data = _parse_val_json(raw_val)
-    if not isinstance(data, dict):
+    raw_parsed = _parse_val_json(raw_val)
+    sub_idx = int(el.get("sub_index", 0))
+    sub_total = 1
+
+    if isinstance(raw_parsed, list) and raw_parsed:
+        sub_total = len(raw_parsed)
+        if sub_idx >= sub_total:
+            sub_idx = 0
+        data = raw_parsed[sub_idx]
+    elif isinstance(raw_parsed, dict):
+        data = raw_parsed
+    else:
         data = {
             "league": "PREMIER LEAGUE",
             "venue": "Emirates Stadium",
@@ -1381,6 +1407,16 @@ def _draw_sports_match(img, d, el, raw_val, display=None):
     bx0 = bx1 - bw
     d.rounded_rectangle([(bx0, y + 10), (bx1, y + 32)], radius=5, fill=T.BLACK)
     d.text((bx0 + bw // 2, y + 21), clock, font=bf, fill=T.WHITE, anchor="mm")
+
+    # Sub-item pagination badge (e.g. [ 2 / 5 ])
+    if sub_total > 1:
+        pag_badge = f"{sub_idx + 1}/{sub_total}"
+        pb_f = T.font(10, bold=True)
+        pb_w = T.text_width(pag_badge, pb_f) + 14
+        pbx1 = bx0 - 8
+        pbx0 = pbx1 - pb_w
+        d.rounded_rectangle([(pbx0, y + 10), (pbx1, y + 32)], radius=5, outline=T.BLACK, width=1)
+        d.text((pbx0 + pb_w // 2, y + 21), pag_badge, font=pb_f, fill=T.BLACK, anchor="mm")
 
     d.line([(x + 14, y + 42), (x + w - 14, y + 42)], fill=T.BLACK, width=1)
 

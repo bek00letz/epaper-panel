@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.8.12
+- **2D Hierarchical Navigation (Categories $\times$ Sub-Items):**
+  - Expanded multi-item cards (`flight_tracker` with multiple aircraft overhead, `sports_match` with multiple scoreboard games, and `watch` with multiple queued episodes like *Scrubs* and *Brothers*) into consecutive sub-slices in the local PSRAM strip.
+  - Implemented intuitive 2D category and sub-item mapping:
+    - **Rotary Dial (Rotate Left / Right, GPIO 6 / 4):** Switches **only between Categories** (e.g. Solar $\leftrightarrow$ Weather $\leftrightarrow$ Watch $\leftrightarrow$ Scores $\leftrightarrow$ Flights $\leftrightarrow$ Cat). Users never have to scroll through 20 NBA games or 5 flights just to see the weather or cat!
+    - **Dial Center Push (GPIO 5):** Short click (<500ms) steps through **sub-options within that category** (e.g. Knicks v Raptors $\rightarrow$ Bulls v Bucks; or Flight 1 $\rightarrow$ Flight 2 $\rightarrow$ Flight 3; or Scrubs $\rightarrow$ Brothers) with instantaneous partial refreshes (~300ms) directly from local PSRAM.
+    - **Dial Long Push (>1000ms):** Toggles **Category Pin** (`cat_pinned`). The panel displays an Apple-polish category badge and locks the automatic interval timer to rotate *only* through sub-items inside that category (e.g. auto-cycling tonight's NBA games).
+    - **Menu Button (GPIO 2):** Short click (<500ms) toggles **Item Pin** (`pinned`, lock icon appears, freezing on that exact item). Long hold (>1000ms) forces an immediate network refetch from Home Assistant.
+    - **Exit Button (GPIO 1):** Unpins all and resets to Home (Category 0, Page 0).
+- **Home Assistant Real-Time Category Sensors & API Actions:**
+  - Automatically publishes `sensor.epaper_category_count`, `sensor.epaper_category_offsets`, `sensor.epaper_category_sizes`, and `sensor.epaper_category_names` to Home Assistant.
+  - Added ESPHome actions `show_category`, `category_step`, `sub_step`, and `category_pin_toggle`.
+  - Added `GET /api/manifest` and `GET /manifest.json` endpoints serving complete 2D category geometry.
+- **Dynamic Radar & Scoreboard Pagination:**
+  - Radar scope targeting reticle `[ ✈ ]` dynamically tracks the selected aircraft across sub-items.
+  - Added concentric pagination pills `[ 1/3 ]`, `[ 2/3 ]` to flight telemetry and sports scoreboards, plus clear footer labels (`WATCH · 1/2`, `SCORES · 2/5`).
+
 ## 0.8.11
 - **Circular PPI Radar Scope & Multi-Style Flight Tracker:**
   - Added tactical circular Plan Position Indicator (PPI) radar scope with outer boundary ring, intermediate range ring, cardinal tick marks (N, E, S, W), range scale badge, home reticle, and directional aircraft blips with callsign tags and target lock brackets (`[ ✈ ]`).
