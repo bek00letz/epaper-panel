@@ -102,11 +102,11 @@ The CrowPanel features five discrete physical inputs: a 3-way rocker dial (rotat
 | **Top Button** | Physical Top | `GPIO 1` | `GPIO 2` | **Short Press (<750ms):** Toggle **Category Lock** (`cat_pinned`).<br>**Long Hold (≥750ms):** Toggle **Panel Lock** (`pinned`). |
 | **Rocker Turn Forward** | Right / Clockwise | `GPIO 6` | `GPIO 4` | **In Category Mode:** Advance to next category.<br>**In Sub-Item Mode:** Advance to next sub-item within current category. |
 | **Rocker Turn Backward** | Left / Counter-Clockwise | `GPIO 4` | `GPIO 6` | **In Category Mode:** Return to previous category.<br>**In Sub-Item Mode:** Return to previous sub-item within current category. |
-| **Rocker Center Push** | Push Inward | `GPIO 5` | `GPIO 5` | **Instant Press:** Toggle between **Category Navigation Mode** and **Sub-Item Navigation Mode**.<br>*(If the current category has only 1 page, remains safely in Category mode).* |
+| **Rocker Center Push** | Push Inward | `GPIO 5` | `GPIO 5` | **Short Press:** Does nothing (prevents rotary scroll wobble from accidentally switching modes).<br>**Long Hold (≥1000ms):** Toggle between **Category Navigation Mode** and **Sub-Item Navigation Mode**.<br>*(If current category is single-page, remains safely in Category mode).* |
 | **Bottom Button** | Physical Bottom | `GPIO 2` | `GPIO 1` | **Short Press (<750ms):** Jump to **Page 1 (Category 1)**.<br>**Long Hold (≥750ms):** Force an immediate network refetch from Home Assistant. |
 
 > [!TIP]
-> **Anti-Chatter & Crosstalk Protection:** Rocker switches can mechanically flex side contacts when pushed firmly in the center. The firmware includes hardware debounce and software crosstalk suppression (`last_ok_press_ms`) that ignores rocker tilt within 200ms of a center push, preventing accidental rotation when toggling modes.
+> **Anti-Chatter & Crosstalk Protection:** Rocker switches can mechanically flex side contacts or trigger center clicks when rotating quickly. The firmware requires a deliberate **long hold (≥1.0s)** on the center button (`key_ok`) to toggle between Category and Sub-item modes, while short clicks do nothing. When scrolling categories, the firmware strictly advances category offsets without ever leaking into sub-cards.
 
 ---
 
