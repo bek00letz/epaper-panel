@@ -143,6 +143,12 @@ button.badge-btn {
 button.badge-btn:hover {
   background: linear-gradient(135deg, rgba(2, 132, 199, 0.25), rgba(147, 51, 234, 0.25));
 }
+button.copied {
+  background: rgba(16, 185, 129, 0.15) !important;
+  border-color: #10b981 !important;
+  color: #10b981 !important;
+  font-weight: 600;
+}
 
 /* Header & Control Center */
 header {
@@ -1359,6 +1365,7 @@ aside {
         <div class="row">
           <label style="width:130px">OTA password</label>
           <input id="cfg_otapw" style="font-family:ui-monospace,monospace;font-size:12px">
+          <button id="copyotapw" class="sm" title="Copy OTA password">Copy</button>
           <button id="regenkeys" class="sm" title="Generate a fresh random API key and OTA password">Regenerate</button>
         </div>
         <div class="row" style="margin-top:4px">
@@ -3411,6 +3418,102 @@ $("setupbtn").onclick = async () => {
 };
 $("setupclose").onclick = () => $("setupwrap").style.display = "none";
 $("setupwrap").onclick = e => { if (e.target.id === "setupwrap") $("setupwrap").style.display = "none"; };
+// Universal resilient clipboard helper (works on HTTP, HTTPS, and inside Home Assistant Ingress iframes)
+function copyTextToClipboard(text, btn, successMsg) {
+  if (!text) {
+    if (successMsg) msg("Nothing to copy.");
+    return false;
+  }
+
+  let ok = false;
+
+  // Method 1: Off-screen textarea with document.execCommand('copy')
+  // Fully synchronous: works in non-secure HTTP contexts, inside HA Ingress iframes,
+  // and retains active user gesture activation without async network drops.
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.top = "0";
+    ta.style.left = "-9999px";
+    ta.style.width = "2em";
+    ta.style.height = "2em";
+    ta.style.padding = "0";
+    ta.style.border = "none";
+    ta.style.outline = "none";
+    ta.style.boxShadow = "none";
+    ta.style.background = "transparent";
+    ta.setAttribute("readonly", "");
+    document.body.appendChild(ta);
+    ta.focus({ preventScroll: true });
+    ta.select();
+    ta.setSelectionRange(0, ta.value.length);
+    ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+  } catch (err) {
+    ok = false;
+  }
+
+  // Method 2: Modern Async Clipboard API if supported and permitted
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      navigator.clipboard.writeText(text).then(() => {
+        if (!ok) onCopySuccess(btn, successMsg);
+      }).catch(() => {});
+    } catch (e) {}
+  }
+
+  if (ok) {
+    onCopySuccess(btn, successMsg);
+    return true;
+  }
+
+  // Method 3: Fallback prompt for sandboxed/restricted browser environments
+  try {
+    window.prompt("Press Cmd+C / Ctrl+C, Enter to copy:", text);
+    onCopySuccess(btn, successMsg);
+    return true;
+  } catch (e) {
+    msg("Copy failed. Please select text manually.");
+    return false;
+  }
+}
+
+function onCopySuccess(btn, successMsg) {
+  if (btn) {
+    const orig = btn.dataset.origText || btn.textContent;
+    btn.dataset.origText = orig;
+    btn.textContent = "✓ Copied!";
+    btn.classList.add("copied");
+    setTimeout(() => {
+      btn.textContent = orig;
+      btn.classList.remove("copied");
+    }, 2000);
+  }
+  if (successMsg) msg(successMsg);
+}
+
+function copyFromField(targetInput, btn, successMsg) {
+  if (!targetInput) return;
+  const val = targetInput.value || targetInput.textContent || "";
+  try {
+    if (typeof targetInput.focus === "function") targetInput.focus({ preventScroll: true });
+    if (typeof targetInput.select === "function") {
+      targetInput.select();
+      if (typeof targetInput.setSelectionRange === "function") {
+        targetInput.setSelectionRange(0, val.length);
+      }
+    }
+  } catch (e) {}
+  copyTextToClipboard(val, btn, successMsg);
+}
+
+// Auto-update YAML whenever setup inputs change
+["cfg_dev", "cfg_host", "cfg_port", "cfg_ssid", "cfg_pw", "cfg_otapw"].forEach(id => {
+  const el = $(id);
+  if (el) el.addEventListener("change", () => savePanelSetup());
+});
+
 $("cfgsave").onclick = () => savePanelSetup().then(() => msg("ESPHome YAML updated."));
 $("cfg_secrets").onchange = () => savePanelSetup();
 $("cfg_orient").onchange = () => savePanelSetup().then(() => msg(`Mount set to ${$("cfg_orient").value}° and YAML updated.`));
@@ -3418,22 +3521,33 @@ if ($("cfg_model")) {
   $("cfg_model").onchange = () => savePanelSetup().then(() => msg(`Model set to ${curDisplay().name} and YAML updated.`));
 }
 $("regenkeys").onclick = () => savePanelSetup({ regenerate_keys: true }).then(() => msg("Generated new API key and OTA password."));
-$("copyapikey").onclick = () => {
-  navigator.clipboard.writeText($("cfg_apikey").value);
-  msg("Copied API encryption key.");
+
+$("copyapikey").onclick = (e) => {
+  e.preventDefault();
+  copyFromField($("cfg_apikey"), $("copyapikey"), "Copied API encryption key.");
 };
 
-$("copyyaml").onclick = async () => {
-  await savePanelSetup();
-  navigator.clipboard.writeText($("yamlout").value);
-  msg("Copied ESPHome YAML to clipboard.");
+if ($("copyotapw")) {
+  $("copyotapw").onclick = (e) => {
+    e.preventDefault();
+    copyFromField($("cfg_otapw"), $("copyotapw"), "Copied OTA password.");
+  };
+}
+
+$("copyyaml").onclick = (e) => {
+  e.preventDefault();
+  copyFromField($("yamlout"), $("copyyaml"), "Copied ESPHome YAML to clipboard.");
+  savePanelSetup().catch(() => {});
 };
-$("copysecrets").onclick = async () => {
-  await savePanelSetup();
-  navigator.clipboard.writeText($("secretsout").value);
-  msg("Copied secrets.yaml snippet.");
+
+$("copysecrets").onclick = (e) => {
+  e.preventDefault();
+  copyFromField($("secretsout"), $("copysecrets"), "Copied secrets.yaml snippet.");
+  savePanelSetup().catch(() => {});
 };
-$("dlyaml").onclick = async () => {
+
+$("dlyaml").onclick = async (e) => {
+  e.preventDefault();
   await savePanelSetup();
   const blob = new Blob([$("yamlout").value], { type: "text/yaml" });
   const a = document.createElement("a");

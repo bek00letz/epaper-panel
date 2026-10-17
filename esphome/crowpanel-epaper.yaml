@@ -410,10 +410,15 @@ text_sensor:
       then:
         - lambda: |-
             id(cat_offsets).clear();
-            std::stringstream ss(x);
-            std::string item;
-            while (std::getline(ss, item, ',')) {
-              if (!item.empty()) id(cat_offsets).push_back(atoi(item.c_str()));
+            const char *p = x.c_str();
+            while (*p) {
+              while (*p == ' ' || *p == ',') p++;
+              if (!*p) break;
+              char *end;
+              long val = strtol(p, &end, 10);
+              if (p == end) break;
+              id(cat_offsets).push_back((int)val);
+              p = end;
             }
             if (id(cat_offsets).empty()) id(cat_offsets).push_back(0);
 
@@ -424,10 +429,15 @@ text_sensor:
       then:
         - lambda: |-
             id(cat_sizes).clear();
-            std::stringstream ss(x);
-            std::string item;
-            while (std::getline(ss, item, ',')) {
-              if (!item.empty()) id(cat_sizes).push_back(atoi(item.c_str()));
+            const char *p = x.c_str();
+            while (*p) {
+              while (*p == ' ' || *p == ',') p++;
+              if (!*p) break;
+              char *end;
+              long val = strtol(p, &end, 10);
+              if (p == end) break;
+              id(cat_sizes).push_back((int)val);
+              p = end;
             }
             if (id(cat_sizes).empty()) id(cat_sizes).push_back(1);
 

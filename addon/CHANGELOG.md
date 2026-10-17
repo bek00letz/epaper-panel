@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.13
+- **Universal Clipboard Fix (HTTP, HTTPS, & Ingress iFrames):**
+  - Resolved clipboard copying failures where `navigator.clipboard` was undefined in non-secure HTTP contexts (`http://homeassistant.local:8123` or IP access) or blocked by Ingress iframe security policies.
+  - Added synchronous `document.execCommand('copy')` fallback with direct DOM element selection and off-screen textarea buffers, guaranteeing that user gesture tokens are never discarded across asynchronous network boundaries.
+  - Added tactile feedback to all copy buttons (`Copy key`, `Copy OTA password`, `Copy YAML`, `Copy secrets.yaml`), flashing `✓ Copied!` with subtle emerald highlight and displaying toast confirmations.
+  - Added dedicated `Copy` button for the OTA password field.
+  - Added automatic change detection across all panel setup inputs (`cfg_dev`, `cfg_host`, `cfg_port`, `cfg_ssid`, `cfg_pw`, `cfg_otapw`) so generated YAML stays perpetually up-to-date.
+
 ## 0.8.12
 - **2D Hierarchical Navigation (Categories $\times$ Sub-Items):**
   - Expanded multi-item cards (`flight_tracker` with multiple aircraft overhead, `sports_match` with multiple scoreboard games, and `watch` with multiple queued episodes like *Scrubs* and *Brothers*) into consecutive sub-slices in the local PSRAM strip.
