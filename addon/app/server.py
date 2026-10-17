@@ -1294,7 +1294,7 @@ async def build_frames(session):
         cat_label = f"{cat_i + 1}/{len(live)}  {cat_display_name}"
         cat_f = T.font(13, bold=True)
         cat_w = T.text_width(cat_label, cat_f) + 20
-        margin = display["margin"] if dw >= 400 else min(display["margin"], 16)
+        margin = disp["margin"] if dw >= 400 else min(disp["margin"], 16)
         cat_x0 = 96 if dw >= 400 else (margin + T.text_width("00:00", T.font(18)) + 12)
         sub_w = 48
         sub_x1 = dw - margin

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.18
+- **Render Loop Fix:**
+  - Resolved `TypeError: string indices must be integers, not 'str'` in `build_frames` by using display dictionary `disp["margin"]` instead of string identifier `display["margin"]`.
+  - Restored continuous background rendering and real-time category sensor updates (`sensor.epaper_category_pill_widths`).
+
 ## 0.8.17
 - **Security & Authentication Hardening:**
   - Enforced `_check_frame_auth` token validation across physical refresh and page stepping action endpoints (`/api/action/refresh`, `/api/action/page`), preventing unauthenticated physical e-paper refresh denial-of-service on LAN port 8099.
