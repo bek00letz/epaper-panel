@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.8.15
+- **Structured Footer Navigation & Dynamic Focus Inversion:**
+  - Shifted category title and counter closer to the system clock on the left (e.g. `14:40  [ 1/5 LIVING ROOM ]`).
+  - Added sub-item counter towards the right of the screen (e.g. `[ 1/4 ]`) for categories with multiple items.
+  - Active selection is indicated by Apple-grade solid inversion (solid black pill with crisp white text):
+    - **Category Mode (default):** Category pill is inverted, signaling that turning the rotary dial steps through categories.
+    - **Sub-Item Mode (when dial is clicked):** Category pill reverts to outline, and Sub-item pill becomes inverted, signaling that turning the dial steps strictly through sub-items inside that category.
+    - Clicking the dial again toggles focus back to Category mode.
+- **Orientation-Aware Hardware Button Actions:**
+  - Dynamic pin mapping based on orientation:
+    - **Physical Top Button (GPIO 1 on 180° mounts / GPIO 2 on 0° mounts):** Short click (<600ms) toggles **Category Lock**; Long hold (>1000ms) toggles **Panel Lock**.
+    - **Physical Bottom Button (GPIO 2 on 180° mounts / GPIO 1 on 0° mounts):** Short click (<600ms) instantly resets back to **Page 1 (Category 1)**; Long hold (>1000ms) forces an immediate network refetch from Home Assistant.
+- **Relocated Status Badges from Canvas to Footer Chrome:**
+  - Moved the exact slide lock padlock (`pinned`) and category lock badge (`cat_pinned`) into the uneditable 32px footer bar, liberating the top-right canvas area so cards and headers never get occluded.
+  - Category lock renders right beside the category pill; Panel lock renders beside the sub-item pill (or right margin).
+- **Activity Watchdog & Anti-Freezing:**
+  - Any button press or dial turn resets the panel activity watchdog (`idle_sec = 0`), guaranteeing the user their full refresh interval of uninterrupted viewing without the screen suddenly rotating away.
+  - Background network image fetches and display updates are suppressed while the user is actively interacting (`idle_sec <= 30`), completely eliminating dial input lag and screen freezes.
+  - Debounced screen redraw to 80ms restart, giving buttery-smooth dial responsiveness without e-paper thrashing.
+
 ## 0.8.14
 - **Orientation-Aware Pin Badges & Rocker Button Inversion (180° / 270° Mounts):**
   - Padlock indicator (`pinned`) and Category Pin badge (`cat_pinned`) are now dynamically mapped to physical screen coordinates and drawn right-side up in the viewer's visual top-right corner, eliminating inverted or clipped badges on 180° mounts.

@@ -76,6 +76,14 @@ globals:
   - id: cat_sizes
     type: std::vector<int>
     restore_value: false
+  - id: sub_mode
+    type: bool
+    initial_value: 'false'
+    restore_value: false
+  - id: idle_sec
+    type: int
+    initial_value: '0'
+    restore_value: false
 
 font:
   - file: "../addon/app/fonts/Lato-Bold.ttf"
@@ -199,27 +207,60 @@ display:
     auto_clear_enabled: false
     lambda: |-
       if (id(have_frames)) {
-        // Read only the rows we need.
         const int off = ${page_h} * id(page);
+        bool is_sub_mode = id(sub_mode);
+        const int cat_x0 = 80, cat_x1 = 300;
+        const int sub_x0 = 715, sub_x1 = 772;
+        const int py0 = 244, py1 = 268;
+
         for (int y = 0; y < ${page_h}; y++) {
           for (int x = 0; x < 792; x++) {
-            it.draw_pixel_at(x, y, id(frames).get_pixel(x, y + off));
+            int vx = 791 - x;
+            int vy = 271 - y;
+
+            bool in_cat = (vx >= cat_x0 && vx <= cat_x1 && vy >= py0 && vy <= py1);
+            bool in_sub = (vx >= sub_x0 && vx <= sub_x1 && vy >= py0 && vy <= py1);
+            bool inv = (!is_sub_mode && in_cat) || (is_sub_mode && in_sub);
+
+            Color c = id(frames).get_pixel(x, y + off);
+            if (inv) {
+              c = (c == COLOR_ON) ? COLOR_OFF : COLOR_ON;
+            }
+            it.draw_pixel_at(x, y, c);
           }
         }
-        // Held exact page indicator (lock icon)
+
+        auto draw_visual_rect = [&](int vx, int vy, int w, int h, Color col) {
+          for (int dy = 0; dy < h; dy++) {
+            for (int dx = 0; dx < w; dx++) {
+              int px = vx + dx;
+              int py = vy + dy;
+              if (px >= 0 && px < 792 && py >= 0 && py < 272) {
+                int rx = 791 - px;
+                int ry = 271 - py;
+                it.draw_pixel_at(rx, ry, col);
+              }
+            }
+          }
+        };
+
+        auto draw_padlock = [&](int lx, int ly) {
+          draw_visual_rect(lx + 2, ly, 6, 2, COLOR_ON);
+          draw_visual_rect(lx + 2, ly + 2, 2, 3, COLOR_ON);
+          draw_visual_rect(lx + 6, ly + 2, 2, 3, COLOR_ON);
+          draw_visual_rect(lx, ly + 5, 10, 8, COLOR_ON);
+          draw_visual_rect(lx + 4, ly + 7, 2, 3, COLOR_OFF);
+        };
+
+        if (id(cat_pinned)) {
+          draw_padlock(cat_x0 - 13, py0 + 5);
+        }
+
         if (id(pinned)) {
-          // Padlock indicator (visually top-right for 180° mount)
-          it.filled_rectangle(14, 226, 28, 22);
-          it.filled_rectangle(20, 248, 16, 4);
-          it.filled_rectangle(20, 243, 4, 9);
-          it.filled_rectangle(32, 243, 4, 9);
-          it.filled_circle(28, 237, 3, COLOR_OFF);
-          it.filled_rectangle(27, 232, 3, 6, COLOR_OFF);
-        } else if (id(cat_pinned)) {
-          // Category Pin badge (visually top-right for 180° mount)
-          it.filled_rectangle(10, 232, 42, 22);
-          it.filled_rectangle(12, 234, 38, 18, COLOR_OFF);
-          it.filled_rectangle(18, 238, 26, 10);
+          int c_idx = id(cat_idx);
+          int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
+          int lx = (sz > 1) ? (sub_x0 - 13) : (sub_x0 + 20);
+          draw_padlock(lx, py0 + 5);
         }
       } else if (id(have_single)) {
         // Strip missing -- fall back to whatever single frame HA is serving.
@@ -257,7 +298,11 @@ online_image:
             }
           }
           ESP_LOGI("panel", "%d pages (%d categories) held locally", id(page_count), id(cat_count));
-      - component.update: epd
+      - if:
+          condition:
+            lambda: 'return (id(idle_sec) > 30);'
+          then:
+            - component.update: epd
     on_error:
       - logger.log: "frames.png missing - falling back to single frame"
       - component.update: frame
@@ -278,39 +323,63 @@ online_image:
 
 binary_sensor:
   # Five discrete push-buttons:
-  # Dial Rotate Right (GPIO 6 in 180° mount): Next Category
+  # Dial Rotate Right (GPIO 6 in 180° mount): Forward
   - platform: gpio
     id: key_next
     internal: true
     pin: {number: 6, mode: {input: true, pullup: true}, inverted: true}
     filters: [delayed_on: 20ms]
     on_press:
-      - logger.log: "KEY next (category right)"
+      - logger.log: "KEY next (dial forward)"
       - lambda: |-
-          int cats = id(cat_count) > 0 ? id(cat_count) : 1;
-          id(cat_idx) = (id(cat_idx) + 1) % cats;
-          id(sub_idx) = 0;
-          int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
-          if (off < id(page_count)) id(page) = off;
+          id(idle_sec) = 0;
+          if (id(sub_mode)) {
+            int c_idx = id(cat_idx);
+            int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
+            if (sz > 1) {
+              id(sub_idx) = (id(sub_idx) + 1) % sz;
+              int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
+              int p = off + id(sub_idx);
+              if (p < id(page_count)) id(page) = p;
+            }
+          } else {
+            int cats = id(cat_count) > 0 ? id(cat_count) : 1;
+            id(cat_idx) = (id(cat_idx) + 1) % cats;
+            id(sub_idx) = 0;
+            int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
+            if (off < id(page_count)) id(page) = off;
+          }
       - script.execute: redraw
 
-  # Dial Rotate Left (GPIO 4 in 180° mount): Previous Category
+  # Dial Rotate Left (GPIO 4 in 180° mount): Backward
   - platform: gpio
     id: key_prev
     internal: true
     pin: {number: 4, mode: {input: true, pullup: true}, inverted: true}
     filters: [delayed_on: 20ms]
     on_press:
-      - logger.log: "KEY prev (category left)"
+      - logger.log: "KEY prev (dial backward)"
       - lambda: |-
-          int cats = id(cat_count) > 0 ? id(cat_count) : 1;
-          id(cat_idx) = (id(cat_idx) - 1 + cats) % cats;
-          id(sub_idx) = 0;
-          int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
-          if (off < id(page_count)) id(page) = off;
+          id(idle_sec) = 0;
+          if (id(sub_mode)) {
+            int c_idx = id(cat_idx);
+            int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
+            if (sz > 1) {
+              id(sub_idx) = (id(sub_idx) - 1 + sz) % sz;
+              int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
+              int p = off + id(sub_idx);
+              if (p < id(page_count)) id(page) = p;
+            }
+          } else {
+            int cats = id(cat_count) > 0 ? id(cat_count) : 1;
+            id(cat_idx) = (id(cat_idx) - 1 + cats) % cats;
+            id(sub_idx) = 0;
+            int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
+            if (off < id(page_count)) id(page) = off;
+          }
       - script.execute: redraw
 
-  # Dial Center Push (GPIO 5): Short Click = Next Sub-item; Long Hold (>1000ms) = Pin Category
+  # Dial Center Push (GPIO 5): Short Click = Toggle Category vs Sub-item Mode
   - platform: gpio
     id: key_ok
     internal: true
@@ -318,34 +387,52 @@ binary_sensor:
     filters: [delayed_on: 20ms]
     on_click:
       - min_length: 30ms
-        max_length: 600ms
+        max_length: 800ms
         then:
-          - logger.log: "KEY ok: short click (step sub-item)"
+          - logger.log: "KEY ok: click (toggle category vs sub-item mode)"
           - lambda: |-
+              id(idle_sec) = 0;
               int c_idx = id(cat_idx);
               int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
               if (sz > 1) {
-                id(sub_idx) = (id(sub_idx) + 1) % sz;
-                int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
-                int p = off + id(sub_idx);
-                if (p < id(page_count)) id(page) = p;
-                ESP_LOGI("panel", "Sub-item stepped to %d/%d (page %d)", id(sub_idx) + 1, sz, id(page));
+                id(sub_mode) = !id(sub_mode);
+                ESP_LOGI("panel", "Navigation mode toggled: sub_mode=%d", id(sub_mode));
               } else {
-                ESP_LOGI("panel", "Category %d has only 1 item", c_idx);
+                id(sub_mode) = false;
               }
+          - script.execute: redraw
+
+  # Physical Top Button (GPIO 1 in 180° mount): Short Click = Toggle Category Lock; Long Hold (>1000ms) = Toggle Panel Lock
+  - platform: gpio
+    id: key_top
+    internal: true
+    pin: {number: 1, mode: {input: true, pullup: true}, inverted: true}
+    filters: [delayed_on: 20ms]
+    on_click:
+      - min_length: 30ms
+        max_length: 600ms
+        then:
+          - logger.log: "KEY top: short click (toggle category lock)"
+          - lambda: |-
+              id(idle_sec) = 0;
+              id(cat_pinned) = !id(cat_pinned);
+              if (id(cat_pinned)) id(pinned) = false;
+              ESP_LOGI("panel", "Category lock: %d", id(cat_pinned));
           - script.execute: redraw
       - min_length: 1000ms
         max_length: 5000ms
         then:
-          - logger.log: "KEY ok: long hold (toggle category pin)"
+          - logger.log: "KEY top: long hold (toggle panel lock)"
           - lambda: |-
-              id(cat_pinned) = !id(cat_pinned);
-              ESP_LOGI("panel", "Category pin toggled: %d", id(cat_pinned));
+              id(idle_sec) = 0;
+              id(pinned) = !id(pinned);
+              if (id(pinned)) id(cat_pinned) = false;
+              ESP_LOGI("panel", "Panel lock: %d", id(pinned));
           - script.execute: redraw
 
-  # Menu Button (GPIO 2): Short Click = Pin Exact Page; Long Hold (>1000ms) = Force Refetch Now
+  # Physical Bottom Button (GPIO 2 in 180° mount): Short Click = First Page; Long Hold (>1000ms) = Force Refetch Now
   - platform: gpio
-    id: key_home
+    id: key_bottom
     internal: true
     pin: {number: 2, mode: {input: true, pullup: true}, inverted: true}
     filters: [delayed_on: 20ms]
@@ -353,32 +440,21 @@ binary_sensor:
       - min_length: 30ms
         max_length: 600ms
         then:
-          - logger.log: "KEY menu: short click (toggle item pin)"
+          - logger.log: "KEY bottom: short click (reset to first page)"
           - lambda: |-
-              id(pinned) = !id(pinned);
-              ESP_LOGI("panel", "Item pin toggled: %d", id(pinned));
+              id(idle_sec) = 0;
+              id(cat_idx) = 0;
+              id(sub_idx) = 0;
+              id(page) = 0;
+              id(sub_mode) = false;
+              ESP_LOGI("panel", "Reset to page 0");
           - script.execute: redraw
       - min_length: 1000ms
         max_length: 5000ms
         then:
-          - logger.log: "KEY menu: long hold (force refetch)"
+          - logger.log: "KEY bottom: long hold (force refetch)"
+          - lambda: 'id(idle_sec) = 0;'
           - script.execute: refetch
-
-  # Exit Button (GPIO 1): Reset to Category 0, Clear All Pins
-  - platform: gpio
-    id: key_exit
-    internal: true
-    pin: {number: 1, mode: {input: true, pullup: true}, inverted: true}
-    filters: [delayed_on: 20ms]
-    on_press:
-      - logger.log: "KEY exit: reset to category 0, clear pins"
-      - lambda: |-
-          id(pinned) = false;
-          id(cat_pinned) = false;
-          id(cat_idx) = 0;
-          id(sub_idx) = 0;
-          id(page) = 0;
-      - script.execute: redraw
 
 sensor:
   - platform: wifi_signal
@@ -446,7 +522,7 @@ script:
   - id: redraw
     mode: restart
     then:
-      - delay: 250ms
+      - delay: 80ms
       - component.update: epd
 
   - id: refetch
@@ -475,19 +551,17 @@ number:
 interval:
   - interval: 10s
     then:
+      - lambda: |-
+          id(idle_sec) += 10;
       - if:
           condition:
             lambda: |-
-              static int elapsed_sec = 0;
-              elapsed_sec += 10;
               int target_sec = (int)(id(panel_refresh_interval).state * 60.0);
               if (target_sec < 10) target_sec = 10;
-              if (elapsed_sec >= target_sec) {
-                elapsed_sec = 0;
-                return true;
-              }
-              return false;
+              return (id(idle_sec) >= target_sec);
           then:
+            - lambda: |-
+                id(idle_sec) = 0;
             - if:
                 condition:
                   lambda: 'return !id(pinned);'
@@ -511,10 +585,15 @@ interval:
                             int cats = id(cat_count) > 0 ? id(cat_count) : 1;
                             id(cat_idx) = (id(cat_idx) + 1) % cats;
                             id(sub_idx) = 0;
+                            id(sub_mode) = false;
                             int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
                             if (off < id(page_count)) id(page) = off;
                         - script.execute: redraw
-            - script.execute: refetch
+            - if:
+                condition:
+                  lambda: 'return (id(page) == 0);'
+                then:
+                  - script.execute: refetch
 
 # ---------------------------------------------------------------------------
 # STAGE 3: battery. Uncomment, delete the interval: block above, and add

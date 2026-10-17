@@ -9,6 +9,7 @@ out/
 .esphome-venv/
 esphome/.esphome/
 esphome/build/
+.esphome/
 __pycache__/
 *.pyc
 .DS_Store

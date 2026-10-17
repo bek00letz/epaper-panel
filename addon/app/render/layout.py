@@ -1494,7 +1494,7 @@ def element_text(el, vals, idx):
     return ""
 
 
-def render_page(page, vals, *, clock="", label="", battery_pct=None, series=None,
+def render_page(page, vals, *, clock="", label="", cat_label="", sub_label="", battery_pct=None, series=None,
                 metrics=None, orientation=0, distance_m=3.0, display=None):
     """Draw one page. `vals` maps element index -> resolved template result."""
     img, d = T.new_canvas(orientation=orientation, display=display)
@@ -1526,7 +1526,8 @@ def render_page(page, vals, *, clock="", label="", battery_pct=None, series=None
         except Exception:
             # One bad element must never cost the whole page.
             continue
-    T.footer(d, clock=clock, label=label, battery_pct=battery_pct, orientation=orientation, display=display)
+    T.footer(d, clock=clock, label=label, cat_label=cat_label, sub_label=sub_label,
+             battery_pct=battery_pct, orientation=orientation, display=display)
     return img
 
 

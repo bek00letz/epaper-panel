@@ -284,7 +284,7 @@ def screen(img, box):
             px[x, y] = WHITE
 
 
-def footer(draw, *, clock, label, battery_pct=None, orientation=0, display=None):
+def footer(draw, *, clock, label="", cat_label="", sub_label="", battery_pct=None, orientation=0, display=None):
     cw, ch = canvas_dims(orientation, display=display)
     disp = get_display(display)
     margin = disp["margin"] if cw >= 400 else min(disp["margin"], 16)
@@ -294,6 +294,25 @@ def footer(draw, *, clock, label, battery_pct=None, orientation=0, display=None)
     f = font(footer_size, bold=False)
     draw.line([(margin, rule_y), (cw - margin, rule_y)], fill=BLACK, width=1)
     draw.text((margin, base_y), clock, font=f, fill=BLACK, anchor="ls")
-    draw.text((cw // 2, base_y), label, font=f, fill=BLACK, anchor="ms")
+
+    if cat_label:
+        cat_f = font(13, bold=True)
+        pill_y0 = ch - 28
+        pill_y1 = ch - 4
+        clock_w = text_width(clock, f)
+        cat_x0 = margin + clock_w + 12
+        cat_x1 = min(cat_x0 + 220, cw - margin - 80)
+        draw.rounded_rectangle([cat_x0, pill_y0, cat_x1, pill_y1], radius=4, outline=BLACK, width=1)
+        draw.text((cat_x0 + 10, (pill_y0 + pill_y1) // 2), cat_label, font=cat_f, fill=BLACK, anchor="lm")
+
+        if sub_label:
+            bat_w = text_width(f"{battery_pct} %", f) + 12 if (battery_pct is not None and battery_pct > 0) else 0
+            sub_x1 = cw - margin - bat_w
+            sub_x0 = sub_x1 - 57
+            draw.rounded_rectangle([sub_x0, pill_y0, sub_x1, pill_y1], radius=4, outline=BLACK, width=1)
+            draw.text(((sub_x0 + sub_x1) // 2, (pill_y0 + pill_y1) // 2), sub_label, font=cat_f, fill=BLACK, anchor="mm")
+    elif label:
+        draw.text((cw // 2, base_y), label, font=f, fill=BLACK, anchor="ms")
+
     if battery_pct is not None and battery_pct > 0:
         draw.text((cw - margin, base_y), f"{battery_pct} %", font=f, fill=BLACK, anchor="rs")
