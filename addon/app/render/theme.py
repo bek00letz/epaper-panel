@@ -299,8 +299,7 @@ def footer(draw, *, clock, label="", cat_label="", sub_label="", battery_pct=Non
         cat_f = font(13, bold=True)
         pill_y0 = ch - 28
         pill_y1 = ch - 4
-        clock_w = text_width(clock, f)
-        cat_x0 = margin + clock_w + 12
+        cat_x0 = 80 if cw >= 400 else (margin + text_width(clock, f) + 12)
         cat_x1 = min(cat_x0 + 220, cw - margin - 80)
         draw.rounded_rectangle([cat_x0, pill_y0, cat_x1, pill_y1], radius=4, outline=BLACK, width=1)
         draw.text((cat_x0 + 10, (pill_y0 + pill_y1) // 2), cat_label, font=cat_f, fill=BLACK, anchor="lm")

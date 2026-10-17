@@ -73,6 +73,92 @@ Whether you mount the panel normally, **upside-down (`180°`)** to route the USB
 - The server pre-rotates each page into the panel's native framebuffer before serving `/frames.png`, so changing orientation in the editor works immediately on **Save / Push to panel** without reflashing ESPHome.
 - When generating new ESPHome firmware for `180°` or `270°` mounts, the wizard also swaps the `Next` and `Prev` button pins (`GPIO 4` and `GPIO 6`) so the physical buttons match the board's orientation.
 
+### 2D Hierarchical Navigation (Categories & Sub-Items)
+
+The display organizes content as a two-dimensional grid: **Top-level Categories** along the horizontal axis, and **Parallel Sub-Items** along the vertical axis.
+
+```
+Category 1 (Solar)       ──>  Single slide
+Category 2 (Watch)       ──>  [Episode 1: Scrubs]  ─>  [Episode 2: Brothers]
+Category 3 (Flights)     ──>  [Plane 1: BAW71LK]   ─>  [Plane 2: THY41Y]
+Category 4 (Scores)      ──>  [Game 1: Bulls v Bucks] ─> [Game 2: Knicks v Raptors]
+```
+
+- **Top-Level Categories:** Major dashboards or functional cards (Solar, Power, Watch, Room Temps, Airspace Radar, Calendar, Sports Scores). Rotating through categories lets you switch context instantly without having to scroll through 10 individual media items or sports matches to see your porch temperature.
+- **Parallel Sub-Items:** Multi-item feeds expand dynamically into parallel sub-slices in local PSRAM:
+  - **Watch & Media Feeds:** Multiple on-deck episodes or movies queued in Jellyfin/Plex.
+  - **Airspace Radar / Flight Telemetry:** Multiple aircraft currently overhead within your radius.
+  - **Sports Matches / Scoreboards:** Multiple games across your leagues or teams.
+- **Sub-Item Rotation:** In auto-rotation mode, the panel visits categories in order. If a category is locked, it automatically cycles through the sub-items of that category.
+
+---
+
+### Physical Controls & Button Mapping
+
+The CrowPanel features five discrete physical inputs: a 3-way rocker dial (rotate up, rotate down, press center) and two push buttons (top and bottom). The firmware automatically remaps pins to match your mounting orientation:
+
+| Physical Control | Visual Direction | 180° Mount (USB-C Top) | 0° Mount (Standard) | Action & Behavior |
+|---|---|---|---|---|
+| **Top Button** | Physical Top | `GPIO 1` | `GPIO 2` | **Short Press (<750ms):** Toggle **Category Lock** (`cat_pinned`).<br>**Long Hold (≥750ms):** Toggle **Panel Lock** (`pinned`). |
+| **Rocker Turn Forward** | Right / Clockwise | `GPIO 6` | `GPIO 4` | **In Category Mode:** Advance to next category.<br>**In Sub-Item Mode:** Advance to next sub-item within current category. |
+| **Rocker Turn Backward** | Left / Counter-Clockwise | `GPIO 4` | `GPIO 6` | **In Category Mode:** Return to previous category.<br>**In Sub-Item Mode:** Return to previous sub-item within current category. |
+| **Rocker Center Push** | Push Inward | `GPIO 5` | `GPIO 5` | **Instant Press:** Toggle between **Category Navigation Mode** and **Sub-Item Navigation Mode**.<br>*(If the current category has only 1 page, remains safely in Category mode).* |
+| **Bottom Button** | Physical Bottom | `GPIO 2` | `GPIO 1` | **Short Press (<750ms):** Jump to **Page 1 (Category 1)**.<br>**Long Hold (≥750ms):** Force an immediate network refetch from Home Assistant. |
+
+> [!TIP]
+> **Anti-Chatter & Crosstalk Protection:** Rocker switches can mechanically flex side contacts when pushed firmly in the center. The firmware includes hardware debounce and software crosstalk suppression (`last_ok_press_ms`) that ignores rocker tilt within 200ms of a center push, preventing accidental rotation when toggling modes.
+
+---
+
+### Visual Indicators & Status Badges
+
+All navigation states and locks are rendered directly inside the uneditable 32px footer bar, leaving the canvas completely unobstructed:
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                                                                        │
+│                            [ Card Content ]                            │
+│                                                                        │
+├────────────────────────────────────────────────────────────────────────┤
+│ 15:42   [ 1/9 WATCH ] (inverted)   [ 🔒 ]               [ 🔒 ]   [ 1/2 ] │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+1. **Active Focus Inversion:**
+   - **Category Mode (Default):** The Category Pill (`[ 1/9 WATCH ]`) is solid black with crisp white text. Turning the rocker flips through categories.
+   - **Sub-Item Mode:** Clicking the dial inverts the Sub-Item Pill (`[ 1/2 ]`) and reverts the category pill to an outline. Turning the rocker flips through sub-items inside that category.
+2. **Apple-Grade Padlock Badges:**
+   - **Category Lock Badge (`[ 🔒 ]`):** A high-contrast 28×24px solid black badge with a crisp white padlock rendered immediately to the right of the category pill (`[ 1/9 WATCH ] [ 🔒 ]`). Indicates the panel will not rotate away to other categories.
+   - **Panel Lock Badge (`[ 🔒 ]`):** Rendered beside the sub-item pill (or in the right margin when single-page). Indicates this exact slide is pinned and will not rotate.
+
+---
+
+### Dynamic Unit Scaling & Formatting Tips
+
+When displaying instantaneous values that span orders of magnitude (e.g. Watts vs Kilowatts), you can dynamically format both the number and the unit using Jinja templates in the editor:
+
+```jinja2
+{% set p = states('sensor.instant_power') | float(0) %}
+{% if p >= 1000 %}
+  {{ (p / 1000) | round(2) }} kW
+{% else %}
+  {{ p | round(0) }} W
+{% endif %}
+```
+
+Or for separating the number value and the unit label across two elements:
+- **Number Element Value Template:**
+  ```jinja2
+  {% set p = states('sensor.instant_power') | float(0) %}
+  {{ (p / 1000) | round(2) if p >= 1000 else p | round(0) }}
+  ```
+- **Label Element Text Template:**
+  ```jinja2
+  {{ 'kW' if states('sensor.instant_power') | float(0) >= 1000 else 'W' }}
+  ```
+
+---
+
 ## Install
 
 1. **Settings → Add-ons → Add-on Store → ⋮ → Repositories**, add

@@ -1309,15 +1309,40 @@ async def build_frames(session):
                 battery_pct=None, series=series.get(cat_name), orientation=orient, display=display)
             imgs.append(T.orient_for_panel(T.to_1bit(img), orient, display=display))
 
-    strip = Image.new("1", (dw, dh * len(imgs)), 1)
+    strip = Image.new("1", (dw, dh * len(imgs) + 1), 1)
     for i, im in enumerate(imgs):
         strip.paste(im, (0, i * dh))
+
+    # Self-describing image header on row meta_y:
+    meta_y = dh * len(imgs)
+    # Magic 0xA5, version 0x01, cat_count
+    payload = [0xA5, 0x01, len(cat_offsets)]
+    for off, sz in zip(cat_offsets, cat_sizes):
+        payload.append(min(255, int(off)))
+        payload.append(min(255, int(sz)))
+
+    px_x = 0
+    for byte_val in payload:
+        for b in range(8):
+            bit = (byte_val >> (7 - b)) & 1
+            # In PIL mode "1", 0 = black (COLOR_ON in ESPHome), 1 = white (COLOR_OFF in ESPHome)
+            strip.putpixel((px_x, meta_y), 0 if bit else 1)
+            px_x += 1
+
     return _png(strip), _png(imgs[0]), live, cat_offsets, cat_sizes, cat_names
 
 
 async def refresh_frames(session):
     """Build a new Frames snapshot and atomically swap FRAMES."""
     strip, single, names, cat_offsets, cat_sizes, cat_names = await build_frames(session)
+    old_f = globals().get("FRAMES")
+    struct_changed = (
+        old_f is not None and getattr(old_f, "rendered_at", None) and (
+            old_f.cat_offsets != cat_offsets or
+            old_f.cat_sizes != cat_sizes or
+            old_f.cat_names != cat_names
+        )
+    )
     nxt = Frames()
     nxt.strip, nxt.single, nxt.names = strip, single, names
     nxt.strip_etag = _etag(strip)
@@ -1330,6 +1355,9 @@ async def refresh_frames(session):
     globals()["FRAMES"] = nxt
     print(f"rendered {names} ({len(strip)}B strip, {nxt.cat_count} cats, offsets: {cat_offsets}, sizes: {cat_sizes})", flush=True)
     await publish_category_sensors(session, nxt)
+    if struct_changed:
+        print("Category structure changed -- pushing immediate refresh to panel", flush=True)
+        await push_panel_update(advance_page=False)
     return nxt
 
 
@@ -1337,7 +1365,7 @@ LAST_PANEL_PUSH_TIME = time.time()
 
 
 async def push_panel_update(advance_page=True):
-    """Trigger the physical panel to redraw with latest frames, advancing page if rotating."""
+    """Trigger the physical panel to redraw with latest frames."""
     if not HA_TOKEN:
         return False
     candidates = list(dict.fromkeys([
@@ -1349,8 +1377,6 @@ async def push_panel_update(advance_page=True):
     ok = False
     for dev in candidates:
         try:
-            if advance_page:
-                await call_ha_service(SHARED_SESSION, "esphome", f"{dev}_page_step", {"delta": 1})
             await call_ha_service(SHARED_SESSION, "esphome", f"{dev}_refresh_now")
             ok = True
             break
@@ -1868,13 +1894,40 @@ def generate_esphome_yaml(cfg: dict) -> tuple[str, str]:
         const int sub_x0 = {sub_vx0}, sub_x1 = {sub_vx1};
         const int py0 = {pill_vy0}, py1 = {pill_vy1};
 
+        int c_idx = id(cat_idx);
+        int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
+        if (sz <= 1) {{
+          is_sub_mode = false;
+        }}
+
+        auto in_rounded_box = [](int px, int py, int x0, int y0, int x1, int y1, int r) -> bool {{
+          if (px < x0 || px > x1 || py < y0 || py > y1) return false;
+          if (px < x0 + r && py < y0 + r) {{
+            int dx = (x0 + r) - px, dy = (y0 + r) - py;
+            return (dx * dx + dy * dy <= r * r);
+          }}
+          if (px > x1 - r && py < y0 + r) {{
+            int dx = px - (x1 - r), dy = (y0 + r) - py;
+            return (dx * dx + dy * dy <= r * r);
+          }}
+          if (px < x0 + r && py > y1 - r) {{
+            int dx = (x0 + r) - px, dy = py - (y1 - r);
+            return (dx * dx + dy * dy <= r * r);
+          }}
+          if (px > x1 - r && py > y1 - r) {{
+            int dx = px - (x1 - r), dy = py - (y1 - r);
+            return (dx * dx + dy * dy <= r * r);
+          }}
+          return true;
+        }};
+
         for (int y = 0; y < ${{page_h}}; y++) {{
           for (int x = 0; x < {dw}; x++) {{
             int vx = ({orient} == 180) ? ({dw - 1} - x) : x;
             int vy = ({orient} == 180) ? ({dh - 1} - y) : y;
 
-            bool in_cat = (vx >= cat_x0 && vx <= cat_x1 && vy >= py0 && vy <= py1);
-            bool in_sub = (vx >= sub_x0 && vx <= sub_x1 && vy >= py0 && vy <= py1);
+            bool in_cat = in_rounded_box(vx, vy, cat_x0, py0, cat_x1, py1, 4);
+            bool in_sub = (sz > 1) && in_rounded_box(vx, vy, sub_x0, py0, sub_x1, py1, 4);
             bool inv = (!is_sub_mode && in_cat) || (is_sub_mode && in_sub);
 
             Color c = id(frames).get_pixel(x, y + off);
@@ -1885,37 +1938,50 @@ def generate_esphome_yaml(cfg: dict) -> tuple[str, str]:
           }}
         }}
 
-        auto draw_visual_rect = [&](int vx, int vy, int w, int h, Color col) {{
-          for (int dy = 0; dy < h; dy++) {{
-            for (int dx = 0; dx < w; dx++) {{
-              int px = vx + dx;
-              int py = vy + dy;
-              if (px >= 0 && px < {dw} && py >= 0 && py < {dh}) {{
+        auto draw_lock_badge = [&](int bx, int by, int bw, int bh) {{
+          int cx = bx + bw / 2;
+          int cy = by + bh / 2;
+          for (int py = by; py < by + bh; py++) {{
+            for (int px = bx; px < bx + bw; px++) {{
+              if (in_rounded_box(px, py, bx, by, bx + bw - 1, by + bh - 1, 4)) {{
+                int dx = px - cx;
+                int dy = py - cy;
+                bool is_shackle = false;
+                if (dy >= -7 && dy <= -2) {{
+                  if (dy <= -5) {{
+                    is_shackle = (dx >= -4 && dx <= 3);
+                  }} else {{
+                    is_shackle = (dx >= -5 && dx <= -3) || (dx >= 2 && dx <= 4);
+                  }}
+                }}
+                bool is_body = (dy >= -1 && dy <= 7 && dx >= -7 && dx <= 6);
+                bool is_keyhole = false;
+                if ((dy >= 1 && dy <= 3 && dx >= -1 && dx <= 0) || (dy >= 4 && dy <= 5 && dx == 0)) {{
+                  is_keyhole = true;
+                }}
+
+                Color col = COLOR_ON;
+                if ((is_shackle || is_body) && !is_keyhole) {{
+                  col = COLOR_OFF;
+                }}
+
                 int rx = ({orient} == 180) ? ({dw - 1} - px) : px;
                 int ry = ({orient} == 180) ? ({dh - 1} - py) : py;
-                it.draw_pixel_at(rx, ry, col);
+                if (rx >= 0 && rx < {dw} && ry >= 0 && ry < {dh}) {{
+                  it.draw_pixel_at(rx, ry, col);
+                }}
               }}
             }}
           }}
         }};
 
-        auto draw_padlock = [&](int lx, int ly) {{
-          draw_visual_rect(lx + 2, ly, 6, 2, COLOR_ON);
-          draw_visual_rect(lx + 2, ly + 2, 2, 3, COLOR_ON);
-          draw_visual_rect(lx + 6, ly + 2, 2, 3, COLOR_ON);
-          draw_visual_rect(lx, ly + 5, 10, 8, COLOR_ON);
-          draw_visual_rect(lx + 4, ly + 7, 2, 3, COLOR_OFF);
-        }};
-
         if (id(cat_pinned)) {{
-          draw_padlock({cat_vx0 - 13}, {pill_vy0 + 5});
+          draw_lock_badge({cat_vx1 + 8}, {pill_vy0}, 28, 24);
         }}
 
         if (id(pinned)) {{
-          int c_idx = id(cat_idx);
-          int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
-          int lx = (sz > 1) ? ({sub_vx0 - 13}) : ({sub_vx0 + 20});
-          draw_padlock(lx, {pill_vy0 + 5});
+          int lx = (sz > 1) ? ({sub_vx0 - 35}) : ({sub_vx1 - 28});
+          draw_lock_badge(lx, {pill_vy0}, 28, 24);
         }}"""
 
     if disp["esphome_component"].startswith("github://"):
@@ -2025,6 +2091,10 @@ psram:
     initial_value: 'false'
   - id: idle_sec
     type: int
+    restore_value: false
+    initial_value: '0'
+  - id: last_ok_press_ms
+    type: uint32_t
     restore_value: false
     initial_value: '0'
 
@@ -2155,6 +2225,39 @@ online_image:
           id(page_count) = (h >= ${{page_h}}) ? h / ${{page_h}} : 1;
           if (id(page) >= id(page_count)) id(page) = 0;
           id(have_frames) = true;
+
+          // Check if self-describing metadata row is present (height == page_count * page_h + 1)
+          if (h >= id(page_count) * ${{page_h}} + 1) {{
+            int meta_y = id(page_count) * ${{page_h}};
+            auto read_byte = [&](int byte_idx) -> int {{
+              int val = 0;
+              int start_px = byte_idx * 8;
+              for (int b = 0; b < 8; b++) {{
+                if (start_px + b < {dw} && id(frames).get_pixel(start_px + b, meta_y) == COLOR_ON) {{
+                  val |= (1 << (7 - b));
+                }}
+              }}
+              return val;
+            }};
+
+            int magic = read_byte(0);
+            if (magic == 0xA5) {{
+              int num_cats = read_byte(2);
+              if (num_cats > 0 && num_cats <= 30) {{
+                id(cat_offsets).clear();
+                id(cat_sizes).clear();
+                id(cat_count) = num_cats;
+                for (int i = 0; i < num_cats; i++) {{
+                  int off = read_byte(3 + i * 2);
+                  int sz = read_byte(3 + i * 2 + 1);
+                  id(cat_offsets).push_back(off);
+                  id(cat_sizes).push_back(sz);
+                }}
+                ESP_LOGI("panel", "Loaded metadata directly from frames.png: %d categories", num_cats);
+              }}
+            }}
+          }}
+
           if (id(cat_offsets).empty() || id(cat_count) <= 0) {{
             id(cat_offsets).clear();
             id(cat_sizes).clear();
@@ -2164,6 +2267,7 @@ online_image:
               id(cat_sizes).push_back(1);
             }}
           }}
+          if (id(cat_idx) >= id(cat_count)) id(cat_idx) = 0;
           ESP_LOGI("panel", "%d pages (%d categories) held locally", id(page_count), id(cat_count));
       - if:
           condition:
@@ -2193,11 +2297,18 @@ binary_sensor:
     id: key_next
     internal: true
     pin: {{number: {next_pin}, mode: {{input: true, pullup: true}}, inverted: true}}
-    filters: [delayed_on: 20ms]
+    filters: [delayed_on: 25ms, delayed_off: 25ms]
     on_press:
       - logger.log: "KEY next (dial forward)"
       - lambda: |-
           id(idle_sec) = 0;
+          if (millis() - id(last_ok_press_ms) < 200) {{
+            ESP_LOGD("panel", "Ignoring rocker tilt crosstalk from center press");
+            return;
+          }}
+          int cats = id(cat_count) > 0 ? id(cat_count) : 1;
+          if (id(cat_idx) >= cats) id(cat_idx) = 0;
+
           if (id(sub_mode)) {{
             int c_idx = id(cat_idx);
             int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
@@ -2206,9 +2317,14 @@ binary_sensor:
               int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
               int p = off + id(sub_idx);
               if (p < id(page_count)) id(page) = p;
+            }} else {{
+              id(sub_mode) = false;
+              id(cat_idx) = (id(cat_idx) + 1) % cats;
+              id(sub_idx) = 0;
+              int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
+              if (off < id(page_count)) id(page) = off;
             }}
           }} else {{
-            int cats = id(cat_count) > 0 ? id(cat_count) : 1;
             id(cat_idx) = (id(cat_idx) + 1) % cats;
             id(sub_idx) = 0;
             int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
@@ -2220,11 +2336,18 @@ binary_sensor:
     id: key_prev
     internal: true
     pin: {{number: {prev_pin}, mode: {{input: true, pullup: true}}, inverted: true}}
-    filters: [delayed_on: 20ms]
+    filters: [delayed_on: 25ms, delayed_off: 25ms]
     on_press:
       - logger.log: "KEY prev (dial backward)"
       - lambda: |-
           id(idle_sec) = 0;
+          if (millis() - id(last_ok_press_ms) < 200) {{
+            ESP_LOGD("panel", "Ignoring rocker tilt crosstalk from center press");
+            return;
+          }}
+          int cats = id(cat_count) > 0 ? id(cat_count) : 1;
+          if (id(cat_idx) >= cats) id(cat_idx) = 0;
+
           if (id(sub_mode)) {{
             int c_idx = id(cat_idx);
             int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
@@ -2233,9 +2356,14 @@ binary_sensor:
               int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
               int p = off + id(sub_idx);
               if (p < id(page_count)) id(page) = p;
+            }} else {{
+              id(sub_mode) = false;
+              id(cat_idx) = (id(cat_idx) - 1 + cats) % cats;
+              id(sub_idx) = 0;
+              int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
+              if (off < id(page_count)) id(page) = off;
             }}
           }} else {{
-            int cats = id(cat_count) > 0 ? id(cat_count) : 1;
             id(cat_idx) = (id(cat_idx) - 1 + cats) % cats;
             id(sub_idx) = 0;
             int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
@@ -2247,32 +2375,31 @@ binary_sensor:
     id: key_ok
     internal: true
     pin: {{number: 5, mode: {{input: true, pullup: true}}, inverted: true}}
-    filters: [delayed_on: 20ms]
-    on_click:
-      - min_length: 30ms
-        max_length: 800ms
-        then:
-          - logger.log: "KEY ok: click (toggle category vs sub-item mode)"
-          - lambda: |-
-              id(idle_sec) = 0;
-              int c_idx = id(cat_idx);
-              int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
-              if (sz > 1) {{
-                id(sub_mode) = !id(sub_mode);
-                ESP_LOGI("panel", "Navigation mode toggled: sub_mode=%d", id(sub_mode));
-              }} else {{
-                id(sub_mode) = false;
-              }}
-          - script.execute: redraw
+    filters: [delayed_on: 30ms, delayed_off: 30ms]
+    on_press:
+      - logger.log: "KEY ok: press (toggle category vs sub-item mode)"
+      - lambda: |-
+          id(idle_sec) = 0;
+          id(last_ok_press_ms) = millis();
+          int c_idx = id(cat_idx);
+          int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
+          if (sz > 1) {{
+            id(sub_mode) = !id(sub_mode);
+            ESP_LOGI("panel", "Navigation mode toggled: sub_mode=%d (sz=%d)", id(sub_mode), sz);
+          }} else {{
+            id(sub_mode) = false;
+            ESP_LOGI("panel", "Category has single page (sz=%d), staying in category mode", sz);
+          }}
+      - script.execute: redraw
 
   - platform: gpio
     id: key_top
     internal: true
     pin: {{number: {top_btn_pin}, mode: {{input: true, pullup: true}}, inverted: true}}
-    filters: [delayed_on: 20ms]
+    filters: [delayed_on: 25ms, delayed_off: 25ms]
     on_click:
       - min_length: 30ms
-        max_length: 600ms
+        max_length: 750ms
         then:
           - logger.log: "KEY top: short click (toggle category lock)"
           - lambda: |-
@@ -2281,8 +2408,8 @@ binary_sensor:
               if (id(cat_pinned)) id(pinned) = false;
               ESP_LOGI("panel", "Category lock: %d", id(cat_pinned));
           - script.execute: redraw
-      - min_length: 1000ms
-        max_length: 5000ms
+      - min_length: 750ms
+        max_length: 6000ms
         then:
           - logger.log: "KEY top: long hold (toggle panel lock)"
           - lambda: |-
@@ -2296,10 +2423,10 @@ binary_sensor:
     id: key_bottom
     internal: true
     pin: {{number: {bot_btn_pin}, mode: {{input: true, pullup: true}}, inverted: true}}
-    filters: [delayed_on: 20ms]
+    filters: [delayed_on: 25ms, delayed_off: 25ms]
     on_click:
       - min_length: 30ms
-        max_length: 600ms
+        max_length: 750ms
         then:
           - logger.log: "KEY bottom: short click (reset to first page)"
           - lambda: |-
@@ -2310,8 +2437,8 @@ binary_sensor:
               id(sub_mode) = false;
               ESP_LOGI("panel", "Reset to page 0");
           - script.execute: redraw
-      - min_length: 1000ms
-        max_length: 5000ms
+      - min_length: 750ms
+        max_length: 6000ms
         then:
           - logger.log: "KEY bottom: long hold (force refetch)"
           - lambda: 'id(idle_sec) = 0;'
@@ -2347,18 +2474,19 @@ text_sensor:
     on_value:
       then:
         - lambda: |-
-            id(cat_offsets).clear();
-            const char *p = x.c_str();
-            while (*p) {{
-              while (*p == ' ' || *p == ',') p++;
-              if (!*p) break;
-              char *end;
-              long val = strtol(p, &end, 10);
-              if (p == end) break;
-              id(cat_offsets).push_back((int)val);
-              p = end;
+            if (id(cat_offsets).empty()) {{
+              const char *p = x.c_str();
+              while (*p) {{
+                while (*p == ' ' || *p == ',') p++;
+                if (!*p) break;
+                char *end;
+                long val = strtol(p, &end, 10);
+                if (p == end) break;
+                id(cat_offsets).push_back((int)val);
+                p = end;
+              }}
+              if (id(cat_offsets).empty()) id(cat_offsets).push_back(0);
             }}
-            if (id(cat_offsets).empty()) id(cat_offsets).push_back(0);
 
   - platform: homeassistant
     id: ha_cat_sizes
@@ -2366,18 +2494,19 @@ text_sensor:
     on_value:
       then:
         - lambda: |-
-            id(cat_sizes).clear();
-            const char *p = x.c_str();
-            while (*p) {{
-              while (*p == ' ' || *p == ',') p++;
-              if (!*p) break;
-              char *end;
-              long val = strtol(p, &end, 10);
-              if (p == end) break;
-              id(cat_sizes).push_back((int)val);
-              p = end;
+            if (id(cat_sizes).empty()) {{
+              const char *p = x.c_str();
+              while (*p) {{
+                while (*p == ' ' || *p == ',') p++;
+                if (!*p) break;
+                char *end;
+                long val = strtol(p, &end, 10);
+                if (p == end) break;
+                id(cat_sizes).push_back((int)val);
+                p = end;
+              }}
+              if (id(cat_sizes).empty()) id(cat_sizes).push_back(1);
             }}
-            if (id(cat_sizes).empty()) id(cat_sizes).push_back(1);
 
 script:
   - id: redraw
@@ -2450,11 +2579,7 @@ interval:
                             int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
                             if (off < id(page_count)) id(page) = off;
                         - script.execute: redraw
-            - if:
-                condition:
-                  lambda: 'return (id(page) == 0);'
-                then:
-                  - script.execute: refetch
+            - script.execute: refetch
 """
 
     secrets_text = f"""# Put these in your ESPHome secrets.yaml if using !secret references:

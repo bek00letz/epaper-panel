@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.8.16
+- **Self-Describing Image Header & Permanent Anti-Desync Architecture:**
+  - `frames.png` now encodes the authoritative category count, slice offsets, and sub-page sizes directly into a dedicated invisible header scanline appended to the image strip.
+  - ESPHome parses this metadata directly out of the downloaded image buffer in PSRAM on `on_download_finished`.
+  - Solves the asynchronous metadata race condition where Home Assistant entity updates desynced from the image currently held in panel PSRAM, permanently preventing missing categories (such as sports match / scores) or wrong slice navigation when conditional pages dynamically join or leave the rotation.
+  - Immediate proactive push (`refresh_now`) is triggered whenever structural category changes are detected by the server.
+- **Apple Craftsmanship & Polish Standard Lock Badges:**
+  - Redesigned the padlock from a 10×13px dot into a prominent, high-contrast 28×24px rounded status badge (`[ 🔒 ]`) featuring concentric 4px corners, a 3px thick shackle, a bold body, and a clean keyhole cutout.
+  - **Category Lock Badge:** Renders immediately following the category pill (`[ 1/9 WATCH ] [ 🔒 ]`).
+  - **Panel Lock Badge:** Renders beside the sub-item pill (`[ 🔒 ] [ 1/2 ]`) or in the right status corner.
+- **Rocker Switch Hardware Hardening & Anti-Chatter:**
+  - Added software crosstalk suppression (`last_ok_press_ms` filter) to ignore mechanical contact bleed when pressing the dial in (preventing inadvertent rotate-left or rotate-right triggers).
+  - Center dial push (`key_ok`) now triggers instantly `on_press` with a robust 30ms symmetric debounce filter, eliminating dropped clicks or timeouts from firm presses.
+  - Symmetrical 750ms threshold across `key_top` and `key_bottom` eliminated button click "dead zones."
+  - When in sub-item mode, categories with a single page automatically fall back to category navigation instead of stalling.
+- **Periodic Scheduled Refetching:**
+  - Ensured that sensor data refetches on the scheduled interval (`panel_refresh_interval`) whether the panel is actively auto-rotating or pinned on a specific card.
+
 ## 0.8.15
 - **Structured Footer Navigation & Dynamic Focus Inversion:**
   - Shifted category title and counter closer to the system clock on the left (e.g. `14:40  [ 1/5 LIVING ROOM ]`).
