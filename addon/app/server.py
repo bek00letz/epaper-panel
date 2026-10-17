@@ -1247,21 +1247,27 @@ async def build_frames(session):
                     sub_count = max(sub_count, min(len(sm_list), 6))
                     sub_type = "sports"
 
-        # 2. Watch / Feed items
-        feed_items = _feed_items_cache.get("sensor.epaper_watch")
-        if not feed_items and any("epaper_watch" in str(el.get("entity", "")) for el in elements):
-            try:
-                st_data = await ha_json(session, "/states/sensor.epaper_watch")
-                feed_items = (st_data.get("attributes") or {}).get("items")
-                if feed_items:
-                    _feed_items_cache["sensor.epaper_watch"] = feed_items
-            except Exception:
-                pass
-
-        if feed_items and isinstance(feed_items, list) and len(feed_items) > 1:
-            if any("epaper_watch" in str(el.get("entity", "")) for el in elements):
-                sub_count = max(sub_count, min(len(feed_items), 5))
-                sub_type = "watch"
+        # 2. Feed items (e.g. Jellyfin, Watch, or any feed sensor with an 'items' attribute)
+        feed_entity = None
+        feed_items = None
+        for el in elements:
+            ent = str(el.get("entity", ""))
+            if ent.startswith("sensor.epaper_") and not ent.endswith("_count") and not ent.startswith("sensor.epaper_category_") and not ent.startswith("sensor.epaper_panel_"):
+                items = _feed_items_cache.get(ent)
+                if not items:
+                    try:
+                        st_data = await ha_json(session, f"/states/{ent}")
+                        items = (st_data.get("attributes") or {}).get("items")
+                        if items:
+                            _feed_items_cache[ent] = items
+                    except Exception:
+                        pass
+                if items and isinstance(items, list) and len(items) > 1:
+                    feed_entity = ent
+                    feed_items = items
+                    sub_count = max(sub_count, min(len(feed_items), 5))
+                    sub_type = "feed"
+                    break
 
         cat_offsets.append(len(imgs))
         cat_sizes.append(sub_count)
@@ -1276,15 +1282,17 @@ async def build_frames(session):
                 el_c = dict(el)
                 if el.get("type") in ("flight_tracker", "sports_match"):
                     el_c["sub_index"] = s_idx
-                elif sub_type == "watch" and feed_items and s_idx < len(feed_items):
+                elif sub_type in ("feed", "watch") and feed_items and s_idx < len(feed_items):
                     item_data = feed_items[s_idx]
-                    if el.get("entity") == "sensor.epaper_watch":
+                    if el.get("entity") == feed_entity or (feed_entity and el.get("entity") in ("sensor.epaper_watch", feed_entity)):
                         if el.get("show") == "attribute" and el.get("attribute") == "detail":
                             cloned_vals[el_idx] = item_data.get("detail", "")
                         else:
                             cloned_vals[el_idx] = item_data.get("title", "")
-                    elif el.get("type") == "text" and str(el.get("value", "")).strip().lower() == "new to watch" and sub_count > 1:
-                        el_c["value"] = f"new to watch  [{s_idx + 1}/{sub_count}]"
+                    elif el.get("type") == "text" and any(k in str(el.get("value", "")).lower() for k in ("watch", "deck", "media", "episode")) and sub_count > 1:
+                        val_str = str(el.get("value", ""))
+                        base_val = val_str.split("  [")[0]
+                        el_c["value"] = f"{base_val}  [{s_idx + 1}/{sub_count}]"
 
                 cloned_page["elements"].append(el_c)
 
