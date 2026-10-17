@@ -116,7 +116,16 @@ api:
         index: int
       then:
         - lambda: |-
-            if (index >= 0 && index < id(page_count)) id(page) = index;
+            if (index >= 0 && index < id(page_count)) {
+              id(page) = index;
+              for (int c = (int)id(cat_offsets).size() - 1; c >= 0; c--) {
+                if (index >= id(cat_offsets)[c]) {
+                  id(cat_idx) = c;
+                  id(sub_idx) = index - id(cat_offsets)[c];
+                  break;
+                }
+              }
+            }
         - script.execute: redraw
     - action: show_category
       variables:
@@ -135,14 +144,47 @@ api:
             }
         - script.execute: redraw
 
-    # Relative paging, for remotes.
+    # Relative paging, for remotes (hierarchical: category mode vs sub-item mode).
     - action: page_step
       variables:
         delta: int
       then:
         - lambda: |-
-            int n = id(page_count) > 0 ? id(page_count) : 1;
-            id(page) = ((id(page) + delta) % n + n) % n;
+            id(idle_sec) = 0;
+            int cats = id(cat_count) > 0 ? id(cat_count) : 1;
+            if (id(cat_idx) >= cats) id(cat_idx) = 0;
+
+            if (id(sub_mode)) {
+              int c_idx = id(cat_idx);
+              int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
+              if (sz > 1) {
+                id(sub_idx) = ((id(sub_idx) + delta) % sz + sz) % sz;
+                int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
+                int p = off + id(sub_idx);
+                if (p < id(page_count)) id(page) = p;
+              }
+            } else {
+              id(cat_idx) = ((id(cat_idx) + delta) % cats + cats) % cats;
+              id(sub_idx) = 0;
+              id(sub_mode) = false;
+              int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
+              if (off < id(page_count)) id(page) = off;
+            }
+        - script.execute: redraw
+
+    - action: mode_toggle
+      then:
+        - lambda: |-
+            id(idle_sec) = 0;
+            int c_idx = id(cat_idx);
+            int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
+            if (sz > 1) {
+              id(sub_mode) = !id(sub_mode);
+              ESP_LOGI("panel", "Navigation mode toggled: sub_mode=%d (sz=%d)", id(sub_mode), sz);
+            } else {
+              id(sub_mode) = false;
+              ESP_LOGI("panel", "Single-page category (sz=%d), staying in category mode", sz);
+            }
         - script.execute: redraw
 
     - action: category_step
@@ -150,9 +192,11 @@ api:
         delta: int
       then:
         - lambda: |-
+            id(idle_sec) = 0;
             int cats = id(cat_count) > 0 ? id(cat_count) : 1;
             id(cat_idx) = ((id(cat_idx) + delta) % cats + cats) % cats;
             id(sub_idx) = 0;
+            id(sub_mode) = false;
             int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
             if (off < id(page_count)) id(page) = off;
         - script.execute: redraw
@@ -162,6 +206,7 @@ api:
         delta: int
       then:
         - lambda: |-
+            id(idle_sec) = 0;
             int c_idx = id(cat_idx);
             int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
             if (sz > 1) {
@@ -174,12 +219,20 @@ api:
 
     - action: hold_toggle
       then:
-        - lambda: 'id(pinned) = !id(pinned);'
+        - lambda: |-
+            id(idle_sec) = 0;
+            id(pinned) = !id(pinned);
+            if (id(pinned)) id(cat_pinned) = false;
+            ESP_LOGI("panel", "Panel lock: %d", id(pinned));
         - script.execute: redraw
 
     - action: category_pin_toggle
       then:
-        - lambda: 'id(cat_pinned) = !id(cat_pinned);'
+        - lambda: |-
+            id(idle_sec) = 0;
+            id(cat_pinned) = !id(cat_pinned);
+            if (id(cat_pinned)) id(pinned) = false;
+            ESP_LOGI("panel", "Category lock: %d", id(cat_pinned));
         - script.execute: redraw
 
 ota:
