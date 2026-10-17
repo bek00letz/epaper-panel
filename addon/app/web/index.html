@@ -1202,6 +1202,10 @@ aside {
           <button data-add="curve"><span class="icon">📈</span><span>Graph</span></button>
           <button data-add="line"><span class="icon">➖</span><span>Divider</span></button>
           <button data-add="dynamic_grid"><span class="icon">🔲</span><span>Dynamic Grid</span></button>
+          <button data-add="calendar_month"><span class="icon">📅</span><span>Month View</span></button>
+          <button data-add="calendar_agenda"><span class="icon">📋</span><span>Agenda</span></button>
+          <button data-add="weather_forecast"><span class="icon">🌤️</span><span>Weather</span></button>
+          <button data-add="flight_tracker"><span class="icon">✈️</span><span>Flights</span></button>
         </div>
       </div>
     </div>
@@ -2362,6 +2366,32 @@ document.querySelectorAll("[data-add]").forEach(b => b.onclick = () => {
       { entity: "switch.zone_4", name: "Zone 4", icon: "mdi:radiator" }
     ];
   }
+  if (t === "calendar_month") {
+    base.x = 20; base.y = 14; base.w = Math.min(360, maxW); base.h = Math.min(230, curSafeH() - 20);
+    base.show_header = true;
+    base.show_weekdays = true;
+    base.first_weekday = 0;
+    base.highlight_today = true;
+    base.show_border = true;
+    base.entity = "";
+  }
+  if (t === "calendar_agenda") {
+    base.x = Math.min(395, m); base.y = 14; base.w = Math.min(380, maxW); base.h = Math.min(230, curSafeH() - 20);
+    base.title = "Upcoming Events";
+    base.max_events = 4;
+    base.show_border = true;
+    base.entity = "";
+  }
+  if (t === "weather_forecast") {
+    base.x = m; base.y = 14; base.w = maxW; base.h = curSafeH() - 20;
+    base.entity = "weather.forecast_home";
+    base.show_border = true;
+  }
+  if (t === "flight_tracker") {
+    base.x = m; base.y = 14; base.w = maxW; base.h = curSafeH() - 20;
+    base.radius = 35;
+    base.show_border = true;
+  }
   els().push(base); sel = els().length - 1; paint(); preview();
 });
 
@@ -2740,6 +2770,54 @@ function props() {
     if (!el.items.length) {
       h += `<div class="chip">No spots configured yet. Click <b>＋ Add Spot</b> above.</div>`;
     }
+  } else if (el.type === "calendar_month") {
+    h += f("entity", "events entity", "text", "calendar.example (optional)", "entities-dl") +
+      `<div class="row"><label>first weekday</label>
+        <select data-k="first_weekday">
+          <option value="0"${(Number(el.first_weekday || 0) === 0) ? " selected" : ""}>Monday (Standard)</option>
+          <option value="6"${(Number(el.first_weekday) === 6) ? " selected" : ""}>Sunday (US / Alternative)</option>
+        </select>
+      </div>
+      <div class="row"><label>show header</label>
+        <input type="checkbox" data-k="show_header"${el.show_header !== false ? " checked" : ""}>
+      </div>
+      <div class="row"><label>show weekdays</label>
+        <input type="checkbox" data-k="show_weekdays"${el.show_weekdays !== false ? " checked" : ""}>
+      </div>
+      <div class="row"><label>highlight today</label>
+        <input type="checkbox" data-k="highlight_today"${el.highlight_today !== false ? " checked" : ""}>
+      </div>
+      <div class="row"><label>card border</label>
+        <input type="checkbox" data-k="show_border"${el.show_border !== false ? " checked" : ""}>
+      </div>
+      <div class="chip">Full monthly calendar grid. Today is highlighted with a solid black circle and bold white date. Link an optional <code>calendar.*</code> entity to display indicator dots on days with events.</div>`;
+  } else if (el.type === "calendar_agenda") {
+    h += f("entity", "calendar entity", "text", "calendar.example", "entities-dl") +
+      f("title", "header title", "text", "Upcoming Events") +
+      `<div class="row"><label>max events</label>
+        <select data-k="max_events">
+          <option value="3"${Number(el.max_events) === 3 ? " selected" : ""}>3 events</option>
+          <option value="4"${(Number(el.max_events || 4) === 4) ? " selected" : ""}>4 events</option>
+          <option value="5"${Number(el.max_events) === 5 ? " selected" : ""}>5 events</option>
+          <option value="6"${Number(el.max_events) === 6 ? " selected" : ""}>6 events</option>
+        </select>
+      </div>
+      <div class="row"><label>card border</label>
+        <input type="checkbox" data-k="show_border"${el.show_border !== false ? " checked" : ""}>
+      </div>
+      <div class="chip">Upcoming event list displaying date chips, bold titles, and times directly from your Home Assistant calendar.</div>`;
+  } else if (el.type === "weather_forecast") {
+    h += f("entity", "weather entity", "text", "weather.forecast_home", "entities-dl") +
+      `<div class="row"><label>card border</label>
+        <input type="checkbox" data-k="show_border"${el.show_border !== false ? " checked" : ""}>
+      </div>
+      <div class="chip">Hero current weather conditions (large MDI icon, temperature, condition, humidity, wind) plus 4-day forecast strip. Adapts automatically to wide or stacked layouts.</div>`;
+  } else if (el.type === "flight_tracker") {
+    h += f("radius", "airspace radius (km)", "number", "35") +
+      `<div class="row"><label>card border</label>
+        <input type="checkbox" data-k="show_border"${el.show_border !== false ? " checked" : ""}>
+      </div>
+      <div class="chip">Live ADS-B flight radar tracking planes flying above your home via OpenSky. Shows callsign, airline/country, altitude, ground speed, heading, and distance. Set Page Tier to <b>Show only when active</b> with <code>{{ states('sensor.overhead_aircraft_count') | int(0) > 0 }}</code> to display only when planes are overhead!</div>`;
   }
   h += "</div>";
 
@@ -2844,7 +2922,9 @@ function props() {
   box.querySelectorAll("[data-k]").forEach(inp => inp.onchange = () => {
     snapshot();
     const k = inp.dataset.k, v = inp.value;
-    if (v === "") {
+    if (inp.type === "checkbox") {
+      el[k] = inp.checked;
+    } else if (v === "") {
       delete el[k];
     } else if (k === "bold") {
       el.bold = v === "true";
@@ -3521,10 +3601,84 @@ const PRESET_ICONS = {
   presence_door: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 20V6a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v14"/><path d="M2 20h20"/><circle cx="14" cy="12" r="1"/></svg>`,
   bin_day: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`,
   clock: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>`,
-  dynamic_entities: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>`
+  dynamic_entities: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>`,
+  calendar_month: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><circle cx="12" cy="15" r="1.5"/></svg>`,
+  calendar_combo: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="8" height="16" rx="1.5"/><rect x="13" y="4" width="8" height="16" rx="1.5"/><line x1="15" y1="8" x2="19" y2="8"/><line x1="15" y1="12" x2="19" y2="12"/><line x1="15" y1="16" x2="19" y2="16"/></svg>`,
+  weather_forecast: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>`,
+  flight_tracker: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>`
 };
 
 const PRESETS = [
+  {
+    id: "calendar_combo",
+    title: "Calendar & Upcoming Agenda",
+    desc: "Side-by-side view with a monthly wall-calendar grid (left) showing days/dates with today highlighted, plus next upcoming agenda events (right).",
+    makeElements: (ent) => [
+      {
+        type: "calendar_month",
+        x: 16, y: 12, w: 368, h: 228,
+        show_header: true,
+        show_weekdays: true,
+        first_weekday: 0,
+        highlight_today: true,
+        show_border: true,
+        entity: ent || ""
+      },
+      {
+        type: "calendar_agenda",
+        x: 396, y: 12, w: 380, h: 228,
+        title: "Upcoming Events",
+        max_events: 4,
+        show_border: true,
+        entity: ent || ""
+      }
+    ]
+  },
+  {
+    id: "calendar_month",
+    title: "Month View Calendar",
+    desc: "Full monthly paper wall-calendar view showing days of the month and days of week, with today clearly highlighted and event indicators.",
+    makeElements: (ent) => [
+      {
+        type: "calendar_month",
+        x: 20, y: 14, w: 752, h: 222,
+        show_header: true,
+        show_weekdays: true,
+        first_weekday: 0,
+        highlight_today: true,
+        show_border: true,
+        entity: ent || ""
+      }
+    ]
+  },
+  {
+    id: "weather_forecast",
+    title: "Weather & 4-Day Forecast",
+    desc: "Large current condition icon, current temperature, humidity & wind chips, and 4-day forecast strip directly from Home Assistant weather.",
+    makeElements: (ent) => [
+      {
+        type: "weather_forecast",
+        x: 18, y: 14, w: 756, h: 222,
+        entity: ent || "weather.forecast_home",
+        show_border: true
+      }
+    ]
+  },
+  {
+    id: "flight_tracker",
+    title: "Overhead Aircraft Tracker",
+    desc: "Live ADS-B flight radar tracking planes flying above your home via OpenSky. Shows callsign, airline/country, altitude, ground speed, heading, and distance.",
+    tier: "when",
+    show_if: "{{ states('sensor.overhead_aircraft_count') | int(0) > 0 }}",
+    makeElements: () => [
+      {
+        type: "flight_tracker",
+        x: 18, y: 14, w: 756, h: 222,
+        radius: 35,
+        show_border: true
+      }
+    ]
+  },
   {
     id: "dynamic_entities",
     title: "Dynamic Entities",

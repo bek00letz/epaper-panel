@@ -16,6 +16,7 @@ import hashlib
 import hmac
 import io
 import json
+import math
 import os
 import re
 import secrets
@@ -98,6 +99,33 @@ def eval_fixture_template(tpl: str) -> str:
                     "changed": "25m ago"
                 })
         return json.dumps(res)
+
+    # Handle weather_forecast JSON template
+    if '"condition": {{ states(' in s and '"temperature": {{ state_attr(' in s:
+        return json.dumps({
+            "condition": "rainy",
+            "temperature": 8.5,
+            "unit": "°C",
+            "humidity": 95,
+            "wind_speed": 6.1,
+            "wind_unit": "km/h",
+            "forecast": [
+                {"datetime": "2026-10-17T09:00:00+00:00", "condition": "rainy", "temperature": 11.2, "templow": 8.5, "precipitation": 1.0},
+                {"datetime": "2026-10-18T09:00:00+00:00", "condition": "partlycloudy", "temperature": 15.5, "templow": 4.6, "precipitation": 0.0},
+                {"datetime": "2026-10-19T09:00:00+00:00", "condition": "partlycloudy", "temperature": 17.3, "templow": 7.7, "precipitation": 0.0},
+                {"datetime": "2026-10-20T09:00:00+00:00", "condition": "cloudy", "temperature": 15.1, "templow": 7.8, "precipitation": 0.1},
+                {"datetime": "2026-10-21T09:00:00+00:00", "condition": "rainy", "temperature": 22.7, "templow": 10.6, "precipitation": 0.6}
+            ]
+        })
+
+    # Handle calendar template
+    if '"message": {{ (state_attr(' in s and '"start_time": {{ (state_attr(' in s:
+        return json.dumps([
+            {"time_label": "TODAY 19:30", "summary": "Dinner with Sarah", "sub": "Trattoria Al Borgo"},
+            {"time_label": "TUE 20 OCT", "summary": "Dentist Appointment", "sub": "09:00 AM • Dr. Popa"},
+            {"time_label": "THU 22 OCT", "summary": "Trash & Recycling Pickup", "sub": "Bins out by 07:00"},
+            {"time_label": "FRI 30 OCT", "summary": "Trip to Munich", "sub": "Flight LH1657"}
+        ])
 
     if s.startswith("{{") and s.endswith("}}"):
         expr = s[2:-2].strip()
@@ -442,6 +470,200 @@ async def curve_series(session, entity, hours=24, buckets=24):
     return out
 
 
+
+_aircraft_cache = {"at": 0.0, "items": []}
+_home_location_cache = {"at": 0.0, "lat": 45.794, "lon": 21.222}
+_weather_cache = {}
+_calendar_cache = {}
+
+
+def _haversine_km(lat1, lon1, lat2, lon2):
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2.0)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2.0)**2
+    c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+    return R * c
+
+
+def _bearing_cardinal(lat1, lon1, lat2, lon2):
+    y = math.sin(math.radians(lon2 - lon1)) * math.cos(math.radians(lat2))
+    x = math.cos(math.radians(lat1)) * math.sin(math.radians(lat2)) - math.sin(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.cos(math.radians(lon2 - lon1))
+    deg = (math.degrees(math.atan2(y, x)) + 360) % 360
+    cardinals = ["N", "NE", "E", "SE", "S", "SW", "W", "NW", "N"]
+    idx = int((deg + 22.5) // 45)
+    return cardinals[idx]
+
+
+async def get_home_coordinates(session):
+    now = time.time()
+    if now - _home_location_cache["at"] < 3600 and _home_location_cache["lat"] is not None:
+        return _home_location_cache["lat"], _home_location_cache["lon"]
+    if HA_TOKEN:
+        try:
+            zone_state = await ha_json(session, "/states/zone.home")
+            attrs = zone_state.get("attributes", {})
+            lat = float(attrs.get("latitude"))
+            lon = float(attrs.get("longitude"))
+            _home_location_cache["at"] = now
+            _home_location_cache["lat"] = lat
+            _home_location_cache["lon"] = lon
+            return lat, lon
+        except Exception:
+            pass
+    return _home_location_cache["lat"], _home_location_cache["lon"]
+
+
+async def fetch_overhead_aircraft(session, radius_km=35.0):
+    now = time.time()
+    if now - _aircraft_cache["at"] < 45.0 and _aircraft_cache["items"] is not None:
+        return _aircraft_cache["items"]
+
+    lat, lon = await get_home_coordinates(session)
+    radius_km = max(5.0, min(150.0, float(radius_km or 35.0)))
+    d_lat = radius_km / 111.0
+    cos_lat = max(0.01, math.cos(math.radians(lat)))
+    d_lon = radius_km / (111.0 * cos_lat)
+
+    url = (
+        f"https://opensky-network.org/api/states/all"
+        f"?lamin={lat - d_lat:.4f}&lamax={lat + d_lat:.4f}"
+        f"&lomin={lon - d_lon:.4f}&lomax={lon + d_lon:.4f}"
+    )
+    headers = {"User-Agent": "Crowpanel-Epaper/0.8.9 (HomeAssistant Addon)"}
+    timeout = aiohttp.ClientTimeout(total=8)
+    try:
+        async with session.get(url, headers=headers, timeout=timeout) as r:
+            if r.status != 200:
+                return _aircraft_cache["items"]
+            data = await r.json()
+            raw_states = data.get("states") or []
+            aircraft = []
+            for s in raw_states:
+                if not s or len(s) < 12 or s[8] is True:
+                    continue
+                a_lon, a_lat = s[5], s[6]
+                if a_lon is None or a_lat is None:
+                    continue
+                dist = _haversine_km(lat, lon, a_lat, a_lon)
+                if dist > radius_km:
+                    continue
+                cardinal = _bearing_cardinal(lat, lon, a_lat, a_lon)
+                cs = str(s[1]).strip() if s[1] else str(s[0]).upper()
+                aircraft.append({
+                    "icao24": str(s[0]).upper(),
+                    "callsign": cs,
+                    "country": str(s[2] or "Commercial"),
+                    "latitude": a_lat,
+                    "longitude": a_lon,
+                    "altitude_m": float(s[7]) if s[7] is not None else 0.0,
+                    "velocity_ms": float(s[9]) if s[9] is not None else 0.0,
+                    "track_deg": float(s[10]) if s[10] is not None else 0.0,
+                    "vertical_rate": float(s[11]) if s[11] is not None else 0.0,
+                    "distance_km": round(dist, 1),
+                    "bearing_cardinal": cardinal
+                })
+            aircraft.sort(key=lambda a: a["distance_km"])
+            _aircraft_cache["at"] = now
+            _aircraft_cache["items"] = aircraft
+            return aircraft
+    except Exception as exc:
+        print(f"fetch_overhead_aircraft error: {exc!r}", flush=True)
+        return _aircraft_cache["items"]
+
+
+async def fetch_weather_forecast(session, entity_id, fallback=None):
+    eid = str(entity_id or "weather.forecast_home").strip()
+    now = time.time()
+    cached = _weather_cache.get(eid)
+    if cached and (now - cached["at"] < 600):
+        return cached["data"]
+
+    base_data = {}
+    if isinstance(fallback, dict):
+        base_data = dict(fallback)
+    elif isinstance(fallback, str) and fallback.strip():
+        try:
+            base_data = json.loads(fallback)
+        except Exception:
+            pass
+
+    if not HA_TOKEN:
+        return base_data
+
+    try:
+        st = await ha_json(session, f"/states/{urllib.parse.quote(eid, safe='.')}")
+        attrs = st.get("attributes", {})
+        base_data.update({
+            "entity": eid,
+            "condition": st.get("state", base_data.get("condition", "cloudy")),
+            "temperature": attrs.get("temperature", base_data.get("temperature")),
+            "unit": attrs.get("temperature_unit", base_data.get("unit", "°C")),
+            "humidity": attrs.get("humidity", base_data.get("humidity")),
+            "wind_speed": attrs.get("wind_speed", base_data.get("wind_speed")),
+            "wind_unit": attrs.get("wind_speed_unit", base_data.get("wind_unit", "km/h")),
+            "attribution": attrs.get("attribution", "")
+        })
+
+        f_resp = await ha_json(session, "/services/weather/get_forecasts?return_response=1",
+                               method="POST", json={"entity_id": eid, "type": "daily"})
+        if isinstance(f_resp, dict) and eid in f_resp:
+            forecast_list = f_resp[eid].get("forecast")
+            if isinstance(forecast_list, list):
+                base_data["forecast"] = forecast_list
+
+        _weather_cache[eid] = {"at": now, "data": base_data}
+        return base_data
+    except Exception as exc:
+        print(f"fetch_weather_forecast error for {eid}: {exc!r}", flush=True)
+        return base_data
+
+
+async def fetch_calendar_events(session, entity_id, days=31, fallback=None):
+    eid = str(entity_id or "").strip()
+    if not eid:
+        return fallback
+    now = time.time()
+    cached = _calendar_cache.get(eid)
+    if cached and (now - cached["at"] < 300):
+        return cached["data"]
+
+    if not HA_TOKEN:
+        return fallback
+
+    try:
+        c_resp = await ha_json(session, "/services/calendar/get_events?return_response=1",
+                               method="POST", json={"entity_id": eid, "duration": {"days": days}})
+        events = []
+        if isinstance(c_resp, dict) and eid in c_resp:
+            events = c_resp[eid].get("events") or []
+        _calendar_cache[eid] = {"at": now, "data": events}
+        return events
+    except Exception as exc:
+        print(f"fetch_calendar_events error for {eid}: {exc!r}", flush=True)
+        return fallback
+
+
+async def enrich_page_values(session, page, vals):
+    for i, el in enumerate(page.get("elements", [])):
+        t = el.get("type")
+        if t == "weather_forecast":
+            wdata = await fetch_weather_forecast(session, el.get("entity", "weather.forecast_home"), fallback=vals.get(i))
+            if wdata:
+                vals[i] = wdata
+        elif t in ("calendar_month", "calendar_agenda"):
+            cal_ent = el.get("entity")
+            if cal_ent:
+                cal_data = await fetch_calendar_events(session, cal_ent, days=31, fallback=vals.get(i))
+                if cal_data:
+                    vals[i] = cal_data
+        elif t == "flight_tracker":
+            radius = float(el.get("radius") or 35)
+            fl_data = await fetch_overhead_aircraft(session, radius_km=radius)
+            if fl_data is not None:
+                vals[i] = fl_data
+
+
 async def gather_values(session, spec, names):
     """Resolve every template on every named page in one request."""
     batch, index = {}, []
@@ -455,6 +677,8 @@ async def gather_values(session, spec, names):
     out = {n: {} for n in names}
     for name, i, key in index:
         out[name][i] = resolved.get(key, "")
+    for name in names:
+        await enrich_page_values(session, spec["pages"][name], out[name])
     return out
 
 
@@ -479,11 +703,25 @@ async def eligible_pages(session, spec):
 async def publish_computed(session):
     """Run every configured source and publish what it returns."""
     srcs = load_sources()
-    if not srcs:
-        return
-    ctx = {"ha_base": HA_BASE, "ha_token": HA_TOKEN, "session": session}
-    for entity_id, state, attrs in await feeds.run_all(srcs, ctx):
-        await publish_entity(session, entity_id, state, attrs)
+    if srcs:
+        ctx = {"ha_base": HA_BASE, "ha_token": HA_TOKEN, "session": session}
+        for entity_id, state, attrs in await feeds.run_all(srcs, ctx):
+            await publish_entity(session, entity_id, state, attrs)
+
+    # Publish overhead aircraft sensor to Home Assistant
+    try:
+        aircraft = await fetch_overhead_aircraft(session, radius_km=35.0)
+        closest_cs = aircraft[0]["callsign"] if aircraft else "None"
+        await publish_entity(session, "sensor.overhead_aircraft_count", len(aircraft),
+                             {"unit_of_measurement": "aircraft", "friendly_name": "Overhead Aircraft Count",
+                              "closest_callsign": closest_cs, "icon": "mdi:airplane"})
+        if aircraft:
+            await publish_entity(session, "sensor.closest_aircraft", closest_cs,
+                                 {"friendly_name": "Closest Aircraft", "distance_km": aircraft[0]["distance_km"],
+                                  "bearing": aircraft[0]["bearing_cardinal"], "altitude_m": aircraft[0]["altitude_m"],
+                                  "country": aircraft[0]["country"], "icon": "mdi:airplane"})
+    except Exception as exc:
+        print(f"publish aircraft sensor failed: {exc!r}", flush=True)
 
 
 async def check_alerts(session, spec):
@@ -878,6 +1116,7 @@ async def api_preview(request):
     display = body.get("display") or load_layouts().get("display", T.DEFAULT_DISPLAY)
     tpls = layout.collect_templates(page)
     vals = await resolve_templates(SHARED_SESSION, tpls) if tpls else {}
+    await enrich_page_values(SHARED_SESSION, page, vals)
     series = {}
     for i, el in enumerate(page.get("elements", [])):
         if el.get("type") == "curve" and el.get("entity"):
@@ -895,6 +1134,15 @@ async def api_preview(request):
     # what you actually got, in millimetres, rather than what you asked for.
     return web.Response(body=_png(T.to_1bit(img)), content_type="image/png",
                         headers={"X-Metrics": json.dumps(metrics)})
+
+
+async def api_aircraft(request):
+    try:
+        radius = float(request.query.get("radius") or 35.0)
+    except (TypeError, ValueError):
+        radius = 35.0
+    aircraft = await fetch_overhead_aircraft(SHARED_SESSION, radius_km=radius)
+    return web.json_response({"aircraft": aircraft, "count": len(aircraft)})
 
 
 async def api_push(request):
@@ -1567,6 +1815,7 @@ async def start(app_runners):
         web.put("/api/layouts", api_layouts_put),
         web.get("/api/entities", api_entities),
         web.get("/api/attributes", api_attributes),
+        web.get("/api/aircraft", api_aircraft),
         web.post("/api/preview", api_preview),
         web.post("/api/push", api_push),
         web.get("/api/sources", api_sources_get),

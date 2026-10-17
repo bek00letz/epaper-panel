@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.8.9
+- **Monthly Wall-Calendar View (`calendar_month`):**
+  - **Full Month Matrix:** A classic paper wall-calendar view showing days of the month aligned under days of the week, allowing you to easily look up what date falls on a Friday two weeks from now or what day the 26th is.
+  - **High-Contrast Today Inversion:** Today's date leaps out instantly with a solid black circle/squircle and bold white text.
+  - **Scheduled Event Indicators:** Link any Home Assistant `calendar.*` entity to automatically render neat event indicator dots under dates with scheduled events.
+  - **Configurable Preferences:** Toggle headers, weekday names (`MON TUE...` vs `M T...`), first day of the week (Monday or Sunday), and optional card border.
+- **Calendar & Upcoming Agenda (`calendar_agenda` & Combo Preset):**
+  - **Upcoming Events List:** Displays upcoming events with inverted date pills (`TODAY 19:30`, `TOMORROW`, `TUE 20 OCT`), bold event summaries, and location or time subtitles.
+  - **Calendar & Agenda Combo Preset:** A ready-made 1-click preset that places the month grid on the left and the upcoming agenda on the right for a complete command center.
+- **Weather Conditions & 4-Day Forecast (`weather_forecast`):**
+  - **Hero Current Conditions:** Renders large MDI weather condition icons (`mdi:weather-rainy`, `mdi:weather-sunny`, `mdi:weather-partly-cloudy`, etc.), prominent temperature readout, condition description, and compact pill badges for humidity, wind speed, and today's high/low.
+  - **Multi-Day Forecast Strip:** Shows day names, crisp weather glyphs, high/low temperatures, and precipitation amount.
+  - **Adaptive Geometry:** Automatically renders in split columns in landscape ($w \ge 480\text{px}$) and seamlessly transitions into stacked rows in portrait orientation ($416\times 792$) or compact widgets.
+- **Live Overhead Aircraft Tracker (`flight_tracker`):**
+  - **Live Airspace ADS-B Radar:** Tracks commercial and private aircraft flying overhead within a configurable radius (e.g. 35 km) around your home using OpenSky Network data.
+  - **Flight Information:** Displays large callsign (e.g. `BAW71LK`, `THY41Y`), airline/country of origin, distance and compass direction (`8.4 KM SW`), altitude (in feet and meters with climb/descent arrows `↑`/`↓`/`→`), ground speed (kts and km/h), heading, and ADS-B ICAO transponder code.
+  - **Automatic Airspace Sensors for Home Assistant:** Automatically publishes `sensor.overhead_aircraft_count` and `sensor.closest_aircraft` to Home Assistant.
+  - **Automatic Dynamic Screen Surfacing:** Pair with page tier **Show only when active** (`show_if: "{{ states('sensor.overhead_aircraft_count') | int(0) > 0 }}"`) so the flight radar page automatically joins rotation only when an aircraft enters your local airspace, and recedes when the sky is clear.
+- **Quick-Add Palette & Preset Library:**
+  - Added dedicated one-click buttons for Month View, Agenda, Weather, and Flights in the editor's Add Element palette.
+  - Added 4 ready-to-use page presets with custom vector icons in the Presets library.
+
 ## 0.8.8
 - **Apple-Grade Header & Toolbar Redesign:** Restored a clean, spacious, and uncluttered layout to the top navigation bar.
   - **Grouped Toolbars:** Grouped 17 sprawling individual controls into 4 logical zones: *Brand*, *Page Navigation*, *Canvas Tools*, and *Status & Output Actions*.

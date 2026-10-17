@@ -16,6 +16,8 @@ renders them all in one request and the results are passed in as `vals`,
 keyed by the element's index. That keeps this module free of network calls
 and makes it testable with a plain dict.
 """
+import calendar
+from datetime import datetime, date
 import json
 from functools import lru_cache
 from pathlib import Path
@@ -567,6 +569,503 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
                     sec_f = T.font(min(13, max(10, cw_i // 13)), bold=False)
                     d.text((mid_x, cy0 + ch_i * 0.86), sec, font=sec_f, fill=T.BLACK, anchor="mm")
 
+def _parse_val_json(raw_val):
+    if raw_val is None:
+        return None
+    if isinstance(raw_val, (dict, list)):
+        return raw_val
+    if isinstance(raw_val, str) and raw_val.strip():
+        try:
+            return json.loads(raw_val)
+        except Exception:
+            return raw_val
+    return None
+
+
+def _draw_calendar_month(img, d, el, raw_val, display=None):
+    x, y, w, h = _clamp_box(el, 360, 240, display=display)
+    show_border = el.get("show_border") not in (False, "false", 0, "0")
+    if show_border:
+        d.rounded_rectangle([(x, y), (x + w, y + h)], radius=12, outline=T.BLACK, width=1)
+        x += 6; y += 4; w -= 12; h -= 8
+
+    now = datetime.now()
+    year = int(el.get("year") or now.year)
+    month = int(el.get("month") or now.month)
+    today_day = now.day if (year == now.year and month == now.month) else -1
+    highlight_today = el.get("highlight_today") not in (False, "false", 0, "0")
+
+    fw_raw = el.get("first_weekday", 0)
+    first_weekday = 6 if str(fw_raw).lower() in ("6", "sun", "sunday") else 0
+
+    event_days = set()
+    val_parsed = _parse_val_json(raw_val)
+    if isinstance(val_parsed, list):
+        for ev in val_parsed:
+            if isinstance(ev, dict):
+                st = ev.get("start")
+                if isinstance(st, str):
+                    try:
+                        edt = datetime.fromisoformat(st.replace("Z", "+00:00"))
+                        if edt.year == year and edt.month == month:
+                            event_days.add(edt.day)
+                    except Exception:
+                        pass
+            elif isinstance(ev, int):
+                event_days.add(ev)
+    elif isinstance(val_parsed, dict) and "event_days" in val_parsed:
+        for ed in val_parsed["event_days"]:
+            try:
+                event_days.add(int(ed))
+            except Exception:
+                pass
+
+    show_header = el.get("show_header") not in (False, "false", 0, "0")
+    header_h = min(32, max(20, h // 8)) if show_header else 0
+
+    if show_header:
+        month_name = calendar.month_name[month].upper()
+        header_text = f"{month_name} {year}"
+        header_f = T.font(min(20, max(13, int(header_h * 0.72))), bold=True)
+        d.text((x + w // 2, y + header_h // 2), header_text, font=header_f, fill=T.BLACK, anchor="mm")
+
+    show_weekdays = el.get("show_weekdays") not in (False, "false", 0, "0")
+    col_w = w / 7.0
+
+    if show_weekdays:
+        weekday_h = min(20, max(14, int(header_h * 0.6 if header_h else 18)))
+        day_names_long = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"] if first_weekday == 0 else ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
+        day_names_short = ["M", "T", "W", "T", "F", "S", "S"] if first_weekday == 0 else ["S", "M", "T", "W", "T", "F", "S"]
+        use_long = col_w >= 34
+        day_labels = day_names_long if use_long else day_names_short
+        wf = T.font(min(13, max(9, int(col_w * 0.3))), bold=True)
+        wy = y + header_h + 1
+        for c_idx, label in enumerate(day_labels):
+            cx = x + int((c_idx + 0.5) * col_w)
+            d.text((cx, wy + weekday_h // 2), label, font=wf, fill=T.BLACK, anchor="mm")
+        div_y = wy + weekday_h + 1
+        d.line([(x + 6, div_y), (x + w - 6, div_y)], fill=T.BLACK, width=1)
+        grid_y = div_y + 4
+    else:
+        grid_y = y + header_h + 4
+
+    c = calendar.Calendar(firstweekday=first_weekday)
+    weeks = c.monthdayscalendar(year, month)
+    num_rows = len(weeks)
+    grid_h = max(10, y + h - grid_y - 4)
+    row_h = grid_h / float(num_rows)
+    cell_f_sz = min(19, max(11, int(min(col_w * 0.45, row_h * 0.52))))
+    font_day = T.font(cell_f_sz, bold=False)
+    font_day_today = T.font(cell_f_sz, bold=True)
+
+    for r_idx, week in enumerate(weeks):
+        cy = grid_y + int((r_idx + 0.5) * row_h)
+        for c_idx, day in enumerate(week):
+            if day == 0:
+                continue
+            cx = x + int((c_idx + 0.5) * col_w)
+            is_today = (day == today_day) and highlight_today
+            has_event = day in event_days
+
+            if is_today:
+                rad = int(min(col_w * 0.4, row_h * 0.4))
+                d.ellipse([(cx - rad, cy - rad), (cx + rad, cy + rad)], fill=T.BLACK)
+                d.text((cx, cy), str(day), font=font_day_today, fill=T.WHITE, anchor="mm")
+                if has_event:
+                    d.ellipse([(cx - 2, cy + rad + 2), (cx + 2, cy + rad + 5)], fill=T.BLACK)
+            else:
+                d.text((cx, cy), str(day), font=font_day, fill=T.BLACK, anchor="mm")
+                if has_event:
+                    d.ellipse([(cx - 2, cy + cell_f_sz // 2 + 2), (cx + 2, cy + cell_f_sz // 2 + 5)], fill=T.BLACK)
+
+
+def _draw_calendar_agenda(img, d, el, raw_val, display=None):
+    x, y, w, h = _clamp_box(el, 375, 250, display=display)
+    show_border = el.get("show_border") not in (False, "false", 0, "0")
+    if show_border:
+        d.rounded_rectangle([(x, y), (x + w, y + h)], radius=12, outline=T.BLACK, width=1)
+
+    title = str(el.get("title") or "Upcoming Events").upper()
+    d.text((x + 14, y + 14), title, font=T.font(12, bold=True), fill=T.BLACK, anchor="lm")
+
+    events = []
+    val_parsed = _parse_val_json(raw_val)
+    if isinstance(val_parsed, list):
+        events = [ev for ev in val_parsed if isinstance(ev, dict)]
+    elif isinstance(val_parsed, dict) and "events" in val_parsed:
+        events = [ev for ev in val_parsed["events"] if isinstance(ev, dict)]
+    elif isinstance(val_parsed, dict) and val_parsed.get("message"):
+        events = [{
+            "summary": val_parsed.get("message"),
+            "start": val_parsed.get("start_time"),
+            "end": val_parsed.get("end_time")
+        }]
+
+    if not events and raw_val is None:
+        # Default preview sample events
+        events = [
+            {"time_label": "TODAY 19:30", "summary": "Dinner with Sarah", "sub": "Trattoria Al Borgo"},
+            {"time_label": "TUE 20 OCT", "summary": "Dentist Appointment", "sub": "09:00 AM • Dr. Popa"},
+            {"time_label": "THU 22 OCT", "summary": "Trash & Recycling Pickup", "sub": "Bins out by 07:00"},
+            {"time_label": "FRI 30 OCT", "summary": "Trip to Munich", "sub": "Flight LH1657"}
+        ]
+
+    count_badge = f"{len(events)} EVENTS" if events else "NONE"
+    bf = T.font(9, bold=True)
+    bw = T.text_width(count_badge, bf) + 12
+    d.rounded_rectangle([(x + w - bw - 14, y + 6), (x + w - 14, y + 22)], radius=4, fill=T.BLACK)
+    d.text((x + w - 14 - bw // 2, y + 14), count_badge, font=bf, fill=T.WHITE, anchor="mm")
+    d.line([(x + 10, y + 28), (x + w - 10, y + 28)], fill=T.BLACK, width=1)
+
+    if not events:
+        d.text((x + w // 2, y + h // 2), "No upcoming events scheduled", font=T.font(13, bold=False), fill=T.BLACK, anchor="mm")
+        return
+
+    list_y = y + 34
+    avail_h = (y + h - 10) - list_y
+    max_items = max(1, min(6, int(el.get("max_events", 4))))
+    display_events = events[:max_items]
+    item_h = avail_h // len(display_events)
+
+    now = datetime.now()
+    today_ymd = now.strftime("%Y-%m-%d")
+
+    for idx, ev in enumerate(display_events):
+        iy0 = list_y + idx * item_h
+        iy_mid = iy0 + item_h // 2
+
+        # Format time badge
+        dt_str = ev.get("time_label")
+        if not dt_str:
+            raw_st = ev.get("start") or ev.get("start_time") or ""
+            if raw_st:
+                try:
+                    s_clean = str(raw_st).replace("Z", "+00:00")
+                    if len(s_clean) == 10:  # all day "YYYY-MM-DD"
+                        edt = datetime.fromisoformat(s_clean)
+                        if s_clean == today_ymd:
+                            dt_str = "TODAY"
+                        else:
+                            dt_str = edt.strftime("%a %-d %b").upper()
+                    else:
+                        edt = datetime.fromisoformat(s_clean)
+                        if edt.strftime("%Y-%m-%d") == today_ymd:
+                            dt_str = f"TODAY {edt.strftime('%H:%M')}"
+                        else:
+                            dt_str = edt.strftime("%a %-d %b").upper()
+                except Exception:
+                    dt_str = "SOON"
+            else:
+                dt_str = "EVENT"
+
+        df = T.font(10, bold=True)
+        pill_w = max(52, T.text_width(dt_str, df) + 12)
+        pill_h = 18
+        py0 = iy_mid - pill_h // 2
+        d.rounded_rectangle([(x + 12, py0), (x + 12 + pill_w, py0 + pill_h)], radius=4, fill=T.BLACK)
+        d.text((x + 12 + pill_w // 2, iy_mid), dt_str, font=df, fill=T.WHITE, anchor="mm")
+
+        # Title
+        title_x = x + 12 + pill_w + 10
+        title_w = (x + w - 14) - title_x
+        tf = T.font(min(15, max(12, int(item_h * 0.32))), bold=True)
+        summary = ev.get("summary") or ev.get("message") or "Untitled Event"
+        title_txt = _fit_text(summary, title_w, tf)
+
+        sub_txt = ev.get("sub") or ev.get("location") or ""
+        d.text((title_x, iy_mid - (7 if sub_txt else 0)), title_txt, font=tf, fill=T.BLACK, anchor="lm")
+
+        if sub_txt:
+            sf = T.font(min(12, max(10, int(item_h * 0.24))), bold=False)
+            sub_fit = _fit_text(sub_txt, title_w, sf)
+            d.text((title_x, iy_mid + 9), sub_fit, font=sf, fill=T.BLACK, anchor="lm")
+
+        if idx < len(display_events) - 1:
+            div_y = iy0 + item_h - 1
+            d.line([(x + 14, div_y), (x + w - 14, div_y)], fill=T.BLACK, width=1)
+
+
+_WEATHER_ICON_MAP = {
+    "clear-night": "mdi:weather-night",
+    "cloudy": "mdi:weather-cloudy",
+    "fog": "mdi:weather-fog",
+    "hail": "mdi:weather-hail",
+    "lightning": "mdi:weather-lightning",
+    "lightning-rainy": "mdi:weather-lightning-rainy",
+    "partlycloudy": "mdi:weather-partly-cloudy",
+    "pouring": "mdi:weather-pouring",
+    "rainy": "mdi:weather-rainy",
+    "snowy": "mdi:weather-snowy",
+    "snowy-rainy": "mdi:weather-snowy-rainy",
+    "sunny": "mdi:weather-sunny",
+    "windy": "mdi:weather-windy",
+    "windy-variant": "mdi:weather-windy-variant",
+    "exceptional": "mdi:alert-circle-outline",
+}
+
+
+def _draw_weather_forecast(img, d, el, raw_val, display=None):
+    x, y, w, h = _clamp_box(el, 752, 235, display=display)
+    show_border = el.get("show_border") not in (False, "false", 0, "0")
+    if show_border:
+        d.rounded_rectangle([(x, y), (x + w, y + h)], radius=12, outline=T.BLACK, width=1)
+
+    data = _parse_val_json(raw_val)
+    if not isinstance(data, dict):
+        data = {
+            "condition": "rainy",
+            "temperature": 8.5,
+            "unit": "°C",
+            "humidity": 95,
+            "wind_speed": 6.1,
+            "wind_unit": "km/h",
+            "forecast": [
+                {"datetime": "2026-10-17T09:00:00+00:00", "condition": "rainy", "temperature": 11.2, "templow": 8.5, "precipitation": 1.0},
+                {"datetime": "2026-10-18T09:00:00+00:00", "condition": "partlycloudy", "temperature": 15.5, "templow": 4.6, "precipitation": 0.0},
+                {"datetime": "2026-10-19T09:00:00+00:00", "condition": "partlycloudy", "temperature": 17.3, "templow": 7.7, "precipitation": 0.0},
+                {"datetime": "2026-10-20T09:00:00+00:00", "condition": "cloudy", "temperature": 15.1, "templow": 7.8, "precipitation": 0.1},
+                {"datetime": "2026-10-21T09:00:00+00:00", "condition": "rainy", "temperature": 22.7, "templow": 10.6, "precipitation": 0.6}
+            ]
+        }
+
+    cond = str(data.get("condition") or "partlycloudy").lower()
+    temp = data.get("temperature", "--")
+    unit = str(data.get("unit") or "°C")
+    humidity = data.get("humidity")
+    wind = data.get("wind_speed")
+    wind_unit = str(data.get("wind_unit") or "km/h")
+    forecast = data.get("forecast") or []
+
+    cur_icon = _WEATHER_ICON_MAP.get(cond, "mdi:weather-cloudy")
+
+    # Split vs Stacked mode: split when wide landscape, stacked when portrait or tall card
+    is_split = (w >= 480) or (w >= 340 and w >= h)
+    if is_split:
+        hero_w = int(w * 0.42)
+        fore_x = x + hero_w
+        fore_w = w - hero_w
+
+        hero_mid_y = y + h // 2 - 14
+        isz = min(68, max(42, h // 3))
+        _draw_icon_glyph(d, cur_icon, x + 24 + isz // 2, hero_mid_y, isz)
+
+        tx = x + 24 + isz + 16
+        temp_str = f"{temp}{unit}" if str(temp).endswith("°") or unit.startswith("°") else f"{temp}°"
+        tf = T.font(min(42, max(26, h // 5)), bold=True)
+        d.text((tx, hero_mid_y - 10), temp_str, font=tf, fill=T.BLACK, anchor="lm")
+
+        cond_str = cond.replace("-", " ").title()
+        cf = T.font(min(17, max(13, h // 13)), bold=True)
+        d.text((tx, hero_mid_y + 18), cond_str, font=cf, fill=T.BLACK, anchor="lm")
+
+        chips_y = y + h - 22
+        chip_parts = []
+        if humidity is not None:
+            chip_parts.append(f"HUM: {humidity}%")
+        if wind is not None:
+            chip_parts.append(f"WIND: {wind} {wind_unit}")
+        if forecast:
+            today_f = forecast[0]
+            th = today_f.get("temperature")
+            tl = today_f.get("templow")
+            if th is not None and tl is not None:
+                chip_parts.append(f"H: {th:.0f}°  L: {tl:.0f}°")
+
+        if chip_parts:
+            mf = T.font(11, bold=True)
+            d.text((x + 20, chips_y), "   •   ".join(chip_parts), font=mf, fill=T.BLACK, anchor="lm")
+
+        # Vertical divider
+        d.line([(fore_x, y + 14), (fore_x, y + h - 14)], fill=T.BLACK, width=1)
+
+        # Forecast strip (4 days)
+        display_forecast = forecast[1:5] if len(forecast) > 4 else forecast[:4]
+        n_days = len(display_forecast)
+        if n_days > 0:
+            day_w = fore_w / float(n_days)
+            for i, fcast in enumerate(display_forecast):
+                cx = fore_x + int((i + 0.5) * day_w)
+                dt_raw = fcast.get("datetime")
+                day_name = f"DAY {i+1}"
+                if dt_raw:
+                    try:
+                        dt = datetime.fromisoformat(str(dt_raw).replace("Z", "+00:00"))
+                        day_name = dt.strftime("%a").upper()
+                    except Exception:
+                        pass
+
+                d.text((cx, y + 24), day_name, font=T.font(12, bold=True), fill=T.BLACK, anchor="mm")
+                f_cond = str(fcast.get("condition") or "cloudy").lower()
+                f_icon = _WEATHER_ICON_MAP.get(f_cond, "mdi:weather-cloudy")
+                _draw_icon_glyph(d, f_icon, cx, y + h // 2 - 2, 34)
+
+                hi = fcast.get("temperature")
+                lo = fcast.get("templow")
+                hl_str = f"{hi:.0f}° / {lo:.0f}°" if (hi is not None and lo is not None) else f"{hi or lo or '--'}°"
+                d.text((cx, y + h - 34), hl_str, font=T.font(12, bold=True), fill=T.BLACK, anchor="mm")
+
+                precip = fcast.get("precipitation")
+                if precip is not None and float(precip) > 0:
+                    d.text((cx, y + h - 18), f"{float(precip):.1f} mm", font=T.font(10, bold=False), fill=T.BLACK, anchor="mm")
+    else:
+        # Stacked layout (portrait or narrow cards)
+        hero_h = int(h * 0.32)
+        mid_y = y + hero_h // 2 - 8
+        isz = min(54, max(36, hero_h // 2))
+        _draw_icon_glyph(d, cur_icon, x + 36, mid_y, isz)
+        temp_str = f"{temp}{unit}" if str(temp).endswith("°") or unit.startswith("°") else f"{temp}°"
+        d.text((x + 84, mid_y - 10), temp_str, font=T.font(min(38, max(24, int(w * 0.1))), bold=True), fill=T.BLACK, anchor="lm")
+        d.text((x + 84, mid_y + 18), cond.replace("-", " ").title(), font=T.font(15, bold=True), fill=T.BLACK, anchor="lm")
+
+        parts = []
+        if humidity is not None:
+            parts.append(f"HUM: {humidity}%")
+        if wind is not None:
+            parts.append(f"WIND: {wind} {wind_unit}")
+        if parts:
+            d.text((x + 20, y + hero_h - 14), "   •   ".join(parts), font=T.font(11, bold=True), fill=T.BLACK, anchor="lm")
+
+        d.line([(x + 10, y + hero_h), (x + w - 10, y + hero_h)], fill=T.BLACK, width=1)
+
+        display_forecast = forecast[1:5] if len(forecast) > 4 else forecast[:4]
+        n_days = min(4, len(display_forecast))
+        if n_days > 0:
+            row_h = (h - hero_h - 14) / float(n_days)
+            for i, fcast in enumerate(display_forecast[:n_days]):
+                ry = y + hero_h + 8 + int(i * row_h)
+                ry_mid = ry + int(row_h * 0.5)
+                dt_raw = fcast.get("datetime")
+                day_name = f"DAY {i+1}"
+                if dt_raw:
+                    try:
+                        dt = datetime.fromisoformat(str(dt_raw).replace("Z", "+00:00"))
+                        day_name = dt.strftime("%A").upper()
+                    except Exception:
+                        pass
+                d.text((x + 20, ry_mid), day_name, font=T.font(13, bold=True), fill=T.BLACK, anchor="lm")
+                f_cond = str(fcast.get("condition") or "cloudy").lower()
+                _draw_icon_glyph(d, _WEATHER_ICON_MAP.get(f_cond, "mdi:weather-cloudy"), x + w // 2 - 10, ry_mid, 30)
+                hi = fcast.get("temperature")
+                lo = fcast.get("templow")
+                hl_str = f"{hi:.0f}° / {lo:.0f}°" if (hi is not None and lo is not None) else f"{hi or lo or '--'}°"
+                d.text((x + w - 20, ry_mid), hl_str, font=T.font(13, bold=True), fill=T.BLACK, anchor="rm")
+                if i < n_days - 1:
+                    d.line([(x + 14, ry + int(row_h)), (x + w - 14, ry + int(row_h))], fill=T.BLACK, width=1)
+
+
+def _draw_flight_tracker(img, d, el, raw_val, display=None):
+    x, y, w, h = _clamp_box(el, 752, 235, display=display)
+    show_border = el.get("show_border") not in (False, "false", 0, "0")
+    if show_border:
+        d.rounded_rectangle([(x, y), (x + w, y + h)], radius=12, outline=T.BLACK, width=1)
+
+    radius = int(el.get("radius") or 35)
+    aircraft_list = []
+    val_parsed = _parse_val_json(raw_val)
+    if isinstance(val_parsed, list):
+        aircraft_list = [a for a in val_parsed if isinstance(a, dict)]
+    elif isinstance(val_parsed, dict) and "aircraft" in val_parsed:
+        aircraft_list = [a for a in val_parsed["aircraft"] if isinstance(a, dict)]
+    elif isinstance(val_parsed, dict) and val_parsed.get("callsign"):
+        aircraft_list = [val_parsed]
+
+    if not aircraft_list and raw_val is None:
+        aircraft_list = [
+            {
+                "callsign": "BAW71LK",
+                "country": "United Kingdom • British Airways",
+                "icao24": "40089A",
+                "distance_km": 8.4,
+                "bearing_cardinal": "SW",
+                "altitude_m": 10370,
+                "velocity_ms": 233.2,
+                "track_deg": 302,
+                "vertical_rate": 0.0
+            },
+            {
+                "callsign": "THY41Y",
+                "country": "Turkey • Turkish Airlines",
+                "icao24": "4BA982",
+                "distance_km": 19.2,
+                "bearing_cardinal": "NE",
+                "altitude_m": 11887,
+                "velocity_ms": 253.3,
+                "track_deg": 140,
+                "vertical_rate": -1.5
+            }
+        ]
+
+    if not aircraft_list:
+        mid_x = x + w // 2
+        mid_y = y + h // 2
+        _draw_icon_glyph(d, "mdi:radar", mid_x, mid_y - 24, 52)
+        d.text((mid_x, mid_y + 16), "AIRSPACE CLEAR", font=T.font(18, bold=True), fill=T.BLACK, anchor="mm")
+        d.text((mid_x, mid_y + 38), f"No aircraft overhead within {radius} km", font=T.font(12, bold=False), fill=T.BLACK, anchor="mm")
+        return
+
+    ac = aircraft_list[0]
+    callsign = str(ac.get("callsign") or ac.get("icao24") or "UNKNOWN").strip().upper()
+    country = ac.get("country") or "Commercial Flight"
+    dist_km = float(ac.get("distance_km") or 0.0)
+    bearing = ac.get("bearing_cardinal") or "OVERHEAD"
+    alt_m = float(ac.get("altitude_m") or 0.0)
+    alt_ft = int(alt_m * 3.28084) if alt_m else 0
+    speed_ms = float(ac.get("velocity_ms") or 0.0)
+    speed_kts = int(speed_ms * 1.94384) if speed_ms else 0
+    speed_kmh = int(speed_ms * 3.6) if speed_ms else 0
+    track = int(ac.get("track_deg", 0)) if ac.get("track_deg") is not None else 0
+    v_rate = float(ac.get("vertical_rate") or 0.0)
+    climb_arrow = " ↑" if v_rate > 1.0 else (" ↓" if v_rate < -1.0 else " →")
+
+    top_y = y + 16
+    _draw_icon_glyph(d, "mdi:airplane", x + 30, top_y + 18, 44)
+
+    cs_f = T.font(32, bold=True)
+    d.text((x + 65, top_y + 16), callsign, font=cs_f, fill=T.BLACK, anchor="lm")
+
+    sub_f = T.font(13, bold=False)
+    sub_title = _fit_text(country, max(60, w - 240), sub_f)
+    d.text((x + 67, top_y + 38), sub_title, font=sub_f, fill=T.BLACK, anchor="lm")
+
+    dist_badge = f"{dist_km:.1f} KM {bearing}" if dist_km > 0 else "OVERHEAD"
+    bf = T.font(11, bold=True)
+    bw = T.text_width(dist_badge, bf) + 16
+    bh = 24
+    bx1 = x + w - 20
+    bx0 = bx1 - bw
+    d.rounded_rectangle([(bx0, top_y + 6), (bx1, top_y + 6 + bh)], radius=6, fill=T.BLACK)
+    d.text((bx0 + bw // 2, top_y + 6 + bh // 2), dist_badge, font=bf, fill=T.WHITE, anchor="mm")
+
+    if len(aircraft_list) > 1:
+        more_txt = f"+{len(aircraft_list) - 1} MORE IN AIRSPACE"
+        mf = T.font(10, bold=True)
+        d.text((bx1, top_y + 40), more_txt, font=mf, fill=T.BLACK, anchor="rm")
+
+    div_y = y + 76
+    d.line([(x + 16, div_y), (x + w - 16, div_y)], fill=T.BLACK, width=1)
+
+    cols_y = div_y + 8
+    cols_h = y + h - cols_y - 10
+    n_cols = 4
+    cw = (w - 32) / float(n_cols)
+
+    metrics_list = [
+        ("ALTITUDE", f"{alt_ft:,} ft{climb_arrow}", f"{int(alt_m):,} m"),
+        ("GROUND SPEED", f"{speed_kts} kts", f"{speed_kmh} km/h"),
+        ("HEADING", f"{track}°", bearing),
+        ("SQUAWK / ICAO", str(ac.get("icao24", "")).upper() or "--", "ADS-B")
+    ]
+
+    for i, (label, val_main, val_sub) in enumerate(metrics_list):
+        col_x = x + 16 + int(i * cw)
+        mid_col_x = col_x + int(cw * 0.5)
+
+        if i > 0:
+            d.line([(col_x, cols_y + 6), (col_x, cols_y + cols_h - 6)], fill=T.BLACK, width=1)
+
+        d.text((mid_col_x, cols_y + 14), label, font=T.font(10, bold=True), fill=T.BLACK, anchor="mm")
+        d.text((mid_col_x, cols_y + cols_h * 0.52), val_main, font=T.font(18, bold=True), fill=T.BLACK, anchor="mm")
+        d.text((mid_col_x, cols_y + cols_h * 0.82), val_sub, font=T.font(11, bold=False), fill=T.BLACK, anchor="mm")
 
 
 DRAWERS = {
@@ -576,6 +1075,10 @@ DRAWERS = {
     "line": _draw_line,
     "curve": _draw_curve,
     "dynamic_grid": _draw_dynamic_grid,
+    "calendar_month": _draw_calendar_month,
+    "calendar_agenda": _draw_calendar_agenda,
+    "weather_forecast": _draw_weather_forecast,
+    "flight_tracker": _draw_flight_tracker,
 }
 
 
@@ -617,7 +1120,7 @@ def render_page(page, vals, *, clock="", label="", battery_pct=None, series=None
                             # else, so say so rather than let it look broken.
                             entry["not_a_number"] = str(raw)[:60]
                     metrics.append(entry)
-            elif el["type"] == "dynamic_grid":
+            elif el["type"] in ("dynamic_grid", "calendar_month", "calendar_agenda", "weather_forecast", "flight_tracker"):
                 drawer(img, d, el, vals.get(i), display=display)
             else:
                 drawer(img, d, el, element_text(el, vals, i), display=display)
@@ -652,6 +1155,36 @@ def collect_templates(page):
                     '"name": {{ (state_attr(e, "friendly_name") or "") | to_json }}, '
                     '"changed": {{ (relative_time(states[e].last_changed) if (states[e] is defined and states[e] is not none and states[e].last_changed is defined) else "") | to_json }}}'
                     "{% if not loop.last %},{% endif %}{% endfor %}]"
+                )
+                out[i] = tpl
+        elif el.get("type") == "weather_forecast":
+            ent = str(el.get("entity") or "weather.forecast_home").strip()
+            ent_q = f"'{binding._quote(ent)}'"
+            tpl = (
+                "{"
+                f'"entity": {ent_q}, '
+                f'"condition": {{{{ states({ent_q}) | to_json }}}}, '
+                f'"temperature": {{{{ state_attr({ent_q}, "temperature") | to_json }}}}, '
+                f'"unit": {{{{ (state_attr({ent_q}, "temperature_unit") or "°C") | to_json }}}}, '
+                f'"humidity": {{{{ state_attr({ent_q}, "humidity") | to_json }}}}, '
+                f'"wind_speed": {{{{ state_attr({ent_q}, "wind_speed") | to_json }}}}, '
+                f'"wind_unit": {{{{ (state_attr({ent_q}, "wind_speed_unit") or "km/h") | to_json }}}}, '
+                f'"attribution": {{{{ (state_attr({ent_q}, "attribution") or "") | to_json }}}}'
+                "}"
+            )
+            out[i] = tpl
+        elif el.get("type") in ("calendar_month", "calendar_agenda"):
+            ent = str(el.get("entity") or "").strip()
+            if ent:
+                ent_q = f"'{binding._quote(ent)}'"
+                tpl = (
+                    "{"
+                    f'"entity": {ent_q}, '
+                    f'"state": {{{{ states({ent_q}) | to_json }}}}, '
+                    f'"message": {{{{ (state_attr({ent_q}, "message") or "") | to_json }}}}, '
+                    f'"start_time": {{{{ (state_attr({ent_q}, "start_time") or "") | to_json }}}}, '
+                    f'"end_time": {{{{ (state_attr({ent_q}, "end_time") or "") | to_json }}}}'
+                    "}"
                 )
                 out[i] = tpl
     return out
