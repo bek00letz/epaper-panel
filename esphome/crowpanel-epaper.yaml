@@ -76,6 +76,9 @@ globals:
   - id: cat_sizes
     type: std::vector<int>
     restore_value: false
+  - id: cat_pill_widths
+    type: std::vector<int>
+    restore_value: false
   - id: sub_mode
     type: bool
     initial_value: 'false'
@@ -213,14 +216,24 @@ display:
       if (id(have_frames)) {
         const int off = ${page_h} * id(page);
         bool is_sub_mode = id(sub_mode);
-        const int cat_x0 = 80, cat_x1 = 300;
-        const int sub_x0 = 715, sub_x1 = 772;
         const int py0 = 244, py1 = 268;
+        const int sub_x0 = 704, sub_x1 = 752;
 
         int c_idx = id(cat_idx);
         int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
         if (sz <= 1) {
           is_sub_mode = false;
+        }
+
+        int cat_w = (c_idx < id(cat_pill_widths).size()) ? id(cat_pill_widths)[c_idx] : 110;
+        int cat_x0 = 96;
+        int cat_x1 = cat_x0 + cat_w;
+
+        // 1. Fast direct blit of page pixels: ~8 ms (eliminates 368 ms redraw lag!)
+        for (int y = 0; y < ${page_h}; y++) {
+          for (int x = 0; x < 792; x++) {
+            it.draw_pixel_at(x, y, id(frames).get_pixel(x, y + off));
+          }
         }
 
         auto in_rounded_box = [](int px, int py, int x0, int y0, int x1, int y1, int r) -> bool {
@@ -244,24 +257,36 @@ display:
           return true;
         };
 
-        for (int y = 0; y < ${page_h}; y++) {
-          for (int x = 0; x < 792; x++) {
-            int vx = 791 - x;
-            int vy = 271 - y;
-
-            bool in_cat = in_rounded_box(vx, vy, cat_x0, py0, cat_x1, py1, 4);
-            bool in_sub = (sz > 1) && in_rounded_box(vx, vy, sub_x0, py0, sub_x1, py1, 4);
-            bool inv = (!is_sub_mode && in_cat) || (is_sub_mode && in_sub);
-
-            Color c = id(frames).get_pixel(x, y + off);
-            if (inv) {
-              c = (c == COLOR_ON) ? COLOR_OFF : COLOR_ON;
+        // 2. Invert ONLY the active pill (Category in Category mode; Sub in Sub mode): <1 ms
+        if (!is_sub_mode) {
+          for (int py = py0; py <= py1; py++) {
+            for (int px = cat_x0; px <= cat_x1; px++) {
+              if (in_rounded_box(px, py, cat_x0, py0, cat_x1, py1, 4)) {
+                int rx = 791 - px;
+                int ry = 271 - py;
+                if (rx >= 0 && rx < 792 && ry >= 0 && ry < 272) {
+                  Color c = id(frames).get_pixel(rx, ry + off);
+                  it.draw_pixel_at(rx, ry, (c == COLOR_ON) ? COLOR_OFF : COLOR_ON);
+                }
+              }
             }
-            it.draw_pixel_at(x, y, c);
+          }
+        } else if (sz > 1) {
+          for (int py = py0; py <= py1; py++) {
+            for (int px = sub_x0; px <= sub_x1; px++) {
+              if (in_rounded_box(px, py, sub_x0, py0, sub_x1, py1, 4)) {
+                int rx = 791 - px;
+                int ry = 271 - py;
+                if (rx >= 0 && rx < 792 && ry >= 0 && ry < 272) {
+                  Color c = id(frames).get_pixel(rx, ry + off);
+                  it.draw_pixel_at(rx, ry, (c == COLOR_ON) ? COLOR_OFF : COLOR_ON);
+                }
+              }
+            }
           }
         }
 
-        // Draw an Apple-polished solid black badge with a bold, crisp white padlock inside
+        // 3. Apple-grade high-contrast solid padlock badge (22x20px)
         auto draw_lock_badge = [&](int bx, int by, int bw, int bh) {
           int cx = bx + bw / 2;
           int cy = by + bh / 2;
@@ -271,16 +296,16 @@ display:
                 int dx = px - cx;
                 int dy = py - cy;
                 bool is_shackle = false;
-                if (dy >= -7 && dy <= -2) {
-                  if (dy <= -5) {
+                if (dy >= -6 && dy <= -2) {
+                  if (dy <= -4) {
                     is_shackle = (dx >= -4 && dx <= 3);
                   } else {
                     is_shackle = (dx >= -5 && dx <= -3) || (dx >= 2 && dx <= 4);
                   }
                 }
-                bool is_body = (dy >= -1 && dy <= 7 && dx >= -7 && dx <= 6);
+                bool is_body = (dy >= -1 && dy <= 6 && dx >= -6 && dx <= 5);
                 bool is_keyhole = false;
-                if ((dy >= 1 && dy <= 3 && dx >= -1 && dx <= 0) || (dy >= 4 && dy <= 5 && dx == 0)) {
+                if ((dy >= 1 && dy <= 2 && dx >= -1 && dx <= 0) || (dy >= 3 && dy <= 4 && dx == 0)) {
                   is_keyhole = true;
                 }
 
@@ -300,14 +325,14 @@ display:
         };
 
         if (id(cat_pinned)) {
-          // Category Lock: prominent badge immediately following the category pill
-          draw_lock_badge(308, py0, 28, 24);
+          // Category Lock: neatly follows the category pill
+          draw_lock_badge(cat_x1 + 8, py0 + 2, 22, 20);
         }
 
         if (id(pinned)) {
-          // Panel Lock: prominent badge positioned by the sub-item indicator or corner
-          int lx = (sz > 1) ? 680 : 744;
-          draw_lock_badge(lx, py0, 28, 24);
+          // Panel Lock: sits to the left of sub-page pill (or corner if single page)
+          int lx = (sz > 1) ? (sub_x0 - 8 - 22) : (752 - 22);
+          draw_lock_badge(lx, py0 + 2, 22, 20);
         }
       } else if (id(have_single)) {
         // Strip missing -- fall back to whatever single frame HA is serving.
@@ -343,8 +368,11 @@ online_image:
               int val = 0;
               int start_px = byte_idx * 8;
               for (int b = 0; b < 8; b++) {
-                if (start_px + b < 792 && id(frames).get_pixel(start_px + b, meta_y) == COLOR_ON) {
-                  val |= (1 << (7 - b));
+                if (start_px + b < 792) {
+                  // In PIL mode 1, bit 1 was written as 0 (black in PNG, red < 128 in get_pixel)
+                  if (id(frames).get_pixel(start_px + b, meta_y).red < 128) {
+                    val |= (1 << (7 - b));
+                  }
                 }
               }
               return val;
@@ -356,12 +384,15 @@ online_image:
               if (num_cats > 0 && num_cats <= 30) {
                 id(cat_offsets).clear();
                 id(cat_sizes).clear();
+                id(cat_pill_widths).clear();
                 id(cat_count) = num_cats;
                 for (int i = 0; i < num_cats; i++) {
-                  int off = read_byte(3 + i * 2);
-                  int sz = read_byte(3 + i * 2 + 1);
+                  int off = read_byte(3 + i * 3);
+                  int sz = read_byte(3 + i * 3 + 1);
+                  int pw = read_byte(3 + i * 3 + 2);
                   id(cat_offsets).push_back(off);
                   id(cat_sizes).push_back(sz);
+                  id(cat_pill_widths).push_back(pw > 0 ? pw : 110);
                 }
                 ESP_LOGI("panel", "Loaded metadata directly from frames.png: %d categories", num_cats);
               }
@@ -371,10 +402,12 @@ online_image:
           if (id(cat_offsets).empty() || id(cat_count) <= 0) {
             id(cat_offsets).clear();
             id(cat_sizes).clear();
+            id(cat_pill_widths).clear();
             id(cat_count) = id(page_count);
             for (int i = 0; i < id(page_count); i++) {
               id(cat_offsets).push_back(i);
               id(cat_sizes).push_back(1);
+              id(cat_pill_widths).push_back(110);
             }
           }
           if (id(cat_idx) >= id(cat_count)) id(cat_idx) = 0;
@@ -414,10 +447,6 @@ binary_sensor:
       - logger.log: "KEY next (dial forward)"
       - lambda: |-
           id(idle_sec) = 0;
-          if (millis() - id(last_ok_press_ms) < 200) {
-            ESP_LOGD("panel", "Ignoring rocker tilt crosstalk from center press");
-            return;
-          }
           int cats = id(cat_count) > 0 ? id(cat_count) : 1;
           if (id(cat_idx) >= cats) id(cat_idx) = 0;
 
@@ -429,16 +458,11 @@ binary_sensor:
               int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
               int p = off + id(sub_idx);
               if (p < id(page_count)) id(page) = p;
-            } else {
-              id(sub_mode) = false;
-              id(cat_idx) = (id(cat_idx) + 1) % cats;
-              id(sub_idx) = 0;
-              int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
-              if (off < id(page_count)) id(page) = off;
             }
           } else {
             id(cat_idx) = (id(cat_idx) + 1) % cats;
             id(sub_idx) = 0;
+            id(sub_mode) = false;
             int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
             if (off < id(page_count)) id(page) = off;
           }
@@ -454,10 +478,6 @@ binary_sensor:
       - logger.log: "KEY prev (dial backward)"
       - lambda: |-
           id(idle_sec) = 0;
-          if (millis() - id(last_ok_press_ms) < 200) {
-            ESP_LOGD("panel", "Ignoring rocker tilt crosstalk from center press");
-            return;
-          }
           int cats = id(cat_count) > 0 ? id(cat_count) : 1;
           if (id(cat_idx) >= cats) id(cat_idx) = 0;
 
@@ -469,42 +489,40 @@ binary_sensor:
               int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
               int p = off + id(sub_idx);
               if (p < id(page_count)) id(page) = p;
-            } else {
-              id(sub_mode) = false;
-              id(cat_idx) = (id(cat_idx) - 1 + cats) % cats;
-              id(sub_idx) = 0;
-              int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
-              if (off < id(page_count)) id(page) = off;
             }
           } else {
             id(cat_idx) = (id(cat_idx) - 1 + cats) % cats;
             id(sub_idx) = 0;
+            id(sub_mode) = false;
             int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
             if (off < id(page_count)) id(page) = off;
           }
       - script.execute: redraw
 
-  # Dial Center Push (GPIO 5): Press = Toggle Category vs Sub-item Mode
+  # Dial Center Push (GPIO 5): Long Hold (>=1000ms) = Toggle Category vs Sub-item Mode
+  # Short press does NOTHING (prevents scroll tilt wobble from accidentally switching modes).
   - platform: gpio
     id: key_ok
     internal: true
     pin: {number: 5, mode: {input: true, pullup: true}, inverted: true}
     filters: [delayed_on: 30ms, delayed_off: 30ms]
-    on_press:
-      - logger.log: "KEY ok: press (toggle category vs sub-item mode)"
-      - lambda: |-
-          id(idle_sec) = 0;
-          id(last_ok_press_ms) = millis();
-          int c_idx = id(cat_idx);
-          int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
-          if (sz > 1) {
-            id(sub_mode) = !id(sub_mode);
-            ESP_LOGI("panel", "Navigation mode toggled: sub_mode=%d (sz=%d)", id(sub_mode), sz);
-          } else {
-            id(sub_mode) = false;
-            ESP_LOGI("panel", "Category has single page (sz=%d), staying in category mode", sz);
-          }
-      - script.execute: redraw
+    on_click:
+      - min_length: 1000ms
+        max_length: 5000ms
+        then:
+          - logger.log: "KEY ok: long hold (toggle category vs sub-item mode)"
+          - lambda: |-
+              id(idle_sec) = 0;
+              int c_idx = id(cat_idx);
+              int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
+              if (sz > 1) {
+                id(sub_mode) = !id(sub_mode);
+                ESP_LOGI("panel", "Navigation mode toggled: sub_mode=%d (sz=%d)", id(sub_mode), sz);
+              } else {
+                id(sub_mode) = false;
+                ESP_LOGI("panel", "Single-page category (sz=%d), staying in category mode", sz);
+              }
+          - script.execute: redraw
 
   # Physical Top Button (GPIO 1 in 180° mount): Short Click (<750ms) = Toggle Category Lock; Long Hold (>=750ms) = Toggle Panel Lock
   - platform: gpio
@@ -572,8 +590,8 @@ sensor:
     on_value:
       then:
         - lambda: |-
-            int n = (int)x;
-            if (n > 0) {
+            if (!std::isnan(x) && x > 0) {
+              int n = (int)x;
               id(cat_count) = n;
               if (id(cat_idx) >= n) id(cat_idx) = 0;
             }
@@ -590,18 +608,19 @@ text_sensor:
     on_value:
       then:
         - lambda: |-
-            if (id(cat_offsets).empty()) {
-              const char *p = x.c_str();
-              while (*p) {
-                while (*p == ' ' || *p == ',') p++;
-                if (!*p) break;
-                char *end;
-                long val = strtol(p, &end, 10);
-                if (p == end) break;
-                id(cat_offsets).push_back((int)val);
-                p = end;
-              }
-              if (id(cat_offsets).empty()) id(cat_offsets).push_back(0);
+            std::vector<int> new_offsets;
+            const char *p = x.c_str();
+            while (*p) {
+              while (*p == ' ' || *p == ',') p++;
+              if (!*p) break;
+              char *end;
+              long val = strtol(p, &end, 10);
+              if (p == end) break;
+              new_offsets.push_back((int)val);
+              p = end;
+            }
+            if (!new_offsets.empty()) {
+              id(cat_offsets) = new_offsets;
             }
 
   - platform: homeassistant
@@ -610,18 +629,40 @@ text_sensor:
     on_value:
       then:
         - lambda: |-
-            if (id(cat_sizes).empty()) {
-              const char *p = x.c_str();
-              while (*p) {
-                while (*p == ' ' || *p == ',') p++;
-                if (!*p) break;
-                char *end;
-                long val = strtol(p, &end, 10);
-                if (p == end) break;
-                id(cat_sizes).push_back((int)val);
-                p = end;
-              }
-              if (id(cat_sizes).empty()) id(cat_sizes).push_back(1);
+            std::vector<int> new_sizes;
+            const char *p = x.c_str();
+            while (*p) {
+              while (*p == ' ' || *p == ',') p++;
+              if (!*p) break;
+              char *end;
+              long val = strtol(p, &end, 10);
+              if (p == end) break;
+              new_sizes.push_back((int)val);
+              p = end;
+            }
+            if (!new_sizes.empty()) {
+              id(cat_sizes) = new_sizes;
+            }
+
+  - platform: homeassistant
+    id: ha_cat_pill_widths
+    entity_id: sensor.epaper_category_pill_widths
+    on_value:
+      then:
+        - lambda: |-
+            std::vector<int> new_pws;
+            const char *p = x.c_str();
+            while (*p) {
+              while (*p == ' ' || *p == ',') p++;
+              if (!*p) break;
+              char *end;
+              long val = strtol(p, &end, 10);
+              if (p == end) break;
+              new_pws.push_back((int)val);
+              p = end;
+            }
+            if (!new_pws.empty()) {
+              id(cat_pill_widths) = new_pws;
             }
 
 script:

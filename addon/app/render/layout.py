@@ -275,7 +275,9 @@ def _resolve_spot_icon(it, state):
 
 
 def _compute_grid_boxes(x, y, w, h, n, cols, rows, gap=10):
-    ch_card = (h - (rows - 1) * gap) // rows
+    rows = max(1, rows)
+    cols = max(1, cols)
+    ch_card = max(16, (h - (rows - 1) * gap) // rows)
     boxes = []
     items_left = n
     curr_y = y
@@ -283,7 +285,7 @@ def _compute_grid_boxes(x, y, w, h, n, cols, rows, gap=10):
         items_in_row = min(cols, items_left)
         if items_in_row <= 0:
             break
-        cw = (w - (items_in_row - 1) * gap) // items_in_row
+        cw = max(16, (w - (items_in_row - 1) * gap) // items_in_row)
         row_x = x
         for c in range(items_in_row):
             boxes.append((row_x, curr_y, cw, ch_card))
@@ -595,8 +597,16 @@ def _draw_calendar_month(img, d, el, raw_val, display=None):
         x += 6; y += 4; w -= 12; h -= 8
 
     now = datetime.now()
-    year = int(el.get("year") or now.year)
-    month = int(el.get("month") or now.month)
+    try:
+        year = int(el.get("year") or now.year)
+    except (ValueError, TypeError):
+        year = now.year
+    try:
+        month = int(el.get("month") or now.month)
+    except (ValueError, TypeError):
+        month = now.month
+    month = max(1, min(12, month))
+    year = max(1970, min(2100, year))
     today_day = now.day if (year == now.year and month == now.month) else -1
     highlight_today = el.get("highlight_today") not in (False, "false", 0, "0")
 

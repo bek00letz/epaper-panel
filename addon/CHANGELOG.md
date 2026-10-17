@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.8.17
+- **Security & Authentication Hardening:**
+  - Enforced `_check_frame_auth` token validation across physical refresh and page stepping action endpoints (`/api/action/refresh`, `/api/action/page`), preventing unauthenticated physical e-paper refresh denial-of-service on LAN port 8099.
+  - Added full support for `Authorization: Bearer <token>` in addition to `X-Frame-Token` and query parameter tokens.
+  - Hardened `/api/panel/setup` GET & POST handlers to mask Wi-Fi credentials in generated YAML and secrets text, preventing plaintext password leaks over the web interface.
+  - Removed risky positional index fallback in `feeds.unmask_secrets()`, ensuring secrets are matched strictly by feed slug to prevent credential cross-contamination when feeds are reordered or added.
+- **ESP32-S3 Firmware Memory Safety & Live Sync:**
+  - Added screen coordinate bounds checking (`rx < dw && ry < dh`) in both Category and Sub-item active pill inversion loops, eliminating out-of-bounds PSRAM writes and ESP32-S3 `LoadProhibited`/`StoreProhibited` panics.
+  - Replaced `.empty()` sensor checks with dynamic vector assignment in `ha_cat_offsets` and `ha_cat_sizes`, allowing Home Assistant category and layout changes to sync live without requiring a physical panel power-cycle.
+  - Added `ha_cat_pill_widths` text sensor for real-time pill width synchronization from Home Assistant.
+  - Added `!std::isnan(x)` check on `ha_cat_count` to prevent undefined behavior during initial sensor discovery.
+  - Tuned rotary dial center button (`key_ok`, GPIO 5) to toggle navigation mode on a long hold (1000ms–5000ms), eliminating accidental mode switches caused by rotary dial scroll tilt wobble.
+- **Rendering Engine & Backend Stability:**
+  - Resolved fatal `UnboundLocalError / NameError: cat_pill_widths` in `server.py` that caused immediate render loop crashes.
+  - Corrected runaway render loop timing (`await asyncio.sleep(REFRESH)`), restoring user-configured refresh intervals (e.g. 5m / 10m).
+  - Implemented `step_panel_page` to properly forward relative page steps to ESPHome via Home Assistant services.
+  - Hardened Jinja template generation for `last_changed` and `last_updated` against missing entities, and validated `replace` configuration types to prevent unhandled `AttributeError`.
+  - Added boundary clamping for calendar month/year rendering and dynamic grid calculations to prevent `IndexError` and division-by-zero crashes.
+  - Bounded footer category pill width against sub-item pill positions to prevent visual overlapping on narrow displays.
+
 ## 0.8.16
 - **Self-Describing Image Header & Permanent Anti-Desync Architecture:**
   - `frames.png` now encodes the authoritative category count, slice offsets, and sub-page sizes directly into a dedicated invisible header scanline appended to the image strip.

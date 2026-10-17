@@ -292,9 +292,19 @@ def sanitize_layouts(spec: dict) -> dict:
         orient = 0
     if orient not in (0, 90, 180, 270):
         orient = 0
+    try:
+        rot_sec = max(5, min(3600, int(spec.get("rotate_seconds") or 30)))
+    except (TypeError, ValueError):
+        rot_sec = 30
     display = spec.get("display")
     disp_id = T.get_display(display)["id"]
-    return {"display": disp_id, "orientation": orient, "rotation": rotation, "pages": pages}
+    return {
+        "display": disp_id,
+        "orientation": orient,
+        "rotate_seconds": rot_sec,
+        "rotation": rotation,
+        "pages": pages,
+    }
 
 
 def save_layouts(spec):
@@ -387,6 +397,7 @@ class Frames:
         self.names: list[str] = []
         self.cat_offsets: list[int] = [0]
         self.cat_sizes: list[int] = [1]
+        self.cat_pill_widths: list[int] = [110]
         self.cat_names: list[str] = []
         self.cat_count: int = 1
         self.rendered_at = None
@@ -1037,6 +1048,8 @@ async def publish_category_sensors(session, cur_f):
                              {"friendly_name": "E-Paper Category Offsets", "icon": "mdi:format-list-numbered"})
         await publish_entity(session, "sensor.epaper_category_sizes", ",".join(map(str, cur_f.cat_sizes)),
                              {"friendly_name": "E-Paper Category Sizes", "icon": "mdi:format-list-bulleted"})
+        await publish_entity(session, "sensor.epaper_category_pill_widths", ",".join(map(str, cur_f.cat_pill_widths)),
+                             {"friendly_name": "E-Paper Category Pill Widths", "icon": "mdi:ruler"})
         await publish_entity(session, "sensor.epaper_category_names", ",".join(cur_f.cat_names),
                              {"friendly_name": "E-Paper Category Names", "icon": "mdi:tag-multiple-outline"})
     except Exception as exc:
@@ -1097,43 +1110,50 @@ async def publish_computed(session):
         pass
 
 
+_mqtt_discovery_published = False
+
+
 async def publish_mqtt_discovery(session, frames):
     """Publish Home Assistant MQTT Auto-Discovery entities if MQTT integration is active."""
+    global _mqtt_discovery_published
     if not HA_TOKEN:
         return
     try:
-        dev_info = {
-            "identifiers": ["epaper_panel_hub"],
-            "name": "E-Paper Display Panel",
-            "manufacturer": "Elecrow",
-            "model": "CrowPanel E-Paper",
-            "sw_version": "0.8.10"
-        }
-        btn_payload = {
-            "name": "E-Paper Refresh Now",
-            "unique_id": "epaper_panel_refresh_button",
-            "command_topic": "homeassistant/epaper_panel/refresh",
-            "icon": "mdi:refresh",
-            "device": dev_info
-        }
-        await call_ha_service(session, "mqtt", "publish", {
-            "topic": "homeassistant/button/epaper_panel/refresh/config",
-            "payload": json.dumps(btn_payload),
-            "retain": True
-        })
-        sens_payload = {
-            "name": "E-Paper Last Render",
-            "unique_id": "epaper_panel_last_render",
-            "state_topic": "homeassistant/epaper_panel/last_render",
-            "device_class": "timestamp",
-            "icon": "mdi:clock-check-outline",
-            "device": dev_info
-        }
-        await call_ha_service(session, "mqtt", "publish", {
-            "topic": "homeassistant/sensor/epaper_panel/last_render/config",
-            "payload": json.dumps(sens_payload),
-            "retain": True
-        })
+        if not _mqtt_discovery_published:
+            dev_info = {
+                "identifiers": ["epaper_panel_hub"],
+                "name": "E-Paper Display Panel",
+                "manufacturer": "Elecrow",
+                "model": "CrowPanel E-Paper",
+                "sw_version": "0.8.17"
+            }
+            btn_payload = {
+                "name": "E-Paper Refresh Now",
+                "unique_id": "epaper_panel_refresh_button",
+                "command_topic": "homeassistant/epaper_panel/refresh",
+                "icon": "mdi:refresh",
+                "device": dev_info
+            }
+            await call_ha_service(session, "mqtt", "publish", {
+                "topic": "homeassistant/button/epaper_panel/refresh/config",
+                "payload": json.dumps(btn_payload),
+                "retain": True
+            })
+            sens_payload = {
+                "name": "E-Paper Last Render",
+                "unique_id": "epaper_panel_last_render",
+                "state_topic": "homeassistant/epaper_panel/last_render",
+                "device_class": "timestamp",
+                "icon": "mdi:clock-check-outline",
+                "device": dev_info
+            }
+            await call_ha_service(session, "mqtt", "publish", {
+                "topic": "homeassistant/sensor/epaper_panel/last_render/config",
+                "payload": json.dumps(sens_payload),
+                "retain": True
+            })
+            _mqtt_discovery_published = True
+
         if frames and frames.rendered_at:
             await call_ha_service(session, "mqtt", "publish", {
                 "topic": "homeassistant/epaper_panel/last_render",
@@ -1209,7 +1229,7 @@ async def build_frames(session):
             clock=datetime.now().strftime("%H:%M"), label="empty", orientation=orient, display=display)
         one = T.orient_for_panel(T.to_1bit(img), orient, display=display)
         png = _png(one)
-        return png, png, [], [0], [1], ["empty"]
+        return png, png, [], [0], [1], ["empty"], [110]
 
     vals = await gather_values(session, spec, set(live))
 
@@ -1224,6 +1244,7 @@ async def build_frames(session):
     cat_offsets = []
     cat_sizes = []
     cat_names = []
+    cat_pill_widths = []
 
     for cat_i, cat_name in enumerate(live):
         page_def = spec["pages"][cat_name]
@@ -1269,9 +1290,21 @@ async def build_frames(session):
                     sub_type = "feed"
                     break
 
+        cat_display_name = cat_name.replace("_", " ").upper()
+        cat_label = f"{cat_i + 1}/{len(live)}  {cat_display_name}"
+        cat_f = T.font(13, bold=True)
+        cat_w = T.text_width(cat_label, cat_f) + 20
+        margin = display["margin"] if dw >= 400 else min(display["margin"], 16)
+        cat_x0 = 96 if dw >= 400 else (margin + T.text_width("00:00", T.font(18)) + 12)
+        sub_w = 48
+        sub_x1 = dw - margin
+        sub_x0 = sub_x1 - sub_w
+        max_cat_w = max(40, (sub_x0 - cat_x0 - 8) if sub_count > 1 else (sub_x1 - cat_x0 - 8))
+        cat_w = min(cat_w, max_cat_w)
         cat_offsets.append(len(imgs))
         cat_sizes.append(sub_count)
         cat_names.append(cat_name)
+        cat_pill_widths.append(cat_w)
 
         # Render each sub-item for this category
         for s_idx in range(sub_count):
@@ -1296,8 +1329,6 @@ async def build_frames(session):
 
                 cloned_page["elements"].append(el_c)
 
-            cat_display_name = cat_name.replace("_", " ").upper()
-            cat_label = f"{cat_i + 1}/{len(live)}  {cat_display_name}"
             sub_label = f"{s_idx + 1}/{sub_count}" if sub_count > 1 else ""
 
             img = await asyncio.to_thread(
@@ -1317,30 +1348,32 @@ async def build_frames(session):
     meta_y = dh * len(imgs)
     # Magic 0xA5, version 0x01, cat_count
     payload = [0xA5, 0x01, len(cat_offsets)]
-    for off, sz in zip(cat_offsets, cat_sizes):
+    for off, sz, pw in zip(cat_offsets, cat_sizes, cat_pill_widths):
         payload.append(min(255, int(off)))
         payload.append(min(255, int(sz)))
+        payload.append(min(255, int(pw)))
 
     px_x = 0
     for byte_val in payload:
         for b in range(8):
             bit = (byte_val >> (7 - b)) & 1
-            # In PIL mode "1", 0 = black (COLOR_ON in ESPHome), 1 = white (COLOR_OFF in ESPHome)
+            # In PIL mode "1", 0 = black (decoded as red < 128 in ESPHome), 1 = white
             strip.putpixel((px_x, meta_y), 0 if bit else 1)
             px_x += 1
 
-    return _png(strip), _png(imgs[0]), live, cat_offsets, cat_sizes, cat_names
+    return _png(strip), _png(imgs[0]), live, cat_offsets, cat_sizes, cat_names, cat_pill_widths
 
 
 async def refresh_frames(session):
     """Build a new Frames snapshot and atomically swap FRAMES."""
-    strip, single, names, cat_offsets, cat_sizes, cat_names = await build_frames(session)
+    strip, single, names, cat_offsets, cat_sizes, cat_names, cat_pill_widths = await build_frames(session)
     old_f = globals().get("FRAMES")
     struct_changed = (
         old_f is not None and getattr(old_f, "rendered_at", None) and (
             old_f.cat_offsets != cat_offsets or
             old_f.cat_sizes != cat_sizes or
-            old_f.cat_names != cat_names
+            old_f.cat_names != cat_names or
+            getattr(old_f, "cat_pill_widths", None) != cat_pill_widths
         )
     )
     nxt = Frames()
@@ -1351,9 +1384,10 @@ async def refresh_frames(session):
     nxt.cat_offsets = cat_offsets
     nxt.cat_sizes = cat_sizes
     nxt.cat_names = cat_names
+    nxt.cat_pill_widths = cat_pill_widths
     nxt.cat_count = len(cat_offsets)
     globals()["FRAMES"] = nxt
-    print(f"rendered {names} ({len(strip)}B strip, {nxt.cat_count} cats, offsets: {cat_offsets}, sizes: {cat_sizes})", flush=True)
+    print(f"rendered {names} ({len(strip)}B strip, {nxt.cat_count} cats, offsets: {cat_offsets}, sizes: {cat_sizes}, pill_widths: {cat_pill_widths})", flush=True)
     await publish_category_sensors(session, nxt)
     if struct_changed:
         print("Category structure changed -- pushing immediate refresh to panel", flush=True)
@@ -1377,7 +1411,35 @@ async def push_panel_update(advance_page=True):
     ok = False
     for dev in candidates:
         try:
+            if advance_page:
+                try:
+                    await call_ha_service(SHARED_SESSION, "esphome", f"{dev}_page_step", {"delta": 1})
+                    ok = True
+                    break
+                except Exception:
+                    pass
             await call_ha_service(SHARED_SESSION, "esphome", f"{dev}_refresh_now")
+            ok = True
+            break
+        except Exception:
+            continue
+    return ok
+
+
+async def step_panel_page(delta=1):
+    """Trigger the physical panel to advance or step backwards."""
+    if not HA_TOKEN:
+        return False
+    candidates = list(dict.fromkeys([
+        ESPHOME_DEVICE,
+        "crowpanel_epaper",
+        "e_paper_panel",
+        "epaper_panel"
+    ]))
+    ok = False
+    for dev in candidates:
+        try:
+            await call_ha_service(SHARED_SESSION, "esphome", f"{dev}_page_step", {"delta": int(delta)})
             ok = True
             break
         except Exception:
@@ -1411,13 +1473,17 @@ async def render_loop():
         except Exception as exc:
             print(f"render loop error: {exc!r}", flush=True)
             FRAMES.error = repr(exc)
-        await asyncio.sleep(min(10, REFRESH))
+        await asyncio.sleep(REFRESH)
 
 
 def _check_frame_auth(request):
     if not FRAME_TOKEN:
         return
-    provided = request.query.get("token") or request.headers.get("X-Frame-Token") or ""
+    auth_hdr = request.headers.get("Authorization") or ""
+    if auth_hdr.lower().startswith("bearer "):
+        provided = auth_hdr[7:].strip()
+    else:
+        provided = request.query.get("token") or request.headers.get("X-Frame-Token") or ""
     if not hmac.compare_digest(provided, FRAME_TOKEN):
         raise web.HTTPUnauthorized(text="invalid or missing token")
 
@@ -1529,7 +1595,12 @@ async def status(request):
 async def api_panel_refresh(request):
     """Update panel refresh rate both in saved panel setup and via HA service if online."""
     global LAST_PANEL_PUSH_TIME
-    body = await request.json()
+    try:
+        body = await request.json()
+    except Exception:
+        raise web.HTTPBadRequest(text="expected json body")
+    if not isinstance(body, dict):
+        raise web.HTTPBadRequest(text="expected a json object")
     raw_val = body.get("interval")
     try:
         minutes = max(1, min(60, int(float(raw_val))))
@@ -1599,6 +1670,7 @@ async def api_layouts_put(request):
         "display": clean.get("display", T.DEFAULT_DISPLAY),
         "pages": list(clean["pages"]),
         "rotation": clean["rotation"],
+        "rotate_seconds": clean["rotate_seconds"],
         "orientation": clean["orientation"],
     })
 
@@ -1680,7 +1752,10 @@ async def api_preview(request):
             series[i] = await curve_series(SHARED_SESSION, el["entity"],
                                            int(el.get("hours", 24)))
     metrics = []
-    dist = float(body.get("distance") or 3.0)
+    try:
+        dist = float(body.get("distance") or 3.0)
+    except (TypeError, ValueError):
+        dist = 3.0
     img = await asyncio.to_thread(
         layout.render_page, page, vals,
         clock=datetime.now().strftime("%H:%M"),
@@ -1714,23 +1789,28 @@ async def api_push(request):
 
 async def api_action_refresh(request):
     """External action endpoint (for HA automations, webhooks, or scripts) to trigger re-render & panel redraw."""
+    _check_frame_auth(request)
     try:
         await refresh_frames(SHARED_SESSION)
-        await push_panel_update(advance_page=False)
-        return web.json_response({"success": True, "action": "refresh", "timestamp": datetime.now().isoformat()})
+        ha_pushed = await push_panel_update(advance_page=False)
+        return web.json_response({"success": True, "action": "refresh", "ha_pushed": ha_pushed, "timestamp": datetime.now().isoformat()})
     except Exception as exc:
         return web.json_response({"success": False, "error": str(exc)}, status=500)
 
 
 async def api_action_page(request):
     """External action endpoint to advance or set the display page."""
+    _check_frame_auth(request)
     try:
         body = await request.json() if request.can_read_body else {}
     except Exception:
         body = {}
-    delta = int(body.get("delta") or request.query.get("delta") or 1)
-    await push_panel_update(advance_page=True)
-    return web.json_response({"success": True, "action": "page_step", "delta": delta})
+    try:
+        delta = int(body.get("delta") if "delta" in body else (request.query.get("delta") or 1))
+    except (TypeError, ValueError):
+        delta = 1
+    ha_stepped = await step_panel_page(delta=delta)
+    return web.json_response({"success": True, "action": "page_step", "delta": delta, "ha_stepped": ha_stepped})
 
 
 async def api_sources_get(request):
@@ -1872,10 +1952,10 @@ def generate_esphome_yaml(cfg: dict) -> tuple[str, str]:
         bot_btn_pin = 1
 
     disp_margin = disp["margin"] if dw >= 400 else min(disp["margin"], 16)
-    cat_vx0 = disp_margin + 60
-    cat_vx1 = min(cat_vx0 + 220, dw - disp_margin - 80)
+    cat_vx0 = 96 if dw >= 400 else (disp_margin + 55)
+    sub_w = 48
     sub_vx1 = dw - disp_margin
-    sub_vx0 = sub_vx1 - 57
+    sub_vx0 = sub_vx1 - sub_w
     pill_vy0 = dh - 28
     pill_vy1 = dh - 4
 
@@ -1890,14 +1970,24 @@ def generate_esphome_yaml(cfg: dict) -> tuple[str, str]:
 
     pin_drawing_code = f"""        const int off = ${{page_h}} * id(page);
         bool is_sub_mode = id(sub_mode);
-        const int cat_x0 = {cat_vx0}, cat_x1 = {cat_vx1};
-        const int sub_x0 = {sub_vx0}, sub_x1 = {sub_vx1};
         const int py0 = {pill_vy0}, py1 = {pill_vy1};
+        const int sub_x0 = {sub_vx0}, sub_x1 = {sub_vx1};
 
         int c_idx = id(cat_idx);
         int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
         if (sz <= 1) {{
           is_sub_mode = false;
+        }}
+
+        int cat_w = (c_idx < id(cat_pill_widths).size()) ? id(cat_pill_widths)[c_idx] : 110;
+        int cat_x0 = {cat_vx0};
+        int cat_x1 = cat_x0 + cat_w;
+
+        // 1. Fast direct blit of page pixels from frames buffer: ~8 ms
+        for (int y = 0; y < ${{page_h}}; y++) {{
+          for (int x = 0; x < {dw}; x++) {{
+            it.draw_pixel_at(x, y, id(frames).get_pixel(x, y + off));
+          }}
         }}
 
         auto in_rounded_box = [](int px, int py, int x0, int y0, int x1, int y1, int r) -> bool {{
@@ -1921,23 +2011,36 @@ def generate_esphome_yaml(cfg: dict) -> tuple[str, str]:
           return true;
         }};
 
-        for (int y = 0; y < ${{page_h}}; y++) {{
-          for (int x = 0; x < {dw}; x++) {{
-            int vx = ({orient} == 180) ? ({dw - 1} - x) : x;
-            int vy = ({orient} == 180) ? ({dh - 1} - y) : y;
-
-            bool in_cat = in_rounded_box(vx, vy, cat_x0, py0, cat_x1, py1, 4);
-            bool in_sub = (sz > 1) && in_rounded_box(vx, vy, sub_x0, py0, sub_x1, py1, 4);
-            bool inv = (!is_sub_mode && in_cat) || (is_sub_mode && in_sub);
-
-            Color c = id(frames).get_pixel(x, y + off);
-            if (inv) {{
-              c = (c == COLOR_ON) ? COLOR_OFF : COLOR_ON;
+        // 2. Invert ONLY the active pill (Category in Category mode; Sub in Sub mode): <1 ms
+        if (!is_sub_mode) {{
+          for (int py = py0; py <= py1; py++) {{
+            for (int px = cat_x0; px <= cat_x1; px++) {{
+              if (in_rounded_box(px, py, cat_x0, py0, cat_x1, py1, 4)) {{
+                int rx = ({orient} == 180) ? ({dw - 1} - px) : px;
+                int ry = ({orient} == 180) ? ({dh - 1} - py) : py;
+                if (rx >= 0 && rx < {dw} && ry >= 0 && ry < {dh}) {{
+                  Color c = id(frames).get_pixel(rx, ry + off);
+                  it.draw_pixel_at(rx, ry, (c == COLOR_ON) ? COLOR_OFF : COLOR_ON);
+                }}
+              }}
             }}
-            it.draw_pixel_at(x, y, c);
+          }}
+        }} else if (sz > 1) {{
+          for (int py = py0; py <= py1; py++) {{
+            for (int px = sub_x0; px <= sub_x1; px++) {{
+              if (in_rounded_box(px, py, sub_x0, py0, sub_x1, py1, 4)) {{
+                int rx = ({orient} == 180) ? ({dw - 1} - px) : px;
+                int ry = ({orient} == 180) ? ({dh - 1} - py) : py;
+                if (rx >= 0 && rx < {dw} && ry >= 0 && ry < {dh}) {{
+                  Color c = id(frames).get_pixel(rx, ry + off);
+                  it.draw_pixel_at(rx, ry, (c == COLOR_ON) ? COLOR_OFF : COLOR_ON);
+                }}
+              }}
+            }}
           }}
         }}
 
+        // 3. Apple-grade high-contrast solid padlock badge (22x20px)
         auto draw_lock_badge = [&](int bx, int by, int bw, int bh) {{
           int cx = bx + bw / 2;
           int cy = by + bh / 2;
@@ -1947,16 +2050,16 @@ def generate_esphome_yaml(cfg: dict) -> tuple[str, str]:
                 int dx = px - cx;
                 int dy = py - cy;
                 bool is_shackle = false;
-                if (dy >= -7 && dy <= -2) {{
-                  if (dy <= -5) {{
+                if (dy >= -6 && dy <= -2) {{
+                  if (dy <= -4) {{
                     is_shackle = (dx >= -4 && dx <= 3);
                   }} else {{
                     is_shackle = (dx >= -5 && dx <= -3) || (dx >= 2 && dx <= 4);
                   }}
                 }}
-                bool is_body = (dy >= -1 && dy <= 7 && dx >= -7 && dx <= 6);
+                bool is_body = (dy >= -1 && dy <= 6 && dx >= -6 && dx <= 5);
                 bool is_keyhole = false;
-                if ((dy >= 1 && dy <= 3 && dx >= -1 && dx <= 0) || (dy >= 4 && dy <= 5 && dx == 0)) {{
+                if ((dy >= 1 && dy <= 2 && dx >= -1 && dx <= 0) || (dy >= 3 && dy <= 4 && dx == 0)) {{
                   is_keyhole = true;
                 }}
 
@@ -1976,12 +2079,12 @@ def generate_esphome_yaml(cfg: dict) -> tuple[str, str]:
         }};
 
         if (id(cat_pinned)) {{
-          draw_lock_badge({cat_vx1 + 8}, {pill_vy0}, 28, 24);
+          draw_lock_badge(cat_x1 + 8, py0 + 2, 22, 20);
         }}
 
         if (id(pinned)) {{
-          int lx = (sz > 1) ? ({sub_vx0 - 35}) : ({sub_vx1 - 28});
-          draw_lock_badge(lx, {pill_vy0}, 28, 24);
+          int lx = (sz > 1) ? (sub_x0 - 8 - 22) : ({sub_vx1} - 22);
+          draw_lock_badge(lx, py0 + 2, 22, 20);
         }}"""
 
     if disp["esphome_component"].startswith("github://"):
@@ -2083,6 +2186,9 @@ psram:
     type: std::vector<int>
     restore_value: false
   - id: cat_sizes
+    type: std::vector<int>
+    restore_value: false
+  - id: cat_pill_widths
     type: std::vector<int>
     restore_value: false
   - id: sub_mode
@@ -2233,8 +2339,11 @@ online_image:
               int val = 0;
               int start_px = byte_idx * 8;
               for (int b = 0; b < 8; b++) {{
-                if (start_px + b < {dw} && id(frames).get_pixel(start_px + b, meta_y) == COLOR_ON) {{
-                  val |= (1 << (7 - b));
+                if (start_px + b < {dw}) {{
+                  // Bit 1 was written as 0 (black in PNG, red < 128 in get_pixel)
+                  if (id(frames).get_pixel(start_px + b, meta_y).red < 128) {{
+                    val |= (1 << (7 - b));
+                  }}
                 }}
               }}
               return val;
@@ -2246,12 +2355,15 @@ online_image:
               if (num_cats > 0 && num_cats <= 30) {{
                 id(cat_offsets).clear();
                 id(cat_sizes).clear();
+                id(cat_pill_widths).clear();
                 id(cat_count) = num_cats;
                 for (int i = 0; i < num_cats; i++) {{
-                  int off = read_byte(3 + i * 2);
-                  int sz = read_byte(3 + i * 2 + 1);
+                  int off = read_byte(3 + i * 3);
+                  int sz = read_byte(3 + i * 3 + 1);
+                  int pw = read_byte(3 + i * 3 + 2);
                   id(cat_offsets).push_back(off);
                   id(cat_sizes).push_back(sz);
+                  id(cat_pill_widths).push_back(pw > 0 ? pw : 110);
                 }}
                 ESP_LOGI("panel", "Loaded metadata directly from frames.png: %d categories", num_cats);
               }}
@@ -2261,10 +2373,12 @@ online_image:
           if (id(cat_offsets).empty() || id(cat_count) <= 0) {{
             id(cat_offsets).clear();
             id(cat_sizes).clear();
+            id(cat_pill_widths).clear();
             id(cat_count) = id(page_count);
             for (int i = 0; i < id(page_count); i++) {{
               id(cat_offsets).push_back(i);
               id(cat_sizes).push_back(1);
+              id(cat_pill_widths).push_back(110);
             }}
           }}
           if (id(cat_idx) >= id(cat_count)) id(cat_idx) = 0;
@@ -2302,10 +2416,6 @@ binary_sensor:
       - logger.log: "KEY next (dial forward)"
       - lambda: |-
           id(idle_sec) = 0;
-          if (millis() - id(last_ok_press_ms) < 200) {{
-            ESP_LOGD("panel", "Ignoring rocker tilt crosstalk from center press");
-            return;
-          }}
           int cats = id(cat_count) > 0 ? id(cat_count) : 1;
           if (id(cat_idx) >= cats) id(cat_idx) = 0;
 
@@ -2317,16 +2427,11 @@ binary_sensor:
               int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
               int p = off + id(sub_idx);
               if (p < id(page_count)) id(page) = p;
-            }} else {{
-              id(sub_mode) = false;
-              id(cat_idx) = (id(cat_idx) + 1) % cats;
-              id(sub_idx) = 0;
-              int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
-              if (off < id(page_count)) id(page) = off;
             }}
           }} else {{
             id(cat_idx) = (id(cat_idx) + 1) % cats;
             id(sub_idx) = 0;
+            id(sub_mode) = false;
             int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
             if (off < id(page_count)) id(page) = off;
           }}
@@ -2341,10 +2446,6 @@ binary_sensor:
       - logger.log: "KEY prev (dial backward)"
       - lambda: |-
           id(idle_sec) = 0;
-          if (millis() - id(last_ok_press_ms) < 200) {{
-            ESP_LOGD("panel", "Ignoring rocker tilt crosstalk from center press");
-            return;
-          }}
           int cats = id(cat_count) > 0 ? id(cat_count) : 1;
           if (id(cat_idx) >= cats) id(cat_idx) = 0;
 
@@ -2356,16 +2457,11 @@ binary_sensor:
               int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
               int p = off + id(sub_idx);
               if (p < id(page_count)) id(page) = p;
-            }} else {{
-              id(sub_mode) = false;
-              id(cat_idx) = (id(cat_idx) - 1 + cats) % cats;
-              id(sub_idx) = 0;
-              int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
-              if (off < id(page_count)) id(page) = off;
             }}
           }} else {{
             id(cat_idx) = (id(cat_idx) - 1 + cats) % cats;
             id(sub_idx) = 0;
+            id(sub_mode) = false;
             int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
             if (off < id(page_count)) id(page) = off;
           }}
@@ -2376,21 +2472,23 @@ binary_sensor:
     internal: true
     pin: {{number: 5, mode: {{input: true, pullup: true}}, inverted: true}}
     filters: [delayed_on: 30ms, delayed_off: 30ms]
-    on_press:
-      - logger.log: "KEY ok: press (toggle category vs sub-item mode)"
-      - lambda: |-
-          id(idle_sec) = 0;
-          id(last_ok_press_ms) = millis();
-          int c_idx = id(cat_idx);
-          int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
-          if (sz > 1) {{
-            id(sub_mode) = !id(sub_mode);
-            ESP_LOGI("panel", "Navigation mode toggled: sub_mode=%d (sz=%d)", id(sub_mode), sz);
-          }} else {{
-            id(sub_mode) = false;
-            ESP_LOGI("panel", "Category has single page (sz=%d), staying in category mode", sz);
-          }}
-      - script.execute: redraw
+    on_click:
+      - min_length: 1000ms
+        max_length: 5000ms
+        then:
+          - logger.log: "KEY ok: long hold (toggle category vs sub-item mode)"
+          - lambda: |-
+              id(idle_sec) = 0;
+              int c_idx = id(cat_idx);
+              int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
+              if (sz > 1) {{
+                id(sub_mode) = !id(sub_mode);
+                ESP_LOGI("panel", "Navigation mode toggled: sub_mode=%d (sz=%d)", id(sub_mode), sz);
+              }} else {{
+                id(sub_mode) = false;
+                ESP_LOGI("panel", "Category has single page (sz=%d), staying in category mode", sz);
+              }}
+          - script.execute: redraw
 
   - platform: gpio
     id: key_top
@@ -2456,8 +2554,8 @@ sensor:
     on_value:
       then:
         - lambda: |-
-            int n = (int)x;
-            if (n > 0) {{
+            if (!std::isnan(x) && x > 0) {{
+              int n = (int)x;
               id(cat_count) = n;
               if (id(cat_idx) >= n) id(cat_idx) = 0;
             }}
@@ -2474,18 +2572,19 @@ text_sensor:
     on_value:
       then:
         - lambda: |-
-            if (id(cat_offsets).empty()) {{
-              const char *p = x.c_str();
-              while (*p) {{
-                while (*p == ' ' || *p == ',') p++;
-                if (!*p) break;
-                char *end;
-                long val = strtol(p, &end, 10);
-                if (p == end) break;
-                id(cat_offsets).push_back((int)val);
-                p = end;
-              }}
-              if (id(cat_offsets).empty()) id(cat_offsets).push_back(0);
+            std::vector<int> new_offsets;
+            const char *p = x.c_str();
+            while (*p) {{
+              while (*p == ' ' || *p == ',') p++;
+              if (!*p) break;
+              char *end;
+              long val = strtol(p, &end, 10);
+              if (p == end) break;
+              new_offsets.push_back((int)val);
+              p = end;
+            }}
+            if (!new_offsets.empty()) {{
+              id(cat_offsets) = new_offsets;
             }}
 
   - platform: homeassistant
@@ -2494,18 +2593,40 @@ text_sensor:
     on_value:
       then:
         - lambda: |-
-            if (id(cat_sizes).empty()) {{
-              const char *p = x.c_str();
-              while (*p) {{
-                while (*p == ' ' || *p == ',') p++;
-                if (!*p) break;
-                char *end;
-                long val = strtol(p, &end, 10);
-                if (p == end) break;
-                id(cat_sizes).push_back((int)val);
-                p = end;
-              }}
-              if (id(cat_sizes).empty()) id(cat_sizes).push_back(1);
+            std::vector<int> new_sizes;
+            const char *p = x.c_str();
+            while (*p) {{
+              while (*p == ' ' || *p == ',') p++;
+              if (!*p) break;
+              char *end;
+              long val = strtol(p, &end, 10);
+              if (p == end) break;
+              new_sizes.push_back((int)val);
+              p = end;
+            }}
+            if (!new_sizes.empty()) {{
+              id(cat_sizes) = new_sizes;
+            }}
+
+  - platform: homeassistant
+    id: ha_cat_pill_widths
+    entity_id: sensor.epaper_category_pill_widths
+    on_value:
+      then:
+        - lambda: |-
+            std::vector<int> new_pws;
+            const char *p = x.c_str();
+            while (*p) {{
+              while (*p == ' ' || *p == ',') p++;
+              if (!*p) break;
+              char *end;
+              long val = strtol(p, &end, 10);
+              if (p == end) break;
+              new_pws.push_back((int)val);
+              p = end;
+            }}
+            if (!new_pws.empty()) {{
+              id(cat_pill_widths) = new_pws;
             }}
 
 script:
@@ -2647,11 +2768,11 @@ async def api_panel_setup_get(request):
     detected_port = await _detect_external_port(SHARED_SESSION)
     if "frame_port" not in cfg:
         cfg["frame_port"] = detected_port
-    yaml_text, secrets_text = generate_esphome_yaml(cfg)
-    conn = await _detect_panel_connection(cfg["device_name"])
     masked_cfg = dict(cfg)
     if masked_cfg.get("wifi_password"):
         masked_cfg["wifi_password"] = feeds.SECRET_MASK
+    yaml_text, secrets_text = generate_esphome_yaml(masked_cfg)
+    conn = await _detect_panel_connection(cfg["device_name"])
     return web.json_response({
         "config": masked_cfg,
         "yaml": yaml_text,
@@ -2697,11 +2818,12 @@ async def api_panel_setup_post(request):
             if not body.get("regenerate_keys"):
                 cur[k] = body[k].strip()
     saved = save_panel_setup(cur)
-    yaml_text, secrets_text = generate_esphome_yaml(saved)
-    conn = await _detect_panel_connection(saved["device_name"])
     masked_cfg = dict(saved)
     if masked_cfg.get("wifi_password"):
         masked_cfg["wifi_password"] = feeds.SECRET_MASK
+    yaml_cfg = masked_cfg if body.get("wifi_password") == feeds.SECRET_MASK else saved
+    yaml_text, secrets_text = generate_esphome_yaml(yaml_cfg)
+    conn = await _detect_panel_connection(saved["device_name"])
     return web.json_response({
         "saved": True,
         "config": masked_cfg,

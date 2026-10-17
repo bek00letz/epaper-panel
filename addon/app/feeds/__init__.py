@@ -75,7 +75,7 @@ def unmask_secrets(incoming, existing):
         c = copy.deepcopy(s)
         slug = clean_slug(c.get("name"))
         c["name"] = slug
-        prev = by_name.get(slug) or (existing[idx] if idx < len(existing or []) else {})
+        prev = by_name.get(slug) or {}
         if c.get("key") == SECRET_MASK and isinstance(prev, dict):
             c["key"] = prev.get("key", "")
         if c.get("headers") == SECRET_MASK and isinstance(prev, dict):

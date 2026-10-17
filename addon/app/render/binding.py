@@ -53,13 +53,15 @@ def template_for(el):
     if show == "attribute":
         core = f"state_attr('{_quote(ent)}', '{_quote(el.get('attribute', ''))}')"
     elif show in ("last_changed", "last_updated"):
-        src = f"states['{_quote(ent)}'].{show}"
+        qent = _quote(ent)
+        cond = f"(states['{qent}'] is defined and states['{qent}'] is not none and states['{qent}'].{show} is defined)"
+        src = f"states['{qent}'].{show}"
         fmt = el.get("format") or "relative"
         if fmt == "relative":
-            core = f"relative_time({src})"
+            core = f"relative_time({src}) if {cond} else ''"
         else:
             pattern = TIME_FORMATS.get(fmt, TIME_FORMATS["time"])
-            core = f"as_timestamp({src}) | timestamp_custom('{pattern}')"
+            core = f"as_timestamp({src}) | timestamp_custom('{pattern}') if {cond} else ''"
     elif show == "days_until":
         # Days remaining until a calendar event or future date sensor
         if ent.startswith("calendar."):
@@ -82,7 +84,9 @@ def template_for(el):
 
     # Replacements cover the common "say it in my words" case without a
     # chain of | replace() the user has to write by hand.
-    for find, repl in (el.get("replace") or {}).items():
-        core = f"({core}) | replace('{_quote(find)}', '{_quote(repl)}')"
+    repl_map = el.get("replace")
+    if isinstance(repl_map, dict):
+        for find, repl in repl_map.items():
+            core = f"({core}) | replace('{_quote(str(find))}', '{_quote(str(repl))}')"
 
     return "{{ " + core + " }}"

@@ -299,15 +299,22 @@ def footer(draw, *, clock, label="", cat_label="", sub_label="", battery_pct=Non
         cat_f = font(13, bold=True)
         pill_y0 = ch - 28
         pill_y1 = ch - 4
-        cat_x0 = 80 if cw >= 400 else (margin + text_width(clock, f) + 12)
-        cat_x1 = min(cat_x0 + 220, cw - margin - 80)
+        cat_x0 = 96 if cw >= 400 else (margin + text_width(clock, f) + 12)
+        cat_w = text_width(cat_label, cat_f) + 20
+
+        bat_w = text_width(f"{battery_pct} %", f) + 12 if (battery_pct is not None and battery_pct > 0) else 0
+        sub_w = 48
+        sub_x1 = cw - margin - bat_w
+        sub_x0 = sub_x1 - sub_w
+
+        max_cat_w = max(40, (sub_x0 - cat_x0 - 8) if sub_label else (sub_x1 - cat_x0 - 8))
+        cat_w = min(cat_w, max_cat_w)
+        cat_x1 = cat_x0 + cat_w
+
         draw.rounded_rectangle([cat_x0, pill_y0, cat_x1, pill_y1], radius=4, outline=BLACK, width=1)
-        draw.text((cat_x0 + 10, (pill_y0 + pill_y1) // 2), cat_label, font=cat_f, fill=BLACK, anchor="lm")
+        draw.text(((cat_x0 + cat_x1) // 2, (pill_y0 + pill_y1) // 2), cat_label, font=cat_f, fill=BLACK, anchor="mm")
 
         if sub_label:
-            bat_w = text_width(f"{battery_pct} %", f) + 12 if (battery_pct is not None and battery_pct > 0) else 0
-            sub_x1 = cw - margin - bat_w
-            sub_x0 = sub_x1 - 57
             draw.rounded_rectangle([sub_x0, pill_y0, sub_x1, pill_y1], radius=4, outline=BLACK, width=1)
             draw.text(((sub_x0 + sub_x1) // 2, (pill_y0 + pill_y1) // 2), sub_label, font=cat_f, fill=BLACK, anchor="mm")
     elif label:
