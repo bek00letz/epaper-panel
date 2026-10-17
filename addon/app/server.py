@@ -1317,13 +1317,34 @@ async def build_frames(session):
                     el_c["sub_index"] = s_idx
                 elif sub_type in ("feed", "watch") and feed_items and s_idx < len(feed_items):
                     item_data = feed_items[s_idx]
-                    if el.get("entity") == feed_entity or (feed_entity and el.get("entity") in ("sensor.epaper_watch", feed_entity)):
-                        if el.get("show") == "attribute" and el.get("attribute") == "detail":
-                            cloned_vals[el_idx] = item_data.get("detail", "")
-                        else:
-                            cloned_vals[el_idx] = item_data.get("title", "")
-                    elif el.get("type") == "text" and any(k in str(el.get("value", "")).lower() for k in ("watch", "deck", "media", "episode")) and sub_count > 1:
-                        val_str = str(el.get("value", ""))
+                    top_title = str(feed_items[0].get("title", "")).strip()
+                    top_detail = str(feed_items[0].get("detail", "")).strip()
+                    ent = str(el.get("entity", "")).strip()
+                    val_str = str(el.get("value", "")).strip()
+                    cur_val = str(cloned_vals.get(el_idx, "")).strip()
+
+                    # 1. Detail / Episode field: matches attribute 'detail', a template referencing detail, or the initial top detail text
+                    is_detail = (
+                        (ent and (ent == feed_entity or ent == "sensor.epaper_watch") and el.get("show") == "attribute" and "detail" in str(el.get("attribute", "")).lower())
+                        or ("detail" in val_str.lower() and any(k in val_str.lower() for k in ("state_attr", "states", feed_entity, "watch", "jelly", "item")))
+                        or (bool(top_detail) and cur_val == top_detail)
+                    )
+
+                    # 2. Show title field: matches feed entity, or the initial top show title
+                    is_title = (
+                        (ent and (ent == feed_entity or ent == "sensor.epaper_watch") and el.get("show") != "attribute")
+                        or (bool(top_title) and cur_val == top_title)
+                    )
+
+                    if is_detail:
+                        cloned_vals[el_idx] = item_data.get("detail", "")
+                        if "value" in el_c and "{{" in str(el_c["value"]):
+                            el_c["value"] = ""
+                    elif is_title:
+                        cloned_vals[el_idx] = item_data.get("title", "")
+                        if "value" in el_c and "{{" in str(el_c["value"]):
+                            el_c["value"] = ""
+                    elif el.get("type") == "text" and any(k in val_str.lower() for k in ("watch", "deck", "media", "episode", "unwatch")) and sub_count > 1:
                         base_val = val_str.split("  [")[0]
                         el_c["value"] = f"{base_val}  [{s_idx + 1}/{sub_count}]"
 
@@ -2972,6 +2993,7 @@ async def start(app_runners):
         web.post("/api/action/refresh", api_action_refresh),
         web.get("/api/action/page", api_action_page),
         web.post("/api/action/page", api_action_page),
+        web.get("/api/layouts", api_layouts_get),
     ])
 
     editor = web.Application(client_max_size=1024 * 1024)

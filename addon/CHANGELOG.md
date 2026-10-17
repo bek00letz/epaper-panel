@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.20
+- **Feed / Watch Sub-Item Cycling:**
+  - Resolved issue where secondary episode detail elements in the watch/feed card remained frozen on the first item's episode title.
+  - Added multi-tier resolution in `server.py` sub-item slicing to seamlessly cycle both titles and episode details whether configured via structured entity attributes, custom Jinja templates (`{{ state_attr(...) }}`), or template values matching the feed's initial detail.
+  - Exposed `/api/layouts` on the panel LAN port for diagnostic inspection.
+
 ## 0.8.19
 - **Remote & Hierarchical Navigation Actions:**
   - Added native `action: mode_toggle` to switch between Category mode and Sub-category navigation, supporting remote automations (IKEA Bilresa, Matter/Zigbee remotes) with on-screen active pill inversion sync.
