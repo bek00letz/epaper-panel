@@ -2337,6 +2337,20 @@ api:
             if (id(cat_pinned)) id(pinned) = false;
             ESP_LOGI("panel", "Category lock: %d", id(cat_pinned));
         - script.execute: redraw
+    - action: lock_toggle
+      then:
+        - lambda: |-
+            id(idle_sec) = 0;
+            if (id(sub_mode)) {{
+              id(pinned) = !id(pinned);
+              if (id(pinned)) id(cat_pinned) = false;
+              ESP_LOGI("panel", "Contextual lock (sub_mode): panel lock=%d", id(pinned));
+            }} else {{
+              id(cat_pinned) = !id(cat_pinned);
+              if (id(cat_pinned)) id(pinned) = false;
+              ESP_LOGI("panel", "Contextual lock (cat_mode): cat lock=%d", id(cat_pinned));
+            }}
+        - script.execute: redraw
 
 ota:
   - platform: esphome
