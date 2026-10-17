@@ -194,6 +194,77 @@ header {
   margin: 0 2px;
 }
 .spacer { margin-left: auto; }
+.tool-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.seg-btn-group {
+  display: inline-flex;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+.seg-btn-group button {
+  border-radius: 0 !important;
+  border: none !important;
+  border-right: 1px solid var(--border) !important;
+  margin: 0 !important;
+  height: 28px !important;
+}
+.seg-btn-group button:last-child {
+  border-right: none !important;
+}
+.menu-wrap {
+  position: relative;
+  display: inline-block;
+}
+.menu-popover {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 180px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+  padding: 6px;
+  display: none;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 1000;
+}
+.menu-popover.right {
+  left: auto;
+  right: 0;
+}
+.menu-popover.show {
+  display: flex;
+}
+.menu-popover button {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+.menu-popover button:hover {
+  background: var(--bg-hover);
+}
+.menu-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 3px 0;
+}
 
 /* Status Pill */
 .status-pill {
@@ -919,6 +990,7 @@ aside {
 <body data-theme="dark">
 
 <header>
+  <!-- Brand & Identity -->
   <div class="brand-group">
     <div class="brand-icon">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -927,45 +999,64 @@ aside {
       </svg>
     </div>
     <span class="brand-title">E-Paper Studio</span>
-    <span class="brand-pill">CrowPanel 5.79"</span>
   </div>
 
   <span class="sep"></span>
 
-  <select id="page" title="Current Page"></select>
-  <button id="templatebtn" class="badge-btn" title="Add page from ready-made presets">Add Preset</button>
-  <button id="addpage" title="New blank page">＋ Blank</button>
-  <button id="duppage" title="Duplicate current page">Duplicate</button>
-  <button id="renamepage" title="Rename current page">Rename</button>
-  <button id="delpage" title="Delete current page">Delete</button>
+  <!-- Page Navigation & Management -->
+  <div class="tool-group">
+    <select id="page" title="Current Page" style="font-weight:600;min-width:130px;height:28px"></select>
+    <button id="templatebtn" class="sm" title="Add page from ready-made presets" style="font-weight:600">＋ Preset</button>
+    <button id="addpage" class="sm" title="New blank page">＋ Blank</button>
+    <div class="menu-wrap">
+      <button id="pageactionsbtn" class="sm icon-btn" title="Page actions (Duplicate, Rename, Delete)">•••</button>
+      <div class="menu-popover" id="pagemenu">
+        <button id="duppage"><span style="font-size:14px">📋</span> Duplicate Page</button>
+        <button id="renamepage"><span style="font-size:14px">✏️</span> Rename Page</button>
+        <div class="menu-sep"></div>
+        <button id="delpage" style="color:var(--danger)"><span style="font-size:14px">🗑️</span> Delete Page</button>
+      </div>
+    </div>
+  </div>
 
   <span class="sep"></span>
 
-  <button id="undo" class="icon-btn" title="Undo (Cmd/Ctrl+Z)">&#8630;</button>
-  <button id="redo" class="icon-btn" title="Redo (Cmd/Ctrl+Shift+Z)">&#8631;</button>
-
-  <select id="orient" title="Mounting orientation">
-    <option value="0">Landscape (0°)</option>
-    <option value="180">Upside-down (180°)</option>
-    <option value="90">Portrait CW (90°)</option>
-    <option value="270">Portrait CCW (270°)</option>
-  </select>
-
-  <button id="reflowbtn" class="sm" title="Reflow current elements between Landscape and Portrait">Reflow</button>
-  <button id="safebtn" class="sm" title="Toggle footer &amp; held-page padlock margins">Guides</button>
+  <!-- Canvas & History Controls -->
+  <div class="tool-group">
+    <div class="seg-btn-group">
+      <button id="undo" class="icon-btn sm" title="Undo (Cmd/Ctrl+Z)">↶</button>
+      <button id="redo" class="icon-btn sm" title="Redo (Cmd/Ctrl+Shift+Z)">↷</button>
+    </div>
+    <select id="orient" title="Mounting orientation" class="sm" style="height:28px">
+      <option value="0">0° Landscape</option>
+      <option value="180">180° Landscape</option>
+      <option value="90">90° Portrait</option>
+      <option value="270">270° Portrait</option>
+    </select>
+    <button id="safebtn" class="sm" title="Toggle footer &amp; padlock margin guides">Guides</button>
+    <button id="reflowbtn" class="sm" title="Reflow current elements" style="display:none">Reflow</button>
+  </div>
 
   <span class="spacer"></span>
 
-  <button id="statuspill" class="status-pill" title="Click to preview the full rendered panel strip">
-    <span id="statusdot" class="status-dot"></span>
-    <span id="statustext">Loading…</span>
-  </button>
-
-  <button id="themetoggle" class="icon-btn" title="Toggle Dark/Light Mode">🌙</button>
-  <button id="setupbtn" title="Configure &amp; generate ESPHome firmware">Panel setup</button>
-  <button id="datasrc" title="External feeds (Jellyfin, JSON, Long-term stats)">Data sources</button>
-  <button id="push" title="Make the panel fetch and redraw now">Push to panel</button>
-  <button id="save" class="primary">Save Changes</button>
+  <!-- Status & Actions -->
+  <div class="tool-group">
+    <button id="statuspill" class="status-pill" title="Click to preview the full rendered panel strip">
+      <span id="statusdot" class="status-dot"></span>
+      <span id="statustext">Loading…</span>
+    </button>
+    <div class="menu-wrap">
+      <button id="toolsbtn" class="sm icon-btn" title="Settings &amp; Tools">⚙️</button>
+      <div class="menu-popover right" id="toolsmenu">
+        <button id="setupbtn"><span style="font-size:14px">📟</span> Panel Setup &amp; Firmware</button>
+        <button id="datasrc"><span style="font-size:14px">🔌</span> Data Sources</button>
+        <div class="menu-sep"></div>
+        <button id="themetoggle"><span style="font-size:14px">🌓</span> Toggle Dark / Light</button>
+      </div>
+    </div>
+    <button id="push" class="primary sm" title="Save changes and make the panel fetch &amp; redraw immediately" style="font-weight:600;padding:5px 14px">Push to Panel</button>
+    <button id="save" class="sm" title="Save changes without pushing to physical display" style="display:none">Save</button>
+  </div>
 </header>
 
 <datalist id="entities-dl"></datalist>
@@ -1064,10 +1155,26 @@ aside {
 
     <!-- Rotation Strip -->
     <div id="rotbelt" class="bar-box">
-      <span class="bar-title">Active Rotation</span>
-      <div id="rotpills" class="rot-pills"></div>
-      <button id="rotadd" class="sm" title="Add another slot for current page">+ Add slot</button>
-      <button id="stripbtn" class="sm" title="Preview all stacked pages">Full strip</button>
+      <div style="display:flex;align-items:center;gap:10px;width:100%;flex-wrap:wrap">
+        <span class="bar-title">Active Rotation</span>
+        <label style="font-size:11.5px;color:var(--text-secondary);display:inline-flex;align-items:center;gap:5px;cursor:pointer">
+          <span>Cycle interval:</span>
+          <select id="rotinterval" style="height:22px;font-size:11px;padding:1px 6px;border:1px solid var(--border);border-radius:4px;background:var(--bg-card);color:inherit;font-weight:600;cursor:pointer">
+            <option value="15">15 sec</option>
+            <option value="30">30 sec</option>
+            <option value="45">45 sec</option>
+            <option value="60">1 min</option>
+            <option value="120">2 min</option>
+            <option value="300">5 min</option>
+            <option value="0">Manual (Buttons only)</option>
+          </select>
+        </label>
+        <div style="margin-left:auto;display:flex;gap:6px">
+          <button id="rotadd" class="sm" title="Add another slot for current page">+ Add slot</button>
+          <button id="stripbtn" class="sm" title="Preview all stacked pages">Full strip</button>
+        </div>
+      </div>
+      <div id="rotpills" class="rot-pills" style="margin-top:6px"></div>
     </div>
 
     <p class="hint"><b>Tip:</b> Click an entity card or drag it onto the canvas. Use arrows to nudge, Shift+arrows by 10px. Hold Alt to ignore grid snapping.</p>
@@ -1851,6 +1958,8 @@ async function boot() {
   spec = await api("api/layouts").then(r => r.json());
   if (!spec.display) spec.display = "crowpanel_579";
   if (spec.orientation === undefined) spec.orientation = 0;
+  if (spec.rotate_seconds === undefined) spec.rotate_seconds = 30;
+  if ($("rotinterval")) $("rotinterval").value = String(spec.rotate_seconds);
   syncOrientUI();
   ents = await api("api/entities").then(r => r.json()).catch(() => []);
   $("entcount").textContent = ents.length;
@@ -1870,6 +1979,9 @@ const fillPages = () => {
     const badge = t === "alert" ? " [alert]" : t === "when" ? " [when]" : "";
     return `<option value="${esc(n)}">${esc(n)}${badge}</option>`;
   }).join("");
+  if ($("rotinterval") && spec.rotate_seconds !== undefined) {
+    $("rotinterval").value = String(spec.rotate_seconds);
+  }
   drawRotationPills();
 };
 const page = () => spec.pages[cur];
@@ -2880,6 +2992,38 @@ function props() {
 $("undo").onclick = undo;
 $("redo").onclick = redo;
 $("page").onchange = e => select(e.target.value);
+
+// Header Popover Menus (Page actions ••• and Settings ⚙️)
+const closeHeaderPopovers = () => document.querySelectorAll(".menu-popover").forEach(m => m.classList.remove("show"));
+if ($("pageactionsbtn")) {
+  $("pageactionsbtn").onclick = (e) => {
+    e.stopPropagation();
+    const m = $("pagemenu");
+    const isShow = m.classList.contains("show");
+    closeHeaderPopovers();
+    if (!isShow) m.classList.add("show");
+  };
+}
+if ($("toolsbtn")) {
+  $("toolsbtn").onclick = (e) => {
+    e.stopPropagation();
+    const m = $("toolsmenu");
+    const isShow = m.classList.contains("show");
+    closeHeaderPopovers();
+    if (!isShow) m.classList.add("show");
+  };
+}
+document.addEventListener("click", () => closeHeaderPopovers());
+
+// Cycle / Rotation Interval Selector
+if ($("rotinterval")) {
+  $("rotinterval").onchange = (e) => {
+    snapshot();
+    spec.rotate_seconds = Number(e.target.value) || 30;
+    saveLayouts();
+    msg(`Rotation cycle interval set to ${spec.rotate_seconds}s.`);
+  };
+}
 
 function holdRow() {
   const t = (page() && page().tier) || "rotate";

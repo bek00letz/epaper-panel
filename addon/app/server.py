@@ -653,15 +653,32 @@ def _check_frame_auth(request):
         raise web.HTTPUnauthorized(text="invalid or missing token")
 
 
+def _frame_headers(etag=None, page_count=1):
+    spec = load_layouts()
+    rot_sec = str(spec.get("rotate_seconds", 30))
+    panel_cfg = load_panel_setup()
+    m_int = re.search(r"\d+", str(panel_cfg.get("refresh_interval", "5")))
+    panel_int = int(m_int.group(0)) if m_int else 5
+
+    h = {
+        "Cache-Control": "no-cache",
+        "X-Next-Refresh-Seconds": str(panel_int * 60),
+        "X-Rotate-Seconds": rot_sec,
+        "X-Page-Count": str(page_count),
+    }
+    if etag:
+        h["ETag"] = etag
+    return h
+
+
 async def frame_png(request):
     _check_frame_auth(request)
     f = FRAMES
     if not f.single:
         raise web.HTTPServiceUnavailable(text="no frame rendered yet")
     if f.single_etag and request.headers.get("If-None-Match") == f.single_etag:
-        raise web.HTTPNotModified(headers={"ETag": f.single_etag})
-    headers = {"ETag": f.single_etag, "Cache-Control": "no-cache"} if f.single_etag else {}
-    return web.Response(body=f.single, content_type="image/png", headers=headers)
+        raise web.HTTPNotModified(headers=_frame_headers(etag=f.single_etag, page_count=1))
+    return web.Response(body=f.single, content_type="image/png", headers=_frame_headers(etag=f.single_etag, page_count=1))
 
 
 async def frames_png(request):
@@ -670,9 +687,8 @@ async def frames_png(request):
     if not f.strip:
         raise web.HTTPServiceUnavailable(text="no frame rendered yet")
     if f.strip_etag and request.headers.get("If-None-Match") == f.strip_etag:
-        raise web.HTTPNotModified(headers={"ETag": f.strip_etag})
-    headers = {"ETag": f.strip_etag, "Cache-Control": "no-cache"} if f.strip_etag else {}
-    return web.Response(body=f.strip, content_type="image/png", headers=headers)
+        raise web.HTTPNotModified(headers=_frame_headers(etag=f.strip_etag, page_count=len(f.names)))
+    return web.Response(body=f.strip, content_type="image/png", headers=_frame_headers(etag=f.strip_etag, page_count=len(f.names)))
 
 
 async def public_status(request):

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.8.8
+- **Apple-Grade Header & Toolbar Redesign:** Restored a clean, spacious, and uncluttered layout to the top navigation bar.
+  - **Grouped Toolbars:** Grouped 17 sprawling individual controls into 4 logical zones: *Brand*, *Page Navigation*, *Canvas Tools*, and *Status & Output Actions*.
+  - **Page Actions Menu (`•••`):** Replaced repetitive page buttons with a compact popover menu containing *Duplicate Page*, *Rename Page*, and *Delete Page*.
+  - **Settings Menu (`⚙️`):** Secondary administrative options (*Panel Setup & Firmware*, *Data Sources*, and *Dark/Light Theme*) now tuck neatly into an unobtrusive settings popover.
+  - **Clear Primary Call to Action:** Replaced ambiguous double-save buttons with a single high-contrast **Push to Panel** action that automatically saves and renders in one click.
+- **Hardware Page Rotation Timing (`X-Rotate-Seconds`):**
+  - **Cycle Interval Selector:** Added an explicit **`Cycle interval`** dropdown (`15s`, `30s`, `45s`, `1 min`, `2 min`, `5 min`, or `Manual`) right inside the **Active Rotation** strip.
+  - **Dynamic HTTP Timing Headers:** The server now emits `X-Next-Refresh-Seconds`, `X-Rotate-Seconds`, and `X-Page-Count` response headers on every `/frames.png` and `/frame.png` fetch, allowing hardware to dynamically adjust its cycle cadence and deep-sleep timers without requiring firmware reflashes.
+
 ## 0.8.7
 - **Dynamic Multi-Row Grid Scaling (2×2, 2×3, 2×4…):** Dynamic Grid is no longer restricted to 4 spots or squished into a single crowded row when monitoring 5+ devices.
   - **Balanced 2D Matrices:** When monitoring 5 or 6 items, the display automatically arranges into an elegant 2×3 grid in landscape (or 3×2 in portrait). When monitoring 7 or 8 items, it flows into a balanced 2×4 grid.
