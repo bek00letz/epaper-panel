@@ -1,5 +1,5 @@
 name: E-paper panel
-version: "0.8.10"
+version: "0.8.11"
 slug: epaper_panel
 description: 'Render Home Assistant onto Elecrow CrowPanel E-Paper displays (primary: 5.79" DIS08792E; also 4.2", 2.9", 7.5", 10.2"), with an intuitive visual editor'
 url: https://github.com/bek00letz/epaper-panel

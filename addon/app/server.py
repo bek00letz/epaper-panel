@@ -475,6 +475,8 @@ _aircraft_cache = {"at": 0.0, "items": []}
 _home_location_cache = {"at": 0.0, "lat": 45.794, "lon": 21.222}
 _weather_cache = {}
 _calendar_cache = {}
+_racing_cache = {}
+_sports_match_cache = {}
 
 
 def _haversine_km(lat1, lon1, lat2, lon2):
@@ -486,13 +488,17 @@ def _haversine_km(lat1, lon1, lat2, lon2):
     return R * c
 
 
-def _bearing_cardinal(lat1, lon1, lat2, lon2):
+def _bearing_calc(lat1, lon1, lat2, lon2):
     y = math.sin(math.radians(lon2 - lon1)) * math.cos(math.radians(lat2))
     x = math.cos(math.radians(lat1)) * math.sin(math.radians(lat2)) - math.sin(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.cos(math.radians(lon2 - lon1))
     deg = (math.degrees(math.atan2(y, x)) + 360) % 360
     cardinals = ["N", "NE", "E", "SE", "S", "SW", "W", "NW", "N"]
     idx = int((deg + 22.5) // 45)
-    return cardinals[idx]
+    return deg, cardinals[idx]
+
+
+def _bearing_cardinal(lat1, lon1, lat2, lon2):
+    return _bearing_calc(lat1, lon1, lat2, lon2)[1]
 
 
 async def get_home_coordinates(session):
@@ -548,7 +554,7 @@ async def fetch_overhead_aircraft(session, radius_km=35.0):
                 dist = _haversine_km(lat, lon, a_lat, a_lon)
                 if dist > radius_km:
                     continue
-                cardinal = _bearing_cardinal(lat, lon, a_lat, a_lon)
+                b_deg, cardinal = _bearing_calc(lat, lon, a_lat, a_lon)
                 cs = str(s[1]).strip() if s[1] else str(s[0]).upper()
                 aircraft.append({
                     "icao24": str(s[0]).upper(),
@@ -561,6 +567,7 @@ async def fetch_overhead_aircraft(session, radius_km=35.0):
                     "track_deg": float(s[10]) if s[10] is not None else 0.0,
                     "vertical_rate": float(s[11]) if s[11] is not None else 0.0,
                     "distance_km": round(dist, 1),
+                    "bearing_deg": round(b_deg, 1),
                     "bearing_cardinal": cardinal
                 })
             aircraft.sort(key=lambda a: a["distance_km"])
@@ -672,6 +679,285 @@ async def fetch_calendar_events(session, entity_id, days=31, fallback=None):
         return fallback
 
 
+async def fetch_racing_data(session, entity_or_series="f1", fallback=None):
+    now = time.time()
+    raw_key = str(entity_or_series or "f1").strip().lower()
+
+    # 1. Approach A: Check if fallback is a resolved template from HA entity (e.g. sensor.f1)
+    base_data = None
+    if isinstance(fallback, dict):
+        base_data = fallback
+    elif isinstance(fallback, str) and fallback.strip():
+        try:
+            base_data = json.loads(fallback)
+        except Exception:
+            pass
+
+    ha_event_name = ""
+    ha_status = ""
+    ha_circuit = ""
+    ha_date = ""
+    if isinstance(base_data, dict) and "attributes" in base_data:
+        attrs = base_data.get("attributes") or {}
+        ha_status = str(base_data.get("state") or "").upper()
+        ha_event_name = attrs.get("event_name") or attrs.get("event") or ""
+        ha_circuit = attrs.get("venue") or attrs.get("circuit") or ""
+        ha_date = attrs.get("date") or ""
+        if attrs.get("standings"):
+            return {
+                "series": "F1",
+                "event_name": ha_event_name or "Formula 1 Grand Prix",
+                "circuit": ha_circuit or "Grand Prix Circuit",
+                "status": ha_status or "IN",
+                "lap": attrs.get("lap"),
+                "total_laps": attrs.get("total_laps"),
+                "clock": attrs.get("clock") or ha_status,
+                "standings": attrs.get("standings")
+            }
+
+    # 2. Check in-memory cache
+    cached = _racing_cache.get(raw_key)
+    if cached and (now - cached["at"] < (60.0 if cached.get("is_live") else 600.0)):
+        return cached["data"]
+
+    # 3. Approach B: Query ESPN F1 scoreboard
+    f1_url = "https://site.api.espn.com/apis/site/v2/sports/racing/f1/scoreboard"
+    headers = {"User-Agent": "Crowpanel-Epaper/0.8.11 (HomeAssistant Addon)"}
+    timeout = aiohttp.ClientTimeout(total=6)
+
+    event_data = {
+        "series": "F1",
+        "event_name": ha_event_name or "Formula 1 Grand Prix",
+        "circuit": ha_circuit or "Grand Prix Circuit",
+        "detail": "Upcoming Grand Prix Session",
+        "status": ha_status or "PRE",
+        "standings": []
+    }
+    is_live = False
+
+    try:
+        async with session.get(f1_url, headers=headers, timeout=timeout) as r:
+            if r.status == 200:
+                data = await r.json()
+                events = data.get("events") or []
+                if events:
+                    ev = events[0]
+                    ev_name = ev.get("name") or ha_event_name or "Formula 1 Grand Prix"
+                    circuit_info = ev.get("circuit") or {}
+                    c_name = circuit_info.get("fullName") or ha_circuit or "Grand Prix Circuit"
+                    c_addr = circuit_info.get("address", {})
+                    c_city = c_addr.get("city") or ""
+                    circuit_str = f"{c_name} · {c_city}" if c_city else c_name
+                    st_desc = ev.get("status", {}).get("type", {}).get("description") or "Scheduled"
+                    st_state = ev.get("status", {}).get("type", {}).get("state") or "pre"
+                    is_live = (st_state == "in" or "progress" in st_desc.lower())
+
+                    date_iso = ev.get("date") or ha_date
+                    detail_str = f"Status: {st_desc}"
+                    if date_iso:
+                        try:
+                            dt = datetime.fromisoformat(date_iso.replace("Z", "+00:00"))
+                            detail_str = dt.strftime("%a %b %d · %H:%M UTC")
+                        except Exception:
+                            detail_str = f"{st_desc} · {str(date_iso)[:10]}"
+
+                    event_data = {
+                        "series": "F1",
+                        "event_name": ev_name,
+                        "circuit": circuit_str,
+                        "detail": detail_str,
+                        "status": "IN" if is_live else ("POST" if st_state == "post" else "PRE"),
+                        "clock": st_desc,
+                        "standings": []
+                    }
+
+                    comps = (ev.get("competitions") or [{}])[0].get("competitors") or []
+                    if comps:
+                        parsed_standings = []
+                        for idx, c in enumerate(comps[:10]):
+                            ath = c.get("athlete") or {}
+                            tm = c.get("team") or {}
+                            code = ath.get("abbreviation") or ath.get("shortName") or "DRV"
+                            team_name = tm.get("displayName") or tm.get("shortDisplayName") or ""
+                            gap_val = c.get("status", {}).get("displayValue") or ("LEADER" if idx == 0 else "")
+                            parsed_standings.append({
+                                "pos": idx + 1,
+                                "driver": str(code)[:3].upper(),
+                                "team": team_name,
+                                "gap": gap_val,
+                                "tyre": "M"
+                            })
+                        if parsed_standings:
+                            event_data["standings"] = parsed_standings
+
+        _racing_cache[raw_key] = {"at": now, "data": event_data, "is_live": is_live}
+        return event_data
+    except Exception as exc:
+        print(f"fetch_racing_data error: {exc!r}", flush=True)
+        return _racing_cache.get(raw_key, {}).get("data") or event_data
+
+
+async def fetch_sports_match(session, entity_or_league="soccer/eng.1", team=None, fallback=None):
+    now = time.time()
+    raw_input = str(entity_or_league or "soccer/eng.1").strip()
+    cache_key = f"{raw_input}:{str(team or '').lower()}"
+
+    # 1. Approach A: Check if fallback is a resolved HA entity from ha-teamtracker
+    base_data = None
+    if isinstance(fallback, dict):
+        base_data = fallback
+    elif isinstance(fallback, str) and fallback.strip():
+        try:
+            base_data = json.loads(fallback)
+        except Exception:
+            pass
+
+    if isinstance(base_data, dict) and "attributes" in base_data:
+        attrs = base_data.get("attributes") or {}
+        home = attrs.get("team_name") or attrs.get("team_abbr") or "HOME"
+        away = attrs.get("opponent_name") or attrs.get("opponent_abbr") or "AWAY"
+        h_score = attrs.get("team_score")
+        a_score = attrs.get("opponent_score")
+        st = str(base_data.get("state") or "PRE").upper()
+        clock_str = attrs.get("clock") or attrs.get("quarter") or attrs.get("period") or st
+        last_play = attrs.get("last_play") or ""
+        down_dist = attrs.get("down_distance_text") or ""
+        venue = attrs.get("venue") or ""
+        league_name = attrs.get("league") or "MATCH"
+        return {
+            "league": league_name,
+            "venue": venue,
+            "clock": clock_str,
+            "status": st,
+            "home_team": home,
+            "home_score": h_score if h_score is not None else "-",
+            "home_stats": down_dist,
+            "away_team": away,
+            "away_score": a_score if a_score is not None else "-",
+            "away_stats": "",
+            "events_home": last_play,
+            "events_away": ""
+        }
+
+    # 2. Check in-memory cache
+    cached = _sports_match_cache.get(cache_key)
+    if cached and (now - cached["at"] < (30.0 if cached.get("is_live") else 300.0)):
+        return cached["data"]
+
+    # 3. Approach B: Map friendly league names to ESPN endpoint
+    league_map = {
+        "premier_league": "soccer/eng.1",
+        "epl": "soccer/eng.1",
+        "champions_league": "soccer/uefa.champions",
+        "ucl": "soccer/uefa.champions",
+        "la_liga": "soccer/esp.1",
+        "bundesliga": "soccer/ger.1",
+        "serie_a": "soccer/ita.1",
+        "mls": "soccer/usa.1",
+        "nba": "basketball/nba",
+        "wnba": "basketball/wnba",
+        "nfl": "football/nfl",
+        "college_football": "football/college-football",
+        "mlb": "baseball/mlb",
+        "nhl": "hockey/nhl"
+    }
+    slug = raw_input.lower().replace("-", "_").replace(" ", "_")
+    endpoint_path = league_map.get(slug, raw_input)
+    if "/" not in endpoint_path:
+        endpoint_path = f"soccer/{endpoint_path}"
+
+    url = f"https://site.api.espn.com/apis/site/v2/sports/{endpoint_path}/scoreboard"
+    headers = {"User-Agent": "Crowpanel-Epaper/0.8.11 (HomeAssistant Addon)"}
+    timeout = aiohttp.ClientTimeout(total=6)
+
+    try:
+        async with session.get(url, headers=headers, timeout=timeout) as r:
+            if r.status != 200:
+                return cached["data"] if cached else None
+            data = await r.json()
+            events = data.get("events") or []
+            if not events:
+                return cached["data"] if cached else None
+
+            # Filter by team name if requested
+            target_ev = None
+            if team:
+                query = str(team).lower().strip()
+                for ev in events:
+                    comp = (ev.get("competitions") or [{}])[0]
+                    for c in comp.get("competitors", []):
+                        tm = c.get("team", {})
+                        if (query in tm.get("displayName", "").lower() or
+                            query in tm.get("shortDisplayName", "").lower() or
+                            query in tm.get("name", "").lower() or
+                            query in tm.get("abbreviation", "").lower()):
+                            target_ev = ev
+                            break
+                    if target_ev:
+                        break
+
+            # If no team match, prefer in-progress event, else first event
+            if not target_ev:
+                for ev in events:
+                    if ev.get("status", {}).get("type", {}).get("state") == "in":
+                        target_ev = ev
+                        break
+                if not target_ev:
+                    target_ev = events[0]
+
+            comp = (target_ev.get("competitions") or [{}])[0]
+            competitors = comp.get("competitors") or []
+            home = next((c for c in competitors if c.get("homeAway") == "home"), competitors[0] if competitors else {})
+            away = next((c for c in competitors if c.get("homeAway") == "away"), competitors[1] if len(competitors) > 1 else {})
+
+            st_type = comp.get("status", {}).get("type", {})
+            st_state = st_type.get("state") or "pre"
+            st_desc = st_type.get("description") or st_type.get("detail") or "Scheduled"
+            clock_val = comp.get("status", {}).get("displayClock")
+            is_live = (st_state == "in")
+
+            clock_badge = f"{clock_val} · {st_desc}" if (clock_val and clock_val != "0'" and is_live) else st_desc
+            league_title = (data.get("leagues") or [{}])[0].get("name") or "MATCH"
+            venue_title = comp.get("venue", {}).get("fullName") or ""
+
+            # Extract scorers / key details
+            home_id = str(home.get("team", {}).get("id") or "")
+            events_home = []
+            events_away = []
+            for dt in comp.get("details", []):
+                t_txt = dt.get("type", {}).get("text") or ""
+                clk = dt.get("clock", {}).get("displayValue") or ""
+                athletes = dt.get("athletesInvolved") or []
+                p_name = athletes[0].get("displayName") if athletes else ""
+                if p_name and ("Goal" in t_txt or "Point" in t_txt or "Touchdown" in t_txt or "Home Run" in t_txt):
+                    entry_str = f"{p_name} ({clk})" if clk else p_name
+                    if str(dt.get("team", {}).get("id") or "") == home_id:
+                        events_home.append(entry_str)
+                    else:
+                        events_away.append(entry_str)
+
+            result = {
+                "league": league_title,
+                "venue": venue_title,
+                "clock": clock_badge,
+                "status": st_state.upper(),
+                "home_team": home.get("team", {}).get("displayName") or home.get("team", {}).get("shortDisplayName") or "HOME",
+                "home_score": home.get("score") if home.get("score") is not None else "-",
+                "home_stats": (home.get("records") or [{}])[0].get("summary", ""),
+                "away_team": away.get("team", {}).get("displayName") or away.get("team", {}).get("shortDisplayName") or "AWAY",
+                "away_score": away.get("score") if away.get("score") is not None else "-",
+                "away_stats": (away.get("records") or [{}])[0].get("summary", ""),
+                "events_home": ", ".join(events_home[:3]),
+                "events_away": ", ".join(events_away[:3])
+            }
+
+            _sports_match_cache[cache_key] = {"at": now, "data": result, "is_live": is_live}
+            return result
+    except Exception as exc:
+        print(f"fetch_sports_match error: {exc!r}", flush=True)
+        return cached["data"] if cached else None
+
+
 async def enrich_page_values(session, page, vals):
     for i, el in enumerate(page.get("elements", [])):
         t = el.get("type")
@@ -690,6 +976,17 @@ async def enrich_page_values(session, page, vals):
             fl_data = await fetch_overhead_aircraft(session, radius_km=radius)
             if fl_data is not None:
                 vals[i] = fl_data
+        elif t == "sports_racing":
+            entity_or_series = el.get("entity") or el.get("series") or "f1"
+            race_data = await fetch_racing_data(session, entity_or_series, fallback=vals.get(i))
+            if race_data:
+                vals[i] = race_data
+        elif t == "sports_match":
+            entity_or_league = el.get("entity") or el.get("league") or "soccer/eng.1"
+            team = el.get("team")
+            match_data = await fetch_sports_match(session, entity_or_league, team=team, fallback=vals.get(i))
+            if match_data:
+                vals[i] = match_data
 
 
 async def gather_values(session, spec, names):
@@ -750,6 +1047,21 @@ async def publish_computed(session):
                                   "country": aircraft[0]["country"], "icon": "mdi:airplane"})
     except Exception as exc:
         print(f"publish aircraft sensor failed: {exc!r}", flush=True)
+
+    # Publish Formula 1 status sensor
+    try:
+        f1_data = await fetch_racing_data(session, "f1")
+        if f1_data:
+            f1_st = f1_data.get("status") or "PRE"
+            await publish_entity(session, "sensor.f1_status", f1_st,
+                                 {"friendly_name": "Formula 1 Status",
+                                  "event_name": f1_data.get("event_name"),
+                                  "circuit": f1_data.get("circuit"),
+                                  "detail": f1_data.get("detail"),
+                                  "clock": f1_data.get("clock"),
+                                  "icon": "mdi:racing-helmet"})
+    except Exception as exc:
+        print(f"publish f1 status failed: {exc!r}", flush=True)
 
     # Publish E-Paper panel system status sensors & MQTT discovery
     try:

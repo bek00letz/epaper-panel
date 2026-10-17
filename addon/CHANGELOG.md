@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.8.11
+- **Circular PPI Radar Scope & Multi-Style Flight Tracker:**
+  - Added tactical circular Plan Position Indicator (PPI) radar scope with outer boundary ring, intermediate range ring, cardinal tick marks (N, E, S, W), range scale badge, home reticle, and directional aircraft blips with callsign tags and target lock brackets (`[ ✈ ]`).
+  - Added `radar style` selector to the Flight Tracker inspector:
+    - `card` (default): The full-width 4-column telemetry card (preserved 100%).
+    - `split`: Tactical circular PPI radar scope on the left + compact 3-column flight telemetry cards on the right.
+    - `radar`: Dedicated circular PPI radar scope.
+  - Added `flight_radar` preset ("Overhead PPI Radar & Telemetry") with automatic dynamic activation (`tier: "when"`).
+- **Formula 1 & Motorsports Live Pit-Wall Tracker (`sports_racing`):**
+  - Live pit-wall leaderboard rendering Top 10 driver positions, driver acronyms (`VER`, `NOR`, `HAM`), constructor names, live gaps (`LEADER`, `+2.1s`), tyre compound badges (`[S]`, `[M]`, `[H]`), and session lap counts (`LAP 42/53`).
+  - Integrated off-week & pre-race schedule card featuring racing helmet glyph, circuit full name, city, and session start countdown.
+  - Published `sensor.f1_status` (`PRE`, `IN`, `POST`) to Home Assistant with event name, circuit, and detail attributes for 1-click dynamic page tier gating (`tier: "when"`).
+- **Live Sports Match Scoreboard (`sports_match`):**
+  - Head-to-head live scoreboards for Soccer (Premier League, UEFA Champions League, La Liga, Serie A, Bundesliga), Basketball (NBA), NFL, MLB, and NHL.
+  - Prominent typography for team names, huge centered score numbers (`2 — 1`), match clock / period badge (`74' · 2ND HALF`, `FINAL`, `Q3 8:12`), team records, and bottom scorers/events ticker.
+- **Dual Engine Architecture (Approach A & Approach B Hybrid):**
+  - **Approach A (Home Assistant `ha-teamtracker`):** If an entity is specified (e.g. `sensor.arsenal`, `sensor.boston_celtics`, `sensor.f1`), state, clock, scores, venue, down & distance, and last play are extracted directly from Home Assistant.
+  - **Approach B (Public Scoreboard Feeds):** Zero-config fallback to public ESPN and OpenF1 APIs when no Home Assistant entity is configured. Allows users to simply choose a league and optional team name (e.g. `Premier League` + `Arsenal`) to start tracking live scores instantly.
+
 ## 0.8.10
 - **Weather Forecast API Unwrapping & Precipitation Chance:**
   - Resolved Home Assistant REST API envelope quirk (`{"response": {eid: ...}}`) so `weather.get_forecasts` daily forecast items and High/Low ranges populate instantly.

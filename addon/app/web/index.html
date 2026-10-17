@@ -1204,8 +1204,9 @@ aside {
           <button data-add="dynamic_grid"><span class="icon">🔲</span><span>Dynamic Grid</span></button>
           <button data-add="calendar_month"><span class="icon">📅</span><span>Month View</span></button>
           <button data-add="calendar_agenda"><span class="icon">📋</span><span>Agenda</span></button>
-          <button data-add="weather_forecast"><span class="icon">🌤️</span><span>Weather</span></button>
           <button data-add="flight_tracker"><span class="icon">✈️</span><span>Flights</span></button>
+          <button data-add="sports_racing"><span class="icon">🏎️</span><span>Racing</span></button>
+          <button data-add="sports_match"><span class="icon">⚽</span><span>Match</span></button>
         </div>
       </div>
     </div>
@@ -2390,6 +2391,20 @@ document.querySelectorAll("[data-add]").forEach(b => b.onclick = () => {
   if (t === "flight_tracker") {
     base.x = m; base.y = 14; base.w = maxW; base.h = curSafeH() - 20;
     base.radius = 35;
+    base.style = "card";
+    base.show_border = true;
+  }
+  if (t === "sports_racing") {
+    base.x = m; base.y = 14; base.w = maxW; base.h = curSafeH() - 20;
+    base.series = "f1";
+    base.entity = "";
+    base.show_border = true;
+  }
+  if (t === "sports_match") {
+    base.x = m; base.y = 14; base.w = maxW; base.h = curSafeH() - 20;
+    base.league = "soccer/eng.1";
+    base.team = "";
+    base.entity = "";
     base.show_border = true;
   }
   els().push(base); sel = els().length - 1; paint(); preview();
@@ -2813,11 +2828,45 @@ function props() {
       </div>
       <div class="chip">Hero current weather conditions (large MDI icon, temperature, condition, humidity, wind) plus 4-day forecast strip. Adapts automatically to wide or stacked layouts.</div>`;
   } else if (el.type === "flight_tracker") {
-    h += f("radius", "airspace radius (km)", "number", "35") +
+    h += `<div class="row"><label>radar style</label><select data-k="style">
+        <option value="card"${(!el.style || el.style === "card") ? " selected" : ""}>Telemetry Card (Default)</option>
+        <option value="split"${el.style === "split" ? " selected" : ""}>Radar Scope + Telemetry (Split)</option>
+        <option value="radar"${el.style === "radar" ? " selected" : ""}>PPI Radar Scope (Tactical Circular)</option>
+      </select></div>` +
+      f("radius", "airspace radius (km)", "number", "35") +
       `<div class="row"><label>card border</label>
         <input type="checkbox" data-k="show_border"${el.show_border !== false ? " checked" : ""}>
       </div>
-      <div class="chip">Live ADS-B flight radar tracking planes flying above your home via OpenSky. Shows callsign, airline/country, altitude, ground speed, heading, and distance. Set Page Tier to <b>Show only when active</b> with <code>{{ states('sensor.overhead_aircraft_count') | int(0) > 0 }}</code> to display only when planes are overhead!</div>`;
+      <div class="chip">Live ADS-B flight tracker tracking planes flying above your home via OpenSky. Choose between <b>Telemetry Card</b>, a tactical circular <b>PPI Radar Scope</b>, or <b>Split View</b>. Set Page Tier to <b>Show only when active</b> with <code>{{ states('sensor.overhead_aircraft_count') | int(0) > 0 }}</code> to display only when planes are overhead!</div>`;
+  } else if (el.type === "sports_racing") {
+    h += `<div class="row"><label>series</label><select data-k="series">
+        <option value="f1"${(!el.series || el.series === "f1") ? " selected" : ""}>Formula 1 (F1)</option>
+        <option value="nascar"${el.series === "nascar" ? " selected" : ""}>NASCAR</option>
+        <option value="indycar"${el.series === "indycar" ? " selected" : ""}>IndyCar</option>
+      </select></div>` +
+      f("entity", "ha sensor entity (optional)", "text", "sensor.f1", "entities-dl") +
+      `<div class="row"><label>card border</label>
+        <input type="checkbox" data-k="show_border"${el.show_border !== false ? " checked" : ""}>
+      </div>
+      <div class="chip">Formula 1 &amp; Motorsport pit-wall tracker. Displays live Top 10 leaderboard, driver abbreviations, gaps, tyre compounds ([S], [M], [H]), and lap numbers during sessions. Shows Grand Prix circuit countdown when off-week. Zero-config ESPN/OpenF1 fallback + blends with HA <code>ha-teamtracker</code>.</div>`;
+  } else if (el.type === "sports_match") {
+    h += `<div class="row"><label>league</label><select data-k="league">
+        <option value="soccer/eng.1"${(!el.league || el.league === "soccer/eng.1" || el.league === "epl") ? " selected" : ""}>Premier League</option>
+        <option value="soccer/uefa.champions"${(el.league === "soccer/uefa.champions" || el.league === "ucl") ? " selected" : ""}>UEFA Champions League</option>
+        <option value="soccer/esp.1"${el.league === "soccer/esp.1" ? " selected" : ""}>La Liga</option>
+        <option value="soccer/ger.1"${el.league === "soccer/ger.1" ? " selected" : ""}>Bundesliga</option>
+        <option value="soccer/ita.1"${el.league === "soccer/ita.1" ? " selected" : ""}>Serie A</option>
+        <option value="basketball/nba"${el.league === "basketball/nba" ? " selected" : ""}>NBA Basketball</option>
+        <option value="football/nfl"${el.league === "football/nfl" ? " selected" : ""}>NFL Football</option>
+        <option value="baseball/mlb"${el.league === "baseball/mlb" ? " selected" : ""}>MLB Baseball</option>
+        <option value="hockey/nhl"${el.league === "hockey/nhl" ? " selected" : ""}>NHL Hockey</option>
+      </select></div>` +
+      f("team", "team filter (optional)", "text", "e.g. Arsenal or Celtics") +
+      f("entity", "ha teamtracker entity (optional)", "text", "sensor.arsenal", "entities-dl") +
+      `<div class="row"><label>card border</label>
+        <input type="checkbox" data-k="show_border"${el.show_border !== false ? " checked" : ""}>
+      </div>
+      <div class="chip">Live head-to-head match scoreboard with large typography, match clock / period badge, team records, and scorer highlights. Seamlessly reads <code>ha-teamtracker</code> entities from Home Assistant, or streams directly from public ESPN scoreboards.</div>`;
   }
   h += "</div>";
 
@@ -3605,7 +3654,10 @@ const PRESET_ICONS = {
   calendar_month: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><circle cx="12" cy="15" r="1.5"/></svg>`,
   calendar_combo: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="8" height="16" rx="1.5"/><rect x="13" y="4" width="8" height="16" rx="1.5"/><line x1="15" y1="8" x2="19" y2="8"/><line x1="15" y1="12" x2="19" y2="12"/><line x1="15" y1="16" x2="19" y2="16"/></svg>`,
   weather_forecast: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z"/></svg>`,
-  flight_tracker: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>`
+  flight_tracker: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>`,
+  flight_radar: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 1 0 10 10"/><path d="m12 12 5-5"/><circle cx="12" cy="12" r="2"/></svg>`,
+  sports_racing: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>`,
+  sports_match: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24M14.83 9.17l4.24-4.24M14.83 14.83l4.24 4.24M9.17 14.83l-4.24 4.24"/></svg>`
 };
 
 const PRESETS = [
@@ -3666,15 +3718,64 @@ const PRESETS = [
   },
   {
     id: "flight_tracker",
-    title: "Overhead Aircraft Tracker",
-    desc: "Live ADS-B flight radar tracking planes flying above your home via OpenSky. Shows callsign, airline/country, altitude, ground speed, heading, and distance.",
+    title: "Overhead Flight Telemetry Card",
+    desc: "Live ADS-B flight tracker showing callsign, airline/country, altitude, ground speed, heading, and distance in a clean 4-column telemetry card.",
     tier: "when",
     show_if: "{{ states('sensor.overhead_aircraft_count') | int(0) > 0 }}",
     makeElements: () => [
       {
         type: "flight_tracker",
+        style: "card",
         x: 18, y: 14, w: 756, h: 222,
         radius: 35,
+        show_border: true
+      }
+    ]
+  },
+  {
+    id: "flight_radar",
+    title: "Overhead PPI Radar & Telemetry",
+    desc: "Tactical circular radar scope on the left plotting planes with range rings and cardinal headings, paired with live flight telemetry cards on the right.",
+    tier: "when",
+    show_if: "{{ states('sensor.overhead_aircraft_count') | int(0) > 0 }}",
+    makeElements: () => [
+      {
+        type: "flight_tracker",
+        style: "split",
+        x: 18, y: 14, w: 756, h: 222,
+        radius: 35,
+        show_border: true
+      }
+    ]
+  },
+  {
+    id: "sports_racing",
+    title: "Formula 1 Live Pit-Wall",
+    desc: "Live Grand Prix pit-wall leaderboard featuring Top 10 positions, driver codes, team names, gaps, tyre compound badges ([S], [M], [H]), and lap count. Circuit countdown when off-week.",
+    tier: "when",
+    show_if: "{{ states('sensor.f1_status') in ['IN', 'PRE'] }}",
+    makeElements: (ent) => [
+      {
+        type: "sports_racing",
+        series: "f1",
+        entity: ent || "",
+        x: 18, y: 14, w: 756, h: 222,
+        show_border: true
+      }
+    ]
+  },
+  {
+    id: "sports_match",
+    title: "Live Sports Match Scoreboard",
+    desc: "Head-to-head live score, period clock (e.g. 74' · 2nd Half), team names, record stats, and scorer highlights. Works with HA ha-teamtracker or public ESPN scoreboards.",
+    tier: "when",
+    makeElements: (ent) => [
+      {
+        type: "sports_match",
+        league: "soccer/eng.1",
+        team: "",
+        entity: ent || "",
+        x: 18, y: 14, w: 756, h: 222,
         show_border: true
       }
     ]
