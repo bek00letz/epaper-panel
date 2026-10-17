@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.8.10
+- **Weather Forecast API Unwrapping & Precipitation Chance:**
+  - Resolved Home Assistant REST API envelope quirk (`{"response": {eid: ...}}`) so `weather.get_forecasts` daily forecast items and High/Low ranges populate instantly.
+  - Added precipitation probability (`% rain`) and precipitation volume (`mm`) indicators to both the current conditions chips and multi-day forecast strip.
+  - Dynamically scaled chip font hierarchy to preserve breathing room from dividers.
+- **Multi-Calendar Family Scheduling & Badges:**
+  - `fetch_calendar_events` now supports comma-separated entity IDs (e.g. `calendar.personal, calendar.work, calendar.family`).
+  - Fetches from all specified calendars concurrently, tags events with calendar source badges (e.g. `WORK`, `PERS`), deduplicates, and sorts chronologically.
+  - Renders subtle outlined calendar origin badges on each agenda item.
+- **Multilingual Font Fallback Chains:**
+  - Installed Alpine Unicode font packages (`font-noto`, `font-noto-cjk`, `font-noto-arabic`, `font-noto-hebrew`, `font-dejavu`).
+  - Added intelligent script detection in `theme.py` that transparently routes Cyrillic, Greek, Hebrew, Arabic, and CJK (Chinese, Japanese, Korean) characters through appropriate native glyph sets without rendering missing glyph tofu boxes (`□`).
+- **MQTT Auto-Discovery & REST Control Actions:**
+  - Publishes Home Assistant MQTT Auto-Discovery entities: `button.epaper_panel_refresh` (instant refresh and panel push) and `sensor.epaper_panel_last_render` (live render timestamp).
+  - Added REST action endpoints `POST /api/action/refresh` and `POST /api/action/page` for easy integration with standard Home Assistant automations and webhooks.
+- **Linux & Battery E-Ink Client Daemon:**
+  - Added `client/linux/epaper-daemon.sh` with strict conditional `If-None-Match` ETag caching.
+  - Automatically aborts screen refresh and redraw on `HTTP 304 Not Modified`, allowing battery e-readers (Kindle, Kobo, Android Termux, Raspberry Pi Zero) to go back to sleep in <100ms.
+
 ## 0.8.9
 - **Monthly Wall-Calendar View (`calendar_month`):**
   - **Full Month Matrix:** A classic paper wall-calendar view showing days of the month aligned under days of the week, allowing you to easily look up what date falls on a Friday two weeks from now or what day the 26th is.

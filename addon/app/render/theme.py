@@ -94,11 +94,17 @@ FOOTER_SIZE  = 20
 BODY_SIZE    = 26    # the "worthwhile when passing by" tier
 LABEL_SIZE   = 30
 
+import re
+
 # Fonts live beside the app, not inside the render package. Check both so
-# this works whether run as a package or as a loose script.
+# this works whether run as a package or as a loose script, and check system font directories.
 _FONT_DIRS = [
     Path(__file__).parent.parent / "fonts",
     Path(__file__).parent / "fonts",
+    Path("/usr/share/fonts"),
+    Path("/usr/share/fonts/noto"),
+    Path("/usr/share/fonts/dejavu"),
+    Path("/usr/share/fonts/truetype"),
 ]
 
 
@@ -108,7 +114,19 @@ def _font_file(*names):
             p = d / n
             if p.exists():
                 return str(p)
+            # Check subdirectories
+            if d.is_dir():
+                for sub in d.glob(f"**/{n}"):
+                    if sub.exists():
+                        return str(sub)
     raise FileNotFoundError(f"none of {names} in {[str(d) for d in _FONT_DIRS]}")
+
+
+def _font_file_opt(*names, fallback_path=None):
+    try:
+        return _font_file(*names)
+    except FileNotFoundError:
+        return fallback_path
 
 
 FONTS = {
@@ -124,10 +142,44 @@ FONTS = {
         "bold": _font_file("RobotoMono-Variable.ttf", "DejaVuSans-Bold.ttf"),
         "regular": _font_file("RobotoMono-Variable.ttf", "DejaVuSans.ttf"),
     },
+    "cjk": {
+        "bold": _font_file_opt("NotoSansCJK-Bold.ttc", "NotoSansCJK-Bold.otf", "NotoSansSC-Bold.ttf", fallback_path=_font_file("DejaVuSans-Bold.ttf")),
+        "regular": _font_file_opt("NotoSansCJK-Regular.ttc", "NotoSansCJK-Regular.otf", "NotoSansSC-Regular.ttf", fallback_path=_font_file("DejaVuSans.ttf")),
+    },
+    "arabic": {
+        "bold": _font_file_opt("NotoSansArabic-Bold.ttf", fallback_path=_font_file("DejaVuSans-Bold.ttf")),
+        "regular": _font_file_opt("NotoSansArabic-Regular.ttf", fallback_path=_font_file("DejaVuSans.ttf")),
+    },
+    "hebrew": {
+        "bold": _font_file_opt("NotoSansHebrew-Bold.ttf", fallback_path=_font_file("DejaVuSans-Bold.ttf")),
+        "regular": _font_file_opt("NotoSansHebrew-Regular.ttf", fallback_path=_font_file("DejaVuSans.ttf")),
+    },
 }
 
 BOLD    = FONTS["lato"]["bold"]
 REGULAR = FONTS["lato"]["regular"]
+
+
+def detect_script(text: str) -> str:
+    """Detect script to route font fallback cleanly without rendering missing glyph boxes."""
+    if not text:
+        return "latin"
+    # CJK (Chinese, Japanese, Korean)
+    if re.search(r"[\u3000-\u9fff\uac00-\ud7af\uff00-\uffef]", text):
+        return "cjk"
+    # Hebrew
+    if re.search(r"[\u0590-\u05ff]", text):
+        return "hebrew"
+    # Arabic
+    if re.search(r"[\u0600-\u06ff\u0750-\u077f]", text):
+        return "arabic"
+    # Cyrillic
+    if re.search(r"[\u0400-\u04ff]", text):
+        return "cyrillic"
+    # Greek
+    if re.search(r"[\u0370-\u03ff]", text):
+        return "greek"
+    return "latin"
 
 
 @lru_cache(maxsize=128)
@@ -135,9 +187,19 @@ def _cached_font(path: str, size: int):
     return ImageFont.truetype(path, size)
 
 
-def font(size, bold=True, family="lato"):
+def font(size, bold=True, family="lato", text=None):
     clamped = max(8, min(360, int(size)))
-    fam = FONTS.get(str(family or "lato").lower(), FONTS["lato"])
+    fam_key = str(family or "lato").lower()
+    
+    # Auto-resolve font family by detecting characters in text if present
+    if text and fam_key in ("lato", "mono", "auto"):
+        script = detect_script(str(text))
+        if script in ("cyrillic", "greek"):
+            fam_key = "dejavu"
+        elif script in FONTS:
+            fam_key = script
+
+    fam = FONTS.get(fam_key, FONTS["lato"])
     path = fam["bold"] if bold else fam["regular"]
     return _cached_font(path, clamped)
 
@@ -185,7 +247,7 @@ def fit_size(s, max_w, max_h, start, floor=24, bold=True, family="lato"):
     lo, hi, best = floor, max(floor, min(360, int(start))), floor
     while lo <= hi:
         mid = (lo + hi) // 2
-        f = font(mid, bold, family=family)
+        f = font(mid, bold, family=family, text=s)
         asc, desc = f.getmetrics()
         if text_width(s, f) <= max_w and (asc + desc) <= max_h:
             best, lo = mid, mid + 1

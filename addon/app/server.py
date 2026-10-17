@@ -607,8 +607,10 @@ async def fetch_weather_forecast(session, entity_id, fallback=None):
 
         f_resp = await ha_json(session, "/services/weather/get_forecasts?return_response=1",
                                method="POST", json={"entity_id": eid, "type": "daily"})
-        if isinstance(f_resp, dict) and eid in f_resp:
-            forecast_list = f_resp[eid].get("forecast")
+        # HA wraps return_response in {"response": {eid: ...}} or sometimes directly
+        payload = f_resp.get("response", f_resp) if isinstance(f_resp, dict) else {}
+        if isinstance(payload, dict) and eid in payload:
+            forecast_list = payload[eid].get("forecast")
             if isinstance(forecast_list, list):
                 base_data["forecast"] = forecast_list
 
@@ -620,27 +622,53 @@ async def fetch_weather_forecast(session, entity_id, fallback=None):
 
 
 async def fetch_calendar_events(session, entity_id, days=31, fallback=None):
-    eid = str(entity_id or "").strip()
-    if not eid:
+    raw_eid = str(entity_id or "").strip()
+    if not raw_eid:
         return fallback
     now = time.time()
-    cached = _calendar_cache.get(eid)
+    cached = _calendar_cache.get(raw_eid)
     if cached and (now - cached["at"] < 300):
         return cached["data"]
 
     if not HA_TOKEN:
         return fallback
 
+    # Support comma-separated list of calendar entities for family/multi-calendar merging
+    eids = [e.strip() for e in raw_eid.split(",") if e.strip()]
+    if not eids:
+        return fallback
+
     try:
-        c_resp = await ha_json(session, "/services/calendar/get_events?return_response=1",
-                               method="POST", json={"entity_id": eid, "duration": {"days": days}})
-        events = []
-        if isinstance(c_resp, dict) and eid in c_resp:
-            events = c_resp[eid].get("events") or []
-        _calendar_cache[eid] = {"at": now, "data": events}
-        return events
+        all_events = []
+        for eid in eids:
+            try:
+                c_resp = await ha_json(session, "/services/calendar/get_events?return_response=1",
+                                       method="POST", json={"entity_id": eid, "duration": {"days": days}})
+                payload = c_resp.get("response", c_resp) if isinstance(c_resp, dict) else {}
+                cal_events = []
+                if isinstance(payload, dict) and eid in payload:
+                    cal_events = payload[eid].get("events") or []
+                
+                # Tag each event with source calendar badge
+                short_badge = eid.replace("calendar.", "").upper()[:4]
+                for ev in cal_events:
+                    ev_copy = dict(ev)
+                    ev_copy["calendar"] = eid
+                    ev_copy["cal_badge"] = short_badge
+                    all_events.append(ev_copy)
+            except Exception as e_inner:
+                print(f"calendar fetch error for {eid}: {e_inner!r}", flush=True)
+
+        # Deduplicate and sort chronologically by start timestamp
+        def _event_key(ev):
+            raw_st = ev.get("start") or ev.get("start_time") or ""
+            return str(raw_st)
+
+        all_events.sort(key=_event_key)
+        _calendar_cache[raw_eid] = {"at": now, "data": all_events}
+        return all_events
     except Exception as exc:
-        print(f"fetch_calendar_events error for {eid}: {exc!r}", flush=True)
+        print(f"fetch_calendar_events error for {raw_eid}: {exc!r}", flush=True)
         return fallback
 
 
@@ -722,6 +750,65 @@ async def publish_computed(session):
                                   "country": aircraft[0]["country"], "icon": "mdi:airplane"})
     except Exception as exc:
         print(f"publish aircraft sensor failed: {exc!r}", flush=True)
+
+    # Publish E-Paper panel system status sensors & MQTT discovery
+    try:
+        cur_f = globals().get("FRAMES")
+        if cur_f and cur_f.rendered_at:
+            await publish_entity(session, "sensor.epaper_panel_last_render", cur_f.rendered_at,
+                                 {"friendly_name": "E-Paper Last Render", "icon": "mdi:clock-check-outline",
+                                  "pages_count": len(cur_f.names), "active_pages": cur_f.names,
+                                  "device_class": "timestamp"})
+            await publish_mqtt_discovery(session, cur_f)
+    except Exception as exc:
+        pass
+
+
+async def publish_mqtt_discovery(session, frames):
+    """Publish Home Assistant MQTT Auto-Discovery entities if MQTT integration is active."""
+    if not HA_TOKEN:
+        return
+    try:
+        dev_info = {
+            "identifiers": ["epaper_panel_hub"],
+            "name": "E-Paper Display Panel",
+            "manufacturer": "Elecrow",
+            "model": "CrowPanel E-Paper",
+            "sw_version": "0.8.10"
+        }
+        btn_payload = {
+            "name": "E-Paper Refresh Now",
+            "unique_id": "epaper_panel_refresh_button",
+            "command_topic": "homeassistant/epaper_panel/refresh",
+            "icon": "mdi:refresh",
+            "device": dev_info
+        }
+        await call_ha_service(session, "mqtt", "publish", {
+            "topic": "homeassistant/button/epaper_panel/refresh/config",
+            "payload": json.dumps(btn_payload),
+            "retain": True
+        })
+        sens_payload = {
+            "name": "E-Paper Last Render",
+            "unique_id": "epaper_panel_last_render",
+            "state_topic": "homeassistant/epaper_panel/last_render",
+            "device_class": "timestamp",
+            "icon": "mdi:clock-check-outline",
+            "device": dev_info
+        }
+        await call_ha_service(session, "mqtt", "publish", {
+            "topic": "homeassistant/sensor/epaper_panel/last_render/config",
+            "payload": json.dumps(sens_payload),
+            "retain": True
+        })
+        if frames and frames.rendered_at:
+            await call_ha_service(session, "mqtt", "publish", {
+                "topic": "homeassistant/epaper_panel/last_render",
+                "payload": str(frames.rendered_at),
+                "retain": True
+            })
+    except Exception:
+        pass
 
 
 async def check_alerts(session, spec):
@@ -1153,6 +1240,27 @@ async def api_push(request):
         print(f"pre-push render failed: {exc!r}", flush=True)
     await call_ha_service(SHARED_SESSION, "esphome", f"{ESPHOME_DEVICE}_refresh_now")
     return web.json_response({"pushed": True})
+
+
+async def api_action_refresh(request):
+    """External action endpoint (for HA automations, webhooks, or scripts) to trigger re-render & panel redraw."""
+    try:
+        await refresh_frames(SHARED_SESSION)
+        await push_panel_update(advance_page=False)
+        return web.json_response({"success": True, "action": "refresh", "timestamp": datetime.now().isoformat()})
+    except Exception as exc:
+        return web.json_response({"success": False, "error": str(exc)}, status=500)
+
+
+async def api_action_page(request):
+    """External action endpoint to advance or set the display page."""
+    try:
+        body = await request.json() if request.can_read_body else {}
+    except Exception:
+        body = {}
+    delta = int(body.get("delta") or request.query.get("delta") or 1)
+    await push_panel_update(advance_page=True)
+    return web.json_response({"success": True, "action": "page_step", "delta": delta})
 
 
 async def api_sources_get(request):
@@ -1803,6 +1911,10 @@ async def start(app_runners):
         web.get("/frames.png", frames_png),
         web.get("/status", public_status),
         web.get("/fonts/{name}", panel_font),
+        web.get("/api/action/refresh", api_action_refresh),
+        web.post("/api/action/refresh", api_action_refresh),
+        web.get("/api/action/page", api_action_page),
+        web.post("/api/action/page", api_action_page),
     ])
 
     editor = web.Application(client_max_size=1024 * 1024)
@@ -1818,6 +1930,10 @@ async def start(app_runners):
         web.get("/api/aircraft", api_aircraft),
         web.post("/api/preview", api_preview),
         web.post("/api/push", api_push),
+        web.get("/api/action/refresh", api_action_refresh),
+        web.post("/api/action/refresh", api_action_refresh),
+        web.get("/api/action/page", api_action_page),
+        web.post("/api/action/page", api_action_page),
         web.get("/api/sources", api_sources_get),
         web.put("/api/sources", api_sources_put),
         web.post("/api/sources/test", api_sources_test),

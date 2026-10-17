@@ -4,6 +4,7 @@ FROM ${BUILD_FROM}
 # Pillow from apk rather than pip: the wheel would need a compiler toolchain
 # and the Alpine package is already built against the right libs.
 RUN apk add --no-cache python3 py3-pip py3-pillow tzdata \
+    font-noto font-noto-cjk font-noto-arabic font-noto-hebrew font-dejavu \
  && pip3 install --no-cache-dir --break-system-packages aiohttp
 
 COPY app /opt/epaper

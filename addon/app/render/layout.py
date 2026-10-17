@@ -766,8 +766,16 @@ def _draw_calendar_agenda(img, d, el, raw_val, display=None):
         d.text((x + 12 + pill_w // 2, iy_mid), dt_str, font=df, fill=T.WHITE, anchor="mm")
 
         # Title
+        cal_badge = ev.get("cal_badge")
         title_x = x + 12 + pill_w + 10
         title_w = (x + w - 14) - title_x
+        if cal_badge:
+            cbf = T.font(9, bold=True)
+            cb_w = max(24, T.text_width(cal_badge, cbf) + 8)
+            d.rounded_rectangle([(x + w - 14 - cb_w, iy_mid - 8), (x + w - 14, iy_mid + 8)], radius=3, outline=T.BLACK, width=1)
+            d.text((x + w - 14 - cb_w // 2, iy_mid), cal_badge, font=cbf, fill=T.BLACK, anchor="mm")
+            title_w -= (cb_w + 8)
+
         tf = T.font(min(15, max(12, int(item_h * 0.32))), bold=True)
         summary = ev.get("summary") or ev.get("message") or "Untitled Event"
         title_txt = _fit_text(summary, title_w, tf)
@@ -820,11 +828,11 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
             "wind_speed": 6.1,
             "wind_unit": "km/h",
             "forecast": [
-                {"datetime": "2026-10-17T09:00:00+00:00", "condition": "rainy", "temperature": 11.2, "templow": 8.5, "precipitation": 1.0},
-                {"datetime": "2026-10-18T09:00:00+00:00", "condition": "partlycloudy", "temperature": 15.5, "templow": 4.6, "precipitation": 0.0},
-                {"datetime": "2026-10-19T09:00:00+00:00", "condition": "partlycloudy", "temperature": 17.3, "templow": 7.7, "precipitation": 0.0},
-                {"datetime": "2026-10-20T09:00:00+00:00", "condition": "cloudy", "temperature": 15.1, "templow": 7.8, "precipitation": 0.1},
-                {"datetime": "2026-10-21T09:00:00+00:00", "condition": "rainy", "temperature": 22.7, "templow": 10.6, "precipitation": 0.6}
+                {"datetime": "2026-10-17T09:00:00+00:00", "condition": "rainy", "temperature": 11.2, "templow": 8.5, "precipitation": 1.0, "precipitation_probability": 85},
+                {"datetime": "2026-10-18T09:00:00+00:00", "condition": "partlycloudy", "temperature": 15.5, "templow": 4.6, "precipitation": 0.0, "precipitation_probability": 10},
+                {"datetime": "2026-10-19T09:00:00+00:00", "condition": "partlycloudy", "temperature": 17.3, "templow": 7.7, "precipitation": 0.0, "precipitation_probability": 5},
+                {"datetime": "2026-10-20T09:00:00+00:00", "condition": "cloudy", "temperature": 15.1, "templow": 7.8, "precipitation": 0.1, "precipitation_probability": 30},
+                {"datetime": "2026-10-21T09:00:00+00:00", "condition": "rainy", "temperature": 22.7, "templow": 10.6, "precipitation": 0.6, "precipitation_probability": 70}
             ]
         }
 
@@ -870,10 +878,23 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
             tl = today_f.get("templow")
             if th is not None and tl is not None:
                 chip_parts.append(f"H: {th:.0f}°  L: {tl:.0f}°")
+            pop = today_f.get("precipitation_probability")
+            precip = today_f.get("precipitation")
+            if pop is not None and float(pop) > 0:
+                chip_parts.append(f"RAIN: {float(pop):.0f}%")
+            elif precip is not None and float(precip) > 0:
+                chip_parts.append(f"RAIN: {float(precip):.1f}mm")
 
         if chip_parts:
-            mf = T.font(11, bold=True)
-            d.text((x + 20, chips_y), "   •   ".join(chip_parts), font=mf, fill=T.BLACK, anchor="lm")
+            chip_text = "   •   ".join(chip_parts)
+            avail_chip_w = fore_x - x - 36
+            csz = 11
+            if T.text_width(chip_text, T.font(csz, bold=True)) > avail_chip_w:
+                csz = 10
+            if T.text_width(chip_text, T.font(csz, bold=True)) > avail_chip_w:
+                csz = 9
+            mf = T.font(csz, bold=True)
+            d.text((x + 20, chips_y), chip_text, font=mf, fill=T.BLACK, anchor="lm")
 
         # Vertical divider
         d.line([(fore_x, y + 14), (fore_x, y + h - 14)], fill=T.BLACK, width=1)
@@ -904,9 +925,14 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
                 hl_str = f"{hi:.0f}° / {lo:.0f}°" if (hi is not None and lo is not None) else f"{hi or lo or '--'}°"
                 d.text((cx, y + h - 34), hl_str, font=T.font(12, bold=True), fill=T.BLACK, anchor="mm")
 
+                pop = fcast.get("precipitation_probability")
                 precip = fcast.get("precipitation")
-                if precip is not None and float(precip) > 0:
+                if pop is not None and float(pop) > 0:
+                    d.text((cx, y + h - 18), f"{float(pop):.0f}% rain", font=T.font(10, bold=False), fill=T.BLACK, anchor="mm")
+                elif precip is not None and float(precip) > 0:
                     d.text((cx, y + h - 18), f"{float(precip):.1f} mm", font=T.font(10, bold=False), fill=T.BLACK, anchor="mm")
+        else:
+            d.text((fore_x + fore_w // 2, y + h // 2), "Forecast loading…", font=T.font(13, bold=False), fill=T.BLACK, anchor="mm")
     else:
         # Stacked layout (portrait or narrow cards)
         hero_h = int(h * 0.32)
