@@ -93,10 +93,10 @@ globals:
     restore_value: false
 
 font:
-  - file: "../addon/app/fonts/Lato-Bold.ttf"
+  - file: "gfonts://Lato@700"
     id: diag_big
     size: 56
-  - file: "../addon/app/fonts/Lato-Regular.ttf"
+  - file: "gfonts://Lato@400"
     id: diag_small
     size: 26
 
