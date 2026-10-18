@@ -13,6 +13,8 @@
   - **Automatic Legacy Sensor Migration:** Existing layouts, `show_if` rules, and exploded widgets referencing legacy names (`sensor.sports_*`, `sensor.f1_status`, `sensor.formula_e_status`, `sensor.overhead_aircraft_count`, `sensor.closest_aircraft`) are automatically migrated to `sensor.epaper_*` in `sanitize_layouts()`.
   - **MQTT Auto-Discovery `unique_id` & Device Grouping:** All active `sensor.epaper_*` sensors are registered via MQTT Auto-Discovery (`publish_mqtt_discovery`) with a deterministic `unique_id` and grouped under the **E-Paper Studio** device in Home Assistant when an MQTT broker is present.
   - **`✦ E-Paper` Filter Chip & `E-PAPER` Badge in Studio Entity Picker:** Added a dedicated **`✦ E-Paper`** filter pill and **`E-PAPER`** badge in the right-rail Entities Explorer so app-native sensors are immediately recognizable.
+- **Quiet Hours Modal Time Picker Layout Fix:**
+  - Fixed `.row input { flex: 1; min-width: 0 }` squeezing `#qh_start` and `#qh_end` `<input type="time">` fields down to ~35px alongside the inline helper span. Give `input[type="time"]` a fixed `136px` non-shrinking width (`flex: 0 0 136px`), moved the helper note to its own caption line below, and added `color-scheme: dark` / `light` so native browser time pickers render legibly in both themes.
 
 ## 0.8.26
 - **Manual Scroll Protection & 15-Second Background Fetch Debounce (`user_cool_sec` & `request_refetch`):**

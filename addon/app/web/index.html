@@ -40,6 +40,7 @@
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.4);
   --shadow-lg: 0 12px 36px rgba(0, 0, 0, 0.5);
+  color-scheme: dark;
 }
 
 [data-theme="light"] {
@@ -67,6 +68,7 @@
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
   --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.08);
   --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.12);
+  color-scheme: light;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -722,6 +724,7 @@ aside {
 }
 .row input, .row select { flex: 1; min-width: 0; }
 .row input[type=number] { max-width: 88px; }
+.row input[type=time] { flex: 0 0 136px; width: 136px; min-width: 136px; font-variant-numeric: tabular-nums; font-weight: 600; }
 
 /* Status & Feedback Chips */
 .chip {
@@ -1298,12 +1301,14 @@ aside {
       <div id="qh_fields" style="display:flex;flex-direction:column;gap:10px">
         <div class="row">
           <label style="width:170px">Quiet time window</label>
-          <div style="display:flex;align-items:center;gap:8px;flex:1;flex-wrap:wrap">
-            <input id="qh_start" type="time" value="23:00" style="max-width:125px">
-            <span style="color:var(--text-secondary);font-size:12px">until</span>
-            <input id="qh_end" type="time" value="07:00" style="max-width:125px">
-            <span style="color:var(--text-muted);font-size:11.5px">(supports overnight spans, e.g. 23:00 → 07:00)</span>
+          <div style="display:flex;align-items:center;gap:10px;flex:1">
+            <input id="qh_start" type="time" value="23:00" style="flex:0 0 136px;width:136px;min-width:136px;font-weight:600;font-size:13.5px">
+            <span style="color:var(--text-secondary);font-size:12.5px;flex:none">until</span>
+            <input id="qh_end" type="time" value="07:00" style="flex:0 0 136px;width:136px;min-width:136px;font-weight:600;font-size:13.5px">
           </div>
+        </div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-top:-6px;margin-left:178px">
+          Supports both overnight spans (e.g. <code>23:00</code> → <code>07:00</code>) and daytime spans.
         </div>
 
         <div class="row">
