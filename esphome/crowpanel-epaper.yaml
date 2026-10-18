@@ -11,11 +11,15 @@ substitutions:
   name: crowpanel-epaper
   frames_url: "http://homeassistant.local:7410/frames.png"
   frame_url:  "http://homeassistant.local:7410/frame.png"
+  frames_epf_url: "http://homeassistant.local:7410/frames.epf"
+  frame_epf_url:  "http://homeassistant.local:7410/frame.epf"
   page_h: "272"
 
 esphome:
   name: ${name}
   friendly_name: E-paper panel
+  includes:
+    - epf_client.h
   on_boot:
     priority: -100
     then:
@@ -177,115 +181,35 @@ api:
         index: int
       then:
         - lambda: |-
-            id(idle_sec) = 0;
-            id(user_cool_sec) = 0;
-            id(pending_redraw) = true;
-            if (index >= 0 && index < id(page_count)) {
-              id(page) = index;
-              for (int c = (int)id(cat_offsets).size() - 1; c >= 0; c--) {
-                if (index >= id(cat_offsets)[c]) {
-                  id(cat_idx) = c;
-                  id(sub_idx) = index - id(cat_offsets)[c];
-                  break;
-                }
-              }
-              id(cur_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
-              id(cur_sub_id) = (id(page) < (int)id(sub_ids).size()) ? id(sub_ids)[id(page)] : 0;
-              if (id(pinned)) {
-                id(pinned_sub_id) = id(cur_sub_id);
-                id(pinned_cat_id) = id(cur_cat_id);
-              } else if (id(cat_pinned)) {
-                id(pinned_cat_id) = id(cur_cat_id);
-              }
-            }
+            epf::PanelController::instance().show_page(index);
+            SYNC_PANEL_GLOBALS();
         - script.execute: redraw
+
     - action: show_category
       variables:
         category: int
         sub: int
       then:
         - lambda: |-
-            id(idle_sec) = 0;
-            id(user_cool_sec) = 0;
-            id(pending_redraw) = true;
-            int cats = id(cat_count) > 0 ? id(cat_count) : 1;
-            if (category >= 0 && category < cats) {
-              id(cat_idx) = category;
-              int sz = (category < (int)id(cat_sizes).size()) ? id(cat_sizes)[category] : 1;
-              id(sub_idx) = (sub >= 0 && sub < sz) ? sub : 0;
-              int off = (category < (int)id(cat_offsets).size()) ? id(cat_offsets)[category] : category;
-              int p = off + id(sub_idx);
-              if (p < id(page_count)) id(page) = p;
-              id(cur_cat_id) = (category < (int)id(cat_ids).size()) ? id(cat_ids)[category] : 0;
-              id(cur_sub_id) = (id(page) < (int)id(sub_ids).size()) ? id(sub_ids)[id(page)] : 0;
-              if (id(pinned)) {
-                id(pinned_sub_id) = id(cur_sub_id);
-                id(pinned_cat_id) = id(cur_cat_id);
-              } else if (id(cat_pinned)) {
-                id(pinned_cat_id) = id(cur_cat_id);
-              }
-            }
+            epf::PanelController::instance().show_category(category, sub);
+            SYNC_PANEL_GLOBALS();
         - script.execute: redraw
 
-    # Relative paging, for remotes (hierarchical: category mode vs sub-item mode).
+    # Relative paging, for remotes (IKEA BILRESA, HA Dashboard)
     - action: page_step
       variables:
         delta: int
       then:
         - lambda: |-
-            id(idle_sec) = 0;
-            id(user_cool_sec) = 0;
-            id(pending_redraw) = true;
-            int cats = id(cat_count) > 0 ? id(cat_count) : 1;
-            if (id(cat_idx) >= cats) id(cat_idx) = 0;
-
-            if (id(sub_mode)) {
-              int c_idx = id(cat_idx);
-              int sz = (c_idx < (int)id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
-              if (sz > 1) {
-                id(sub_idx) = ((id(sub_idx) + delta) % sz + sz) % sz;
-                if ((int)id(cat_sub_pos).size() <= c_idx) id(cat_sub_pos).resize(cats, 0);
-                id(cat_sub_pos)[c_idx] = (id(sub_idx) + 1) % sz;
-                int off = (c_idx < (int)id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
-                int p = off + id(sub_idx);
-                if (p < id(page_count)) id(page) = p;
-              }
-            } else {
-              id(cat_idx) = ((id(cat_idx) + delta) % cats + cats) % cats;
-              int c_idx = id(cat_idx);
-              int sz = (c_idx < (int)id(cat_sizes).size() && id(cat_sizes)[c_idx] > 0) ? id(cat_sizes)[c_idx] : 1;
-              if ((int)id(cat_sub_pos).size() <= c_idx) id(cat_sub_pos).resize(cats, 0);
-              id(sub_idx) = (sz > 1) ? (id(cat_sub_pos)[c_idx] % sz) : 0;
-              id(sub_mode) = false;
-              int off = (c_idx < (int)id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
-              int p = off + id(sub_idx);
-              if (p < id(page_count)) id(page) = p;
-            }
-            id(cur_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
-            id(cur_sub_id) = (id(page) < (int)id(sub_ids).size()) ? id(sub_ids)[id(page)] : 0;
-            if (id(pinned)) {
-              id(pinned_sub_id) = id(cur_sub_id);
-              id(pinned_cat_id) = id(cur_cat_id);
-            } else if (id(cat_pinned)) {
-              id(pinned_cat_id) = id(cur_cat_id);
-            }
+            epf::PanelController::instance().page_step(delta);
+            SYNC_PANEL_GLOBALS();
         - script.execute: redraw
 
     - action: mode_toggle
       then:
         - lambda: |-
-            id(idle_sec) = 0;
-            id(user_cool_sec) = 0;
-            id(pending_redraw) = true;
-            int c_idx = id(cat_idx);
-            int sz = (c_idx < (int)id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
-            if (sz > 1) {
-              id(sub_mode) = !id(sub_mode);
-              ESP_LOGI("panel", "Navigation mode toggled: sub_mode=%d (sz=%d)", id(sub_mode), sz);
-            } else {
-              id(sub_mode) = false;
-              ESP_LOGI("panel", "Single-page category (sz=%d), staying in category mode", sz);
-            }
+            epf::PanelController::instance().mode_toggle();
+            SYNC_PANEL_GLOBALS();
         - script.execute: redraw
 
     - action: category_step
@@ -293,24 +217,8 @@ api:
         delta: int
       then:
         - lambda: |-
-            id(idle_sec) = 0;
-            id(user_cool_sec) = 0;
-            id(pending_redraw) = true;
-            int cats = id(cat_count) > 0 ? id(cat_count) : 1;
-            id(cat_idx) = ((id(cat_idx) + delta) % cats + cats) % cats;
-            int c_idx = id(cat_idx);
-            int sz = (c_idx < (int)id(cat_sizes).size() && id(cat_sizes)[c_idx] > 0) ? id(cat_sizes)[c_idx] : 1;
-            if ((int)id(cat_sub_pos).size() <= c_idx) id(cat_sub_pos).resize(cats, 0);
-            id(sub_idx) = (sz > 1) ? (id(cat_sub_pos)[c_idx] % sz) : 0;
-            id(sub_mode) = false;
-            int off = (c_idx < (int)id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
-            int p = off + id(sub_idx);
-            if (p < id(page_count)) id(page) = p;
-            id(cur_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
-            id(cur_sub_id) = (id(page) < (int)id(sub_ids).size()) ? id(sub_ids)[id(page)] : 0;
-            if (id(cat_pinned)) {
-              id(pinned_cat_id) = id(cur_cat_id);
-            }
+            epf::PanelController::instance().category_step(delta);
+            SYNC_PANEL_GLOBALS();
         - script.execute: redraw
 
     - action: sub_step
@@ -318,93 +226,29 @@ api:
         delta: int
       then:
         - lambda: |-
-            id(idle_sec) = 0;
-            id(user_cool_sec) = 0;
-            id(pending_redraw) = true;
-            int cats = id(cat_count) > 0 ? id(cat_count) : 1;
-            int c_idx = id(cat_idx);
-            int sz = (c_idx < (int)id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
-            if (sz > 1) {
-              id(sub_idx) = ((id(sub_idx) + delta) % sz + sz) % sz;
-              if ((int)id(cat_sub_pos).size() <= c_idx) id(cat_sub_pos).resize(cats, 0);
-              id(cat_sub_pos)[c_idx] = (id(sub_idx) + 1) % sz;
-              int off = (c_idx < (int)id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
-              int p = off + id(sub_idx);
-              if (p < id(page_count)) id(page) = p;
-              id(cur_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
-              id(cur_sub_id) = (id(page) < (int)id(sub_ids).size()) ? id(sub_ids)[id(page)] : 0;
-              if (id(pinned)) {
-                id(pinned_sub_id) = id(cur_sub_id);
-                id(pinned_cat_id) = id(cur_cat_id);
-              }
-            }
+            epf::PanelController::instance().sub_step(delta);
+            SYNC_PANEL_GLOBALS();
         - script.execute: redraw
 
     - action: hold_toggle
       then:
         - lambda: |-
-            id(idle_sec) = 0;
-            id(user_cool_sec) = 0;
-            id(pending_redraw) = true;
-            id(pinned) = !id(pinned);
-            if (id(pinned)) {
-              id(cat_pinned) = false;
-              id(pinned_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
-              id(pinned_sub_id) = (id(page) < (int)id(sub_ids).size()) ? id(sub_ids)[id(page)] : 0;
-            } else {
-              id(pinned_cat_id) = 0;
-              id(pinned_sub_id) = 0;
-            }
-            ESP_LOGI("panel", "Panel lock: %d (cat_id=0x%08X, sub_id=0x%08X)", id(pinned), id(pinned_cat_id), id(pinned_sub_id));
+            epf::PanelController::instance().hold_toggle();
+            SYNC_PANEL_GLOBALS();
         - script.execute: redraw
 
     - action: category_pin_toggle
       then:
         - lambda: |-
-            id(idle_sec) = 0;
-            id(user_cool_sec) = 0;
-            id(pending_redraw) = true;
-            id(cat_pinned) = !id(cat_pinned);
-            if (id(cat_pinned)) {
-              id(pinned) = false;
-              id(pinned_sub_id) = 0;
-              id(pinned_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
-            } else {
-              id(pinned_cat_id) = 0;
-            }
-            ESP_LOGI("panel", "Category lock: %d (cat_id=0x%08X)", id(cat_pinned), id(pinned_cat_id));
+            epf::PanelController::instance().category_pin_toggle();
+            SYNC_PANEL_GLOBALS();
         - script.execute: redraw
 
     - action: lock_toggle
       then:
         - lambda: |-
-            id(idle_sec) = 0;
-            id(user_cool_sec) = 0;
-            id(pending_redraw) = true;
-            if (id(sub_mode)) {
-              id(pinned) = !id(pinned);
-              if (id(pinned)) {
-                id(cat_pinned) = false;
-                id(pinned_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
-                id(pinned_sub_id) = (id(page) < (int)id(sub_ids).size()) ? id(sub_ids)[id(page)] : 0;
-              } else {
-                id(pinned_cat_id) = 0;
-                id(pinned_sub_id) = 0;
-              }
-              ESP_LOGI("panel", "Contextual lock (sub_mode): panel lock=%d (cat_id=0x%08X, sub_id=0x%08X)",
-                       id(pinned), id(pinned_cat_id), id(pinned_sub_id));
-            } else {
-              id(cat_pinned) = !id(cat_pinned);
-              if (id(cat_pinned)) {
-                id(pinned) = false;
-                id(pinned_sub_id) = 0;
-                id(pinned_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
-              } else {
-                id(pinned_cat_id) = 0;
-              }
-              ESP_LOGI("panel", "Contextual lock (cat_mode): cat lock=%d (cat_id=0x%08X)",
-                       id(cat_pinned), id(pinned_cat_id));
-            }
+            epf::PanelController::instance().lock_toggle();
+            SYNC_PANEL_GLOBALS();
         - script.execute: redraw
 
 ota:
@@ -441,135 +285,30 @@ display:
       if (id(downloading_frames)) {
         return;
       }
-      if (id(have_frames)) {
+      if (epf::EpfClient::instance().has_stream()) {
+        int cur_page = epf::PanelController::instance().page();
+        // 1. Direct scanline blit into display buffer: ~80 microseconds!
+        epf::EpfClient::instance().blit_to_display(id(epd), cur_page);
+
+        // 2. Fast direct overlays (active pill inversion & solid padlock badge): <50 microseconds!
+        epf::PanelController::instance().draw_overlays(id(epd), 792, 272);
+      } else if (id(have_frames)) {
+        // Fallback for legacy PNG strip
         const int off = ${page_h} * id(page);
-        bool is_sub_mode = id(sub_mode);
-        const int py0 = 244, py1 = 268;
-        const int sub_x0 = 704, sub_x1 = 752;
-
-        int c_idx = id(cat_idx);
-        int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
-        if (sz <= 1) {
-          is_sub_mode = false;
-        }
-
-        int cat_w = (c_idx < id(cat_pill_widths).size()) ? id(cat_pill_widths)[c_idx] : 110;
-        int cat_x0 = 96;
-        int cat_x1 = cat_x0 + cat_w;
-
-        // 1. Fast direct blit of page pixels: ~8 ms (eliminates 368 ms redraw lag!)
         for (int y = 0; y < ${page_h}; y++) {
           for (int x = 0; x < 792; x++) {
             it.draw_pixel_at(x, y, id(frames).get_pixel(x, y + off));
           }
         }
-
-        auto in_rounded_box = [](int px, int py, int x0, int y0, int x1, int y1, int r) -> bool {
-          if (px < x0 || px > x1 || py < y0 || py > y1) return false;
-          if (px < x0 + r && py < y0 + r) {
-            int dx = (x0 + r) - px, dy = (y0 + r) - py;
-            return (dx * dx + dy * dy <= r * r);
-          }
-          if (px > x1 - r && py < y0 + r) {
-            int dx = px - (x1 - r), dy = (y0 + r) - py;
-            return (dx * dx + dy * dy <= r * r);
-          }
-          if (px < x0 + r && py > y1 - r) {
-            int dx = (x0 + r) - px, dy = py - (y1 - r);
-            return (dx * dx + dy * dy <= r * r);
-          }
-          if (px > x1 - r && py > y1 - r) {
-            int dx = px - (x1 - r), dy = py - (y1 - r);
-            return (dx * dx + dy * dy <= r * r);
-          }
-          return true;
-        };
-
-        // 2. Invert ONLY the active pill (Category in Category mode; Sub in Sub mode): <1 ms
-        if (!is_sub_mode) {
-          for (int py = py0; py <= py1; py++) {
-            for (int px = cat_x0; px <= cat_x1; px++) {
-              if (in_rounded_box(px, py, cat_x0, py0, cat_x1, py1, 4)) {
-                int rx = 791 - px;
-                int ry = 271 - py;
-                if (rx >= 0 && rx < 792 && ry >= 0 && ry < 272) {
-                  Color c = id(frames).get_pixel(rx, ry + off);
-                  it.draw_pixel_at(rx, ry, (c == COLOR_ON) ? COLOR_OFF : COLOR_ON);
-                }
-              }
-            }
-          }
-        } else if (sz > 1) {
-          for (int py = py0; py <= py1; py++) {
-            for (int px = sub_x0; px <= sub_x1; px++) {
-              if (in_rounded_box(px, py, sub_x0, py0, sub_x1, py1, 4)) {
-                int rx = 791 - px;
-                int ry = 271 - py;
-                if (rx >= 0 && rx < 792 && ry >= 0 && ry < 272) {
-                  Color c = id(frames).get_pixel(rx, ry + off);
-                  it.draw_pixel_at(rx, ry, (c == COLOR_ON) ? COLOR_OFF : COLOR_ON);
-                }
-              }
-            }
-          }
-        }
-
-        // 3. Apple-grade high-contrast solid padlock badge (22x20px)
-        auto draw_lock_badge = [&](int bx, int by, int bw, int bh) {
-          int cx = bx + bw / 2;
-          int cy = by + bh / 2;
-          for (int py = by; py < by + bh; py++) {
-            for (int px = bx; px < bx + bw; px++) {
-              if (in_rounded_box(px, py, bx, by, bx + bw - 1, by + bh - 1, 4)) {
-                int dx = px - cx;
-                int dy = py - cy;
-                bool is_shackle = false;
-                if (dy >= -6 && dy <= -2) {
-                  if (dy <= -4) {
-                    is_shackle = (dx >= -4 && dx <= 3);
-                  } else {
-                    is_shackle = (dx >= -5 && dx <= -3) || (dx >= 2 && dx <= 4);
-                  }
-                }
-                bool is_body = (dy >= -1 && dy <= 6 && dx >= -6 && dx <= 5);
-                bool is_keyhole = false;
-                if ((dy >= 1 && dy <= 2 && dx >= -1 && dx <= 0) || (dy >= 3 && dy <= 4 && dx == 0)) {
-                  is_keyhole = true;
-                }
-
-                Color col = COLOR_ON;
-                if ((is_shackle || is_body) && !is_keyhole) {
-                  col = COLOR_OFF;
-                }
-
-                int rx = 791 - px;
-                int ry = 271 - py;
-                if (rx >= 0 && rx < 792 && ry >= 0 && ry < 272) {
-                  it.draw_pixel_at(rx, ry, col);
-                }
-              }
-            }
-          }
-        };
-
-        if (id(cat_pinned)) {
-          // Category Lock: neatly follows the category pill
-          draw_lock_badge(cat_x1 + 8, py0 + 2, 22, 20);
-        }
-
-        if (id(pinned)) {
-          // Panel Lock: sits to the left of sub-page pill (or corner if single page)
-          int lx = (sz > 1) ? (sub_x0 - 8 - 22) : (752 - 22);
-          draw_lock_badge(lx, py0 + 2, 22, 20);
-        }
+        epf::PanelController::instance().draw_overlays(id(epd), 792, 272);
       } else if (id(have_single)) {
-        // Strip missing -- fall back to whatever single frame HA is serving.
         it.image(0, 0, id(frame));
       } else {
         it.print(40, 40, id(diag_big), "panel alive");
         it.printf(40, 130, id(diag_small), "ip: %s", id(wifi_ip).state.c_str());
-        it.printf(40, 170, id(diag_small), "waiting for %s", "frames.png");
+        it.printf(40, 170, id(diag_small), "waiting for %s", "frames.epf");
       }
+
 
 http_request:
   verify_ssl: false
@@ -776,9 +515,9 @@ online_image:
                 id(sub_mode) = (id(cat_sizes)[found_cat] > 1);
                 resolved = true;
                 ESP_LOGI("panel", "Sub-item lock preserved: sub_id=0x%08X -> cat=%d sub=%d page=%d",
-                         id(pinned_sub_id), id(cat_idx), id(sub_idx), id(page));
+                         (unsigned int)id(pinned_sub_id), id(cat_idx), id(sub_idx), id(page));
               } else {
-                ESP_LOGW("panel", "Pinned sub-item 0x%08X no longer in rotation; releasing lock", id(pinned_sub_id));
+                ESP_LOGW("panel", "Pinned sub-item 0x%08X no longer in rotation; releasing lock", (unsigned int)id(pinned_sub_id));
                 id(pinned) = false;
                 id(pinned_sub_id) = 0;
               }
@@ -808,9 +547,9 @@ online_image:
                 id(page) = off + id(sub_idx);
                 resolved = true;
                 ESP_LOGI("panel", "Category lock preserved: cat_id=0x%08X -> cat=%d sub=%d page=%d",
-                         id(pinned_cat_id), id(cat_idx), id(sub_idx), id(page));
+                         (unsigned int)id(pinned_cat_id), id(cat_idx), id(sub_idx), id(page));
               } else {
-                ESP_LOGW("panel", "Pinned category 0x%08X no longer in rotation; releasing lock", id(pinned_cat_id));
+                ESP_LOGW("panel", "Pinned category 0x%08X no longer in rotation; releasing lock", (unsigned int)id(pinned_cat_id));
                 id(cat_pinned) = false;
                 id(pinned_cat_id) = 0;
               }
@@ -890,7 +629,7 @@ online_image:
           id(cur_sub_id) = (id(page) < (int)id(sub_ids).size()) ? id(sub_ids)[id(page)] : 0;
 
           ESP_LOGI("panel", "%d pages (%d categories) held locally, showing cat=%d sub=%d page=%d (cat_id=0x%08X, sub_id=0x%08X)",
-                   id(page_count), id(cat_count), id(cat_idx), id(sub_idx), id(page), id(cur_cat_id), id(cur_sub_id));
+                   id(page_count), id(cat_count), id(cat_idx), id(sub_idx), id(page), (unsigned int)id(cur_cat_id), (unsigned int)id(cur_sub_id));
 
           if (new_strip_hash != -1 && new_strip_hash == id(last_strip_hash) && !id(pending_redraw) && id(page) == id(last_drawn_page)) {
             ESP_LOGI("panel", "Strip unchanged (HTTP 304) -- skipping physical e-paper refresh");
@@ -944,42 +683,8 @@ binary_sensor:
     on_press:
       - logger.log: "KEY next (dial forward)"
       - lambda: |-
-          id(idle_sec) = 0;
-          id(user_cool_sec) = 0;
-          id(pending_redraw) = true;
-          int cats = id(cat_count) > 0 ? id(cat_count) : 1;
-          if (id(cat_idx) >= cats) id(cat_idx) = 0;
-
-          if (id(sub_mode)) {
-            int c_idx = id(cat_idx);
-            int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
-            if (sz > 1) {
-              id(sub_idx) = (id(sub_idx) + 1) % sz;
-              if ((int)id(cat_sub_pos).size() <= c_idx) id(cat_sub_pos).resize(cats, 0);
-              id(cat_sub_pos)[c_idx] = (id(sub_idx) + 1) % sz;
-              int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
-              int p = off + id(sub_idx);
-              if (p < id(page_count)) id(page) = p;
-            }
-          } else {
-            id(cat_idx) = (id(cat_idx) + 1) % cats;
-            int c_idx = id(cat_idx);
-            int sz = (c_idx < id(cat_sizes).size() && id(cat_sizes)[c_idx] > 0) ? id(cat_sizes)[c_idx] : 1;
-            if ((int)id(cat_sub_pos).size() <= c_idx) id(cat_sub_pos).resize(cats, 0);
-            id(sub_idx) = (sz > 1) ? (id(cat_sub_pos)[c_idx] % sz) : 0;
-            id(sub_mode) = false;
-            int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
-            int p = off + id(sub_idx);
-            if (p < id(page_count)) id(page) = p;
-          }
-          id(cur_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
-          id(cur_sub_id) = (id(page) < (int)id(sub_ids).size()) ? id(sub_ids)[id(page)] : 0;
-          if (id(pinned)) {
-            id(pinned_sub_id) = id(cur_sub_id);
-            id(pinned_cat_id) = id(cur_cat_id);
-          } else if (id(cat_pinned)) {
-            id(pinned_cat_id) = id(cur_cat_id);
-          }
+          epf::PanelController::instance().page_step(1);
+          SYNC_PANEL_GLOBALS();
       - script.execute: redraw
 
   # Dial Rotate Left (GPIO 4 in 180° mount): Backward
@@ -991,42 +696,8 @@ binary_sensor:
     on_press:
       - logger.log: "KEY prev (dial backward)"
       - lambda: |-
-          id(idle_sec) = 0;
-          id(user_cool_sec) = 0;
-          id(pending_redraw) = true;
-          int cats = id(cat_count) > 0 ? id(cat_count) : 1;
-          if (id(cat_idx) >= cats) id(cat_idx) = 0;
-
-          if (id(sub_mode)) {
-            int c_idx = id(cat_idx);
-            int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
-            if (sz > 1) {
-              id(sub_idx) = (id(sub_idx) - 1 + sz) % sz;
-              if ((int)id(cat_sub_pos).size() <= c_idx) id(cat_sub_pos).resize(cats, 0);
-              id(cat_sub_pos)[c_idx] = (id(sub_idx) + 1) % sz;
-              int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
-              int p = off + id(sub_idx);
-              if (p < id(page_count)) id(page) = p;
-            }
-          } else {
-            id(cat_idx) = (id(cat_idx) - 1 + cats) % cats;
-            int c_idx = id(cat_idx);
-            int sz = (c_idx < id(cat_sizes).size() && id(cat_sizes)[c_idx] > 0) ? id(cat_sizes)[c_idx] : 1;
-            if ((int)id(cat_sub_pos).size() <= c_idx) id(cat_sub_pos).resize(cats, 0);
-            id(sub_idx) = (sz > 1) ? (id(cat_sub_pos)[c_idx] % sz) : 0;
-            id(sub_mode) = false;
-            int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
-            int p = off + id(sub_idx);
-            if (p < id(page_count)) id(page) = p;
-          }
-          id(cur_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
-          id(cur_sub_id) = (id(page) < (int)id(sub_ids).size()) ? id(sub_ids)[id(page)] : 0;
-          if (id(pinned)) {
-            id(pinned_sub_id) = id(cur_sub_id);
-            id(pinned_cat_id) = id(cur_cat_id);
-          } else if (id(cat_pinned)) {
-            id(pinned_cat_id) = id(cur_cat_id);
-          }
+          epf::PanelController::instance().page_step(-1);
+          SYNC_PANEL_GLOBALS();
       - script.execute: redraw
 
   # Dial Center Push (GPIO 5): Long Hold (>=1000ms) = Toggle Category vs Sub-item Mode
@@ -1042,18 +713,8 @@ binary_sensor:
         then:
           - logger.log: "KEY ok: long hold (toggle category vs sub-item mode)"
           - lambda: |-
-               id(idle_sec) = 0;
-               id(user_cool_sec) = 0;
-               id(pending_redraw) = true;
-               int c_idx = id(cat_idx);
-               int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
-               if (sz > 1) {
-                 id(sub_mode) = !id(sub_mode);
-                 ESP_LOGI("panel", "Navigation mode toggled: sub_mode=%d (sz=%d)", id(sub_mode), sz);
-               } else {
-                 id(sub_mode) = false;
-                 ESP_LOGI("panel", "Single-page category (sz=%d), staying in category mode", sz);
-               }
+              epf::PanelController::instance().mode_toggle();
+              SYNC_PANEL_GLOBALS();
           - script.execute: redraw
 
   # Physical Top Button (GPIO 1 in 180° mount): Short Click (<750ms) = Toggle Category Lock; Long Hold (>=750ms) = Toggle Panel Lock
@@ -1068,37 +729,16 @@ binary_sensor:
         then:
           - logger.log: "KEY top: short click (toggle category lock)"
           - lambda: |-
-              id(idle_sec) = 0;
-              id(user_cool_sec) = 0;
-              id(pending_redraw) = true;
-              id(cat_pinned) = !id(cat_pinned);
-              if (id(cat_pinned)) {
-                id(pinned) = false;
-                id(pinned_sub_id) = 0;
-                id(pinned_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
-              } else {
-                id(pinned_cat_id) = 0;
-              }
-              ESP_LOGI("panel", "Category lock: %d (cat_id=0x%08X)", id(cat_pinned), id(pinned_cat_id));
+              epf::PanelController::instance().category_pin_toggle();
+              SYNC_PANEL_GLOBALS();
           - script.execute: redraw
       - min_length: 750ms
         max_length: 6000ms
         then:
           - logger.log: "KEY top: long hold (toggle panel lock)"
           - lambda: |-
-              id(idle_sec) = 0;
-              id(user_cool_sec) = 0;
-              id(pending_redraw) = true;
-              id(pinned) = !id(pinned);
-              if (id(pinned)) {
-                id(cat_pinned) = false;
-                id(pinned_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
-                id(pinned_sub_id) = (id(page) < (int)id(sub_ids).size()) ? id(sub_ids)[id(page)] : 0;
-              } else {
-                id(pinned_cat_id) = 0;
-                id(pinned_sub_id) = 0;
-              }
-              ESP_LOGI("panel", "Panel lock: %d (cat_id=0x%08X, sub_id=0x%08X)", id(pinned), id(pinned_cat_id), id(pinned_sub_id));
+              epf::PanelController::instance().hold_toggle();
+              SYNC_PANEL_GLOBALS();
           - script.execute: redraw
 
   # Physical Bottom Button (GPIO 2 in 180° mount): Short Click (<750ms) = First Page; Long Hold (>=750ms) = Force Refetch Now
@@ -1113,22 +753,8 @@ binary_sensor:
         then:
           - logger.log: "KEY bottom: short click (reset to first page)"
           - lambda: |-
-              id(idle_sec) = 0;
-              id(user_cool_sec) = 0;
-              id(pending_redraw) = true;
-              id(cat_idx) = 0;
-              id(sub_idx) = 0;
-              id(page) = 0;
-              id(sub_mode) = false;
-              id(cur_cat_id) = (id(cat_ids).size() > 0) ? id(cat_ids)[0] : 0;
-              id(cur_sub_id) = (id(sub_ids).size() > 0) ? id(sub_ids)[0] : 0;
-              if (id(pinned)) {
-                id(pinned_sub_id) = id(cur_sub_id);
-                id(pinned_cat_id) = id(cur_cat_id);
-              } else if (id(cat_pinned)) {
-                id(pinned_cat_id) = id(cur_cat_id);
-              }
-              ESP_LOGI("panel", "Reset to page 0");
+              epf::PanelController::instance().reset_home();
+              SYNC_PANEL_GLOBALS();
           - script.execute: redraw
       - min_length: 750ms
         max_length: 6000ms
@@ -1164,7 +790,14 @@ script:
           then:
             - lambda: |-
                 id(pending_redraw) = false;
+                epf::PanelController::instance().clear_pending_redraw();
                 id(last_drawn_page) = id(page);
+                if (epf::PanelController::instance().check_settle_clear()) {
+                  id(epd).force_full_update();
+                  epf::PanelController::instance().record_full_update();
+                } else {
+                  epf::PanelController::instance().record_partial_update();
+                }
             - component.update: epd
 
   - id: request_refetch
@@ -1177,9 +810,10 @@ script:
                 id(pending_refetch) = true;
                 return false;
               }
-              if (id(user_cool_sec) < 15) {
+              if (epf::PanelController::instance().should_defer_refetch()) {
                 id(pending_refetch) = true;
-                ESP_LOGI("panel", "Manual scroll active (cooldown %ds/15s) -- deferring background refetch", id(user_cool_sec));
+                ESP_LOGI("panel", "Manual scroll active (cooldown %ds/15s) -- deferring background refetch",
+                         epf::PanelController::instance().user_cool_sec());
                 return false;
               }
               return true;
@@ -1197,7 +831,48 @@ script:
           id(downloading_frames) = true;
           id(pending_refetch) = false;
           id(fetch_idle_sec) = 0;
-      - component.update: frames
+          epf::PanelController::instance().reset_fetch_idle();
+          epf::PanelController::instance().set_pending_refetch(false);
+
+          std::string target_url = "${frames_epf_url}";
+          if (epf::PanelController::instance().pinned()) {
+            target_url = "${frame_epf_url}?page=" + to_string(epf::PanelController::instance().page());
+          }
+
+          epf::FetchResult res = epf::EpfClient::instance().fetch(target_url);
+          id(downloading_frames) = false;
+
+          if (res == epf::FetchResult::NOT_MODIFIED) {
+            ESP_LOGI("panel", "HTTP 304 Not Modified -- 0 bytes downloaded, skipping refresh");
+          } else if (res == epf::FetchResult::OK) {
+            id(have_frames) = true;
+            epf::PanelController::instance().on_stream_loaded(
+              epf::EpfClient::instance().header(),
+              epf::EpfClient::instance().categories(),
+              epf::EpfClient::instance().pages()
+            );
+            SYNC_PANEL_GLOBALS();
+            if (epf::EpfClient::instance().is_alert_interrupt() || epf::EpfClient::instance().is_force_full_waveform()) {
+              id(epd).force_full_update();
+              epf::PanelController::instance().record_full_update();
+            }
+            id(pending_redraw) = true;
+            epf::PanelController::instance().set_pending_redraw();
+          } else {
+            ESP_LOGW("panel", "EPF fetch failed (code %d) -- falling back to legacy frames.png", (int)res);
+            id(downloading_frames) = true;
+          }
+      - if:
+          condition:
+            lambda: 'return id(downloading_frames);'
+          then:
+            - component.update: frames
+          else:
+            - if:
+                condition:
+                  lambda: 'return id(pending_redraw);'
+                then:
+                  - script.execute: redraw
 
 number:
   - platform: template
@@ -1217,89 +892,39 @@ interval:
   - interval: 5s
     then:
       - lambda: |-
-          id(idle_sec) += 5;
-          id(fetch_idle_sec) += 5;
-          if (id(user_cool_sec) < 1000) id(user_cool_sec) += 5;
-      # 1. If a background refetch was deferred while the user was manually scrolling,
-      #    run it now once 15 seconds of scroll inactivity have elapsed.
+          epf::PanelController::instance().tick_seconds(5);
+          id(idle_sec) = epf::PanelController::instance().idle_sec();
+          id(fetch_idle_sec) = epf::PanelController::instance().fetch_idle_sec();
+          id(user_cool_sec) = epf::PanelController::instance().user_cool_sec();
+      # 1. If a background refetch was deferred while user was scrolling, run once cooldown elapses
       - if:
           condition:
             lambda: |-
-              return id(pending_refetch) && id(user_cool_sec) >= 15 && !id(downloading_frames);
+              return id(pending_refetch) && !epf::PanelController::instance().should_defer_refetch() && !id(downloading_frames);
           then:
             - logger.log: "Manual scroll cooldown complete (15s) -- running deferred background refetch"
             - script.execute: refetch
-      # 2. Local PSRAM Page Rotation (every rotate_sec, default 30s):
-      #    Blits the next category/sub-item slice directly from PSRAM (~480ms, zero network fetch).
-      #    Each category remembers its own sub-item index (cat_sub_pos) so pass 1 shows sub 1/N,
-      #    pass 2 shows sub 2/N, etc., unaffected by 1-minute background data updates.
+      # 2. Local PSRAM Page Rotation
       - if:
           condition:
             lambda: |-
-              if (id(quiet_hours_active) || id(downloading_frames) || !id(have_frames)) return false;
-              if (id(user_cool_sec) < 15) return false;
-              int rot_target = id(rotate_sec) >= 5 ? id(rotate_sec) : 30;
-              return (id(idle_sec) >= rot_target);
+              if (id(downloading_frames)) return false;
+              bool rotated = epf::PanelController::instance().check_auto_rotate();
+              if (rotated) {
+                SYNC_PANEL_GLOBALS();
+                return true;
+              }
+              return false;
           then:
-            - lambda: |-
-                id(idle_sec) = 0;
-            - if:
-                condition:
-                  lambda: 'return !id(pinned);'
-                then:
-                  - if:
-                      condition:
-                        lambda: 'return id(cat_pinned);'
-                      then:
-                        - lambda: |-
-                            int cats = id(cat_count) > 0 ? id(cat_count) : 1;
-                            int c_idx = id(cat_idx);
-                            int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
-                            if (sz > 1) {
-                              id(sub_idx) = (id(sub_idx) + 1) % sz;
-                              if ((int)id(cat_sub_pos).size() <= c_idx) id(cat_sub_pos).resize(cats, 0);
-                              id(cat_sub_pos)[c_idx] = (id(sub_idx) + 1) % sz;
-                              int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
-                              int p = off + id(sub_idx);
-                              if (p < id(page_count)) id(page) = p;
-                              id(cur_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
-                              id(cur_sub_id) = (id(page) < (int)id(sub_ids).size()) ? id(sub_ids)[id(page)] : 0;
-                              id(pending_redraw) = true;
-                            }
-                      else:
-                        - lambda: |-
-                            int cats = id(cat_count) > 0 ? id(cat_count) : 1;
-                            id(cat_idx) = (id(cat_idx) + 1) % cats;
-                            int c_idx = id(cat_idx);
-                            int sz = (c_idx < (int)id(cat_sizes).size() && id(cat_sizes)[c_idx] > 0) ? id(cat_sizes)[c_idx] : 1;
-                            if ((int)id(cat_sub_pos).size() <= c_idx) id(cat_sub_pos).resize(cats, 0);
-                            if (sz > 1) {
-                              id(sub_idx) = id(cat_sub_pos)[c_idx] % sz;
-                              id(cat_sub_pos)[c_idx] = (id(sub_idx) + 1) % sz;
-                            } else {
-                              id(sub_idx) = 0;
-                            }
-                            id(sub_mode) = false;
-                            int off = (c_idx < (int)id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
-                            int p = off + id(sub_idx);
-                            if (p < id(page_count)) id(page) = p;
-                            id(cur_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
-                            id(cur_sub_id) = (id(page) < (int)id(sub_ids).size()) ? id(sub_ids)[id(page)] : 0;
-                            id(pending_redraw) = true;
-                            ESP_LOGI("panel", "Auto-rotated to cat=%d sub=%d/%d (page=%d)", c_idx, id(sub_idx) + 1, sz, id(page));
-                  - if:
-                      condition:
-                        lambda: 'return id(pending_redraw);'
-                      then:
-                        - script.execute: redraw
-      # 3. Periodic Background Network Data Fetch (every panel_refresh_interval minutes):
+            - script.execute: redraw
+      # 3. Periodic Background Network Data Fetch
       - if:
           condition:
             lambda: |-
-              if (id(quiet_hours_active) || id(downloading_frames)) return false;
+              if (epf::PanelController::instance().quiet_hours_active() || id(downloading_frames)) return false;
               int fetch_target = (int)(id(panel_refresh_interval).state * 60.0);
               if (fetch_target < 30) fetch_target = 30;
-              return (id(fetch_idle_sec) >= fetch_target);
+              return (epf::PanelController::instance().fetch_idle_sec() >= fetch_target);
           then:
             - lambda: 'id(fetch_idle_sec) = 0;'
             - script.execute: request_refetch
