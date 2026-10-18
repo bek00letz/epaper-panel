@@ -28,6 +28,7 @@ from PIL import Image, ImageDraw, ImageFont
 from . import theme as T
 from . import binding
 from .binding import template_for
+from .qr import encode_qr_matrix
 
 _FONTS = Path(__file__).parent.parent / "fonts"
 _MDI_TTF = _FONTS / "mdi.ttf"
@@ -135,27 +136,54 @@ def _draw_text(img, d, el, text, metrics=None, distance_m=3.0, display=None):
         return
     x, y, w, h = _clamp_box(el, 200, 60, display=display)
     align = el.get("align", "left")
-    bold = el.get("bold") not in (False, "false", 0, "0")
+    bold = el.get("bold") not in (False, "false", 0, "0") and str(el.get("weight", "bold")).lower() != "regular"
     family = str(el.get("font") or "lato").lower()
+    invert = el.get("invert") in (True, "true", 1, "1")
+    pill = el.get("pill") in (True, "true", 1, "1")
+    has_bg = invert or pill
 
-    size = max(8, min(360, int(el["size"]))) if el.get("size") else T.fit_size(text, w, h, 200, bold=bold, family=family)
-    f = T.font(size, bold=bold, family=family)
+    pad_x = 12 if has_bg else 0
+    inner_w = max(8, w - pad_x * 2)
+    size = max(8, min(360, int(el["size"]))) if el.get("size") else T.fit_size(text, inner_w, h - (8 if has_bg else 0), 200, bold=bold, family=family)
+    f = T.font(size, bold=bold, family=family, text=text)
     if metrics is not None:
         mm, verdict = legibility(size, distance_m=distance_m, display=display)
         t = text.strip()
         metrics.append({"size": size, "mm": mm, "verdict": verdict,
-                        "overflow": T.text_width(text, f) > w,
-                        # A list or dict rendered as a string is almost always
-                        # the wrong attribute picked, not a deliberate choice.
+                        "overflow": T.text_width(text, f) > inner_w,
                         "collection": t.startswith(("[", "{")) and t.endswith(("]", "}"))})
-    ax = _anchor_x(align, x, w)
+
+    if has_bg:
+        try:
+            rad = max(0, min(h // 2, int(el.get("radius", 10))))
+        except (ValueError, TypeError):
+            rad = min(14, h // 2)
+        if invert:
+            d.rounded_rectangle([(x, y), (x + w, y + h)], radius=rad, fill=T.BLACK)
+        else:
+            d.rounded_rectangle([(x, y), (x + w, y + h)], radius=rad, fill=T.WHITE, outline=T.BLACK, width=2)
+
+    fg = T.WHITE if invert else T.BLACK
+    ax = _anchor_x(align, x + pad_x, inner_w)
     anchor = {"left": "lm", "center": "mm", "right": "rm"}.get(align, "lm")
-    d.text((ax, y + h // 2), text, font=f, fill=T.BLACK, anchor=anchor)
+    d.text((ax, y + h // 2), text, font=f, fill=fg, anchor=anchor)
 
 
 def _draw_icon(img, d, el, _text, display=None):
     name = str(el.get("icon", ""))
     x, y, w, h = _clamp_box(el, 100, 100, display=display)
+    invert = el.get("invert") in (True, "true", 1, "1")
+    pill = el.get("pill") in (True, "true", 1, "1")
+    has_bg = invert or pill
+    if has_bg:
+        try:
+            rad = max(0, min(min(w, h) // 2, int(el.get("radius", 14))))
+        except (ValueError, TypeError):
+            rad = min(14, min(w, h) // 4)
+        if invert:
+            d.rounded_rectangle([(x, y), (x + w, y + h)], radius=rad, fill=T.BLACK)
+        else:
+            d.rounded_rectangle([(x, y), (x + w, y + h)], radius=rad, fill=T.WHITE, outline=T.BLACK, width=2)
     if name.startswith("custom:"):
         art = CUSTOM_ICONS.get(name.removeprefix("custom:"))
         if art:
@@ -165,18 +193,229 @@ def _draw_icon(img, d, el, _text, display=None):
     if cp is None:
         return
     ch = chr(cp)
-    size = max(8, min(360, int(el["size"]))) if el.get("size") else _fit_glyph(ch, w, h)
+    pad = 10 if has_bg else 0
+    size = max(8, min(360, int(el["size"]))) if el.get("size") else _fit_glyph(ch, max(8, w - pad * 2), max(8, h - pad * 2))
     f = _mdi_font(size)
-    d.text((x + w // 2, y + h // 2), ch, font=f, fill=T.BLACK, anchor="mm")
+    d.text((x + w // 2, y + h // 2), ch, font=f, fill=T.WHITE if invert else T.BLACK, anchor="mm")
 
 
 def _draw_line(img, d, el, _text, display=None):
     x, y, w, h = _clamp_box(el, 200, 2, display=display)
-    thick = max(1, min(32, int(el.get("thickness", 2))))
+    thick = max(1, min(32, int(el.get("thickness") or el.get("stroke") or 2)))
     if h >= w:                                   # taller than wide -> vertical
         d.line([(x + w // 2, y), (x + w // 2, y + h)], fill=T.BLACK, width=thick)
     else:
         d.line([(x, y + h // 2), (x + w, y + h // 2)], fill=T.BLACK, width=thick)
+
+
+def _draw_box(img, d, el, _text, display=None):
+    """1-bit container / card / pill / shaded block primitive."""
+    x, y, w, h = _clamp_box(el, 220, 120, display=display)
+    try:
+        rad = max(0, min(min(w, h) // 2, int(el.get("radius", 10))))
+    except (ValueError, TypeError):
+        rad = 10
+    try:
+        thick = max(0, min(24, int(el.get("thickness") if el.get("thickness") is not None else el.get("stroke", 2))))
+    except (ValueError, TypeError):
+        thick = 2
+    fill_mode = str(el.get("fill") or "outline").lower()
+
+    if fill_mode in ("solid", "black"):
+        d.rounded_rectangle([(x, y), (x + w, y + h)], radius=rad, fill=T.BLACK)
+    elif fill_mode == "white":
+        d.rounded_rectangle([(x, y), (x + w, y + h)], radius=rad, fill=T.WHITE, outline=T.BLACK if thick > 0 else None, width=max(1, thick))
+    elif fill_mode in ("checker", "screen"):
+        mask = Image.new("1", img.size, 0)
+        ImageDraw.Draw(mask).rounded_rectangle([(x, y), (x + w, y + h)], radius=rad, fill=1)
+        pattern = Image.new("L", img.size, T.WHITE)
+        px = pattern.load()
+        for yy in range(max(0, y), min(img.size[1], y + h + 1)):
+            for xx in range(max(0, x), min(img.size[0], x + w + 1)):
+                if (xx + yy) % 2 == 0:
+                    px[xx, yy] = T.BLACK
+        img.paste(pattern, (0, 0), mask)
+        if thick > 0:
+            d.rounded_rectangle([(x, y), (x + w, y + h)], radius=rad, outline=T.BLACK, width=thick)
+    else:
+        # "outline" default: transparent interior, crisp border
+        d.rounded_rectangle([(x, y), (x + w, y + h)], radius=rad, outline=T.BLACK, width=max(1, thick))
+
+
+def _draw_bar(img, d, el, raw_val, display=None):
+    """1-bit horizontal, segmented, or vertical progress/gauge bar."""
+    x, y, w, h = _clamp_box(el, 260, 44, display=display)
+    try:
+        lo = float(el.get("min_val") if el.get("min_val") not in (None, "") else 0.0)
+    except (ValueError, TypeError):
+        lo = 0.0
+    try:
+        hi = float(el.get("max_val") if el.get("max_val") not in (None, "") else 100.0)
+    except (ValueError, TypeError):
+        hi = 100.0
+    span = (hi - lo) or 100.0
+
+    raw_str = str(raw_val if raw_val is not None else el.get("value", "68")).strip()
+    try:
+        cleaned = "".join(ch for ch in raw_str if ch in "0123456789.-")
+        val = float(cleaned) if cleaned else 68.0
+    except (ValueError, TypeError):
+        val = 68.0
+    pct = max(0.0, min(1.0, (val - lo) / span))
+
+    style = str(el.get("bar_style") or ("vertical" if h > w * 1.3 else "solid")).lower()
+    show_label = el.get("show_label") not in (False, "false", 0, "0")
+    title = str(el.get("title") or "").strip()
+    suffix = str(el.get("suffix") if el.get("suffix") is not None else "%")
+
+    bar_x, bar_y, bar_w, bar_h = x, y, w, h
+    if title and style != "vertical" and h >= 38:
+        tf = T.font(max(11, min(20, int(h * 0.30))), bold=True)
+        d.text((x + 2, y + 2), title.upper(), font=tf, fill=T.BLACK, anchor="lt")
+        if show_label:
+            lbl = f"{val:.0f}{suffix}"
+            d.text((x + w - 2, y + 2), lbl, font=tf, fill=T.BLACK, anchor="rt")
+        hdr_off = max(16, int(h * 0.42))
+        bar_y += hdr_off
+        bar_h = max(12, h - hdr_off)
+        show_label = False  # already drawn in header row
+
+    rad = min(8, min(bar_w, bar_h) // 4)
+    if style == "segmented":
+        segs = max(4, min(20, int(el.get("segments") or 10)))
+        gap = 4
+        seg_w = max(4, (bar_w - gap * (segs - 1)) / float(segs))
+        lit = int(round(pct * segs))
+        for s_i in range(segs):
+            sx0 = int(bar_x + s_i * (seg_w + gap))
+            sx1 = int(sx0 + seg_w)
+            if s_i < lit:
+                d.rounded_rectangle([(sx0, bar_y), (sx1, bar_y + bar_h)], radius=min(4, rad), fill=T.BLACK)
+            else:
+                d.rounded_rectangle([(sx0, bar_y), (sx1, bar_y + bar_h)], radius=min(4, rad), outline=T.BLACK, width=2)
+    elif style == "vertical":
+        d.rounded_rectangle([(bar_x, bar_y), (bar_x + bar_w, bar_y + bar_h)], radius=rad, outline=T.BLACK, width=2)
+        fill_h = int(round((bar_h - 6) * pct))
+        if fill_h > 2:
+            d.rounded_rectangle([(bar_x + 3, bar_y + bar_h - 3 - fill_h), (bar_x + bar_w - 3, bar_y + bar_h - 3)], radius=max(2, rad - 2), fill=T.BLACK)
+    else:
+        d.rounded_rectangle([(bar_x, bar_y), (bar_x + bar_w, bar_y + bar_h)], radius=rad, outline=T.BLACK, width=2)
+        fill_w = int(round((bar_w - 6) * pct))
+        if fill_w > 2:
+            d.rounded_rectangle([(bar_x + 3, bar_y + 3), (bar_x + 3 + fill_w, bar_y + bar_h - 3)], radius=max(2, rad - 2), fill=T.BLACK)
+        if show_label and bar_h >= 20:
+            lbl = f"{title + ' · ' if title else ''}{val:.0f}{suffix}"
+            lf = T.font(max(11, min(24, int(bar_h * 0.56))), bold=True)
+            cx = bar_x + bar_w // 2
+            cy = bar_y + bar_h // 2
+            # High-contrast pill behind center label so it reads over both black and white regions
+            tw = T.text_width(lbl, lf) + 14
+            th = max(16, int(bar_h * 0.72))
+            d.rounded_rectangle([(cx - tw // 2, cy - th // 2), (cx + tw // 2, cy + th // 2)], radius=4, fill=T.WHITE, outline=T.BLACK, width=1)
+            d.text((cx, cy), lbl, font=lf, fill=T.BLACK, anchor="mm")
+
+
+def _draw_bar_chart(img, d, el, _text, series=None, display=None):
+    """Crisp 1-bit vertical bar chart from entity history series."""
+    raw_pts = [float(p) for p in (series or el.get("_series") or []) if p is not None]
+    if len(raw_pts) < 2:
+        # Clean sample wave for visual design preview when no live history yet
+        raw_pts = [18, 24, 32, 48, 65, 82, 95, 88, 74, 52, 36, 22]
+    x0, y0, w, h = _clamp_box(el, 280, 120, display=display)
+    show_border = el.get("show_border") in (True, "true", 1, "1")
+    if show_border:
+        d.rounded_rectangle([(x0, y0), (x0 + w, y0 + h)], radius=14, outline=T.BLACK, width=3)
+        x0 += 14
+        y0 += 12
+        w = max(24, w - 28)
+        h = max(24, h - 24)
+    try:
+        num_bars = max(4, min(32, int(el.get("bars") or 12)))
+    except (ValueError, TypeError):
+        num_bars = 12
+    show_labels = el.get("show_labels") not in (False, "false", 0, "0")
+    title = str(el.get("title") or "").strip()
+
+    # Downsample/bucket raw_pts into num_bars buckets
+    buckets = []
+    n = len(raw_pts)
+    for b_i in range(num_bars):
+        i0 = int(b_i * n / num_bars)
+        i1 = max(i0 + 1, int((b_i + 1) * n / num_bars))
+        chunk = raw_pts[i0:i1]
+        buckets.append(sum(chunk) / len(chunk) if chunk else 0.0)
+
+    top_pad = 24 if (title or show_labels) else 4
+    chart_y0 = y0 + top_pad
+    chart_y1 = y0 + h - 2
+    chart_h = max(16, chart_y1 - chart_y0)
+
+    lo = min(0.0, min(buckets))
+    hi = max(buckets)
+    span = (hi - lo) or 1.0
+
+    if title or show_labels:
+        hf = T.font(14, bold=True)
+        if title:
+            d.text((x0 + 2, y0 + 2), title.upper(), font=hf, fill=T.BLACK, anchor="lt")
+        if show_labels:
+            hi_lbl = f"MAX {hi:.1f}" if abs(hi) < 10 and hi != int(hi) else f"MAX {hi:.0f}"
+            d.text((x0 + w - 2, y0 + 2), hi_lbl, font=hf, fill=T.BLACK, anchor="rt")
+
+    gap = max(2, min(6, w // (num_bars * 4)))
+    bar_w = max(3, (w - gap * (num_bars - 1)) / float(num_bars))
+    for i, v in enumerate(buckets):
+        bx0 = int(x0 + i * (bar_w + gap))
+        bx1 = int(bx0 + bar_w)
+        bh = max(3, int(round(((v - lo) / span) * (chart_h - 4))))
+        by0 = chart_y1 - bh
+        d.rounded_rectangle([(bx0, by0), (bx1, chart_y1)], radius=min(3, int(bar_w // 2)), fill=T.BLACK)
+
+    d.line([(x0, chart_y1), (x0 + w, chart_y1)], fill=T.BLACK, width=2)
+
+
+def _draw_qr(img, d, el, raw_val, display=None):
+    """1-bit QR code element (supports literal URL/text, entity value, or Wi-Fi credentials)."""
+    x, y, w, h = _clamp_box(el, 150, 150, display=display)
+    show_border = el.get("show_border") in (True, "true", 1, "1")
+    if show_border:
+        d.rounded_rectangle([(x, y), (x + w, y + h)], radius=12, outline=T.BLACK, width=2)
+        x += 6
+        y += 6
+        w = max(32, w - 12)
+        h = max(32, h - 12)
+    wifi_ssid = str(el.get("wifi_ssid") or "").strip()
+    if wifi_ssid:
+        wifi_pass = str(el.get("wifi_password") or "")
+        wifi_enc = str(el.get("wifi_auth") or ("WPA" if wifi_pass else "nopass"))
+        payload = f"WIFI:S:{wifi_ssid};T:{wifi_enc};P:{wifi_pass};;"
+    else:
+        payload = str(raw_val if (raw_val is not None and str(raw_val).strip()) else (el.get("value") or "https://home-assistant.io")).strip()
+
+    title = str(el.get("title") or "").strip()
+    matrix = encode_qr_matrix(payload)
+    m_size = len(matrix)
+    quiet = 2  # 2-module quiet zone around QR
+    total_mods = m_size + quiet * 2
+
+    label_h = 22 if title and h >= 90 else 0
+    avail_box = min(w, max(40, h - label_h))
+    mod_px = max(1, avail_box // total_mods)
+    qr_px = mod_px * total_mods
+    ox = x + (w - qr_px) // 2
+    oy = y + (h - label_h - qr_px) // 2
+
+    d.rectangle([(ox, oy), (ox + qr_px, oy + qr_px)], fill=T.WHITE)
+    for r_i, row in enumerate(matrix):
+        for c_i, cell in enumerate(row):
+            if cell:
+                px0 = ox + (c_i + quiet) * mod_px
+                py0 = oy + (r_i + quiet) * mod_px
+                d.rectangle([(px0, py0), (px0 + mod_px - 1, py0 + mod_px - 1)], fill=T.BLACK)
+
+    if label_h and title:
+        tf = _fit_font(title, w - 8, 15, min_sz=10, bold=True)
+        d.text((x + w // 2, oy + qr_px + label_h // 2 + 2), title, font=tf, fill=T.BLACK, anchor="mm")
 
 
 def _draw_curve(img, d, el, _text, series=None, display=None):
@@ -1666,6 +1905,10 @@ DRAWERS = {
     "number": _draw_text,          # same drawing, value formatted first
     "icon": _draw_icon,
     "line": _draw_line,
+    "box": _draw_box,
+    "bar": _draw_bar,
+    "bar_chart": _draw_bar_chart,
+    "qr": _draw_qr,
     "curve": _draw_curve,
     "dynamic_grid": _draw_dynamic_grid,
     "calendar_month": _draw_calendar_month,
@@ -1698,8 +1941,14 @@ def render_page(page, vals, *, clock="", label="", cat_label="", sub_label="", b
         drawer = DRAWERS.get(el.get("type"))
         if drawer is None:
             continue
+        # Per-element conditional visibility (show_if)
+        vis_key = f"__vis_{i}"
+        if vis_key in (vals or {}):
+            vis_res = str(vals.get(vis_key) or "").strip().lower()
+            if vis_res in ("false", "0", "no", "off", "none", "unavailable", "unknown", ""):
+                continue
         try:
-            if el["type"] == "curve":
+            if el["type"] in ("curve", "bar_chart"):
                 drawer(img, d, el, "", (series or {}).get(i), display=display)
             elif el["type"] in ("text", "number"):
                 got = []
@@ -1715,7 +1964,7 @@ def render_page(page, vals, *, clock="", label="", cat_label="", sub_label="", b
                             # else, so say so rather than let it look broken.
                             entry["not_a_number"] = str(raw)[:60]
                     metrics.append(entry)
-            elif el["type"] in ("dynamic_grid", "calendar_month", "calendar_agenda", "weather_forecast", "flight_tracker", "sports_racing", "sports_match"):
+            elif el["type"] in ("bar", "qr", "dynamic_grid", "calendar_month", "calendar_agenda", "weather_forecast", "flight_tracker", "sports_racing", "sports_match"):
                 drawer(img, d, el, vals.get(i), display=display)
             else:
                 drawer(img, d, el, element_text(el, vals, i), display=display)
@@ -1735,7 +1984,10 @@ def collect_templates(page):
     """
     out = {}
     for i, el in enumerate(page.get("elements", [])):
-        if el.get("type") in ("text", "number"):
+        show_if = str(el.get("show_if") or "").strip()
+        if show_if:
+            out[f"__vis_{i}"] = show_if
+        if el.get("type") in ("text", "number", "bar", "qr"):
             tpl = template_for(el)
             if tpl and "{{" in tpl:
                 out[i] = tpl
@@ -1796,3 +2048,4 @@ def collect_templates(page):
                 )
                 out[i] = tpl
     return out
+

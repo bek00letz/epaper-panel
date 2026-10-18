@@ -1,5 +1,41 @@
 # Changelog
 
+## 0.8.25
+- **Configurable Night / Quiet Hours (Zero-Ghosting Deep Idle):**
+  - Added an optional, fully configurable **Night / Quiet Hours** schedule (`quiet_hours`) accessible via the top toolbar (`🌙 Quiet`) or **Settings → Night / Quiet Hours…** (`enabled: false` by default).
+  - Supports a daily time window (`start` to `end` in `HH:MM`, including overnight windows like `23:30` to `07:00`) and/or an optional Home Assistant presence entity (`zone.home`, `person.*`, `group.*`, `input_boolean.*`) that activates Quiet Hours automatically when everyone is away (`0`, `not_home`, `away`, `off`).
+  - **How it works:** While Quiet Hours are active, the server suppresses background `refresh_now` pushes to the panel and encodes a quiet-mode flag (`0xA5`) in the self-describing metadata row of `frames.png`. The ESP32 pauses its 10-second auto-rotation timer so the e-paper screen performs **zero physical flashes** overnight (eliminating e-ink wear and bedroom flashing while retaining the crisp image at zero power), yet **stays 100% awake on Wi-Fi** so physical buttons and IKEA BILRESA scroll remotes still page instantaneously.
+  - Optional **Allow Interrupt Alerts (`allow_alerts`)** override lets high-priority `alert` tier pages wake and update the panel even during Quiet Hours.
+  - Publishes `sensor.epaper_quiet_hours` (`active` / `inactive`) with schedule and reason attributes to Home Assistant.
+- **New E-Ink Native Primitives & Visual Styling:**
+  - **`box` (Card / Container / Pill / 50% Screen):** Structural rectangle/rounded card primitive supporting `outline`, `black` (solid fill), `white` (opaque mask), and `screen` (50% checkerboard grey pattern) with configurable corner `radius` and border `thickness`.
+  - **Inverted & Pill Badges on `text`, `number`, and `icon`:** Any text, number, or icon element can now toggle `Invert (White on Black)` and/or `Pill / Badge Frame` with configurable corner `radius` for high-contrast headers, status tags, and callout badges.
+  - **`bar` (Progress / Gauge Bar):** Horizontal (`solid` or `segmented` battery blocks) or `vertical` tank/column gauge bound to any numeric entity or template, with configurable `min_val`, `max_val`, `title`, `suffix`, and `show_label`.
+  - **`bar_chart` (Multi-Bar History Column Chart):** Renders historical Home Assistant sensor data bucketed into `4`–`24` discrete vertical columns over `1`–`72` hours with min/max scale labels and current value readout.
+  - **`qr` (Zero-Dependency 1-Bit QR Code Generator):** Pure-Python ISO/IEC 18004 QR code renderer (`addon/app/render/qr.py`) supporting URLs, static text, live Home Assistant entity states, or **Guest Wi-Fi credentials** (`WIFI:T:WPA;S:...;P:...;;`) with crisp module scaling and optional caption header.
+- **Per-Element Conditional Visibility (`show_if`):**
+  - Every individual element on a page now supports an optional `show_if` condition (structured entity state comparison or raw Jinja expression) in the inspector, allowing badges, warning icons, or secondary metrics to appear or hide dynamically on the same canvas without duplicating whole pages.
+- **Studio Multi-Select (`Shift+Click`), Group Alignment & Custom Presets:**
+  - **Multi-Select (`Shift+Click`):** Hold `Shift` and click elements on the canvas to select multiple elements at once. Dragging or pressing arrow keys moves the entire selection together.
+  - **Multi-Element Alignment & Distribution Toolbar:** Selecting 2+ elements opens a dedicated alignment inspector (`Align Left`, `Center H`, `Align Right`, `Align Top`, `Middle V`, `Align Bottom`, `Distribute H`, `Distribute V`, `Duplicate Selected`, `Delete Selected`).
+  - **Save Page as Custom Preset:** Save any designed page into your personal **Custom Presets** library (`💾 Save Page as Preset…`), stored in `layouts.json` (`custom_presets`) and accessible with one click in the **Page Presets** modal alongside two new built-in presets (`Energy & Battery Gauges` and `Guest Wi-Fi QR Card`).
+- **Single-Page Slice Endpoint (`/frame.png?page=N`):**
+  - `/frame.png` now accepts an optional `?page=N` query parameter to serve any individual rendered slice PNG directly by index.
+
+## 0.8.24
+- **Editable & Customizable Composite Widgets (`font_scale`, Layout Density & Break Apart):**
+  - **Typography Scale (`font_scale` 0.70×–1.60×) & Density Controls:** All composite widgets (`weather_forecast`, `calendar_month`, `calendar_agenda`, `flight_tracker`, `sports_racing`, `sports_match`, `dynamic_grid`) now expose a **Font Scale (`70%`–`160%`)** slider, **Show Outer Border** toggle, and layout-specific density controls (`Forecast Days` 3–5, `Split Hero + Forecast` vs `Full-Width Forecast Only`, `Max Events` 2–6, `Max Matches` 2–4, `Radar Split` vs `Telemetry Only`).
+  - **✂️ Break Apart into Editable Elements:** New one-click inspector action (`POST /api/widget/explode`) that decomposes any composite widget (`weather_forecast`, `flight_tracker`, `sports_racing`, `sports_match`, `calendar_agenda`, `dynamic_grid`) into standard, individually draggable `text`, `number`, `icon`, and `line` elements on the canvas for unlimited pixel-level customization.
+- **Weather Forecast Multi-Tier Fallback Engine:**
+  - Fixed `weather_forecast` cards getting stuck on `"Forecast loading..."` on modern Home Assistant (`2024.3+`, where `state_attr('weather.x', 'forecast')` was removed).
+  - `fetch_weather_forecast()` in `server.py` now tries 4 tiers automatically: (1) HA REST `POST /api/services/weather/get_forecasts?return_response` (`hourly` + `daily`), (2) HA WebSocket `weather/get_forecasts` fallback, (3) legacy `attributes.forecast`, and (4) **automatic Open-Meteo API fallback** using your `zone.home` coordinates and WMO weather codes if the HA weather integration fails or is unavailable.
+- **Eliminated Black "Sleep-Like" Screen & Remote Desync Bugs:**
+  - **Root Cause 1 (Torn In-Flight Downloads):** ESPHome's `online_image` clears/reallocates its target PSRAM buffer as soon as an HTTP download starts (`GET /frames.png`), taking ~5–6 seconds to decode. Previously, if the 10s timer ticked or a remote action fired mid-download, the display lambda blitted an uninitialized/zeroed PSRAM buffer (`COLOR_ON` with `invert_colors: true` = solid black screen) until the user rotated the dial.
+  - **Root Cause 2 (Stale `cat_offsets` / `cat_sizes`):** `ha_cat_offsets` and `ha_cat_sizes` arrived asynchronously over the ESPHome native API out of lockstep with `frames.png`, causing `page_step` from an IKEA BILRESA scroll remote to compute out-of-range slice indices (`y_offset >= strip.height`).
+  - **Fix — Self-Describing Strip Metadata & Download Guard:** `server.py` now embeds a self-describing binary header (`0xA5` magic, `cat_count`, `(offset, size, pill_width)` per category, and `quiet_hours_active`) in the bottom-right pixels of `frames.png`. The firmware reads this header atomically inside `on_download_finished` and guards `redraw`, `page_step`, `mode_toggle`, `lock_toggle`, and `show_page` with `downloading_frames` so mid-download triggers defer cleanly until decoding finishes.
+- **Studio Canvas Smart Alignment Guides:**
+  - Dragging an element on the canvas now snaps to and renders live magenta alignment guides for canvas centerlines (`X = W/2`, `Y = H/2`) and other elements' edges and centers (`±5 px` threshold; hold `Alt` to bypass snapping).
+
 ## 0.8.23
 - **Custom Flight Tracker Coordinates & Airport Presets:**
   - Added support for custom latitude and longitude on flight tracker cards (allowing traffic monitoring above specific airports such as TSR, LHR, JFK, FRA, or any custom coordinate) with graceful fallback to Home Assistant's `zone.home` coordinates.

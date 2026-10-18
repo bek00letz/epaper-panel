@@ -95,6 +95,10 @@ globals:
     type: bool
     initial_value: 'false'
     restore_value: false
+  - id: quiet_hours_active
+    type: bool
+    initial_value: 'false'
+    restore_value: false
 
 font:
   - file: "gfonts://Lato@700"
@@ -469,7 +473,9 @@ online_image:
                   id(cat_sizes).push_back(sz);
                   id(cat_pill_widths).push_back(pw > 0 ? pw : 110);
                 }
-                ESP_LOGI("panel", "Loaded metadata directly from frames.png: %d categories", num_cats);
+                int qh_flag = read_byte(3 + num_cats * 3);
+                id(quiet_hours_active) = (qh_flag == 0xA5);
+                ESP_LOGI("panel", "Loaded metadata directly from frames.png: %d categories (quiet_hours=%d)", num_cats, id(quiet_hours_active));
               }
             }
           }
@@ -723,6 +729,7 @@ interval:
       - if:
           condition:
             lambda: |-
+              if (id(quiet_hours_active)) return false;
               int target_sec = (int)(id(panel_refresh_interval).state * 60.0);
               if (target_sec < 10) target_sec = 10;
               return (id(idle_sec) >= target_sec);

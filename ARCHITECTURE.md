@@ -47,9 +47,24 @@ The add-on runs two HTTP listeners inside the same event loop:
 Every 60 seconds (and immediately on layout save or panel push), `server.py` runs `refresh_frames()`:
 
 - Polls configured `feeds/` (`jellyfin`, `rest`, `statistics`) and publishes their results back to Home Assistant as `sensor.epaper_<name>` entities.
-- Evaluates `alert` and `when` page conditions (`show_if`) and builds two in-memory PNG buffers:
-  - `frames.png` — every active rotation page stacked vertically (`792 × 272·N`). The panel holds it in PSRAM and blits a 272 px slice, so paging with the hardware buttons needs no network round trip. When an `alert` (interrupt) page triggers, `frames.png` shrinks to a 1-page strip containing only that alert for `hold_minutes` and calls `esphome.<device>_show_page`, decoding in ~1 s and preventing the panel's 5-minute timer from rotating away during the hold window.
-  - `frame.png` — the single-page slice for the current slot, driving dashboard previews and single-page wake flows.
+- Evaluates `alert` and `when` page conditions (`show_if`), per-element `show_if` visibility, and `quiet_hours` schedule/presence state, then builds the in-memory PNG buffers:
+  - `frames.png` — every active rotation slice stacked vertically (`792 × 272·N`). The panel holds it in PSRAM and blits a 272 px slice, so paging with the hardware buttons or an IKEA BILRESA scroll remote needs no network round trip. When an `alert` (interrupt) page triggers, `frames.png` shrinks to a 1-page strip containing only that alert for `hold_minutes` and calls `esphome.<device>_show_page`, decoding in ~1 s and preventing the panel's timer from rotating away during the hold window.
+  - `frame.png` (and `/frame.png?page=N`) — single-page PNG slice for the current slot or any specific slice index `N`, driving dashboard previews and single-page wake flows.
+
+### Self-Describing Strip Metadata & In-Flight Download Guard
+
+Two subtle hardware/firmware race conditions originally caused intermittent black screens or remote navigation glitches:
+1. **Torn In-Flight Downloads:** ESPHome's `online_image` clears/reallocates its target PSRAM buffer as soon as an HTTP download starts (`GET /frames.png`), taking ~5–6 s to decode a multi-page strip. If the 10-second rotation interval or a remote action fired mid-download, the display lambda blitted an uninitialized/zeroed PSRAM buffer (`COLOR_ON` with `invert_colors: true` = solid black screen).
+2. **Asynchronous Sensor Desync:** `sensor.epaper_categories` (`ha_cat_offsets`, `ha_cat_sizes`, `ha_cat_pill_widths`) arrived over the ESPHome native API out of lockstep with the HTTP strip download, so a remote `page_step` could compute a slice offset beyond the strip height (`y_offset >= strip.height`).
+
+To eliminate both races atomically:
+- **Self-Describing Metadata Row (`meta_y`):** `server.py` encodes a binary header in the bottom-right pixels of the first frame (`y = dh - 1`, `x` starting backward from `dw - 1`, 1 bit per pixel, MSB first):
+  - `Byte 0`: `0xA5` magic marker (`10100101`)
+  - `Byte 1`: `total_slices`
+  - `Byte 2`: `cat_count` (`N`, up to 32)
+  - `Bytes 3 .. 3 + 3·N - 1`: `(offset, size, pill_width)` tuple for each category
+  - `Byte 3 + 3·N`: `0xA5` when **Night / Quiet Hours** (`quiet_hours_active`) is active, or `0x00` when inactive.
+- **Atomic Parse & `downloading_frames` Guard:** `esphome/crowpanel-epaper.yaml` sets `id(downloading_frames) = true` before `component.update: frames` and clears it inside `on_download_finished` (and `on_error`), where it parses the `0xA5` header directly from the decoded `frames` buffer. All `redraw`, `page_step`, `mode_toggle`, `lock_toggle`, and `show_page` actions check `downloading_frames` and defer (`pending_redraw = true`) until decoding finishes.
 
 ## Measured numbers
 
@@ -200,7 +215,7 @@ dashboard can no longer step the panel's page directly — it pushes through
 **Held state is drawn on the device, not baked into the image.** The pages are
 pre-rendered server-side and the panel does not know which it will show when
 one is rendered, so the padlock is drawn by the display lambda over the slice,
-in the top-right margin that every page leaves free.
+in the bottom footer bar alongside the active category/sub-item pills.
 
 **Rotation order as a single string.** `solar,cat,watch,cat,temps,dryer` —
 repeating a name weights it, removing it disables it. Editable directly in the
@@ -212,4 +227,5 @@ elements declare structured intent (`show: days_until`, `date_formatted`, `attri
 `last_changed`). `binding.py` compiles and sanitizes the Jinja expression, while
 `prefix` and `suffix` are applied in Python so numeric formatting and fallbacks
 remain predictable and resilient.
+
 

@@ -1015,10 +1015,11 @@ aside {
     <button id="templatebtn" class="sm" title="Add page from ready-made presets" style="font-weight:600">＋ Preset</button>
     <button id="addpage" class="sm" title="New blank page">＋ Blank</button>
     <div class="menu-wrap">
-      <button id="pageactionsbtn" class="sm icon-btn" title="Page actions (Duplicate, Rename, Delete)">•••</button>
+      <button id="pageactionsbtn" class="sm icon-btn" title="Page actions (Duplicate, Rename, Save as Preset, Delete)">•••</button>
       <div class="menu-popover" id="pagemenu">
         <button id="duppage"><span style="font-size:14px">📋</span> Duplicate Page</button>
         <button id="renamepage"><span style="font-size:14px">✏️</span> Rename Page</button>
+        <button id="savepresetpage"><span style="font-size:14px">💾</span> Save Page as Preset…</button>
         <div class="menu-sep"></div>
         <button id="delpage" style="color:var(--danger)"><span style="font-size:14px">🗑️</span> Delete Page</button>
       </div>
@@ -1047,6 +1048,10 @@ aside {
 
   <!-- Status & Actions -->
   <div class="tool-group">
+    <button id="quietpill" class="badge-tag" title="Configure Night / Quiet Hours (Zero-Ghosting Deep Idle)" style="cursor:pointer;display:inline-flex;align-items:center;gap:5px;padding:4px 9px;height:28px">
+      <span>🌙</span>
+      <span id="quietpilltext">Quiet: Off</span>
+    </button>
     <button id="statuspill" class="status-pill" title="Click to preview the full rendered panel strip">
       <span id="statusdot" class="status-dot"></span>
       <span id="statustext">Loading…</span>
@@ -1055,6 +1060,7 @@ aside {
       <button id="toolsbtn" class="sm icon-btn" title="Settings &amp; Tools">⚙️</button>
       <div class="menu-popover right" id="toolsmenu">
         <button id="setupbtn"><span style="font-size:14px">📟</span> Panel Setup &amp; Firmware</button>
+        <button id="quietbtn"><span style="font-size:14px">🌙</span> Night / Quiet Hours…</button>
         <button id="datasrc"><span style="font-size:14px">🔌</span> Data Sources</button>
         <div class="menu-sep"></div>
         <button id="themetoggle"><span style="font-size:14px">🌓</span> Toggle Dark / Light</button>
@@ -1183,7 +1189,7 @@ aside {
       <div id="rotpills" class="rot-pills" style="margin-top:6px"></div>
     </div>
 
-    <p class="hint"><b>Tip:</b> Click an entity card or drag it onto the canvas. Use arrows to nudge, Shift+arrows by 10px. Hold Alt to ignore grid snapping.</p>
+    <p class="hint"><b>Tip:</b> Click or drag an entity onto the canvas. <b>Shift+Click</b> elements to multi-select &amp; align together. Use arrows to nudge (Shift+arrows by 10px), Alt to bypass snap guides.</p>
   </div>
 
   <!-- Sidebar Rail -->
@@ -1205,8 +1211,13 @@ aside {
           <button data-add="number"><span class="icon">#️⃣</span><span>Number</span></button>
           <button data-add="text"><span class="icon">🔤</span><span>Text</span></button>
           <button data-add="icon"><span class="icon">⭐</span><span>Icon</span></button>
-          <button data-add="curve"><span class="icon">📈</span><span>Graph</span></button>
+          <button data-add="box"><span class="icon">⬛</span><span>Box / Card</span></button>
           <button data-add="line"><span class="icon">➖</span><span>Divider</span></button>
+          <button data-add="bar"><span class="icon">🔋</span><span>Gauge Bar</span></button>
+          <button data-add="curve"><span class="icon">📈</span><span>Sparkline</span></button>
+          <button data-add="bar_chart"><span class="icon">📊</span><span>Bar Chart</span></button>
+          <button data-add="qr"><span class="icon">📱</span><span>QR Code</span></button>
+          <button data-add="weather_forecast"><span class="icon">⛅</span><span>Weather</span></button>
           <button data-add="dynamic_grid"><span class="icon">🔲</span><span>Dynamic Grid</span></button>
           <button data-add="calendar_month"><span class="icon">📅</span><span>Month View</span></button>
           <button data-add="calendar_agenda"><span class="icon">📋</span><span>Agenda</span></button>
@@ -1246,11 +1257,76 @@ aside {
   <div class="modal-card">
     <div class="row" style="margin:0">
       <strong style="font-size:16px;flex:1">Page Presets</strong>
+      <button id="savecurpresetbtn" class="sm" title="Save your current page layout as a reusable custom preset">💾 Save Current Page as Preset…</button>
       <button id="templateclose">Close</button>
     </div>
-    <p class="hint" style="margin:0">Pick a preset to quickly create a beautiful, high-legibility page. Customize entities and layouts after creation.</p>
+    <p class="hint" style="margin:0">Pick a built-in or custom preset to quickly create a high-legibility page. Customize entities, font scale, or break widgets apart after creation.</p>
     <div class="template-grid" id="templategrid">
       <!-- Injected via JS -->
+    </div>
+  </div>
+</div>
+
+<!-- Night / Quiet Hours (Zero-Ghosting Deep Idle) Modal -->
+<div id="quietwrap" class="modal-wrap">
+  <div class="modal-card" style="width:min(620px,94vw)">
+    <div class="row" style="margin:0">
+      <strong style="font-size:16px;flex:1">🌙 Night / Quiet Hours (Zero-Ghosting Deep Idle)</strong>
+      <button id="quietclose">Close</button>
+    </div>
+    <div id="qh_status_chip" class="chip" style="margin:0">Status: Disabled (24/7 normal refresh &amp; rotation)</div>
+    <div class="card"><div class="body" style="display:flex;flex-direction:column;gap:10px">
+      <div style="font-size:12.5px;color:var(--text-secondary);line-height:1.45">
+        E-paper is bistable and holds its last image cleanly with <b>0 mW power</b> and zero backlight glow.
+        When <b>Night / Quiet Hours</b> is enabled and active:
+        <ul style="margin:6px 0 2px 18px;padding:0">
+          <li><b>Zero screen flashes:</b> Automatic page rotation and periodic full-screen e-ink refreshes pause so the display never flashes in a dark room or wears the e-ink film while nobody is looking.</li>
+          <li><b>Zero Wi-Fi polling:</b> The panel skips background HTTP strip downloads while Quiet Hours is active.</li>
+          <li><b>Instant manual wake:</b> Pressing any physical button on the CrowPanel or turning your <b>IKEA BILRESA</b> remote still flips pages immediately on demand.</li>
+        </ul>
+      </div>
+
+      <div class="row" style="border-top:1px solid var(--border);padding-top:10px;margin-top:2px">
+        <label style="width:170px;font-weight:600;color:var(--text-primary)">Enable Quiet Hours</label>
+        <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;flex:1">
+          <input id="qh_enabled" type="checkbox" style="width:18px;height:18px;min-height:0;flex:none">
+          <span id="qh_enabled_label" style="font-weight:600">Off — Panel refreshes &amp; rotates 24/7</span>
+        </label>
+      </div>
+
+      <div id="qh_fields" style="display:flex;flex-direction:column;gap:10px">
+        <div class="row">
+          <label style="width:170px">Quiet time window</label>
+          <div style="display:flex;align-items:center;gap:8px;flex:1;flex-wrap:wrap">
+            <input id="qh_start" type="time" value="23:00" style="max-width:125px">
+            <span style="color:var(--text-secondary);font-size:12px">until</span>
+            <input id="qh_end" type="time" value="07:00" style="max-width:125px">
+            <span style="color:var(--text-muted);font-size:11.5px">(supports overnight spans, e.g. 23:00 → 07:00)</span>
+          </div>
+        </div>
+
+        <div class="row">
+          <label style="width:170px">Away / Presence entity</label>
+          <input id="qh_presence" list="entities-dl" placeholder="Optional: e.g. zone.home, group.family, or person.alex" style="flex:1">
+        </div>
+        <div style="font-size:11.5px;color:var(--text-muted);margin-top:-6px;margin-left:178px">
+          Optional: also pause panel refreshes automatically whenever this entity is <code>not_home</code>, <code>away</code>, <code>off</code>, or <code>0</code> (nobody home).
+        </div>
+
+        <div class="row" style="border-top:1px solid var(--border);padding-top:8px">
+          <label style="width:170px">Urgent alerts override</label>
+          <label style="display:inline-flex;align-items:center;gap:8px;cursor:pointer;flex:1;font-size:12.5px">
+            <input id="qh_alerts" type="checkbox" checked style="width:16px;height:16px;min-height:0;flex:none">
+            <span>Allow <b>Urgent interruption</b> pages (<code>tier: alert</code>) to wake and push to the panel during Quiet Hours</span>
+          </label>
+        </div>
+      </div>
+    </div></div>
+    <div class="chip" style="margin:0;font-size:11.5px">
+      Publishes <code>sensor.epaper_quiet_hours</code> (<code>active</code> / <code>inactive</code>) to Home Assistant so your automations can also check Quiet Hours status.
+    </div>
+    <div class="row" style="margin:0;justify-content:flex-end;gap:8px">
+      <button id="qh_save" class="primary">Save Quiet Hours Settings</button>
     </div>
   </div>
 </div>
@@ -1922,6 +1998,8 @@ function snapshot() {
   hpos = hist.length - 1;
   buttons();
 }
+let multiSel = new Set();
+
 function restore(i) {
   if (i < 0 || i >= hist.length) return;
   hpos = i;
@@ -1931,12 +2009,47 @@ function restore(i) {
   fillPages();
   $("page").value = cur;
   sel = -1;
+  multiSel.clear();
   holdRow(); paint(); preview(); buttons();
 }
 const undo = () => restore(hpos - 1), redo = () => restore(hpos + 1);
 function buttons() {
   $("undo").disabled = hpos <= 0;
   $("redo").disabled = hpos >= hist.length - 1;
+}
+
+function updateQuietHoursBadge() {
+  const qh = (spec && spec.quiet_hours) || {};
+  const pill = $("quietpill"), ptxt = $("quietpilltext"), chip = $("qh_status_chip");
+  const isAct = !!(liveStatus && liveStatus.quiet_active);
+  const reason = (liveStatus && liveStatus.quiet_reason) || "";
+  if (pill && ptxt) {
+    if (!qh.enabled) {
+      ptxt.textContent = "Quiet: Off";
+      pill.style.background = "";
+      pill.style.color = "";
+    } else if (isAct) {
+      ptxt.textContent = "Quiet: Active";
+      pill.style.background = "rgba(56, 139, 253, 0.18)";
+      pill.style.color = "#58a6ff";
+    } else {
+      ptxt.textContent = `Quiet: ${qh.start || "23:00"}–${qh.end || "07:00"}`;
+      pill.style.background = "";
+      pill.style.color = "";
+    }
+  }
+  if (chip) {
+    if (!qh.enabled) {
+      chip.className = "chip";
+      chip.innerHTML = "<b>Status: Disabled</b> — Panel refreshes and rotates normally 24/7.";
+    } else if (isAct) {
+      chip.className = "chip good";
+      chip.innerHTML = `<b>Status: Quiet Hours Active</b> (${esc(reason || "deep idle")}) — Automatic screen flashes and Wi-Fi strip fetches are paused. Physical buttons &amp; remote still wake on demand.`;
+    } else {
+      chip.className = "chip";
+      chip.innerHTML = `<b>Status: Armed &amp; Scheduled</b> (${esc(qh.start || "23:00")} → ${esc(qh.end || "07:00")}${qh.presence_entity ? ` or when <code>${esc(qh.presence_entity)}</code> is away` : ""}) — Currently in normal daytime operation.`;
+    }
+  }
 }
 
 /* Status */
@@ -1961,6 +2074,7 @@ async function refreshStatus() {
     if (liveStatus.panel_interval && !isDraggingRefresh) {
       updateRefreshUI(liveStatus.panel_interval);
     }
+    updateQuietHoursBadge();
     drawRotationPills();
   } catch (_) {}
 }
@@ -1971,8 +2085,13 @@ async function boot() {
   if (!spec.display) spec.display = "crowpanel_579";
   if (spec.orientation === undefined) spec.orientation = 0;
   if (spec.rotate_seconds === undefined) spec.rotate_seconds = 30;
+  if (!spec.quiet_hours) {
+    spec.quiet_hours = { enabled: false, start: "23:00", end: "07:00", presence_entity: "", allow_alerts: true };
+  }
+  if (!Array.isArray(spec.custom_presets)) spec.custom_presets = [];
   if ($("rotinterval")) $("rotinterval").value = String(spec.rotate_seconds);
   syncOrientUI();
+  updateQuietHoursBadge();
   ents = await api("api/entities").then(r => r.json()).catch(() => []);
   $("entcount").textContent = ents.length;
   $("entities-dl").innerHTML = ents.map(e => `<option value="${esc(e.entity_id)}">${esc(e.name)} (${esc(e.state)})</option>`).join("");
@@ -2157,6 +2276,7 @@ $("showif").onchange = e => {
 function select(name) {
   cur = name;
   sel = -1;
+  multiSel.clear();
   if (!cur || !page()) return;
   $("page").value = cur;
   $("tier").value = page().tier || "rotate";
@@ -2176,7 +2296,8 @@ function paint() {
   const cw = curW(), ch = curH();
   els().forEach((el, i) => {
     const d = document.createElement("div");
-    d.className = "el" + (i === sel ? " sel" : "");
+    const isSelected = (i === sel) || multiSel.has(i);
+    d.className = "el" + (isSelected ? " sel" : "");
     d.style.left = (el.x / cw * 100) + "%";
     d.style.top = (el.y / ch * 100) + "%";
     d.style.width = (el.w / cw * 100) + "%";
@@ -2219,7 +2340,7 @@ function guides(el, i) {
   const cw = curW(), ch = curH(), m = curMargin(), sh = curSafeH();
   const xs = [0, m, cw / 2, cw - m, cw], ys = [0, 26, ch / 2, sh, ch];
   els().forEach((o, j) => {
-    if (j !== i) {
+    if (j !== i && !multiSel.has(j)) {
       xs.push(o.x, o.x + o.w / 2, o.x + o.w);
       ys.push(o.y, o.y + o.h / 2, o.y + o.h);
     }
@@ -2277,13 +2398,43 @@ function endDrag() {
 canvas.addEventListener("pointerdown", e => {
   if (e.button !== 0) return;
   const box = e.target.closest(".el");
-  if (!box) { sel = -1; paint(); return; }
-  sel = +box.dataset.i;
+  if (!box) {
+    sel = -1;
+    multiSel.clear();
+    paint();
+    return;
+  }
+  const clickedIdx = +box.dataset.i;
+  if (e.shiftKey) {
+    if (sel >= 0 && !multiSel.has(sel)) multiSel.add(sel);
+    if (multiSel.has(clickedIdx)) {
+      multiSel.delete(clickedIdx);
+      sel = multiSel.size ? Array.from(multiSel)[multiSel.size - 1] : -1;
+    } else {
+      multiSel.add(clickedIdx);
+      sel = clickedIdx;
+    }
+    paint();
+    return;
+  }
+  if (!multiSel.has(clickedIdx) || multiSel.size <= 1) {
+    multiSel.clear();
+    multiSel.add(clickedIdx);
+  }
+  sel = clickedIdx;
   paint();
   const scale = curW() / canvas.getBoundingClientRect().width;
+  const origMap = {};
+  multiSel.forEach(idx => { if (els()[idx]) origMap[idx] = { ...els()[idx] }; });
   drag = {
-    i: sel, mode: e.target.classList.contains("hd") ? "size" : "move",
-    sx: e.clientX, sy: e.clientY, el: { ...els()[sel] }, scale, moved: false
+    i: sel,
+    mode: e.target.classList.contains("hd") ? "size" : "move",
+    sx: e.clientX,
+    sy: e.clientY,
+    el: { ...els()[sel] },
+    origMap,
+    scale,
+    moved: false
   };
   canvas.setPointerCapture(e.pointerId);
 });
@@ -2294,16 +2445,26 @@ canvas.addEventListener("pointermove", e => {
   const dx = (e.clientX - drag.sx) * drag.scale, dy = (e.clientY - drag.sy) * drag.scale;
   const el = els()[drag.i], o = drag.el;
   if (drag.mode === "move") {
-    el.x = Math.max(0, Math.min(cw - o.w, Math.round(o.x + dx)));
-    el.y = Math.max(0, Math.min(ch - o.h, Math.round(o.y + dy)));
-    if (!e.altKey) guides(el, drag.i);
+    if (multiSel.size > 1 && drag.origMap) {
+      multiSel.forEach(idx => {
+        const item = els()[idx], orig = drag.origMap[idx];
+        if (!item || !orig) return;
+        item.x = Math.max(0, Math.min(cw - orig.w, Math.round(orig.x + dx)));
+        item.y = Math.max(0, Math.min(ch - orig.h, Math.round(orig.y + dy)));
+      });
+    } else {
+      el.x = Math.max(0, Math.min(cw - o.w, Math.round(o.x + dx)));
+      el.y = Math.max(0, Math.min(ch - o.h, Math.round(o.y + dy)));
+      if (!e.altKey) guides(el, drag.i);
+    }
   } else {
     el.w = Math.max(16, Math.min(cw - o.x, Math.round(o.w + dx)));
-    el.h = Math.max(10, Math.min(ch - o.y, Math.round(o.h + dy)));
+    el.h = Math.max(4, Math.min(ch - o.y, Math.round(o.h + dy)));
     if (!e.altKey) guidesResize(el, drag.i);
   }
   canvas.querySelectorAll(".el").forEach(n => {
     const q = els()[+n.dataset.i];
+    if (!q) return;
     n.style.left = (q.x / cw * 100) + "%";
     n.style.top = (q.y / ch * 100) + "%";
     n.style.width = (q.w / cw * 100) + "%";
@@ -2324,26 +2485,47 @@ addEventListener("keydown", e => {
   const mod = e.metaKey || e.ctrlKey;
   if (mod && e.key.toLowerCase() === "z") { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
   if (mod && e.key.toLowerCase() === "d") { e.preventDefault(); duplicate(); return; }
-  if (sel < 0) return;
+  if (sel < 0 && multiSel.size === 0) return;
   if (e.key === "Backspace" || e.key === "Delete") {
-    e.preventDefault(); snapshot(); els().splice(sel, 1); sel = -1; paint(); preview(); return;
+    e.preventDefault();
+    snapshot();
+    const toDel = multiSel.size > 1 ? Array.from(multiSel).sort((a, b) => b - a) : [sel];
+    toDel.forEach(idx => { if (idx >= 0 && idx < els().length) els().splice(idx, 1); });
+    sel = -1;
+    multiSel.clear();
+    paint(); preview();
+    return;
   }
-  const step = e.shiftKey ? 10 : 1, el = els()[sel];
+  const step = e.shiftKey ? 10 : 1;
   const map = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
   if (map[e.key]) {
     e.preventDefault(); snapshot();
-    el.x = Math.max(0, Math.min(curW() - el.w, el.x + map[e.key][0]));
-    el.y = Math.max(0, Math.min(curH() - el.h, el.y + map[e.key][1]));
+    const targets = multiSel.size > 1 ? Array.from(multiSel) : [sel];
+    targets.forEach(idx => {
+      const item = els()[idx];
+      if (!item) return;
+      item.x = Math.max(0, Math.min(curW() - item.w, item.x + map[e.key][0]));
+      item.y = Math.max(0, Math.min(curH() - item.h, item.y + map[e.key][1]));
+    });
     paint(); preview();
   }
 });
 function duplicate() {
-  if (sel < 0) return;
+  if (sel < 0 && multiSel.size === 0) return;
   snapshot();
-  const c = JSON.parse(JSON.stringify(els()[sel]));
-  c.x = Math.min(curW() - c.w, c.x + 12);
-  c.y = Math.min(curH() - c.h, c.y + 12);
-  els().push(c); sel = els().length - 1; paint(); preview();
+  const targets = multiSel.size > 1 ? Array.from(multiSel).sort((a, b) => a - b) : [sel];
+  const newIndices = [];
+  targets.forEach(idx => {
+    if (!els()[idx]) return;
+    const c = JSON.parse(JSON.stringify(els()[idx]));
+    c.x = Math.min(curW() - c.w, c.x + 12);
+    c.y = Math.min(curH() - c.h, c.y + 12);
+    els().push(c);
+    newIndices.push(els().length - 1);
+  });
+  multiSel = new Set(newIndices);
+  sel = newIndices[newIndices.length - 1] ?? -1;
+  paint(); preview();
 }
 
 /* Palette Quick Add */
@@ -2355,7 +2537,22 @@ document.querySelectorAll("[data-add]").forEach(b => b.onclick = () => {
   if (t === "number") { base.entity = ""; base.show = "state"; base.decimals = 1; base.align = "left"; }
   if (t === "text") { base.value = "Label"; base.size = 30; base.bold = false; base.align = "left"; }
   if (t === "icon") { base.icon = "mdi:home"; base.w = 110; base.h = 110; }
+  if (t === "box") { base.x = m; base.y = 36; base.w = Math.min(240, maxW); base.h = 120; base.fill = "outline"; base.radius = 12; base.thickness = 3; }
+  if (t === "bar") {
+    base.x = m; base.y = 70; base.w = Math.min(280, maxW); base.h = 58;
+    base.entity = "sensor.battery"; base.title = "BATTERY"; base.min_val = 0; base.max_val = 100;
+    base.suffix = "%"; base.bar_style = "solid"; base.show_label = true; base.decimals = 0;
+  }
   if (t === "curve") { base.entity = "sensor.example"; base.hours = 24; }
+  if (t === "bar_chart") {
+    base.x = m; base.y = 36; base.w = Math.min(320, maxW); base.h = 140;
+    base.entity = "sensor.example"; base.hours = 24; base.bars = 12; base.title = "24H HISTORY";
+    base.show_labels = true; base.show_border = false;
+  }
+  if (t === "qr") {
+    base.x = m; base.y = 26; base.w = 148; base.h = 172;
+    base.value = "https://www.home-assistant.io"; base.title = "SCAN ME"; base.show_border = false;
+  }
   if (t === "dynamic_grid") {
     base.y = 16;
     base.w = maxW;
@@ -2414,7 +2611,17 @@ document.querySelectorAll("[data-add]").forEach(b => b.onclick = () => {
     base.entity = "";
     base.show_border = true;
   }
-  els().push(base); sel = els().length - 1; paint(); preview();
+  if (t === "box") {
+    // Insert background boxes at the bottom of the layer stack by default so they frame existing text/icons
+    els().unshift(base);
+    sel = 0;
+  } else {
+    els().push(base);
+    sel = els().length - 1;
+  }
+  multiSel.clear();
+  multiSel.add(sel);
+  paint(); preview();
 });
 
 /* Entities Explorer */
@@ -2757,9 +2964,68 @@ function explodeWidget(el) {
 /* Properties Inspector */
 function props() {
   const box = $("props"), badge = $("selbadge");
+  if (multiSel.size > 1) {
+    badge.style.display = "";
+    badge.textContent = `${multiSel.size} SELECTED`;
+    box.innerHTML = `<div class="grp"><div class="lbl">Multi-Selection (${multiSel.size} Elements)</div>
+      <div class="chip" style="margin-bottom:8px">Drag any selected element on the canvas to move them together, or use arrow keys to nudge.</div>
+      <div class="row"><label>horizontal</label>
+        <button id="m_align_l" class="sm" style="flex:1" title="Align left edges">Left</button>
+        <button id="m_align_cx" class="sm" style="flex:1" title="Align horizontal centers">Center</button>
+        <button id="m_align_r" class="sm" style="flex:1" title="Align right edges">Right</button>
+      </div>
+      <div class="row"><label>vertical</label>
+        <button id="m_align_t" class="sm" style="flex:1" title="Align top edges">Top</button>
+        <button id="m_align_cy" class="sm" style="flex:1" title="Align vertical centers">Middle</button>
+        <button id="m_align_b" class="sm" style="flex:1" title="Align bottom edges">Bottom</button>
+      </div>
+      <div class="row"><label>distribute</label>
+        <button id="m_dist_h" class="sm" style="flex:1" title="Space evenly horizontally">Distribute H</button>
+        <button id="m_dist_v" class="sm" style="flex:1" title="Space evenly vertically">Distribute V</button>
+      </div>
+    </div>
+    <div class="grp"><div class="row">
+      <button id="m_dup" class="sm" style="flex:1">Duplicate All</button>
+      <button id="m_del" class="sm" style="flex:1;color:var(--danger)">Remove All</button>
+    </div></div>`;
+
+    const selItems = () => Array.from(multiSel).map(idx => els()[idx]).filter(Boolean);
+    $("m_align_l").onclick = () => { snapshot(); const minX = Math.min(...selItems().map(x => x.x)); selItems().forEach(x => x.x = minX); paint(); preview(); };
+    $("m_align_cx").onclick = () => { snapshot(); const minX = Math.min(...selItems().map(x => x.x)), maxR = Math.max(...selItems().map(x => x.x + x.w)), mid = (minX + maxR) / 2; selItems().forEach(x => x.x = Math.round(mid - x.w / 2)); paint(); preview(); };
+    $("m_align_r").onclick = () => { snapshot(); const maxR = Math.max(...selItems().map(x => x.x + x.w)); selItems().forEach(x => x.x = maxR - x.w); paint(); preview(); };
+    $("m_align_t").onclick = () => { snapshot(); const minY = Math.min(...selItems().map(x => x.y)); selItems().forEach(x => x.y = minY); paint(); preview(); };
+    $("m_align_cy").onclick = () => { snapshot(); const minY = Math.min(...selItems().map(x => x.y)), maxB = Math.max(...selItems().map(x => x.y + x.h)), mid = (minY + maxB) / 2; selItems().forEach(x => x.y = Math.round(mid - x.h / 2)); paint(); preview(); };
+    $("m_align_b").onclick = () => { snapshot(); const maxB = Math.max(...selItems().map(x => x.y + x.h)); selItems().forEach(x => x.y = maxB - x.h); paint(); preview(); };
+    $("m_dist_h").onclick = () => {
+      const items = selItems().sort((a, b) => a.x - b.x);
+      if (items.length < 3) return;
+      snapshot();
+      const first = items[0].x, last = items[items.length - 1].x;
+      const step = (last - first) / (items.length - 1);
+      items.forEach((it, idx) => { it.x = Math.round(first + idx * step); });
+      paint(); preview();
+    };
+    $("m_dist_v").onclick = () => {
+      const items = selItems().sort((a, b) => a.y - b.y);
+      if (items.length < 3) return;
+      snapshot();
+      const first = items[0].y, last = items[items.length - 1].y;
+      const step = (last - first) / (items.length - 1);
+      items.forEach((it, idx) => { it.y = Math.round(first + idx * step); });
+      paint(); preview();
+    };
+    $("m_dup").onclick = duplicate;
+    $("m_del").onclick = () => {
+      snapshot();
+      Array.from(multiSel).sort((a, b) => b - a).forEach(idx => { if (idx >= 0 && idx < els().length) els().splice(idx, 1); });
+      sel = -1; multiSel.clear(); paint(); preview();
+    };
+    return;
+  }
+
   if (sel < 0 || !els()[sel]) {
     badge.style.display = "none";
-    box.innerHTML = '<div class="empty">No element selected.<br>Click an element on the canvas to inspect, or click <b>Add Preset</b> to build a screen.</div>';
+    box.innerHTML = '<div class="empty">No element selected.<br>Click an element on the canvas to inspect (<b>Shift+Click</b> to multi-select), or click <b>＋ Preset</b> to build a screen.</div>';
     return;
   }
   const el = els()[sel];
@@ -2779,9 +3045,71 @@ function props() {
         <button id="browse" class="sm">Browse…</button>
       </div>
     </div>`;
+  } else if (el.type === "box") {
+    h += `<div class="row"><label>style / fill</label><select data-k="fill">
+        <option value="outline"${(!el.fill || el.fill === "outline") ? " selected" : ""}>Outlined Card (White inside)</option>
+        <option value="black"${el.fill === "black" ? " selected" : ""}>Solid Black Block (High-contrast header/pill)</option>
+        <option value="screen"${(el.fill === "screen" || el.fill === "checker") ? " selected" : ""}>50% E-Ink Checkerboard Tint</option>
+        <option value="white"${el.fill === "white" ? " selected" : ""}>Solid White Mask (No border)</option>
+      </select></div>` +
+      f("radius", "corner radius (px)", "number", "12") +
+      f("thickness", "border width (px)", "number", "3") +
+      `<div class="chip">Visual container, card frame, or solid black background block. Use <b>&darr; Layer</b> below to place behind text or icons.</div>`;
+  } else if (el.type === "bar") {
+    h += f("entity", "entity", "text", "sensor.battery", "entities-dl") +
+      f("title", "header label", "text", "e.g. BATTERY or SOLAR") +
+      `<div class="row"><label>bar style</label><select data-k="bar_style">
+        <option value="solid"${(!el.bar_style || el.bar_style === "solid") ? " selected" : ""}>Horizontal Solid Fill</option>
+        <option value="segmented"${el.bar_style === "segmented" ? " selected" : ""}>Segmented Battery / Cells</option>
+        <option value="vertical"${el.bar_style === "vertical" ? " selected" : ""}>Vertical Tank / Column</option>
+      </select></div>` +
+      (el.bar_style === "segmented" ? f("segments", "segments", "number", "10") : "") +
+      f("min_val", "min value", "number", "0") +
+      f("max_val", "max value", "number", "100") +
+      f("suffix", "unit suffix", "text", "%") +
+      f("decimals", "decimals", "number", "0") +
+      `<div class="row"><label>show value</label>
+        <input type="checkbox" data-k="show_label"${el.show_label !== false ? " checked" : ""}>
+      </div>
+      <div class="chip">1-bit progress &amp; gauge bar for battery levels, tank capacity, humidity, or solar load.</div>`;
   } else if (el.type === "curve") {
     h += f("entity", "entity", "text", "", "entities-dl") + f("hours", "hours", "number") +
       `<div class="chip">24h history curve (sparkline) of that sensor's values. Ideal for solar output or power draw.</div>`;
+  } else if (el.type === "bar_chart") {
+    h += f("entity", "entity", "text", "sensor.solar_power", "entities-dl") +
+      f("title", "chart title", "text", "24H OUTPUT") +
+      f("hours", "history window (h)", "number", "24") +
+      f("bars", "column count", "number", "12") +
+      `<div class="row"><label>min/max range</label>
+        <input type="checkbox" data-k="show_labels"${el.show_labels !== false ? " checked" : ""}>
+      </div>
+      <div class="row"><label>card border</label>
+        <input type="checkbox" data-k="show_border"${el.show_border ? " checked" : ""}>
+      </div>
+      <div class="chip">Historical column bar chart bucketed over the time window. The peak bar is highlighted in solid black.</div>`;
+  } else if (el.type === "qr") {
+    const isWifi = !!(el.wifi_ssid !== undefined && String(el.wifi_ssid).length > 0) || el.qr_mode === "wifi";
+    h += `<div class="row"><label>qr content</label><select id="qr_mode_sel">
+        <option value="text"${!isWifi ? " selected" : ""}>URL / Text / Entity State</option>
+        <option value="wifi"${isWifi ? " selected" : ""}>Wi-Fi Guest Login (Auto-Connect)</option>
+      </select></div>`;
+    if (isWifi) {
+      h += f("wifi_ssid", "Wi-Fi SSID", "text", "GuestNetwork") +
+        f("wifi_password", "Wi-Fi password", "text", "secret123") +
+        `<div class="row"><label>encryption</label><select data-k="wifi_auth">
+          <option value="WPA"${(!el.wifi_auth || el.wifi_auth === "WPA") ? " selected" : ""}>WPA / WPA2 / WPA3</option>
+          <option value="WEP"${el.wifi_auth === "WEP" ? " selected" : ""}>WEP</option>
+          <option value="nopass"${el.wifi_auth === "nopass" ? " selected" : ""}>Open (No Password)</option>
+        </select></div>`;
+    } else {
+      h += f("value", "URL or text", "text", "https://www.home-assistant.io") +
+        f("entity", "or entity", "text", "optional sensor/input_text", "entities-dl");
+    }
+    h += f("title", "caption label", "text", "SCAN FOR WI-FI") +
+      `<div class="row"><label>card border</label>
+        <input type="checkbox" data-k="show_border"${el.show_border ? " checked" : ""}>
+      </div>
+      <div class="chip">Crisp pixel-aligned 1-bit QR code scannable by any phone camera from across the room.</div>`;
   } else if (el.type === "line") {
     h += f("thickness", "thickness", "number");
   } else if (el.type === "dynamic_grid") {
@@ -3080,6 +3408,21 @@ function props() {
       <div class="row"><label>align</label><select data-k="align">
           ${["left", "center", "right"].map(a => `<option${el.align === a ? " selected" : ""}>${a}</option>`).join("")}</select></div>`;
     }
+    h += `<div class="row"><label>badge style</label>
+      <div style="display:flex;gap:12px;align-items:center;flex:1;flex-wrap:wrap">
+        <label style="width:auto;display:inline-flex;align-items:center;gap:5px;cursor:pointer;font-size:12px">
+          <input type="checkbox" data-k="invert"${el.invert ? " checked" : ""} style="min-height:0;width:15px;height:15px">
+          <span>Inverted (White on Black)</span>
+        </label>
+        <label style="width:auto;display:inline-flex;align-items:center;gap:5px;cursor:pointer;font-size:12px">
+          <input type="checkbox" data-k="pill"${el.pill ? " checked" : ""} style="min-height:0;width:15px;height:15px">
+          <span>Pill Border</span>
+        </label>
+      </div>
+    </div>`;
+    if (el.invert || el.pill) {
+      h += f("radius", "badge radius (px)", "number", "10");
+    }
     const m = metrics.find(x => x.i === sel);
     if (m) {
       if (m.not_a_number !== undefined) {
@@ -3105,11 +3448,14 @@ function props() {
     h += "</div>";
   }
 
-  h += `<div class="grp"><div class="lbl">Position &amp; Alignment</div>
-      <div class="row"><label>quick</label>
+  h += `<div class="grp"><div class="lbl">Position, Layer &amp; Visibility</div>
+      <div class="row"><label>quick align</label>
         <button id="aligncx" class="sm" title="Center horizontally">Center X</button>
         <button id="aligncy" class="sm" title="Center vertically">Center Y</button>
         <button id="alignfw" class="sm" title="Full safe width">Full Width</button>
+      </div>
+      <div class="row"><label title="Optional Jinja expression: element is drawn only when this evaluates to true">show only if</label>
+        <input data-k="show_if" type="text" placeholder="Optional: e.g. {{ is_state('binary_sensor.rain','on') }}" value="${esc(el.show_if || "")}">
       </div>
       <details id="advcoords" style="margin-top:8px"${advCoordsOpen ? " open" : ""}>
         <summary style="font-size:11.5px;color:var(--text-muted);cursor:pointer">Advanced Pixel Coordinates</summary>
@@ -3132,6 +3478,24 @@ function props() {
       </div></div>`;
 
   box.innerHTML = h;
+
+  const qrModeSel = box.querySelector("#qr_mode_sel");
+  if (qrModeSel) {
+    qrModeSel.onchange = () => {
+      snapshot();
+      el.qr_mode = qrModeSel.value;
+      if (qrModeSel.value === "wifi") {
+        if (!el.wifi_ssid) el.wifi_ssid = "MyGuestWiFi";
+        if (!el.wifi_auth) el.wifi_auth = "WPA";
+        if (el.title === "SCAN ME") el.title = "WI-FI ACCESS";
+      } else {
+        delete el.wifi_ssid;
+        delete el.wifi_password;
+        delete el.wifi_auth;
+      }
+      props(); paint(); preview();
+    };
+  }
 
   const fscaleRange = box.querySelector("#comp_fscale_range");
   const fscaleVal = box.querySelector("#comp_fscale_val");
@@ -3205,7 +3569,7 @@ function props() {
     if (k === "filter_state" && page() && page().tier === "when") {
       syncDynamicGridShowIf(el);
     }
-    if (k === "icon" || k === "header_icon") {
+    if (["icon", "header_icon", "invert", "pill", "bar_style"].includes(k)) {
       props();
     }
     paint(); preview();
@@ -3348,14 +3712,14 @@ function props() {
   $("alignfw").onclick = () => { snapshot(); const m = curMargin(); el.x = m; el.w = curW() - m * 2; paint(); preview(); };
   $("layerup").onclick = () => {
     if (sel >= els().length - 1) return;
-    snapshot(); const t = els()[sel]; els()[sel] = els()[sel + 1]; els()[sel + 1] = t; sel++; paint(); preview();
+    snapshot(); const t = els()[sel]; els()[sel] = els()[sel + 1]; els()[sel + 1] = t; sel++; multiSel = new Set([sel]); paint(); preview();
   };
   $("layerdn").onclick = () => {
     if (sel <= 0) return;
-    snapshot(); const t = els()[sel]; els()[sel] = els()[sel - 1]; els()[sel - 1] = t; sel--; paint(); preview();
+    snapshot(); const t = els()[sel]; els()[sel] = els()[sel - 1]; els()[sel - 1] = t; sel--; multiSel = new Set([sel]); paint(); preview();
   };
   $("dup").onclick = duplicate;
-  $("del").onclick = () => { snapshot(); els().splice(sel, 1); sel = -1; paint(); preview(); };
+  $("del").onclick = () => { snapshot(); els().splice(sel, 1); sel = -1; multiSel.clear(); paint(); preview(); };
 }
 
 /* Page Level Actions */
@@ -4228,12 +4592,52 @@ const PRESETS = [
       { type: "text", value: "{{ now().strftime('%A, %-d %B') }}", size: 36, bold: false, x: 44, y: 168, w: 500, h: 46, align: "left" },
       { type: "icon", icon: "mdi:clock-outline", x: 620, y: 40, w: 120, h: 120 }
     ]
+  },
+  {
+    id: "energy_gauges",
+    title: "Battery Gauge & 24h Bar Chart",
+    desc: "Segmented battery progress bar paired with a 12-column historical bar chart and inverted status pill.",
+    makeElements: (ent) => [
+      { type: "box", x: 18, y: 14, w: 356, h: 218, fill: "outline", radius: 14, thickness: 3 },
+      { type: "text", value: "ENERGY & STORAGE", size: 18, bold: true, invert: true, radius: 8, x: 34, y: 28, w: 210, h: 32, align: "center" },
+      { type: "bar", entity: ent || "sensor.battery", title: "HOME BATTERY", bar_style: "segmented", segments: 10, min_val: 0, max_val: 100, suffix: "%", decimals: 0, show_label: true, x: 34, y: 74, w: 324, h: 66 },
+      { type: "bar", entity: "sensor.grid_load", title: "HOUSE LOAD", bar_style: "solid", min_val: 0, max_val: 5000, suffix: " W", decimals: 0, show_label: true, x: 34, y: 152, w: 324, h: 64 },
+      { type: "bar_chart", entity: ent || "sensor.solar_power", title: "24H GENERATION", hours: 24, bars: 12, show_labels: true, show_border: true, x: 390, y: 14, w: 384, h: 218 }
+    ]
+  },
+  {
+    id: "guest_wifi",
+    title: "Guest Wi-Fi QR Code Card",
+    desc: "Scannable 1-bit Wi-Fi QR code card so guests can point their phone camera at the e-ink screen to join your network.",
+    makeElements: () => [
+      { type: "box", x: 18, y: 14, w: 756, h: 218, fill: "outline", radius: 16, thickness: 3 },
+      { type: "icon", icon: "mdi:wifi", invert: true, radius: 14, x: 42, y: 38, w: 72, h: 72 },
+      { type: "text", value: "GUEST WI-FI", size: 42, bold: true, x: 132, y: 36, w: 400, h: 52, align: "left" },
+      { type: "text", value: "Point your phone camera at the QR code to connect automatically.", size: 22, bold: false, x: 132, y: 94, w: 410, h: 64, align: "left" },
+      { type: "text", value: "NETWORK: MyGuestWiFi", size: 20, bold: true, pill: true, radius: 8, x: 42, y: 172, w: 310, h: 38, align: "center" },
+      { type: "qr", qr_mode: "wifi", wifi_ssid: "MyGuestWiFi", wifi_password: "secretpassword", wifi_auth: "WPA", title: "SCAN TO JOIN", x: 568, y: 24, w: 184, h: 198 }
+    ]
   }
 ];
 
+PRESET_ICONS.energy_gauges = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="7" width="16" height="10" rx="2"/><line x1="22" y1="11" x2="22" y2="13"/><line x1="6" y1="10" x2="6" y2="14"/><line x1="10" y1="10" x2="10" y2="14"/></svg>`;
+PRESET_ICONS.guest_wifi = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><path d="M14 14h3v3h-3zM18 18h3v3h-3z"/></svg>`;
+const CUSTOM_PRESET_ICON = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`;
+
 function buildTemplateLibrary() {
   const grid = $("templategrid");
-  grid.innerHTML = PRESETS.map(p => `
+  if (!grid) return;
+  const customs = Array.isArray(spec.custom_presets) ? spec.custom_presets : [];
+  const customHtml = customs.map((cp, idx) => `
+    <div class="template-card" data-cid="${idx}" style="position:relative;border-color:var(--accent)">
+      <button type="button" class="sm del-custom-preset" data-cdel="${idx}" title="Delete this custom preset" style="position:absolute;top:8px;right:8px;padding:0 6px;min-height:22px;color:var(--danger)">&times;</button>
+      <span class="template-icon">${CUSTOM_PRESET_ICON}</span>
+      <div class="template-title">${esc(cp.title)} <span class="badge-tag" style="font-size:10px;padding:1px 5px;margin-left:4px">Custom</span></div>
+      <div class="template-desc">${esc(cp.desc || "Saved user page preset.")}</div>
+    </div>
+  `).join("");
+
+  const builtinHtml = PRESETS.map(p => `
     <div class="template-card" data-tid="${p.id}">
       <span class="template-icon">${PRESET_ICONS[p.id] || ""}</span>
       <div class="template-title">${esc(p.title)}</div>
@@ -4241,13 +4645,71 @@ function buildTemplateLibrary() {
     </div>
   `).join("");
 
-  grid.querySelectorAll(".template-card").forEach(c => c.onclick = () => {
+  grid.innerHTML = customHtml + builtinHtml;
+
+  grid.querySelectorAll(".del-custom-preset").forEach(btn => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      const idx = +btn.dataset.cdel;
+      const removed = (spec.custom_presets || [])[idx];
+      if (!removed) return;
+      snapshot();
+      spec.custom_presets.splice(idx, 1);
+      buildTemplateLibrary();
+      await saveLayouts().catch(() => {});
+      msg(`Removed custom preset "${removed.title}".`, { label: "Undo", run: () => { undo(); buildTemplateLibrary(); } });
+    };
+  });
+
+  grid.querySelectorAll(".template-card[data-cid]").forEach(c => c.onclick = () => {
+    const idx = +c.dataset.cid;
+    const cp = (spec.custom_presets || [])[idx];
+    if (!cp) return;
+    applyPresetToPage({
+      id: cp.id || "custom_page",
+      title: cp.title,
+      tier: cp.tier || "rotate",
+      show_if: cp.show_if || "",
+      makeElements: () => JSON.parse(JSON.stringify(cp.elements || []))
+    });
+  });
+
+  grid.querySelectorAll(".template-card[data-tid]").forEach(c => c.onclick = () => {
     const tid = c.dataset.tid;
     const p = PRESETS.find(x => x.id === tid);
     if (!p) return;
     applyPresetToPage(p);
   });
 }
+
+async function saveCurrentPageAsPreset() {
+  if (!cur || !page()) return;
+  const defTitle = cur.replace(/[_-]+/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  const title = prompt(`Save page "${cur}" as a reusable Custom Preset.\nPreset title:`, defTitle);
+  if (!title || !title.trim()) return;
+  const desc = prompt("Optional short description for this preset:", `Custom layout based on ${cur} (${els().length} elements).`) || "";
+  const id = title.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "") || "custom_preset";
+  snapshot();
+  if (!Array.isArray(spec.custom_presets)) spec.custom_presets = [];
+  spec.custom_presets.unshift({
+    id,
+    title: title.trim(),
+    desc: desc.trim(),
+    tier: page().tier || "rotate",
+    show_if: page().show_if || "",
+    elements: JSON.parse(JSON.stringify(els()))
+  });
+  buildTemplateLibrary();
+  try {
+    await saveLayouts();
+    msg(`Saved "${title.trim()}" to Page Presets!`);
+  } catch (e) {
+    msg(`Saved "${title.trim()}" locally (click Push to Panel to persist).`);
+  }
+}
+
+if ($("savepresetpage")) $("savepresetpage").onclick = saveCurrentPageAsPreset;
+if ($("savecurpresetbtn")) $("savecurpresetbtn").onclick = saveCurrentPageAsPreset;
 
 function applyPresetToPage(preset) {
   const pageName = prompt(`Create page for "${preset.title}":`, preset.id);
@@ -4274,9 +4736,75 @@ function applyPresetToPage(preset) {
   msg(`Created "${preset.title}" page! Select an element to bind your entity.`);
 }
 
-$("templatebtn").onclick = () => $("templatewrap").style.display = "flex";
+$("templatebtn").onclick = () => { buildTemplateLibrary(); $("templatewrap").style.display = "flex"; };
 $("templateclose").onclick = () => $("templatewrap").style.display = "none";
 $("templatewrap").onclick = e => { if (e.target.id === "templatewrap") $("templatewrap").style.display = "none"; };
+
+/* =====================================================================
+   NIGHT / QUIET HOURS (ZERO-GHOSTING DEEP IDLE) MODAL
+   ===================================================================== */
+function syncQuietHoursModal() {
+  const qh = (spec && spec.quiet_hours) || { enabled: false, start: "23:00", end: "07:00", presence_entity: "", allow_alerts: true };
+  if ($("qh_enabled")) $("qh_enabled").checked = !!qh.enabled;
+  if ($("qh_start")) $("qh_start").value = qh.start || "23:00";
+  if ($("qh_end")) $("qh_end").value = qh.end || "07:00";
+  if ($("qh_presence")) $("qh_presence").value = qh.presence_entity || "";
+  if ($("qh_alerts")) $("qh_alerts").checked = qh.allow_alerts !== false;
+  if ($("qh_enabled_label")) {
+    $("qh_enabled_label").textContent = qh.enabled
+      ? "On — Deep Idle active during schedule / away"
+      : "Off — Panel refreshes & rotates 24/7";
+  }
+  if ($("qh_fields")) {
+    $("qh_fields").style.opacity = qh.enabled ? "1" : "0.55";
+  }
+  updateQuietHoursBadge();
+}
+
+function openQuietHoursModal() {
+  syncQuietHoursModal();
+  $("quietwrap").style.display = "flex";
+}
+
+if ($("quietbtn")) $("quietbtn").onclick = openQuietHoursModal;
+if ($("quietpill")) $("quietpill").onclick = openQuietHoursModal;
+if ($("quietclose")) $("quietclose").onclick = () => $("quietwrap").style.display = "none";
+if ($("quietwrap")) $("quietwrap").onclick = e => { if (e.target.id === "quietwrap") $("quietwrap").style.display = "none"; };
+
+if ($("qh_enabled")) {
+  $("qh_enabled").onchange = () => {
+    const on = $("qh_enabled").checked;
+    if ($("qh_enabled_label")) {
+      $("qh_enabled_label").textContent = on
+        ? "On — Deep Idle active during schedule / away"
+        : "Off — Panel refreshes & rotates 24/7";
+    }
+    if ($("qh_fields")) $("qh_fields").style.opacity = on ? "1" : "0.55";
+  };
+}
+
+if ($("qh_save")) {
+  $("qh_save").onclick = async () => {
+    snapshot();
+    spec.quiet_hours = {
+      enabled: !!($("qh_enabled") && $("qh_enabled").checked),
+      start: ($("qh_start") && $("qh_start").value) || "23:00",
+      end: ($("qh_end") && $("qh_end").value) || "07:00",
+      presence_entity: (($("qh_presence") && $("qh_presence").value) || "").trim(),
+      allow_alerts: $("qh_alerts") ? $("qh_alerts").checked : true
+    };
+    try {
+      await saveLayouts();
+      updateQuietHoursBadge();
+      $("quietwrap").style.display = "none";
+      msg(spec.quiet_hours.enabled
+        ? `Night / Quiet Hours enabled (${spec.quiet_hours.start} → ${spec.quiet_hours.end}).`
+        : "Night / Quiet Hours disabled (24/7 normal operation).");
+    } catch (e) {
+      msg("Failed to save Quiet Hours: " + e.message);
+    }
+  };
+}
 
 boot().catch(e => msg("Load failed: " + e.message));
 </script>

@@ -299,10 +299,45 @@ def sanitize_layouts(spec: dict) -> dict:
         rot_sec = 30
     display = spec.get("display")
     disp_id = T.get_display(display)["id"]
+
+    raw_qh = spec.get("quiet_hours") if isinstance(spec.get("quiet_hours"), dict) else {}
+    qh_start = str(raw_qh.get("start") or "23:00").strip()[:5]
+    qh_end = str(raw_qh.get("end") or "07:00").strip()[:5]
+    if not re.match(r"^\d{2}:\d{2}$", qh_start):
+        qh_start = "23:00"
+    if not re.match(r"^\d{2}:\d{2}$", qh_end):
+        qh_end = "07:00"
+    qh_pres = str(raw_qh.get("presence_entity") or "").strip()
+    if qh_pres and not valid_entity_id(qh_pres):
+        qh_pres = ""
+    quiet_hours = {
+        "enabled": bool(raw_qh.get("enabled", False)),
+        "start": qh_start,
+        "end": qh_end,
+        "presence_entity": qh_pres,
+        "allow_alerts": bool(raw_qh.get("allow_alerts", True)),
+    }
+
+    raw_presets = spec.get("custom_presets")
+    custom_presets = []
+    if isinstance(raw_presets, list):
+        for cp in raw_presets[:50]:
+            if isinstance(cp, dict) and cp.get("name") and isinstance(cp.get("elements"), list):
+                custom_presets.append({
+                    "id": str(cp.get("id") or f"custom_{len(custom_presets)+1}")[:40],
+                    "name": str(cp.get("name"))[:60],
+                    "desc": str(cp.get("desc") or "Custom saved layout preset")[:140],
+                    "tier": cp.get("tier") if cp.get("tier") in ("rotate", "when", "alert") else "rotate",
+                    "show_if": str(cp.get("show_if") or "").strip(),
+                    "elements": [el for el in cp["elements"] if isinstance(el, dict)],
+                })
+
     return {
         "display": disp_id,
         "orientation": orient,
         "rotate_seconds": rot_sec,
+        "quiet_hours": quiet_hours,
+        "custom_presets": custom_presets,
         "rotation": rotation,
         "pages": pages,
     }
@@ -393,6 +428,7 @@ class Frames:
     def __init__(self):
         self.strip = b""
         self.single = b""
+        self.slices: list[bytes] = []
         self.strip_etag = ""
         self.single_etag = ""
         self.names: list[str] = []
@@ -401,6 +437,8 @@ class Frames:
         self.cat_pill_widths: list[int] = [110]
         self.cat_names: list[str] = []
         self.cat_count: int = 1
+        self.quiet_active: bool = False
+        self.quiet_reason: str = "disabled"
         self.rendered_at = None
         self.error = None
 
@@ -409,6 +447,60 @@ FRAMES = Frames()
 
 # Which alert page, if any, currently owns the screen.
 ALERT = {"name": None, "until": 0.0, "fired": {}}
+
+
+async def evaluate_quiet_hours(session, spec: dict) -> tuple[bool, str]:
+    """Determine if Night / Quiet Hours (Zero-Ghosting Deep Idle) is currently active."""
+    qh = spec.get("quiet_hours") if isinstance(spec.get("quiet_hours"), dict) else {}
+    enabled = bool(qh.get("enabled", False))
+    start_str = str(qh.get("start") or "23:00").strip()[:5]
+    end_str = str(qh.get("end") or "07:00").strip()[:5]
+    pres_ent = str(qh.get("presence_entity") or "").strip()
+    allow_alerts = bool(qh.get("allow_alerts", True))
+
+    active = False
+    reason = "disabled"
+    if enabled:
+        now_t = datetime.now()
+        cur_mins = now_t.hour * 60 + now_t.minute
+        try:
+            sh, sm = [int(x) for x in start_str.split(":")]
+            eh, em = [int(x) for x in end_str.split(":")]
+            s_mins = sh * 60 + sm
+            e_mins = eh * 60 + em
+            if s_mins != e_mins:
+                in_window = (cur_mins >= s_mins or cur_mins < e_mins) if s_mins > e_mins else (s_mins <= cur_mins < e_mins)
+                if in_window:
+                    active = True
+                    reason = f"schedule ({start_str}–{end_str})"
+        except Exception:
+            pass
+
+        if not active and pres_ent and valid_entity_id(pres_ent):
+            try:
+                if HA_TOKEN:
+                    safe_eid = urllib.parse.quote(pres_ent, safe=".")
+                    st_obj = await ha_json(session, f"/states/{safe_eid}")
+                    st_val = str(st_obj.get("state") or "").strip().lower()
+                    if st_val in ("not_home", "away", "0", "off"):
+                        active = True
+                        reason = f"away ({pres_ent}: {st_val})"
+            except Exception:
+                pass
+        if not active:
+            reason = "outside quiet window"
+
+    await publish_entity(session, "sensor.epaper_quiet_hours", "active" if active else "inactive", {
+        "friendly_name": "E-Paper Quiet Hours",
+        "icon": "mdi:weather-night" if active else "mdi:weather-sunny",
+        "enabled": enabled,
+        "reason": reason,
+        "start": start_str,
+        "end": end_str,
+        "presence_entity": pres_ent,
+        "allow_alerts": allow_alerts,
+    })
+    return active, reason
 
 
 async def call_ha_service(session, domain, service, data=None):
@@ -1820,6 +1912,8 @@ async def build_frames(session):
     else:
         live = await eligible_pages(session, spec)
 
+    quiet_active, quiet_reason = await evaluate_quiet_hours(session, spec)
+
     if not live:
         cw, _ = T.canvas_dims(orient, display=display)
         empty_page = {"elements": [{"type": "text", "value": "no pages", "x": 24, "y": 60, "w": cw - 48, "h": 120}]}
@@ -1828,14 +1922,14 @@ async def build_frames(session):
             clock=datetime.now().strftime("%H:%M"), label="empty", orientation=orient, display=display)
         one = T.orient_for_panel(T.to_1bit(img), orient, display=display)
         png = _png(one)
-        return png, png, [], [0], [1], ["empty"], [110]
+        return png, png, [png], [], [0], [1], ["empty"], [110], quiet_active, quiet_reason
 
     vals = await gather_values(session, spec, set(live))
 
     series = {}
     for name in set(live):
         for i, el in enumerate(spec["pages"][name].get("elements", [])):
-            if el.get("type") == "curve" and el.get("entity"):
+            if el.get("type") in ("curve", "bar_chart") and el.get("entity"):
                 series.setdefault(name, {})[i] = await curve_series(
                     session, el["entity"], int(el.get("hours", 24)))
 
@@ -1961,43 +2055,49 @@ async def build_frames(session):
             imgs.append(T.orient_for_panel(T.to_1bit(img), orient, display=display))
 
     strip = Image.new("1", (dw, dh * len(imgs) + 1), 1)
+    slice_pngs = []
     for i, im in enumerate(imgs):
         strip.paste(im, (0, i * dh))
+        slice_pngs.append(_png(im))
 
     # Self-describing image header on row meta_y:
     meta_y = dh * len(imgs)
-    # Magic 0xA5, version 0x01, cat_count
+    # Magic 0xA5, version 0x01, cat_count, followed by (offset, size, pill_width) triples, then quiet_hours flag (0xA5=quiet, 0x00=active)
     payload = [0xA5, 0x01, len(cat_offsets)]
     for off, sz, pw in zip(cat_offsets, cat_sizes, cat_pill_widths):
         payload.append(min(255, int(off)))
         payload.append(min(255, int(sz)))
         payload.append(min(255, int(pw)))
+    payload.append(0xA5 if quiet_active else 0x00)
 
     px_x = 0
     for byte_val in payload:
         for b in range(8):
             bit = (byte_val >> (7 - b)) & 1
-            # In PIL mode "1", 0 = black (decoded as red < 128 in ESPHome), 1 = white
-            strip.putpixel((px_x, meta_y), 0 if bit else 1)
+            if px_x < dw:
+                # In PIL mode "1", 0 = black (decoded as red < 128 in ESPHome), 1 = white
+                strip.putpixel((px_x, meta_y), 0 if bit else 1)
             px_x += 1
 
-    return _png(strip), _png(imgs[0]), live, cat_offsets, cat_sizes, cat_names, cat_pill_widths
+    return _png(strip), slice_pngs[0], slice_pngs, live, cat_offsets, cat_sizes, cat_names, cat_pill_widths, quiet_active, quiet_reason
 
 
 async def refresh_frames(session):
     """Build a new Frames snapshot and atomically swap FRAMES."""
-    strip, single, names, cat_offsets, cat_sizes, cat_names, cat_pill_widths = await build_frames(session)
+    strip, single, slices, names, cat_offsets, cat_sizes, cat_names, cat_pill_widths, quiet_active, quiet_reason = await build_frames(session)
     old_f = globals().get("FRAMES")
+    has_prev = old_f is not None and getattr(old_f, "rendered_at", None)
     struct_changed = (
-        old_f is not None and getattr(old_f, "rendered_at", None) and (
+        has_prev and (
             old_f.cat_offsets != cat_offsets or
             old_f.cat_sizes != cat_sizes or
             old_f.cat_names != cat_names or
             getattr(old_f, "cat_pill_widths", None) != cat_pill_widths
         )
     )
+    quiet_changed = bool(has_prev and getattr(old_f, "quiet_active", False) != quiet_active)
     nxt = Frames()
-    nxt.strip, nxt.single, nxt.names = strip, single, names
+    nxt.strip, nxt.single, nxt.slices, nxt.names = strip, single, slices, names
     nxt.strip_etag = _etag(strip)
     nxt.single_etag = _etag(single)
     nxt.rendered_at = datetime.now().isoformat(timespec="seconds")
@@ -2006,13 +2106,24 @@ async def refresh_frames(session):
     nxt.cat_names = cat_names
     nxt.cat_pill_widths = cat_pill_widths
     nxt.cat_count = len(cat_offsets)
+    nxt.quiet_active = quiet_active
+    nxt.quiet_reason = quiet_reason
     globals()["FRAMES"] = nxt
-    print(f"rendered {names} ({len(strip)}B strip, {nxt.cat_count} cats, offsets: {cat_offsets}, sizes: {cat_sizes}, pill_widths: {cat_pill_widths})", flush=True)
+    print(f"rendered {names} ({len(strip)}B strip, {nxt.cat_count} cats, offsets: {cat_offsets}, sizes: {cat_sizes}, quiet: {quiet_active} [{quiet_reason}])", flush=True)
     await publish_category_sensors(session, nxt)
-    if struct_changed:
-        print("Category structure changed -- pushing immediate refresh to panel", flush=True)
+    if quiet_changed:
+        print(f"Quiet Hours state transitioned to {quiet_active} ({quiet_reason}) -- syncing panel state", flush=True)
         globals()["LAST_PANEL_PUSH_TIME"] = time.time()
         await push_panel_update(advance_page=False)
+    elif struct_changed:
+        spec = load_layouts()
+        allow_alerts = bool((spec.get("quiet_hours") or {}).get("allow_alerts", True))
+        if quiet_active and not (ALERT["name"] and allow_alerts):
+            print(f"Category structure changed during Quiet Hours ({quiet_reason}) -- deferring panel push", flush=True)
+        else:
+            print("Category structure changed -- pushing immediate refresh to panel", flush=True)
+            globals()["LAST_PANEL_PUSH_TIME"] = time.time()
+            await push_panel_update(advance_page=False)
     return nxt
 
 
@@ -2076,11 +2187,14 @@ async def render_loop():
         try:
             await refresh_frames(SHARED_SESSION)
             cur_alert = ALERT["name"]
+            spec = load_layouts()
+            allow_alerts = bool((spec.get("quiet_hours") or {}).get("allow_alerts", True))
             if cur_alert != was_alert:
-                # Immediately push when an alert seizes or releases the screen.
-                await push_panel_update(advance_page=False)
                 was_alert = cur_alert
                 LAST_PANEL_PUSH_TIME = time.time()
+                if not FRAMES.quiet_active or allow_alerts:
+                    # Immediately push when an alert seizes or releases the screen.
+                    await push_panel_update(advance_page=False)
             else:
                 panel_cfg = load_panel_setup()
                 m_int = re.search(r"\d+", str(panel_cfg.get("refresh_interval", "5")))
@@ -2089,8 +2203,11 @@ async def render_loop():
                 now = time.time()
                 if now - LAST_PANEL_PUSH_TIME >= panel_sec:
                     LAST_PANEL_PUSH_TIME = now
-                    print(f"proactive refresh push to panel ({panel_min} min interval)", flush=True)
-                    await push_panel_update(advance_page=False)
+                    if FRAMES.quiet_active and not (cur_alert and allow_alerts):
+                        print(f"Quiet Hours active ({FRAMES.quiet_reason}) -- suppressing background panel refresh push", flush=True)
+                    else:
+                        print(f"proactive refresh push to panel ({panel_min} min interval)", flush=True)
+                        await push_panel_update(advance_page=False)
         except Exception as exc:
             print(f"render loop error: {exc!r}", flush=True)
             FRAMES.error = repr(exc)
@@ -2111,7 +2228,8 @@ def _check_frame_auth(request):
 
 def _frame_headers(f=None, etag=None, page_count=1):
     spec = load_layouts()
-    rot_sec = str(spec.get("rotate_seconds", 30))
+    quiet_on = bool(f and getattr(f, "quiet_active", False))
+    rot_sec = "0" if quiet_on else str(spec.get("rotate_seconds", 30))
     panel_cfg = load_panel_setup()
     m_int = re.search(r"\d+", str(panel_cfg.get("refresh_interval", "5")))
     panel_int = int(m_int.group(0)) if m_int else 5
@@ -2120,6 +2238,7 @@ def _frame_headers(f=None, etag=None, page_count=1):
         "Cache-Control": "no-cache",
         "X-Next-Refresh-Seconds": str(panel_int * 60),
         "X-Rotate-Seconds": rot_sec,
+        "X-Quiet-Hours": "1" if quiet_on else "0",
         "X-Page-Count": str(page_count),
     }
     if f is not None:
@@ -2137,9 +2256,18 @@ async def frame_png(request):
     f = FRAMES
     if not f.single:
         raise web.HTTPServiceUnavailable(text="no frame rendered yet")
-    if f.single_etag and request.headers.get("If-None-Match") == f.single_etag:
-        raise web.HTTPNotModified(headers=_frame_headers(f=f, etag=f.single_etag, page_count=1))
-    return web.Response(body=f.single, content_type="image/png", headers=_frame_headers(f=f, etag=f.single_etag, page_count=1))
+    page_q = request.query.get("page")
+    body = f.single
+    if page_q is not None and f.slices:
+        try:
+            idx = max(0, min(len(f.slices) - 1, int(page_q)))
+            body = f.slices[idx]
+        except (ValueError, TypeError):
+            body = f.single
+    etag = _etag(body)
+    if etag and request.headers.get("If-None-Match") == etag:
+        raise web.HTTPNotModified(headers=_frame_headers(f=f, etag=etag, page_count=1))
+    return web.Response(body=body, content_type="image/png", headers=_frame_headers(f=f, etag=etag, page_count=1))
 
 
 async def frames_png(request):
@@ -2161,6 +2289,8 @@ async def api_manifest(request):
         "cat_offsets": f.cat_offsets,
         "cat_sizes": f.cat_sizes,
         "cat_names": f.cat_names,
+        "quiet_active": f.quiet_active,
+        "quiet_reason": f.quiet_reason,
         "rendered_at": f.rendered_at,
     })
 
@@ -2175,6 +2305,8 @@ async def public_status(request):
         "cat_offsets": f.cat_offsets,
         "cat_sizes": f.cat_sizes,
         "cat_names": f.cat_names,
+        "quiet_active": f.quiet_active,
+        "quiet_reason": f.quiet_reason,
         "rendered_at": f.rendered_at,
     })
 
@@ -2202,6 +2334,8 @@ async def status(request):
         "cat_offsets": f.cat_offsets,
         "cat_sizes": f.cat_sizes,
         "cat_names": f.cat_names,
+        "quiet_active": f.quiet_active,
+        "quiet_reason": f.quiet_reason,
         "error": f.error,
         "refresh_seconds": REFRESH,
         "panel_interval": panel_int,
@@ -2369,7 +2503,7 @@ async def api_preview(request):
     await enrich_page_values(SHARED_SESSION, page, vals)
     series = {}
     for i, el in enumerate(page.get("elements", [])):
-        if el.get("type") == "curve" and el.get("entity"):
+        if el.get("type") in ("curve", "bar_chart") and el.get("entity"):
             series[i] = await curve_series(SHARED_SESSION, el["entity"],
                                            int(el.get("hours", 24)))
     metrics = []
@@ -2830,6 +2964,10 @@ psram:
     type: bool
     restore_value: false
     initial_value: 'false'
+  - id: quiet_hours_active
+    type: bool
+    restore_value: false
+    initial_value: 'false'
 
 font:
   - file: "gfonts://Lato@700"
@@ -3061,7 +3199,9 @@ online_image:
                   id(cat_sizes).push_back(sz);
                   id(cat_pill_widths).push_back(pw > 0 ? pw : 110);
                 }}
-                ESP_LOGI("panel", "Loaded metadata directly from frames.png: %d categories", num_cats);
+                int qh_flag = read_byte(3 + num_cats * 3);
+                id(quiet_hours_active) = (qh_flag == 0xA5);
+                ESP_LOGI("panel", "Loaded metadata directly from frames.png: %d categories (quiet_hours=%d)", num_cats, id(quiet_hours_active));
               }}
             }}
           }}
@@ -3308,6 +3448,7 @@ interval:
       - if:
           condition:
             lambda: |-
+              if (id(quiet_hours_active)) return false;
               int target_sec = (int)(id(panel_refresh_interval).state * 60.0);
               if (target_sec < 10) target_sec = 10;
               return (id(idle_sec) >= target_sec);
