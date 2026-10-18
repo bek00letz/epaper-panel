@@ -34,6 +34,7 @@ psram:
 
 external_components:
   - source: github://bek00letz/epaper-panel@main
+    refresh: 0s
     components: [epf]
   - source: github://ESPBoards/esphome-lvgl-crowpanel-epaper-5.79-4.2
 
@@ -639,7 +640,6 @@ online_image:
             id(last_strip_hash) = new_strip_hash;
             id(pending_redraw) = true;
           }
-          SYNC_PANEL_FROM_GLOBALS();
       - if:
           condition:
             lambda: 'return id(pending_redraw);'

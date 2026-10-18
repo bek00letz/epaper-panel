@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.35
+- **ESPHome External Component Cache Auto-Refresh & Compiler Hardening:**
+  - **Added `refresh: 0s` to `external_components`:** ESPHome by default caches external Git repositories for 24 hours (`refresh: 1d`), which caused ESPHome Dashboard builds to compile against stale cached headers even after new commits were pushed. Adding `refresh: 0s` ensures ESPHome pulls the latest git commit on every build.
+  - **Guarded `SYNC_PANEL_FROM_GLOBALS`:** Wrapped `SYNC_PANEL_FROM_GLOBALS()` with `#ifdef SYNC_PANEL_FROM_GLOBALS` in both `crowpanel-epaper.yaml` and the Python YAML generator. This ensures builds will never fail even if compiling against an existing or cached header.
+
 ## 0.8.34
 - **Precision Overlay Coordinates & Navigation Hierarchy:**
   - **Corrected Horizontal Overlay Inversion:** Fixed ternary orientation mapping in `draw_overlays` (`rx = is_180 ? ((dw - 1) - px) : px`) where unrotated (0°) orientations previously mirrored X coordinates to the opposite side of the screen. The active category pill now highlights strictly on the left over `[ X/Y CATEGORY ]`, and sub-item pills highlight on the right over `[ A/B ]`.

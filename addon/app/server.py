@@ -3267,6 +3267,7 @@ def generate_esphome_yaml(cfg: dict) -> tuple[str, str]:
     extra_ext = f"\n  - source: {disp['esphome_component']}" if disp["esphome_component"].startswith("github://") else ""
     ext_comp_block = f"""external_components:
   - source: github://bek00letz/epaper-panel@main
+    refresh: 0s
     components: [epf]{extra_ext}
 
 epf:
@@ -3871,7 +3872,6 @@ online_image:
 
           id(cur_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
           id(cur_sub_id) = (id(page) < (int)id(sub_ids).size()) ? id(sub_ids)[id(page)] : 0;
-          SYNC_PANEL_FROM_GLOBALS();
 
           if (new_strip_hash != -1 && new_strip_hash == id(last_strip_hash) && !id(pending_redraw) && id(page) == id(last_drawn_page)) {{
             ESP_LOGI("panel", "Strip unchanged (HTTP 304) -- skipping physical e-paper refresh");
