@@ -24,6 +24,7 @@ import sys
 import time
 import urllib.parse
 from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 import aiohttp
@@ -486,8 +487,9 @@ async def curve_series(session, entity, hours=24, buckets=24):
 
 
 
-_aircraft_cache = {"at": 0.0, "items": []}
+_aircraft_cache = {}
 _home_location_cache = {"at": 0.0, "lat": 45.794, "lon": 21.222}
+_ha_config_cache = {"at": 0.0, "tz": "Europe/Bucharest"}
 _weather_cache = {}
 _calendar_cache = {}
 _racing_cache = {}
@@ -517,11 +519,46 @@ def _bearing_cardinal(lat1, lon1, lat2, lon2):
     return _bearing_calc(lat1, lon1, lat2, lon2)[1]
 
 
+async def get_home_timezone(session, default="Europe/Bucharest"):
+    now = time.time()
+    if now - _ha_config_cache["at"] < 3600 and _ha_config_cache.get("tz"):
+        return _ha_config_cache["tz"]
+    if HA_TOKEN:
+        try:
+            cfg = await ha_json(session, "/config")
+            tz = cfg.get("time_zone")
+            if tz:
+                _ha_config_cache["at"] = now
+                _ha_config_cache["tz"] = tz
+                if "latitude" in cfg and "longitude" in cfg:
+                    _home_location_cache["at"] = now
+                    _home_location_cache["lat"] = float(cfg["latitude"])
+                    _home_location_cache["lon"] = float(cfg["longitude"])
+                return tz
+        except Exception:
+            pass
+    return _ha_config_cache.get("tz") or default
+
+
 async def get_home_coordinates(session):
     now = time.time()
     if now - _home_location_cache["at"] < 3600 and _home_location_cache["lat"] is not None:
         return _home_location_cache["lat"], _home_location_cache["lon"]
     if HA_TOKEN:
+        try:
+            cfg = await ha_json(session, "/config")
+            if "latitude" in cfg and "longitude" in cfg:
+                lat = float(cfg["latitude"])
+                lon = float(cfg["longitude"])
+                _home_location_cache["at"] = now
+                _home_location_cache["lat"] = lat
+                _home_location_cache["lon"] = lon
+                if "time_zone" in cfg:
+                    _ha_config_cache["at"] = now
+                    _ha_config_cache["tz"] = cfg["time_zone"]
+                return lat, lon
+        except Exception:
+            pass
         try:
             zone_state = await ha_json(session, "/states/zone.home")
             attrs = zone_state.get("attributes", {})
@@ -536,13 +573,23 @@ async def get_home_coordinates(session):
     return _home_location_cache["lat"], _home_location_cache["lon"]
 
 
-async def fetch_overhead_aircraft(session, radius_km=35.0):
-    now = time.time()
-    if now - _aircraft_cache["at"] < 30.0 and _aircraft_cache["items"] is not None:
-        return _aircraft_cache["items"]
+async def fetch_overhead_aircraft(session, radius_km=35.0, lat=None, lon=None):
+    if lat is not None and lon is not None:
+        try:
+            lat = float(lat)
+            lon = float(lon)
+        except (ValueError, TypeError):
+            lat, lon = await get_home_coordinates(session)
+    else:
+        lat, lon = await get_home_coordinates(session)
 
-    lat, lon = await get_home_coordinates(session)
     radius_km = max(5.0, min(250.0, float(radius_km or 35.0)))
+    cache_key = (round(lat, 3), round(lon, 3), int(radius_km))
+    now = time.time()
+    cached = _aircraft_cache.get(cache_key)
+    if cached and (now - cached["at"] < 30.0) and cached.get("items") is not None:
+        return cached["items"]
+
     d_lat = radius_km / 111.0
     cos_lat = max(0.01, math.cos(math.radians(lat)))
     d_lon = radius_km / (111.0 * cos_lat)
@@ -609,8 +656,7 @@ async def fetch_overhead_aircraft(session, radius_km=35.0):
                         "model": ac_type
                     })
                 aircraft.sort(key=lambda a: a["distance_km"])
-                _aircraft_cache["at"] = now
-                _aircraft_cache["items"] = aircraft
+                _aircraft_cache[cache_key] = {"at": now, "items": aircraft}
                 return aircraft
     except Exception as exc:
         print(f"FR24 fetch error: {exc!r}", flush=True)
@@ -653,13 +699,13 @@ async def fetch_overhead_aircraft(session, radius_km=35.0):
                         "bearing_cardinal": cardinal
                     })
                 aircraft.sort(key=lambda a: a["distance_km"])
-                _aircraft_cache["at"] = now
-                _aircraft_cache["items"] = aircraft
+                _aircraft_cache[cache_key] = {"at": now, "items": aircraft}
                 return aircraft
     except Exception as exc:
         print(f"OpenSky fallback error: {exc!r}", flush=True)
 
-    return _aircraft_cache["items"] or []
+    cached = _aircraft_cache.get(cache_key)
+    return (cached.get("items") if cached else []) or []
 
 
 
@@ -763,9 +809,12 @@ async def fetch_calendar_events(session, entity_id, days=31, fallback=None):
         return fallback
 
 
-async def fetch_racing_data(session, entity_or_series="f1", fallback=None):
+async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_name=None):
+    if not tz_name:
+        tz_name = await get_home_timezone(session)
     now = time.time()
     raw_key = str(entity_or_series or "f1").strip().lower()
+    cache_key = f"{raw_key}:{tz_name}"
 
     # 1. Approach A: Check if fallback is a resolved template from HA entity (e.g. sensor.f1)
     base_data = None
@@ -788,9 +837,10 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None):
         ha_circuit = attrs.get("venue") or attrs.get("circuit") or ""
         ha_date = attrs.get("date") or ""
         if attrs.get("standings"):
+            ser_name = "FE" if raw_key in ("fe", "formula_e", "formula-e", "formulae") else "F1"
             return {
-                "series": "F1",
-                "event_name": ha_event_name or "Formula 1 Grand Prix",
+                "series": ser_name,
+                "event_name": ha_event_name or ("Formula E World Championship" if ser_name == "FE" else "Formula 1 Grand Prix"),
                 "circuit": ha_circuit or "Grand Prix Circuit",
                 "status": ha_status or "IN",
                 "lap": attrs.get("lap"),
@@ -799,14 +849,144 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None):
                 "standings": attrs.get("standings")
             }
 
-    # 2. Check in-memory cache
-    cached = _racing_cache.get(raw_key)
+    # 2. Formula E support
+    if raw_key in ("fe", "formula_e", "formula-e", "formulae"):
+        cached = _racing_cache.get(cache_key)
+        if cached and (now - cached["at"] < (60.0 if cached.get("is_live") else 600.0)):
+            return cached["data"]
+
+        fe_event = {
+            "series": "FE",
+            "event_name": ha_event_name or "Formula E World Championship",
+            "circuit": ha_circuit or "ePrix Circuit",
+            "detail": "Upcoming Formula E Session",
+            "status": ha_status or "PRE",
+            "clock": "PRE",
+            "standings": []
+        }
+        is_live = False
+        now_utc = datetime.now(timezone.utc)
+        cur_year = now_utc.year
+        headers = {"User-Agent": "Crowpanel-Epaper/0.8.23 (HomeAssistant Addon)"}
+        timeout = aiohttp.ClientTimeout(total=6)
+
+        try:
+            races = []
+            for yr in (cur_year, cur_year + 1):
+                fe_url = f"https://raw.githubusercontent.com/sportstimes/f1/main/_db/fe/{yr}.json"
+                try:
+                    async with session.get(fe_url, headers=headers, timeout=timeout) as r:
+                        if r.status == 200:
+                            fdata = await r.json(content_type=None)
+                            yr_races = fdata.get("races") or []
+                            if yr_races:
+                                races.extend(yr_races)
+                except Exception:
+                    pass
+
+            if not races:
+                try:
+                    async with session.get(f"https://formulaecal.com/api/year/{cur_year}", headers=headers, timeout=timeout) as r:
+                        if r.status == 200:
+                            fdata = await r.json(content_type=None)
+                            races = fdata.get("races") or []
+                except Exception:
+                    pass
+
+            if races:
+                candidate_race = None
+                active_session_name = "Race"
+                active_session_dt = None
+                session_st = "PRE"
+
+                for r in races:
+                    sess_dict = r.get("sessions") or {}
+                    s_items = []
+                    for s_k, s_v in sess_dict.items():
+                        if not s_v:
+                            continue
+                        try:
+                            s_dt = datetime.fromisoformat(str(s_v).replace("Z", "+00:00"))
+                            s_items.append((s_k, s_dt))
+                        except Exception:
+                            pass
+                    s_items.sort(key=lambda x: x[1])
+                    if not s_items:
+                        continue
+
+                    if s_items[-1][1] + timedelta(hours=4) >= now_utc:
+                        candidate_race = r
+                        for s_k, s_dt in s_items:
+                            if s_dt <= now_utc <= s_dt + timedelta(hours=2):
+                                active_session_name = s_k
+                                active_session_dt = s_dt
+                                session_st = "IN"
+                                is_live = True
+                                break
+                            elif s_dt > now_utc:
+                                active_session_name = s_k
+                                active_session_dt = s_dt
+                                session_st = "PRE"
+                                break
+                        if not active_session_dt:
+                            active_session_name = s_items[-1][0]
+                            active_session_dt = s_items[-1][1]
+                            session_st = "POST"
+                        break
+
+                if not candidate_race:
+                    candidate_race = races[-1]
+                    session_st = "POST"
+                    s_items = [(k, datetime.fromisoformat(str(v).replace("Z", "+00:00")))
+                               for k, v in candidate_race.get("sessions", {}).items() if v]
+                    s_items.sort(key=lambda x: x[1])
+                    active_session_name = s_items[-1][0] if s_items else "Race"
+                    active_session_dt = s_items[-1][1] if s_items else now_utc
+
+                friendly_session_map = {
+                    "practice1": "Practice 1",
+                    "practice2": "Practice 2",
+                    "qualifying": "Qualifying",
+                    "race": "ePrix Race"
+                }
+                session_title = friendly_session_map.get(active_session_name.lower(), active_session_name.capitalize())
+                circ_name = candidate_race.get("location") or "ePrix Circuit"
+                if "circuit" not in circ_name.lower():
+                    circ_name = f"{circ_name} ePrix Circuit"
+
+                detail_str = ""
+                if active_session_dt:
+                    try:
+                        dt_loc = active_session_dt.astimezone(ZoneInfo(tz_name))
+                        tz_abbr = dt_loc.tzname() or ""
+                        detail_str = f"{session_title} · {dt_loc.strftime('%a %b %d · %H:%M')} {tz_abbr}".strip()
+                    except Exception:
+                        detail_str = f"{session_title} · {active_session_dt.strftime('%a %b %d · %H:%M UTC')}"
+
+                fe_event = {
+                    "series": "FE",
+                    "event_name": candidate_race.get("name") or ha_event_name or "Formula E World Championship",
+                    "circuit": circ_name,
+                    "detail": detail_str or f"Status: {session_st}",
+                    "status": session_st,
+                    "clock": f"{session_title} LIVE" if session_st == "IN" else ("SCHEDULED" if session_st == "PRE" else "FINAL"),
+                    "standings": []
+                }
+
+            _racing_cache[cache_key] = {"at": now, "data": fe_event, "is_live": is_live}
+            return fe_event
+        except Exception as exc:
+            print(f"fetch_formula_e_data error: {exc!r}", flush=True)
+            return _racing_cache.get(cache_key, {}).get("data") or fe_event
+
+    # 3. Check in-memory cache for F1 / other series
+    cached = _racing_cache.get(cache_key)
     if cached and (now - cached["at"] < (60.0 if cached.get("is_live") else 600.0)):
         return cached["data"]
 
-    # 3. Approach B: Query ESPN F1 scoreboard
+    # 4. Approach B: Query ESPN F1 scoreboard
     f1_url = "https://site.api.espn.com/apis/site/v2/sports/racing/f1/scoreboard"
-    headers = {"User-Agent": "Crowpanel-Epaper/0.8.11 (HomeAssistant Addon)"}
+    headers = {"User-Agent": "Crowpanel-Epaper/0.8.23 (HomeAssistant Addon)"}
     timeout = aiohttp.ClientTimeout(total=6)
 
     event_data = {
@@ -841,7 +1021,12 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None):
                     if date_iso:
                         try:
                             dt = datetime.fromisoformat(date_iso.replace("Z", "+00:00"))
-                            detail_str = dt.strftime("%a %b %d · %H:%M UTC")
+                            if tz_name:
+                                dt_loc = dt.astimezone(ZoneInfo(tz_name))
+                                tz_abbr = dt_loc.tzname() or ""
+                                detail_str = f"{dt_loc.strftime('%a %b %d · %H:%M')} {tz_abbr}".strip()
+                            else:
+                                detail_str = dt.strftime("%a %b %d · %H:%M UTC")
                         except Exception:
                             detail_str = f"{st_desc} · {str(date_iso)[:10]}"
 
@@ -874,11 +1059,11 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None):
                         if parsed_standings:
                             event_data["standings"] = parsed_standings
 
-        _racing_cache[raw_key] = {"at": now, "data": event_data, "is_live": is_live}
+        _racing_cache[cache_key] = {"at": now, "data": event_data, "is_live": is_live}
         return event_data
     except Exception as exc:
         print(f"fetch_racing_data error: {exc!r}", flush=True)
-        return _racing_cache.get(raw_key, {}).get("data") or event_data
+        return _racing_cache.get(cache_key, {}).get("data") or event_data
 
 
 LEAGUE_MAP = {
@@ -927,7 +1112,7 @@ LEAGUE_SLUGS = {
 }
 
 
-def _parse_espn_event(ev, league_title="MATCH"):
+def _parse_espn_event(ev, league_title="MATCH", tz_name=None):
     comp = (ev.get("competitions") or [{}])[0]
     competitors = comp.get("competitors") or []
     home = next((c for c in competitors if c.get("homeAway") == "home"), competitors[0] if competitors else {})
@@ -941,17 +1126,32 @@ def _parse_espn_event(ev, league_title="MATCH"):
 
     date_str = ev.get("date") or comp.get("date") or ""
     kickoff_time_str = ""
+    kickoff_day_str = ""
     if date_str:
         try:
             kickoff_dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+            if tz_name:
+                try:
+                    local_tz = ZoneInfo(tz_name)
+                    kickoff_dt = kickoff_dt.astimezone(local_tz)
+                except Exception:
+                    pass
             kickoff_time_str = kickoff_dt.strftime("%H:%M")
+            now_local = datetime.now(kickoff_dt.tzinfo)
+            if kickoff_dt.date() != now_local.date():
+                kickoff_day_str = kickoff_dt.strftime("%a ")
         except Exception:
             pass
 
     if is_live:
         clock_badge = f"{clock_val} · {st_desc}" if (clock_val and clock_val != "0'") else st_desc
     elif st_state == "pre":
-        clock_badge = f"Kickoff {kickoff_time_str}" if kickoff_time_str else st_desc
+        if kickoff_day_str:
+            clock_badge = f"{kickoff_day_str}{kickoff_time_str}"
+        elif kickoff_time_str:
+            clock_badge = f"Kickoff {kickoff_time_str}"
+        else:
+            clock_badge = st_desc
     else:
         clock_badge = st_desc
 
@@ -991,7 +1191,9 @@ def _parse_espn_event(ev, league_title="MATCH"):
     }
 
 
-async def compute_sports_active_window(session, entity_or_league="soccer/eng.1", pre_buffer_hours=2.0, post_buffer_hours=2.0):
+async def compute_sports_active_window(session, entity_or_league="soccer/eng.1", pre_buffer_hours=2.0, post_buffer_hours=2.0, tz_name=None):
+    if not tz_name:
+        tz_name = await get_home_timezone(session)
     raw_input = str(entity_or_league or "soccer/eng.1").strip()
     slug_in = raw_input.lower().replace("-", "_").replace(" ", "_")
     endpoint_path = LEAGUE_MAP.get(slug_in, raw_input)
@@ -1007,7 +1209,7 @@ async def compute_sports_active_window(session, entity_or_league="soccer/eng.1",
     today_str = now_utc.strftime("%Y%m%d")
     yesterday_str = (now_utc - timedelta(days=1)).strftime("%Y%m%d")
 
-    headers = {"User-Agent": "Crowpanel-Epaper/0.8.21 (HomeAssistant Addon)"}
+    headers = {"User-Agent": "Crowpanel-Epaper/0.8.23 (HomeAssistant Addon)"}
     timeout = aiohttp.ClientTimeout(total=6)
 
     today_url = f"https://site.api.espn.com/apis/site/v2/sports/{endpoint_path}/scoreboard?dates={today_str}"
@@ -1041,7 +1243,7 @@ async def compute_sports_active_window(session, entity_or_league="soccer/eng.1",
     today_parsed = []
 
     for ev in events:
-        parsed = _parse_espn_event(ev, league_title)
+        parsed = _parse_espn_event(ev, league_title, tz_name=tz_name)
         today_parsed.append(parsed)
 
     for ev in all_candidate_events:
@@ -1069,6 +1271,16 @@ async def compute_sports_active_window(session, entity_or_league="soccer/eng.1",
     for m in today_parsed:
         summaries.append(f"{m['away_team']} at {m['home_team']}")
 
+    try:
+        local_tz = ZoneInfo(tz_name)
+    except Exception:
+        local_tz = timezone.utc
+
+    first_ko_local = first_ko.astimezone(local_tz).strftime("%H:%M") if first_ko else None
+    last_ko_local = last_ko.astimezone(local_tz).strftime("%H:%M") if last_ko else None
+    win_start_local = win_start.astimezone(local_tz).strftime("%H:%M") if win_start else None
+    win_end_local = win_end.astimezone(local_tz).strftime("%H:%M") if win_end else None
+
     return {
         "slug": slug,
         "league_name": league_title,
@@ -1077,9 +1289,14 @@ async def compute_sports_active_window(session, entity_or_league="soccer/eng.1",
         "is_live": is_live,
         "matches_today": len(events),
         "first_kickoff": first_ko.isoformat() if first_ko else None,
+        "first_kickoff_local": first_ko_local,
         "last_kickoff": last_ko.isoformat() if last_ko else None,
+        "last_kickoff_local": last_ko_local,
         "window_start": win_start.isoformat() if win_start else None,
+        "window_start_local": win_start_local,
         "window_end": win_end.isoformat() if win_end else None,
+        "window_end_local": win_end_local,
+        "time_zone": tz_name,
         "pre_buffer_hours": pre_buffer_hours,
         "post_buffer_hours": post_buffer_hours,
         "matches_summary": ", ".join(summaries[:6]),
@@ -1087,10 +1304,12 @@ async def compute_sports_active_window(session, entity_or_league="soccer/eng.1",
     }
 
 
-async def fetch_sports_match(session, entity_or_league="soccer/eng.1", team=None, fallback=None):
+async def fetch_sports_match(session, entity_or_league="soccer/eng.1", team=None, fallback=None, tz_name=None):
+    if not tz_name:
+        tz_name = await get_home_timezone(session)
     now = time.time()
     raw_input = str(entity_or_league or "soccer/eng.1").strip()
-    cache_key = f"{raw_input}:{str(team or '').lower()}"
+    cache_key = f"{raw_input}:{str(team or '').lower()}:{tz_name}"
 
     # 1. Approach A: Check if fallback is a resolved HA entity from ha-teamtracker
     base_data = None
@@ -1145,7 +1364,7 @@ async def fetch_sports_match(session, entity_or_league="soccer/eng.1", team=None
 
     url_today = f"https://site.api.espn.com/apis/site/v2/sports/{endpoint_path}/scoreboard?dates={today_str}"
     url_default = f"https://site.api.espn.com/apis/site/v2/sports/{endpoint_path}/scoreboard"
-    headers = {"User-Agent": "Crowpanel-Epaper/0.8.21 (HomeAssistant Addon)"}
+    headers = {"User-Agent": "Crowpanel-Epaper/0.8.23 (HomeAssistant Addon)"}
     timeout = aiohttp.ClientTimeout(total=6)
 
     try:
@@ -1169,7 +1388,7 @@ async def fetch_sports_match(session, entity_or_league="soccer/eng.1", team=None
         if not events:
             return cached["data"] if cached else None
 
-        parsed_matches = [_parse_espn_event(ev, league_title) for ev in events]
+        parsed_matches = [_parse_espn_event(ev, league_title, tz_name=tz_name) for ev in events]
 
         if team:
             query = str(team).lower().strip()
@@ -1198,6 +1417,7 @@ async def fetch_sports_match(session, entity_or_league="soccer/eng.1", team=None
 
 
 async def enrich_page_values(session, page, vals):
+    home_tz = await get_home_timezone(session)
     for i, el in enumerate(page.get("elements", [])):
         t = el.get("type")
         if t == "weather_forecast":
@@ -1212,18 +1432,22 @@ async def enrich_page_values(session, page, vals):
                     vals[i] = cal_data
         elif t == "flight_tracker":
             radius = float(el.get("radius") or 35)
-            fl_data = await fetch_overhead_aircraft(session, radius_km=radius)
+            custom_lat = el.get("lat") or el.get("latitude")
+            custom_lon = el.get("lon") or el.get("lng") or el.get("longitude")
+            fl_data = await fetch_overhead_aircraft(session, radius_km=radius, lat=custom_lat, lon=custom_lon)
             if fl_data is not None:
                 vals[i] = fl_data
         elif t == "sports_racing":
             entity_or_series = el.get("entity") or el.get("series") or "f1"
-            race_data = await fetch_racing_data(session, entity_or_series, fallback=vals.get(i))
+            el_tz = el.get("timezone") or home_tz
+            race_data = await fetch_racing_data(session, entity_or_series, fallback=vals.get(i), tz_name=el_tz)
             if race_data:
                 vals[i] = race_data
         elif t == "sports_match":
             entity_or_league = el.get("entity") or el.get("league") or "soccer/eng.1"
             team = el.get("team")
-            match_data = await fetch_sports_match(session, entity_or_league, team=team, fallback=vals.get(i))
+            el_tz = el.get("timezone") or home_tz
+            match_data = await fetch_sports_match(session, entity_or_league, team=team, fallback=vals.get(i), tz_name=el_tz)
             if match_data:
                 vals[i] = match_data
 
@@ -1296,24 +1520,40 @@ async def publish_computed(session):
     # Publish overhead aircraft sensor to Home Assistant
     try:
         flight_radius = 35.0
+        custom_lat = None
+        custom_lon = None
+        custom_loc = None
         try:
             cur_spec = load_layouts()
             for p in cur_spec.get("pages", {}).values():
                 for el in p.get("elements", []):
                     if el.get("type") == "flight_tracker":
                         flight_radius = float(el.get("radius") or 35.0)
+                        if el.get("lat") is not None and el.get("lon") is not None:
+                            try:
+                                custom_lat = float(el.get("lat"))
+                                custom_lon = float(el.get("lon"))
+                            except (ValueError, TypeError):
+                                pass
+                        if el.get("location_name"):
+                            custom_loc = str(el.get("location_name")).strip()
                         break
         except Exception:
             pass
-        aircraft = await fetch_overhead_aircraft(session, radius_km=flight_radius)
+        aircraft = await fetch_overhead_aircraft(session, radius_km=flight_radius, lat=custom_lat, lon=custom_lon)
         closest_cs = aircraft[0]["callsign"] if aircraft else "None"
+        friendly_sensor_name = f"Overhead Aircraft ({custom_loc})" if custom_loc else "Overhead Aircraft Count"
         attrs = {
             "unit_of_measurement": "aircraft",
-            "friendly_name": "Overhead Aircraft Count",
+            "friendly_name": friendly_sensor_name,
             "closest_callsign": closest_cs,
             "radius_km": flight_radius,
+            "location_name": custom_loc or "Home",
             "icon": "mdi:airplane"
         }
+        if custom_lat is not None and custom_lon is not None:
+            attrs["latitude"] = custom_lat
+            attrs["longitude"] = custom_lon
         if aircraft:
             attrs["closest_distance_km"] = aircraft[0]["distance_km"]
             attrs["closest_bearing"] = aircraft[0]["bearing_cardinal"]
@@ -1325,11 +1565,13 @@ async def publish_computed(session):
                                  {"friendly_name": "Closest Aircraft", "distance_km": aircraft[0]["distance_km"],
                                   "bearing": aircraft[0]["bearing_cardinal"], "altitude_m": aircraft[0]["altitude_m"],
                                   "country": aircraft[0]["country"], "model": aircraft[0].get("model", ""),
+                                  "location_name": custom_loc or "Home",
                                   "icon": "mdi:airplane"})
     except Exception as exc:
         print(f"publish aircraft sensor failed: {exc!r}", flush=True)
 
     # Publish sports match status sensors to Home Assistant
+    home_tz = await get_home_timezone(session)
     try:
         cur_spec = load_layouts()
         sports_elements = []
@@ -1342,6 +1584,7 @@ async def publish_computed(session):
         if sports_elements:
             for el in sports_elements:
                 lg = el.get("league") or "soccer/eng.1"
+                el_tz = el.get("timezone") or home_tz
                 try:
                     pre_b = float(el.get("pre_buffer_hours")) if el.get("pre_buffer_hours") is not None else 2.0
                 except (ValueError, TypeError):
@@ -1350,16 +1593,16 @@ async def publish_computed(session):
                     post_b = float(el.get("post_buffer_hours")) if el.get("post_buffer_hours") is not None else 2.0
                 except (ValueError, TypeError):
                     post_b = 2.0
-                leagues_to_publish.append((lg, pre_b, post_b))
+                leagues_to_publish.append((lg, pre_b, post_b, el_tz))
         else:
-            leagues_to_publish.append(("soccer/eng.1", 2.0, 2.0))
+            leagues_to_publish.append(("soccer/eng.1", 2.0, 2.0, home_tz))
 
         seen_leagues = set()
-        for lg, pre_b, post_b in leagues_to_publish:
+        for lg, pre_b, post_b, s_tz in leagues_to_publish:
             if lg in seen_leagues:
                 continue
             seen_leagues.add(lg)
-            win_info = await compute_sports_active_window(session, lg, pre_buffer_hours=pre_b, post_buffer_hours=post_b)
+            win_info = await compute_sports_active_window(session, lg, pre_buffer_hours=pre_b, post_buffer_hours=post_b, tz_name=s_tz)
             slug = win_info["slug"]
             sensor_id = f"sensor.sports_{slug}"
             sport_icon = "mdi:soccer"
@@ -1380,9 +1623,14 @@ async def publish_computed(session):
                     "is_live": win_info["is_live"],
                     "matches_today": win_info["matches_today"],
                     "first_kickoff": win_info["first_kickoff"],
+                    "first_kickoff_local": win_info.get("first_kickoff_local"),
                     "last_kickoff": win_info["last_kickoff"],
+                    "last_kickoff_local": win_info.get("last_kickoff_local"),
                     "window_start": win_info["window_start"],
+                    "window_start_local": win_info.get("window_start_local"),
                     "window_end": win_info["window_end"],
+                    "window_end_local": win_info.get("window_end_local"),
+                    "time_zone": win_info.get("time_zone"),
                     "pre_buffer_hours": win_info["pre_buffer_hours"],
                     "post_buffer_hours": win_info["post_buffer_hours"],
                     "matches_summary": win_info["matches_summary"],
@@ -1392,9 +1640,9 @@ async def publish_computed(session):
     except Exception as exc:
         print(f"publish sports matchday sensor failed: {exc!r}", flush=True)
 
-    # Publish Formula 1 status sensor
+    # Publish Formula 1 & Formula E motorsport status sensors
     try:
-        f1_data = await fetch_racing_data(session, "f1")
+        f1_data = await fetch_racing_data(session, "f1", tz_name=home_tz)
         if f1_data:
             f1_st = f1_data.get("status") or "PRE"
             await publish_entity(session, "sensor.f1_status", f1_st,
@@ -1406,6 +1654,20 @@ async def publish_computed(session):
                                   "icon": "mdi:racing-helmet"})
     except Exception as exc:
         print(f"publish f1 status failed: {exc!r}", flush=True)
+
+    try:
+        fe_data = await fetch_racing_data(session, "fe", tz_name=home_tz)
+        if fe_data:
+            fe_st = fe_data.get("status") or "PRE"
+            await publish_entity(session, "sensor.formula_e_status", fe_st,
+                                 {"friendly_name": "Formula E Status",
+                                  "event_name": fe_data.get("event_name"),
+                                  "circuit": fe_data.get("circuit"),
+                                  "detail": fe_data.get("detail"),
+                                  "clock": fe_data.get("clock"),
+                                  "icon": "mdi:car-electric"})
+    except Exception as exc:
+        print(f"publish formula e status failed: {exc!r}", flush=True)
 
     # Publish E-Paper panel system status sensors & MQTT discovery
     try:
@@ -2105,7 +2367,9 @@ async def api_aircraft(request):
         radius = float(request.query.get("radius") or 35.0)
     except (TypeError, ValueError):
         radius = 35.0
-    aircraft = await fetch_overhead_aircraft(SHARED_SESSION, radius_km=radius)
+    lat = request.query.get("lat")
+    lon = request.query.get("lon")
+    aircraft = await fetch_overhead_aircraft(SHARED_SESSION, radius_km=radius, lat=lat, lon=lon)
     return web.json_response({"aircraft": aircraft, "count": len(aircraft)})
 
 

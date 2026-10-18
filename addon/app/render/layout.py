@@ -1116,13 +1116,15 @@ def _draw_flight_tracker(img, d, el, raw_val, display=None):
         ]
 
     style = str(el.get("style") or "card").lower()
+    loc_name = str(el.get("location_name") or el.get("name") or "").strip()
 
     if not aircraft_list:
         mid_x = x + w // 2
         mid_y = y + h // 2
         _draw_icon_glyph(d, "mdi:radar", mid_x, mid_y - 24, 52)
         d.text((mid_x, mid_y + 16), "AIRSPACE CLEAR", font=T.font(18, bold=True), fill=T.BLACK, anchor="mm")
-        d.text((mid_x, mid_y + 38), f"No aircraft overhead within {radius} km", font=T.font(12, bold=False), fill=T.BLACK, anchor="mm")
+        loc_str = f" overhead {loc_name}" if loc_name else " overhead"
+        d.text((mid_x, mid_y + 38), f"No aircraft{loc_str} within {radius} km", font=T.font(12, bold=False), fill=T.BLACK, anchor="mm")
         return
 
     sub_idx = int(el.get("sub_index", 0))
@@ -1147,12 +1149,15 @@ def _draw_flight_tracker(img, d, el, raw_val, display=None):
     if style == "radar":
         # Pure Circular PPI Radar Scope
         _draw_radar_scope(d, x + 6, y + 6, w - 12, h - 12, radius, aircraft_list, tracked_cs=callsign)
-        d.text((x + 16, y + 16), f"AIRSPACE RADAR · {radius} KM", font=T.font(11, bold=True), fill=T.BLACK, anchor="lm")
+        hdr_title = f"{loc_name.upper()} RADAR · {radius} KM" if loc_name else f"AIRSPACE RADAR · {radius} KM"
+        d.text((x + 16, y + 16), hdr_title, font=T.font(11, bold=True), fill=T.BLACK, anchor="lm")
         target_str = f"TARGET: {callsign} ({dist_km:.1f} KM {bearing})"
         if sub_total > 1:
             target_str = f"[{sub_idx + 1}/{sub_total}] {target_str}"
         d.text((x + w - 16, y + 16), target_str, font=T.font(11, bold=True), fill=T.BLACK, anchor="rm")
         return
+
+    loc_suffix = f" · {loc_name}" if loc_name else ""
 
     if style == "split" and w >= 480:
         # Split mode: Scope on left, telemetry card on right
@@ -1171,7 +1176,7 @@ def _draw_flight_tracker(img, d, el, raw_val, display=None):
         sub_title = _fit_text(country, max(40, tw - 120), sub_f)
         d.text((tx0 + 2, top_y + 36), sub_title, font=sub_f, fill=T.BLACK, anchor="lm")
 
-        dist_badge = f"{dist_km:.1f} KM {bearing}" if dist_km > 0 else "OVERHEAD"
+        dist_badge = f"{dist_km:.1f} KM {bearing}{loc_suffix}" if dist_km > 0 else (f"OVERHEAD {loc_name}" if loc_name else "OVERHEAD")
         bf = T.font(10, bold=True)
         bw = T.text_width(dist_badge, bf) + 14
         bh = 22
@@ -1223,7 +1228,7 @@ def _draw_flight_tracker(img, d, el, raw_val, display=None):
     sub_title = _fit_text(country, max(60, w - 240), sub_f)
     d.text((x + 67, top_y + 38), sub_title, font=sub_f, fill=T.BLACK, anchor="lm")
 
-    dist_badge = f"{dist_km:.1f} KM {bearing}" if dist_km > 0 else "OVERHEAD"
+    dist_badge = f"{dist_km:.1f} KM {bearing}{loc_suffix}" if dist_km > 0 else (f"OVERHEAD {loc_name}" if loc_name else "OVERHEAD")
     bf = T.font(11, bold=True)
     bw = T.text_width(dist_badge, bf) + 16
     bh = 24
@@ -1296,14 +1301,16 @@ def _draw_sports_racing(img, d, el, raw_val, display=None):
         }
 
     series = str(data.get("series") or "F1").upper()
-    event_name = str(data.get("event_name") or "Formula 1 Grand Prix").upper()
+    default_name = "Formula E World Championship" if series == "FE" else "Formula 1 Grand Prix"
+    event_name = str(data.get("event_name") or default_name).upper()
     status = str(data.get("status") or "IN").upper()
     lap = data.get("lap")
     total_laps = data.get("total_laps")
     standings = data.get("standings") or []
 
     # Header
-    _draw_icon_glyph(d, "mdi:flag-checkered", x + 24, y + 21, 24)
+    hdr_icon = "mdi:car-electric" if series == "FE" else "mdi:flag-checkered"
+    _draw_icon_glyph(d, hdr_icon, x + 24, y + 21, 24)
     hf = T.font(13, bold=True)
     header_txt = _fit_text(f"{series} · {event_name}", w - 180, hf)
     d.text((x + 44, y + 21), header_txt, font=hf, fill=T.BLACK, anchor="lm")
@@ -1323,8 +1330,9 @@ def _draw_sports_racing(img, d, el, raw_val, display=None):
         # Pre-race or schedule view
         mid_x = x + w // 2
         mid_y = y + h // 2
-        _draw_icon_glyph(d, "mdi:racing-helmet", mid_x, mid_y - 20, 46)
-        circ = data.get("circuit") or "Grand Prix Circuit"
+        mid_icon = "mdi:car-electric" if series == "FE" else "mdi:racing-helmet"
+        _draw_icon_glyph(d, mid_icon, mid_x, mid_y - 20, 46)
+        circ = data.get("circuit") or ("ePrix Circuit" if series == "FE" else "Grand Prix Circuit")
         d.text((mid_x, mid_y + 18), circ, font=T.font(16, bold=True), fill=T.BLACK, anchor="mm")
         detail = data.get("detail") or "Session scheduled soon"
         d.text((mid_x, mid_y + 40), detail, font=T.font(12, bold=False), fill=T.BLACK, anchor="mm")

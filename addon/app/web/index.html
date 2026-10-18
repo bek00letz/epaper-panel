@@ -2840,24 +2840,46 @@ function props() {
         <option value="split"${el.style === "split" ? " selected" : ""}>Radar Scope + Telemetry (Split)</option>
         <option value="radar"${el.style === "radar" ? " selected" : ""}>PPI Radar Scope (Tactical Circular)</option>
       </select></div>
+      <div class="row"><label>location label</label>
+        <input type="text" data-k="location_name" placeholder="Home (or TSR / LHR / JFK)" value="${esc(el.location_name || '')}">
+      </div>
+      <div class="row"><label>latitude</label>
+        <input type="number" step="any" data-k="lat" placeholder="Default (HA Home)" value="${el.lat !== undefined ? el.lat : ''}">
+      </div>
+      <div class="row"><label>longitude</label>
+        <input type="number" step="any" data-k="lon" placeholder="Default (HA Home)" value="${el.lon !== undefined ? el.lon : ''}">
+      </div>
+      <div class="row"><label>quick presets</label>
+        <div style="display:flex;gap:4px;flex-wrap:wrap">
+          <button type="button" class="sm flight-preset-btn" data-preset="home" style="padding:2px 8px;font-size:11px">Home</button>
+          <button type="button" class="sm flight-preset-btn" data-preset="tsr" style="padding:2px 8px;font-size:11px">TSR (Timisoara)</button>
+          <button type="button" class="sm flight-preset-btn" data-preset="lhr" style="padding:2px 8px;font-size:11px">LHR (Heathrow)</button>
+          <button type="button" class="sm flight-preset-btn" data-preset="jfk" style="padding:2px 8px;font-size:11px">JFK (New York)</button>
+          <button type="button" class="sm flight-preset-btn" data-preset="fra" style="padding:2px 8px;font-size:11px">FRA (Frankfurt)</button>
+        </div>
+      </div>
       <div class="row"><label>airspace radius (km)</label>
         <input type="number" min="5" max="250" data-k="radius" value="${Math.min(250, el.radius || 35)}">
       </div>
       <div class="row"><label>card border</label>
         <input type="checkbox" data-k="show_border"${el.show_border !== false ? " checked" : ""}>
       </div>
-      <div class="chip">Live ADS-B flight tracker tracking planes flying above your home via Flightradar24 &amp; ADS-B. Choose between <b>Telemetry Card</b>, a tactical circular <b>PPI Radar Scope</b>, or <b>Split View</b>. Set Page Tier to <b>Show only when active</b> with <code>{{ states('sensor.overhead_aircraft_count') | int(0) > 0 }}</code> to display only when planes are overhead!</div>`;
+      <div class="chip">Live ADS-B flight tracker tracking planes flying above your home or custom airport coordinates via Flightradar24 &amp; ADS-B. Choose between <b>Telemetry Card</b>, a tactical circular <b>PPI Radar Scope</b>, or <b>Split View</b>. Set Page Tier to <b>Show only when active</b> with <code>{{ states('sensor.overhead_aircraft_count') | int(0) > 0 }}</code> to display only when planes are overhead!</div>`;
   } else if (el.type === "sports_racing") {
     h += `<div class="row"><label>series</label><select data-k="series">
         <option value="f1"${(!el.series || el.series === "f1") ? " selected" : ""}>Formula 1 (F1)</option>
+        <option value="fe"${(el.series === "fe" || el.series === "formula_e" || el.series === "formula-e") ? " selected" : ""}>Formula E (FE)</option>
         <option value="nascar"${el.series === "nascar" ? " selected" : ""}>NASCAR</option>
         <option value="indycar"${el.series === "indycar" ? " selected" : ""}>IndyCar</option>
       </select></div>` +
       f("entity", "ha sensor entity (optional)", "text", "sensor.f1", "entities-dl") +
-      `<div class="row"><label>card border</label>
+      `<div class="row"><label>time zone</label>
+        <input type="text" data-k="timezone" placeholder="e.g. Europe/Bucharest (default: HA)" value="${esc(el.timezone || '')}">
+      </div>
+      <div class="row"><label>card border</label>
         <input type="checkbox" data-k="show_border"${el.show_border !== false ? " checked" : ""}>
       </div>
-      <div class="chip">Formula 1 &amp; Motorsport pit-wall tracker. Displays live Top 10 leaderboard, driver abbreviations, gaps, tyre compounds ([S], [M], [H]), and lap numbers during sessions. Shows Grand Prix circuit countdown when off-week. Zero-config ESPN/OpenF1 fallback + blends with HA <code>ha-teamtracker</code>.</div>`;
+      <div class="chip">Formula 1, Formula E &amp; Motorsport pit-wall tracker. Displays live Top 10 leaderboard, driver abbreviations, gaps, tyre compounds, session status, and localized times. Shows Grand Prix circuit countdown when off-week. Zero-config live feed + blends with HA <code>ha-teamtracker</code>.</div>`;
   } else if (el.type === "sports_match") {
     h += `<div class="row"><label>league</label><select data-k="league">
         <option value="soccer/eng.1"${(!el.league || el.league === "soccer/eng.1" || el.league === "epl") ? " selected" : ""}>Premier League</option>
@@ -2872,7 +2894,10 @@ function props() {
       </select></div>` +
       f("team", "team filter (optional)", "text", "e.g. Arsenal or Celtics") +
       f("entity", "ha teamtracker entity (optional)", "text", "sensor.arsenal", "entities-dl") +
-      `<div class="row"><label>show before (hrs)</label>
+      `<div class="row"><label>time zone</label>
+        <input type="text" data-k="timezone" placeholder="e.g. Europe/Bucharest (default: HA)" value="${esc(el.timezone || '')}">
+      </div>
+      <div class="row"><label>show before (hrs)</label>
         <input type="number" step="0.5" min="0" max="12" data-k="pre_buffer_hours" value="${el.pre_buffer_hours !== undefined ? el.pre_buffer_hours : 2}">
       </div>
       <div class="row"><label>show after (hrs)</label>
@@ -2881,7 +2906,7 @@ function props() {
       <div class="row"><label>card border</label>
         <input type="checkbox" data-k="show_border"${el.show_border !== false ? " checked" : ""}>
       </div>
-      <div class="chip">Live head-to-head match scoreboard with large typography, match clock / period badge, team records, and scorer highlights. Integrates automatically with <code>sensor.sports_premier_league</code> active window (turns on before kickoff and off after final whistle).</div>`;
+      <div class="chip">Live head-to-head match scoreboard with large typography, match clock / period badge, localized kickoff time, team records, and scorer highlights. Integrates automatically with <code>sensor.sports_premier_league</code> active window (turns on before kickoff and off after final whistle).</div>`;
   }
   h += "</div>";
 
@@ -3004,6 +3029,27 @@ function props() {
       props();
     }
     paint(); preview();
+  });
+
+  box.querySelectorAll(".flight-preset-btn").forEach(btn => {
+    btn.onclick = () => {
+      snapshot();
+      const p = btn.dataset.preset;
+      const presets = {
+        home: { lat: undefined, lon: undefined, name: "" },
+        tsr: { lat: 45.8100, lon: 21.3378, name: "TSR" },
+        lhr: { lat: 51.4700, lon: -0.4543, name: "LHR" },
+        jfk: { lat: 40.6413, lon: -73.7781, name: "JFK" },
+        fra: { lat: 50.0379, lon: 8.5622, name: "FRA" }
+      };
+      const c = presets[p];
+      if (c) {
+        if (c.lat !== undefined) el.lat = c.lat; else delete el.lat;
+        if (c.lon !== undefined) el.lon = c.lon; else delete el.lon;
+        if (c.name) el.location_name = c.name; else delete el.location_name;
+        props(); paint(); preview();
+      }
+    };
   });
 
   const addDg = box.querySelector("#dgadditem");

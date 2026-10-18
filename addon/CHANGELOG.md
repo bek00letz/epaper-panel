@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.8.23
+- **Custom Flight Tracker Coordinates & Airport Presets:**
+  - Added support for custom latitude and longitude on flight tracker cards (allowing traffic monitoring above specific airports such as TSR, LHR, JFK, FRA, or any custom coordinate) with graceful fallback to Home Assistant's `zone.home` coordinates.
+  - Multi-location cache: flight tracker cache is now keyed per location and radius, allowing multiple cards or airports without cache collisions.
+  - Added Airport Presets (Home, TSR Timisoara, LHR Heathrow, JFK New York, FRA Frankfurt) and custom location label input in the Visual Editor inspector.
+  - Added location tags to on-screen distance badges (`1.5 KM E · LHR`) and radar headers.
+- **Formula E Motorsport Pit-Wall Tracker:**
+  - Added native Formula E support (`series: "fe"`) to `sports_racing`.
+  - Integrates with authoritative Formula E season calendar feeds (`sportstimes/f1` and `formulaecal.com`), automatically resolving current/upcoming ePrix rounds, practice sessions, qualifying, and race sessions.
+  - Publishes `sensor.formula_e_status` to Home Assistant with state (`PRE`, `IN`, `POST`), event name, circuit, and localized session schedule.
+  - Features dedicated electric motorsport iconography (`mdi:car-electric`).
+- **Local & Preferred Timezone Conversion for Sports & Motorsport:**
+  - Automatically queries Home Assistant's configured timezone (`/api/config` -> `time_zone`, e.g. `Europe/Bucharest`) or accepts card-level custom timezone overrides.
+  - All sports kickoff times (Premier League, NBA, NFL, Champions League, etc.) and racing session times (F1, Formula E) are automatically converted from UTC to the user's local timezone (e.g. converting 13:00 UTC to `16:00 EEST` / `15:00 EET`).
+  - Added localized time attributes (`first_kickoff_local`, `last_kickoff_local`, `window_start_local`, `window_end_local`) to `sensor.sports_{league_slug}` for easy Jinja automation templates.
+
 ## 0.8.22
 - **Real-Time ADS-B Flight Tracking:**
   - Replaced deprecated/rate-limited OpenSky Network feed with ultra-fast, rate-limit-free Flightradar24 live feed with OpenSky fallback.
