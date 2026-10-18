@@ -32,6 +32,11 @@ constexpr size_t PAGE_RECORD_SIZE = 16;
 constexpr size_t CRC_SIZE = 4;
 constexpr size_t BUFFER_CAPACITY = 1048576;  // 1 MB static PSRAM buffer
 
+constexpr uint32_t FLAG_ALERT_INTERRUPT = 0x0001;
+constexpr uint32_t FLAG_QUIET_HOURS = 0x0002;
+constexpr uint32_t FLAG_FORCE_FULL = 0x0004;
+constexpr uint32_t FLAG_ORIENTATION_180 = 0x0008;
+
 enum class FetchResult : uint8_t {
   OK,
   NOT_MODIFIED,
@@ -300,9 +305,10 @@ class EpfClient {
     return true;
   }
 
-  bool is_alert_interrupt() const { return (header_.flags & 0x0001) != 0; }
-  bool is_quiet_hours() const { return (header_.flags & 0x0002) != 0; }
-  bool is_force_full_waveform() const { return (header_.flags & 0x0004) != 0; }
+  bool is_alert_interrupt() const { return (header_.flags & FLAG_ALERT_INTERRUPT) != 0; }
+  bool is_quiet_hours() const { return (header_.flags & FLAG_QUIET_HOURS) != 0; }
+  bool is_force_full_waveform() const { return (header_.flags & FLAG_FORCE_FULL) != 0; }
+  bool is_orientation_180() const { return (header_.flags & FLAG_ORIENTATION_180) != 0; }
 
   const EpfHeader &header() const { return header_; }
   bool has_stream() const { return has_valid_stream_; }
@@ -823,12 +829,18 @@ class PanelController {
     int cat_x0 = (dw >= 400) ? 96 : (16 + 55);
     int cat_x1 = cat_x0 + cat_w;
 
+    bool is_180 = EpfClient::instance().is_orientation_180();
+    // Default to true for CrowPanel 5.79" which is mounted upside-down (180°)
+    if (!EpfClient::instance().has_stream()) {
+      is_180 = true;
+    }
+
     auto invert_rounded_pill = [&](int x0, int y0, int x1, int y1, int r) {
       for (int py = y0; py <= y1; py++) {
         for (int px = x0; px <= x1; px++) {
           if (in_rounded_box(px, py, x0, y0, x1, y1, r)) {
-            int rx = (dw - 1) - px;
-            int ry = (dh - 1) - py;
+            int rx = is_180 ? px : ((dw - 1) - px);
+            int ry = is_180 ? ((dh - 1) - py) : py;
             if (rx >= 0 && rx < dw && ry >= 0 && ry < dh) {
               size_t byte_off = ((size_t)ry * dw + rx) / 8;
               uint8_t bit = 7 - (rx % 8);
@@ -846,7 +858,7 @@ class PanelController {
       invert_rounded_pill(sub_x0, py0, sub_x1, py1, 4);
     }
 
-    // 2. Padlock badge (Apple-grade high contrast solid lock)
+    // 2. Padlock badge (Apple-grade high contrast solid lock: dark rounded badge with crisp white padlock)
     auto draw_padlock = [&](int bx, int by, int bw, int bh) {
       int cx = bx + bw / 2;
       int cy = by + bh / 2;
@@ -861,16 +873,17 @@ class PanelController {
             bool is_body = (dy >= -1 && dy <= 6 && dx >= -6 && dx <= 5);
             bool is_keyhole = ((dy >= 1 && dy <= 2 && dx >= -1 && dx <= 0) || (dy >= 3 && dy <= 4 && dx == 0));
 
-            bool black_ink = (is_shackle || is_body) && !is_keyhole;
-            int rx = (dw - 1) - px;
-            int ry = (dh - 1) - py;
+            // White ink for padlock shackle and body; black ink for rounded background and keyhole
+            bool white_ink = (is_shackle || is_body) && !is_keyhole;
+            int rx = is_180 ? px : ((dw - 1) - px);
+            int ry = is_180 ? ((dh - 1) - py) : py;
             if (rx >= 0 && rx < dw && ry >= 0 && ry < dh) {
               size_t byte_off = ((size_t)ry * dw + rx) / 8;
               uint8_t bit = 7 - (rx % 8);
-              if (black_ink) {
-                raw_buf[byte_off] &= ~(1 << bit);  // black
+              if (white_ink) {
+                raw_buf[byte_off] |= (1 << bit);   // 1 = white
               } else {
-                raw_buf[byte_off] |= (1 << bit);   // white
+                raw_buf[byte_off] &= ~(1 << bit);  // 0 = black
               }
             }
           }

@@ -33,6 +33,7 @@ MODEL_REV_MAP = {v: k for k, v in MODEL_MAP.items()}
 FLAG_ALERT_INTERRUPT = 0x0001
 FLAG_QUIET_HOURS = 0x0002
 FLAG_FORCE_FULL = 0x0004
+FLAG_ORIENTATION_180 = 0x0008
 
 
 @dataclass(frozen=True)
@@ -101,6 +102,7 @@ def encode_epf(
     quiet_hours: bool = False,
     alert_interrupt: bool = False,
     force_full_waveform: bool = False,
+    orientation_180: bool = False,
     content_hash: int = 0,
 ) -> bytes:
     """Encode layout pages and identity directories into an aligned .epf binary buffer."""
@@ -125,6 +127,8 @@ def encode_epf(
         flags |= FLAG_QUIET_HOURS
     if force_full_waveform:
         flags |= FLAG_FORCE_FULL
+    if orientation_180:
+        flags |= FLAG_ORIENTATION_180
 
     dir_offset = HEADER_SIZE
     cat_dir_size = num_cats * CAT_RECORD_SIZE

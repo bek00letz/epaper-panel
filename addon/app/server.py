@@ -2493,6 +2493,7 @@ async def build_frames(session):
         rotate_sec=rot_sec,
         quiet_hours=quiet_active,
         alert_interrupt=bool(alert),
+        orientation_180=(orient == 180),
         content_hash=int.from_bytes(slices_digest[:8], "big"),
     )
     epf_single = epf.extract_page_epf(epf_data, 0)
@@ -3813,9 +3814,6 @@ script:
           epf::PanelController::instance().set_pending_refetch(false);
 
           std::string target_url = "${{frames_epf_url}}";
-          if (epf::PanelController::instance().pinned()) {{
-            target_url = "${{frame_epf_url}}?page=" + to_string(epf::PanelController::instance().page());
-          }}
 
           epf::FetchResult res = epf::EpfClient::instance().fetch(target_url);
           id(downloading_frames) = false;

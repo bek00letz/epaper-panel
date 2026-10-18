@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.33
+- **E-Ink Footer Polish & Stream Retention:**
+  - **Fixed Multi-Page Collapse on Refetch:** Removed conditional override in `refetch` that requested single-page `/frame.epf` when `pinned` was true. The panel now unconditionally fetches full multi-page `/frames.epf` so rotation categories and pages are never collapsed down to a single page in PSRAM, preserving sub-item rotation memory and locks across background updates.
+  - **Orientation-Aware Overlay Coordinate Alignment:** Added `FLAG_ORIENTATION_180` (0x0008) to the EPF stream header. `draw_overlays` now maps active pill inversion boxes (`invert_rounded_pill`) and padlock badges (`draw_padlock`) strictly to physical buffer coordinates matching both 180° and 0° display orientations, eliminating inverted X/Y pill offsets and misplaced badges on rotated panels.
+  - **High-Contrast Padlock Contrast Correction:** Corrected padlock pixel polarities on inverted SSD1683 displays to render Apple-grade crisp solid black rounded badges with pure white padlocks and black keyholes on the footer bar.
+
 ## 0.8.32
 - **Compilation & Secrets Self-Healing:**
   - **Fixed undeclared `alert_interrupt`:** Corrected legacy PNG fallback lambda in generated ESPHome YAML.

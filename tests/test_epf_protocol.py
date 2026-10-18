@@ -189,6 +189,23 @@ class TestEpfProtocol(unittest.TestCase):
             dec = epf.decode_epf(enc)
             self.assertEqual(dec.header.model_id, expected_id)
 
+    def test_orientation_180_flag(self):
+        enc = epf.encode_epf(
+            pages=self.pages[:1],
+            cat_ids=[0x1],
+            cat_offsets=[0],
+            cat_sizes=[1],
+            cat_pill_widths=[100],
+            sub_ids=[0x2],
+            orientation_180=True,
+        )
+        dec = epf.decode_epf(enc)
+        self.assertTrue(dec.header.flags & epf.FLAG_ORIENTATION_180)
+
+        single = epf.extract_page_epf(enc, 0)
+        dec_single = epf.decode_epf(single)
+        self.assertTrue(dec_single.header.flags & epf.FLAG_ORIENTATION_180)
+
 
 if __name__ == "__main__":
     unittest.main()

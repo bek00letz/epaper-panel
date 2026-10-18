@@ -837,9 +837,6 @@ script:
           epf::PanelController::instance().set_pending_refetch(false);
 
           std::string target_url = "${frames_epf_url}";
-          if (epf::PanelController::instance().pinned()) {
-            target_url = "${frame_epf_url}?page=" + to_string(epf::PanelController::instance().page());
-          }
 
           epf::FetchResult res = epf::EpfClient::instance().fetch(target_url);
           id(downloading_frames) = false;
