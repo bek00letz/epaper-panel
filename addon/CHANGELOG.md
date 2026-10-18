@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.8.21
+## 0.8.22
 - **Real-Time ADS-B Flight Tracking:**
   - Replaced deprecated/rate-limited OpenSky Network feed with ultra-fast, rate-limit-free Flightradar24 live feed with OpenSky fallback.
   - Automatically fetches live aircraft within range of Home Assistant home coordinates (`zone.home`), delivering flight routes (`BEY → DUS`), aircraft models (`A320`, `B77W`), speed, altitude, and heading.
