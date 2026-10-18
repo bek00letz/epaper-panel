@@ -2670,6 +2670,90 @@ function suggestIconForEntity(entityId, friendlyName = "") {
   return "mdi:power";
 }
 
+function explodeWidget(el) {
+  if (!el || sel < 0) return;
+  const x = el.x || 0, y = el.y || 0, w = el.w || 760, h = el.h || 200;
+  const sc = parseFloat(el.font_scale) || 1.0;
+  const s = (v) => Math.max(10, Math.round(v * sc));
+  const newEls = [];
+
+  if (el.type === "weather_forecast") {
+    const ent = el.entity || "weather.forecast_home";
+    const mode = el.layout_mode || "auto";
+    const isSplit = mode === "split" || (mode === "auto" && w >= 420 && w > h * 1.4);
+    const leftW = isSplit ? Math.floor(w * 0.44) : w;
+
+    newEls.push(
+      { type: "icon", x: x + 8, y: y + 8, w: s(64), h: s(64), icon: "weather-partly-cloudy" },
+      { type: "number", x: x + s(80), y: y + 4, w: Math.max(120, leftW - s(88)), h: s(74), size: s(64), weight: "black", entity: ent, show: "attribute", attribute: "temperature", format: "round", suffix: "°" },
+      { type: "text", x: x + 8, y: y + s(86), w: leftW - 16, h: s(32), size: s(22), weight: "bold", entity: ent, show: "state", replace: { partlycloudy: "Partly Cloudy", clear_night: "Clear Night", rainy: "Rainy", sunny: "Sunny", cloudy: "Cloudy", pouring: "Heavy Rain", snowy: "Snowy", lightning_rainy: "Thunderstorm", windy: "Windy", fog: "Foggy" } },
+      { type: "text", x: x + 8, y: y + s(126), w: Math.floor((leftW - 20) / 2), h: s(28), size: s(17), weight: "bold", entity: ent, show: "attribute", attribute: "humidity", format: "round", prefix: "HUM ", suffix: "%" },
+      { type: "text", x: x + 12 + Math.floor((leftW - 20) / 2), y: y + s(126), w: Math.floor((leftW - 20) / 2), h: s(28), size: s(17), weight: "bold", entity: ent, show: "attribute", attribute: "wind_speed", format: "round", prefix: "WIND ", suffix: " km/h" }
+    );
+    if (isSplit && mode !== "hero_only") {
+      newEls.push(
+        { type: "line", x: x + leftW, y: y + 8, w: 2, h: h - 16, stroke: 2 },
+        { type: "weather_forecast", x: x + leftW + 12, y: y, w: w - leftW - 12, h: h, entity: ent, layout_mode: "forecast_only", forecast_days: el.forecast_days || 4, font_scale: sc }
+      );
+    }
+  } else if (el.type === "flight_tracker") {
+    const ent = el.entity || "sensor.closest_aircraft";
+    newEls.push(
+      { type: "icon", x: x + 8, y: y + 10, w: s(40), h: s(40), icon: "mdi:airplane" },
+      { type: "text", x: x + s(58), y: y + 6, w: Math.floor(w * 0.55), h: s(52), size: s(42), weight: "black", entity: ent, show: "state" },
+      { type: "text", x: x + Math.floor(w * 0.62), y: y + 14, w: Math.floor(w * 0.36), h: s(32), size: s(22), weight: "bold", align: "right", entity: ent, show: "attribute", attribute: "operator" },
+      { type: "text", x: x + 8, y: y + s(64), w: w - 16, h: s(32), size: s(20), weight: "bold", entity: ent, show: "attribute", attribute: "aircraft_name" },
+      { type: "line", x: x + 8, y: y + s(102), w: w - 16, h: 2, stroke: 2 },
+      { type: "text", x: x + 8, y: y + s(112), w: Math.floor(w / 3) - 12, h: s(18), size: s(12), weight: "bold", value: "DISTANCE" },
+      { type: "number", x: x + 8, y: y + s(132), w: Math.floor(w / 3) - 12, h: s(40), size: s(30), weight: "black", entity: ent, show: "attribute", attribute: "distance_km", format: "1dp", suffix: " km" },
+      { type: "text", x: x + Math.floor(w / 3) + 4, y: y + s(112), w: Math.floor(w / 3) - 12, h: s(18), size: s(12), weight: "bold", value: "ALTITUDE" },
+      { type: "number", x: x + Math.floor(w / 3) + 4, y: y + s(132), w: Math.floor(w / 3) - 12, h: s(40), size: s(30), weight: "black", entity: ent, show: "attribute", attribute: "altitude_ft", format: "round", suffix: " ft" },
+      { type: "text", x: x + Math.floor((w * 2) / 3) + 4, y: y + s(112), w: Math.floor(w / 3) - 12, h: s(18), size: s(12), weight: "bold", value: "GROUND SPEED" },
+      { type: "number", x: x + Math.floor((w * 2) / 3) + 4, y: y + s(132), w: Math.floor(w / 3) - 12, h: s(40), size: s(30), weight: "black", entity: ent, show: "attribute", attribute: "speed_kts", format: "round", suffix: " kts" }
+    );
+  } else if (el.type === "calendar_agenda") {
+    const ent = el.entity || "calendar.personal";
+    newEls.push(
+      { type: "icon", x: x + 8, y: y + 10, w: s(34), h: s(34), icon: "mdi:calendar-clock" },
+      { type: "text", x: x + s(50), y: y + 12, w: w - s(58), h: s(30), size: s(20), weight: "black", entity: ent, show: "date_formatted", prefix: "UPCOMING · " },
+      { type: "line", x: x + 8, y: y + s(48), w: w - 16, h: 3, stroke: 3 },
+      { type: "text", x: x + 8, y: y + s(62), w: w - 16, h: s(46), size: s(32), weight: "black", entity: ent, show: "calendar_title" },
+      { type: "text", x: x + 8, y: y + s(116), w: Math.floor(w * 0.5), h: s(28), size: s(18), weight: "bold", entity: ent, show: "days_until" },
+      { type: "text", x: x + Math.floor(w * 0.5), y: y + s(116), w: Math.floor(w * 0.5) - 8, h: s(28), size: s(18), weight: "bold", align: "right", entity: ent, show: "attribute", attribute: "location" }
+    );
+  } else if (el.type === "sports_match") {
+    const ent = el.entity || "sensor.sports_live";
+    const colW = Math.floor(w * 0.35);
+    const midW = w - colW * 2;
+    newEls.push(
+      { type: "text", x: x + 8, y: y + 6, w: Math.floor(w * 0.6), h: s(24), size: s(15), weight: "black", entity: ent, show: "attribute", attribute: "competition" },
+      { type: "text", x: x + Math.floor(w * 0.6), y: y + 6, w: Math.floor(w * 0.4) - 8, h: s(24), size: s(15), weight: "black", align: "right", entity: ent, show: "attribute", attribute: "clock" },
+      { type: "line", x: x + 8, y: y + s(34), w: w - 16, h: 2, stroke: 2 },
+      { type: "text", x: x + 8, y: y + s(56), w: colW - 12, h: s(48), size: s(34), weight: "black", entity: ent, show: "attribute", attribute: "home_team" },
+      { type: "text", x: x + colW, y: y + s(44), w: midW, h: s(64), size: s(52), weight: "black", align: "center", entity: ent, show: "state" },
+      { type: "text", x: x + colW + midW + 4, y: y + s(56), w: colW - 12, h: s(48), size: s(34), weight: "black", align: "right", entity: ent, show: "attribute", attribute: "away_team" }
+    );
+  } else if (el.type === "sports_racing") {
+    const ent = el.entity || "sensor.f1_standings";
+    newEls.push(
+      { type: "icon", x: x + 8, y: y + 8, w: s(32), h: s(32), icon: "mdi:flag-checkered" },
+      { type: "text", x: x + s(48), y: y + 10, w: Math.floor(w * 0.55), h: s(28), size: s(18), weight: "black", value: (el.title || "FORMULA 1 STANDINGS").toUpperCase() },
+      { type: "text", x: x + Math.floor(w * 0.65), y: y + 10, w: Math.floor(w * 0.35) - 8, h: s(28), size: s(16), weight: "bold", align: "right", entity: ent, show: "attribute", attribute: "event_name" },
+      { type: "line", x: x + 8, y: y + s(42), w: w - 16, h: 3, stroke: 3 },
+      { type: "text", x: x + 8, y: y + s(56), w: w - 16, h: s(44), size: s(28), weight: "black", entity: ent, show: "state", prefix: "LEADER · " }
+    );
+  }
+
+  if (!newEls.length) return;
+  snapshot();
+  els().splice(sel, 1, ...newEls);
+  sel = Math.min(sel, els().length - 1);
+  paint();
+  preview();
+  props();
+  msg(`Broke preset into ${newEls.length} editable elements (Cmd/Ctrl+Z to undo)`);
+}
+
 /* Properties Inspector */
 function props() {
   const box = $("props"), badge = $("selbadge");
@@ -2818,11 +2902,15 @@ function props() {
       f("title", "header title", "text", "Upcoming Events") +
       `<div class="row"><label>max events</label>
         <select data-k="max_events">
-          <option value="3"${Number(el.max_events) === 3 ? " selected" : ""}>3 events</option>
-          <option value="4"${(Number(el.max_events || 4) === 4) ? " selected" : ""}>4 events</option>
+          <option value="2"${Number(el.max_events) === 2 ? " selected" : ""}>2 events (Extra Large)</option>
+          <option value="3"${Number(el.max_events) === 3 ? " selected" : ""}>3 events (Large)</option>
+          <option value="4"${(Number(el.max_events || 4) === 4) ? " selected" : ""}>4 events (Standard)</option>
           <option value="5"${Number(el.max_events) === 5 ? " selected" : ""}>5 events</option>
           <option value="6"${Number(el.max_events) === 6 ? " selected" : ""}>6 events</option>
         </select>
+      </div>
+      <div class="row"><label>show subtitles</label>
+        <input type="checkbox" data-k="show_sub"${el.show_sub !== false ? " checked" : ""}>
       </div>
       <div class="row"><label>card border</label>
         <input type="checkbox" data-k="show_border"${el.show_border !== false ? " checked" : ""}>
@@ -2830,10 +2918,29 @@ function props() {
       <div class="chip">Upcoming event list displaying date chips, bold titles, and times directly from your Home Assistant calendar.</div>`;
   } else if (el.type === "weather_forecast") {
     h += f("entity", "weather entity", "text", "weather.forecast_home", "entities-dl") +
-      `<div class="row"><label>card border</label>
+      `<div class="row"><label>layout mode</label>
+        <select data-k="layout_mode">
+          <option value="auto"${(!el.layout_mode || el.layout_mode === "auto") ? " selected" : ""}>Auto (Split Wide / Stacked Tall)</option>
+          <option value="split"${el.layout_mode === "split" ? " selected" : ""}>Split (Current Left + Forecast Right)</option>
+          <option value="stacked"${el.layout_mode === "stacked" ? " selected" : ""}>Stacked (Current Top + Forecast Rows)</option>
+          <option value="hero_only"${el.layout_mode === "hero_only" ? " selected" : ""}>Current Conditions Only (Giant Hero)</option>
+          <option value="forecast_only"${el.layout_mode === "forecast_only" ? " selected" : ""}>Forecast Strip Only (Multi-Day Columns)</option>
+        </select>
+      </div>
+      <div class="row"><label>forecast days</label>
+        <select data-k="forecast_days">
+          <option value="3"${Number(el.forecast_days) === 3 ? " selected" : ""}>3 days (Wider Columns)</option>
+          <option value="4"${(Number(el.forecast_days || 4) === 4) ? " selected" : ""}>4 days (Standard)</option>
+          <option value="5"${Number(el.forecast_days) === 5 ? " selected" : ""}>5 days</option>
+        </select>
+      </div>
+      <div class="row"><label>humidity &amp; wind</label>
+        <input type="checkbox" data-k="show_details"${el.show_details !== false ? " checked" : ""}>
+      </div>
+      <div class="row"><label>card border</label>
         <input type="checkbox" data-k="show_border"${el.show_border !== false ? " checked" : ""}>
       </div>
-      <div class="chip">Hero current weather conditions (large MDI icon, temperature, condition, humidity, wind) plus 4-day forecast strip. Adapts automatically to wide or stacked layouts.</div>`;
+      <div class="chip">Hero current weather conditions plus multi-day forecast strip. Adjust <b>Font Scale</b> below or click <b>Break Apart into Elements</b> to customize individual pieces freely.</div>`;
   } else if (el.type === "flight_tracker") {
     h += `<div class="row"><label>radar style</label><select data-k="style">
         <option value="card"${(!el.style || el.style === "card") ? " selected" : ""}>Telemetry Card (Default)</option>
@@ -2861,10 +2968,13 @@ function props() {
       <div class="row"><label>airspace radius (km)</label>
         <input type="number" min="5" max="250" data-k="radius" value="${Math.min(250, el.radius || 35)}">
       </div>
+      <div class="row"><label>metric sub-units</label>
+        <input type="checkbox" data-k="show_sub_metrics"${el.show_sub_metrics !== false ? " checked" : ""}>
+      </div>
       <div class="row"><label>card border</label>
         <input type="checkbox" data-k="show_border"${el.show_border !== false ? " checked" : ""}>
       </div>
-      <div class="chip">Live ADS-B flight tracker tracking planes flying above your home or custom airport coordinates via Flightradar24 &amp; ADS-B. Choose between <b>Telemetry Card</b>, a tactical circular <b>PPI Radar Scope</b>, or <b>Split View</b>. Set Page Tier to <b>Show only when active</b> with <code>{{ states('sensor.overhead_aircraft_count') | int(0) > 0 }}</code> to display only when planes are overhead!</div>`;
+      <div class="chip">Live ADS-B flight tracker tracking planes flying above your home or custom airport coordinates via Flightradar24 &amp; ADS-B.</div>`;
   } else if (el.type === "sports_racing") {
     h += `<div class="row"><label>series</label><select data-k="series">
         <option value="f1"${(!el.series || el.series === "f1") ? " selected" : ""}>Formula 1 (F1)</option>
@@ -2873,13 +2983,23 @@ function props() {
         <option value="indycar"${el.series === "indycar" ? " selected" : ""}>IndyCar</option>
       </select></div>` +
       f("entity", "ha sensor entity (optional)", "text", "sensor.f1", "entities-dl") +
-      `<div class="row"><label>time zone</label>
+      `<div class="row"><label>leaderboard size</label>
+        <select data-k="max_drivers">
+          <option value="6"${Number(el.max_drivers) === 6 ? " selected" : ""}>Top 6 (3 per col · Extra Large)</option>
+          <option value="8"${Number(el.max_drivers) === 8 ? " selected" : ""}>Top 8 (4 per col · Large)</option>
+          <option value="10"${(Number(el.max_drivers || 10) === 10) ? " selected" : ""}>Top 10 (5 per col · Standard)</option>
+        </select>
+      </div>
+      <div class="row"><label>show team names</label>
+        <input type="checkbox" data-k="show_teams"${el.show_teams !== false ? " checked" : ""}>
+      </div>
+      <div class="row"><label>time zone</label>
         <input type="text" data-k="timezone" placeholder="e.g. Europe/Bucharest (default: HA)" value="${esc(el.timezone || '')}">
       </div>
       <div class="row"><label>card border</label>
         <input type="checkbox" data-k="show_border"${el.show_border !== false ? " checked" : ""}>
       </div>
-      <div class="chip">Formula 1, Formula E &amp; Motorsport pit-wall tracker. Displays live Top 10 leaderboard, driver abbreviations, gaps, tyre compounds, session status, and localized times. Shows Grand Prix circuit countdown when off-week. Zero-config live feed + blends with HA <code>ha-teamtracker</code>.</div>`;
+      <div class="chip">Formula 1, Formula E &amp; Motorsport pit-wall tracker.</div>`;
   } else if (el.type === "sports_match") {
     h += `<div class="row"><label>league</label><select data-k="league">
         <option value="soccer/eng.1"${(!el.league || el.league === "soccer/eng.1" || el.league === "epl") ? " selected" : ""}>Premier League</option>
@@ -2903,12 +3023,47 @@ function props() {
       <div class="row"><label>show after (hrs)</label>
         <input type="number" step="0.5" min="0" max="12" data-k="post_buffer_hours" value="${el.post_buffer_hours !== undefined ? el.post_buffer_hours : 2}">
       </div>
+      <div class="row"><label>show team stats</label>
+        <input type="checkbox" data-k="show_stats"${el.show_stats !== false ? " checked" : ""}>
+      </div>
+      <div class="row"><label>show scorers</label>
+        <input type="checkbox" data-k="show_scorers"${el.show_scorers !== false ? " checked" : ""}>
+      </div>
       <div class="row"><label>card border</label>
         <input type="checkbox" data-k="show_border"${el.show_border !== false ? " checked" : ""}>
       </div>
-      <div class="chip">Live head-to-head match scoreboard with large typography, match clock / period badge, localized kickoff time, team records, and scorer highlights. Integrates automatically with <code>sensor.sports_premier_league</code> active window (turns on before kickoff and off after final whistle).</div>`;
+      <div class="chip">Live head-to-head match scoreboard with large typography, match clock, team stats, and scorer highlights.</div>`;
   }
   h += "</div>";
+
+  const isComposite = ["dynamic_grid", "calendar_month", "calendar_agenda", "weather_forecast", "flight_tracker", "sports_racing", "sports_match"].includes(el.type);
+  if (isComposite) {
+    const curScale = Number(el.font_scale || 1.0);
+    const pct = Math.round(curScale * 100);
+    h += `<div class="grp"><div class="lbl">Typography &amp; Customization</div>
+      <div class="row"><label>font scale</label>
+        <div style="display:flex;align-items:center;gap:8px;flex:1">
+          <input id="comp_fscale_range" type="range" min="0.7" max="1.6" step="0.05" value="${curScale}" style="flex:1">
+          <span id="comp_fscale_val" style="font-size:12px;font-weight:700;min-width:42px;text-align:right">${pct}%</span>
+        </div>
+      </div>
+      <div class="row"><label>presets</label>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;flex:1">
+          ${[0.85, 1.0, 1.15, 1.3, 1.5].map(s => `<button type="button" class="sm fscale-btn${Math.abs(curScale - s) < 0.03 ? " primary" : ""}" data-fscale="${s}" style="padding:2px 8px;font-size:11px;min-height:28px">${Math.round(s * 100)}%</button>`).join("")}
+        </div>
+      </div>`;
+    if (["weather_forecast", "flight_tracker", "calendar_agenda", "sports_match", "sports_racing"].includes(el.type)) {
+      h += `<div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--border)">
+        <button type="button" id="explode_widget_btn" class="sm" style="width:100%;justify-content:center;font-weight:600;gap:6px" title="Convert this preset widget into individual, freely movable text, number, icon, and line elements">
+          ✂️ Break Apart into Editable Elements
+        </button>
+        <div style="font-size:11px;color:var(--text-muted);margin-top:5px;line-height:1.35">
+          Want to move or resize individual numbers, labels, or icons? Break this widget apart into atomic canvas elements (reversible with Undo).
+        </div>
+      </div>`;
+    }
+    h += `</div>`;
+  }
 
   if (["text", "number", "icon"].includes(el.type)) {
     h += '<div class="grp"><div class="lbl">Typography &amp; Legibility</div>' + f("size", "size (px)", "number", "auto");
@@ -2978,6 +3133,31 @@ function props() {
 
   box.innerHTML = h;
 
+  const fscaleRange = box.querySelector("#comp_fscale_range");
+  const fscaleVal = box.querySelector("#comp_fscale_val");
+  if (fscaleRange) {
+    fscaleRange.oninput = () => {
+      if (fscaleVal) fscaleVal.textContent = Math.round(Number(fscaleRange.value) * 100) + "%";
+    };
+    fscaleRange.onchange = () => {
+      snapshot();
+      el.font_scale = Number(fscaleRange.value);
+      props(); paint(); preview();
+    };
+  }
+  box.querySelectorAll(".fscale-btn").forEach(btn => {
+    btn.onclick = () => {
+      snapshot();
+      el.font_scale = Number(btn.dataset.fscale);
+      props(); paint(); preview();
+    };
+  });
+
+  const explodeBtn = box.querySelector("#explode_widget_btn");
+  if (explodeBtn) {
+    explodeBtn.onclick = () => explodeWidget(el);
+  }
+
   const advDet = box.querySelector("#advcoords");
   if (advDet) {
     advDet.ontoggle = () => {
@@ -3017,7 +3197,7 @@ function props() {
       delete el[k];
     } else if (k === "bold") {
       el.bold = v === "true";
-    } else if (inp.type === "number") {
+    } else if (inp.type === "number" || ["max_events", "forecast_days", "max_drivers", "first_weekday"].includes(k)) {
       el[k] = Number(v);
     } else {
       el[k] = v;

@@ -744,12 +744,28 @@ async def fetch_weather_forecast(session, entity_id, fallback=None):
 
         f_resp = await ha_json(session, "/services/weather/get_forecasts?return_response=1",
                                method="POST", json={"entity_id": eid, "type": "daily"})
-        # HA wraps return_response in {"response": {eid: ...}} or sometimes directly
-        payload = f_resp.get("response", f_resp) if isinstance(f_resp, dict) else {}
-        if isinstance(payload, dict) and eid in payload:
+        # HA REST API wraps ?return_response=1 in {"service_response": {eid: {"forecast": [...]}}}
+        payload = (f_resp.get("service_response") or f_resp.get("response") or f_resp) if isinstance(f_resp, dict) else {}
+        forecast_list = None
+        if isinstance(payload, dict) and eid in payload and isinstance(payload[eid], dict):
             forecast_list = payload[eid].get("forecast")
-            if isinstance(forecast_list, list):
-                base_data["forecast"] = forecast_list
+        if not isinstance(forecast_list, list) or not forecast_list:
+            for f_type in ("twice_daily", "hourly"):
+                try:
+                    f_resp2 = await ha_json(session, "/services/weather/get_forecasts?return_response=1",
+                                            method="POST", json={"entity_id": eid, "type": f_type})
+                    p2 = (f_resp2.get("service_response") or f_resp2.get("response") or f_resp2) if isinstance(f_resp2, dict) else {}
+                    if isinstance(p2, dict) and eid in p2 and isinstance(p2[eid], dict):
+                        cand = p2[eid].get("forecast")
+                        if isinstance(cand, list) and cand:
+                            forecast_list = cand
+                            break
+                except Exception:
+                    pass
+        if (not isinstance(forecast_list, list) or not forecast_list) and isinstance(attrs.get("forecast"), list):
+            forecast_list = attrs.get("forecast")
+        if isinstance(forecast_list, list) and forecast_list:
+            base_data["forecast"] = forecast_list
 
         _weather_cache[eid] = {"at": now, "data": base_data}
         return base_data
@@ -781,9 +797,9 @@ async def fetch_calendar_events(session, entity_id, days=31, fallback=None):
             try:
                 c_resp = await ha_json(session, "/services/calendar/get_events?return_response=1",
                                        method="POST", json={"entity_id": eid, "duration": {"days": days}})
-                payload = c_resp.get("response", c_resp) if isinstance(c_resp, dict) else {}
+                payload = (c_resp.get("service_response") or c_resp.get("response") or c_resp) if isinstance(c_resp, dict) else {}
                 cal_events = []
-                if isinstance(payload, dict) and eid in payload:
+                if isinstance(payload, dict) and eid in payload and isinstance(payload[eid], dict):
                     cal_events = payload[eid].get("events") or []
                 
                 # Tag each event with source calendar badge
@@ -1561,10 +1577,20 @@ async def publish_computed(session):
             attrs["closest_model"] = aircraft[0].get("model", "")
         await publish_entity(session, "sensor.overhead_aircraft_count", len(aircraft), attrs)
         if aircraft:
+            ac0 = aircraft[0]
+            alt_m0 = float(ac0.get("altitude_m") or 0.0)
+            spd_ms0 = float(ac0.get("velocity_ms") or 0.0)
             await publish_entity(session, "sensor.closest_aircraft", closest_cs,
-                                 {"friendly_name": "Closest Aircraft", "distance_km": aircraft[0]["distance_km"],
-                                  "bearing": aircraft[0]["bearing_cardinal"], "altitude_m": aircraft[0]["altitude_m"],
-                                  "country": aircraft[0]["country"], "model": aircraft[0].get("model", ""),
+                                 {"friendly_name": "Closest Aircraft",
+                                  "distance_km": ac0.get("distance_km"),
+                                  "bearing": ac0.get("bearing_cardinal"),
+                                  "altitude_m": int(alt_m0),
+                                  "altitude_ft": int(alt_m0 * 3.28084),
+                                  "speed_kts": int(spd_ms0 * 1.94384),
+                                  "speed_kmh": int(spd_ms0 * 3.6),
+                                  "track_deg": int(ac0.get("track_deg") or 0),
+                                  "country": ac0.get("country"),
+                                  "model": ac0.get("model", ""),
                                   "location_name": custom_loc or "Home",
                                   "icon": "mdi:airplane"})
     except Exception as exc:
@@ -1985,6 +2011,7 @@ async def refresh_frames(session):
     await publish_category_sensors(session, nxt)
     if struct_changed:
         print("Category structure changed -- pushing immediate refresh to panel", flush=True)
+        globals()["LAST_PANEL_PUSH_TIME"] = time.time()
         await push_panel_update(advance_page=False)
     return nxt
 
@@ -1992,8 +2019,8 @@ async def refresh_frames(session):
 LAST_PANEL_PUSH_TIME = time.time()
 
 
-async def push_panel_update(advance_page=True):
-    """Trigger the physical panel to redraw with latest frames."""
+async def push_panel_update(advance_page=False):
+    """Trigger the physical panel to fetch latest frames (without clobbering locks or sub_mode)."""
     if not HA_TOKEN:
         return False
     candidates = list(dict.fromkeys([
@@ -2063,7 +2090,7 @@ async def render_loop():
                 if now - LAST_PANEL_PUSH_TIME >= panel_sec:
                     LAST_PANEL_PUSH_TIME = now
                     print(f"proactive refresh push to panel ({panel_min} min interval)", flush=True)
-                    await push_panel_update(advance_page=True)
+                    await push_panel_update(advance_page=False)
         except Exception as exc:
             print(f"render loop error: {exc!r}", flush=True)
             FRAMES.error = repr(exc)
@@ -2799,6 +2826,10 @@ psram:
     type: uint32_t
     restore_value: false
     initial_value: '0'
+  - id: downloading_frames
+    type: bool
+    restore_value: false
+    initial_value: 'false'
 
 font:
   - file: "gfonts://Lato@700"
@@ -2966,6 +2997,9 @@ switch:
 
 {display_platform_block}
     lambda: |-
+      if (id(downloading_frames)) {{
+        return;
+      }}
       if (id(have_frames)) {{
 {pin_drawing_code}
       }} else if (id(have_single)) {{
@@ -2989,9 +3023,9 @@ online_image:
     buffer_size: 32768
     on_download_finished:
       - lambda: |-
+          id(downloading_frames) = false;
           int h = id(frames).get_height();
           id(page_count) = (h >= ${{page_h}}) ? h / ${{page_h}} : 1;
-          if (id(page) >= id(page_count)) id(page) = 0;
           id(have_frames) = true;
 
           // Check if self-describing metadata row is present (height == page_count * page_h + 1)
@@ -3043,16 +3077,31 @@ online_image:
               id(cat_pill_widths).push_back(110);
             }}
           }}
-          if (id(cat_idx) >= id(cat_count)) id(cat_idx) = 0;
-          ESP_LOGI("panel", "%d pages (%d categories) held locally", id(page_count), id(cat_count));
+          if (id(cat_idx) < 0 || id(cat_idx) >= id(cat_count)) id(cat_idx) = 0;
+          int c_idx = id(cat_idx);
+          int sz = (c_idx < (int)id(cat_sizes).size() && id(cat_sizes)[c_idx] > 0) ? id(cat_sizes)[c_idx] : 1;
+          if (sz <= 1) {{
+            id(sub_idx) = 0;
+            id(sub_mode) = false;
+          }} else if (id(sub_idx) < 0 || id(sub_idx) >= sz) {{
+            id(sub_idx) = 0;
+          }}
+          int off = (c_idx < (int)id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
+          int p = off + id(sub_idx);
+          id(page) = (p >= 0 && p < id(page_count)) ? p : 0;
+          ESP_LOGI("panel", "%d pages (%d categories) held locally, showing cat=%d sub=%d page=%d", id(page_count), id(cat_count), id(cat_idx), id(sub_idx), id(page));
+      - script.execute: redraw
+    on_error:
+      - lambda: 'id(downloading_frames) = false;'
       - if:
           condition:
-            lambda: 'return (id(idle_sec) > 30);'
+            lambda: 'return id(have_frames);'
           then:
-            - component.update: epd
-    on_error:
-      - logger.log: "frames.png missing - falling back to single frame"
-      - component.update: frame
+            - logger.log: "frames.png fetch failed - keeping cached strip in PSRAM"
+            - script.execute: redraw
+          else:
+            - logger.log: "frames.png missing - falling back to single frame"
+            - component.update: frame
 
   - id: frame
     url: ${{frame_url}}
@@ -3210,93 +3259,22 @@ sensor:
     name: Panel Wi-Fi
     update_interval: 60s
 
-  - platform: homeassistant
-    id: ha_cat_count
-    entity_id: sensor.epaper_category_count
-    on_value:
-      then:
-        - lambda: |-
-            if (!std::isnan(x) && x > 0) {{
-              int n = (int)x;
-              id(cat_count) = n;
-              if (id(cat_idx) >= n) id(cat_idx) = 0;
-            }}
-
 text_sensor:
   - platform: wifi_info
     ip_address:
       id: wifi_ip
       name: Panel IP
 
-  - platform: homeassistant
-    id: ha_cat_offsets
-    entity_id: sensor.epaper_category_offsets
-    on_value:
-      then:
-        - lambda: |-
-            std::vector<int> new_offsets;
-            const char *p = x.c_str();
-            while (*p) {{
-              while (*p == ' ' || *p == ',') p++;
-              if (!*p) break;
-              char *end;
-              long val = strtol(p, &end, 10);
-              if (p == end) break;
-              new_offsets.push_back((int)val);
-              p = end;
-            }}
-            if (!new_offsets.empty()) {{
-              id(cat_offsets) = new_offsets;
-            }}
-
-  - platform: homeassistant
-    id: ha_cat_sizes
-    entity_id: sensor.epaper_category_sizes
-    on_value:
-      then:
-        - lambda: |-
-            std::vector<int> new_sizes;
-            const char *p = x.c_str();
-            while (*p) {{
-              while (*p == ' ' || *p == ',') p++;
-              if (!*p) break;
-              char *end;
-              long val = strtol(p, &end, 10);
-              if (p == end) break;
-              new_sizes.push_back((int)val);
-              p = end;
-            }}
-            if (!new_sizes.empty()) {{
-              id(cat_sizes) = new_sizes;
-            }}
-
-  - platform: homeassistant
-    id: ha_cat_pill_widths
-    entity_id: sensor.epaper_category_pill_widths
-    on_value:
-      then:
-        - lambda: |-
-            std::vector<int> new_pws;
-            const char *p = x.c_str();
-            while (*p) {{
-              while (*p == ' ' || *p == ',') p++;
-              if (!*p) break;
-              char *end;
-              long val = strtol(p, &end, 10);
-              if (p == end) break;
-              new_pws.push_back((int)val);
-              p = end;
-            }}
-            if (!new_pws.empty()) {{
-              id(cat_pill_widths) = new_pws;
-            }}
-
 script:
   - id: redraw
     mode: restart
     then:
       - delay: 80ms
-      - component.update: epd
+      - if:
+          condition:
+            lambda: 'return !id(downloading_frames);'
+          then:
+            - component.update: epd
 
   - id: refetch
     mode: single
@@ -3305,6 +3283,7 @@ script:
           condition:
             wifi.connected:
           timeout: 30s
+      - lambda: 'id(downloading_frames) = true;'
       - component.update: frames
 
 number:
@@ -3352,7 +3331,6 @@ interval:
                               int p = off + id(sub_idx);
                               if (p < id(page_count)) id(page) = p;
                             }}
-                        - script.execute: redraw
                       else:
                         - lambda: |-
                             int cats = id(cat_count) > 0 ? id(cat_count) : 1;
@@ -3361,7 +3339,6 @@ interval:
                             id(sub_mode) = false;
                             int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
                             if (off < id(page_count)) id(page) = off;
-                        - script.execute: redraw
             - script.execute: refetch
 """
 

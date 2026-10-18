@@ -91,6 +91,10 @@ globals:
     type: uint32_t
     initial_value: '0'
     restore_value: false
+  - id: downloading_frames
+    type: bool
+    initial_value: 'false'
+    restore_value: false
 
 font:
   - file: "gfonts://Lato@700"
@@ -281,6 +285,9 @@ display:
     update_interval: never
     auto_clear_enabled: false
     lambda: |-
+      if (id(downloading_frames)) {
+        return;
+      }
       if (id(have_frames)) {
         const int off = ${page_h} * id(page);
         bool is_sub_mode = id(sub_mode);
@@ -424,9 +431,9 @@ online_image:
     buffer_size: 32768
     on_download_finished:
       - lambda: |-
+          id(downloading_frames) = false;
           int h = id(frames).get_height();
           id(page_count) = (h >= ${page_h}) ? h / ${page_h} : 1;
-          if (id(page) >= id(page_count)) id(page) = 0;
           id(have_frames) = true;
 
           // Check if self-describing metadata row is present (height == page_count * page_h + 1)
@@ -478,16 +485,31 @@ online_image:
               id(cat_pill_widths).push_back(110);
             }
           }
-          if (id(cat_idx) >= id(cat_count)) id(cat_idx) = 0;
-          ESP_LOGI("panel", "%d pages (%d categories) held locally", id(page_count), id(cat_count));
+          if (id(cat_idx) < 0 || id(cat_idx) >= id(cat_count)) id(cat_idx) = 0;
+          int c_idx = id(cat_idx);
+          int sz = (c_idx < (int)id(cat_sizes).size() && id(cat_sizes)[c_idx] > 0) ? id(cat_sizes)[c_idx] : 1;
+          if (sz <= 1) {
+            id(sub_idx) = 0;
+            id(sub_mode) = false;
+          } else if (id(sub_idx) < 0 || id(sub_idx) >= sz) {
+            id(sub_idx) = 0;
+          }
+          int off = (c_idx < (int)id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
+          int p = off + id(sub_idx);
+          id(page) = (p >= 0 && p < id(page_count)) ? p : 0;
+          ESP_LOGI("panel", "%d pages (%d categories) held locally, showing cat=%d sub=%d page=%d", id(page_count), id(cat_count), id(cat_idx), id(sub_idx), id(page));
+      - script.execute: redraw
+    on_error:
+      - lambda: 'id(downloading_frames) = false;'
       - if:
           condition:
-            lambda: 'return (id(idle_sec) > 30);'
+            lambda: 'return id(have_frames);'
           then:
-            - component.update: epd
-    on_error:
-      - logger.log: "frames.png missing - falling back to single frame"
-      - component.update: frame
+            - logger.log: "frames.png fetch failed - keeping cached strip in PSRAM"
+            - script.execute: redraw
+          else:
+            - logger.log: "frames.png missing - falling back to single frame"
+            - component.update: frame
 
   - id: frame
     url: ${frame_url}
@@ -652,93 +674,22 @@ sensor:
     name: Panel Wi-Fi
     update_interval: 60s
 
-  - platform: homeassistant
-    id: ha_cat_count
-    entity_id: sensor.epaper_category_count
-    on_value:
-      then:
-        - lambda: |-
-            if (!std::isnan(x) && x > 0) {
-              int n = (int)x;
-              id(cat_count) = n;
-              if (id(cat_idx) >= n) id(cat_idx) = 0;
-            }
-
 text_sensor:
   - platform: wifi_info
     ip_address:
       id: wifi_ip
       name: Panel IP
 
-  - platform: homeassistant
-    id: ha_cat_offsets
-    entity_id: sensor.epaper_category_offsets
-    on_value:
-      then:
-        - lambda: |-
-            std::vector<int> new_offsets;
-            const char *p = x.c_str();
-            while (*p) {
-              while (*p == ' ' || *p == ',') p++;
-              if (!*p) break;
-              char *end;
-              long val = strtol(p, &end, 10);
-              if (p == end) break;
-              new_offsets.push_back((int)val);
-              p = end;
-            }
-            if (!new_offsets.empty()) {
-              id(cat_offsets) = new_offsets;
-            }
-
-  - platform: homeassistant
-    id: ha_cat_sizes
-    entity_id: sensor.epaper_category_sizes
-    on_value:
-      then:
-        - lambda: |-
-            std::vector<int> new_sizes;
-            const char *p = x.c_str();
-            while (*p) {
-              while (*p == ' ' || *p == ',') p++;
-              if (!*p) break;
-              char *end;
-              long val = strtol(p, &end, 10);
-              if (p == end) break;
-              new_sizes.push_back((int)val);
-              p = end;
-            }
-            if (!new_sizes.empty()) {
-              id(cat_sizes) = new_sizes;
-            }
-
-  - platform: homeassistant
-    id: ha_cat_pill_widths
-    entity_id: sensor.epaper_category_pill_widths
-    on_value:
-      then:
-        - lambda: |-
-            std::vector<int> new_pws;
-            const char *p = x.c_str();
-            while (*p) {
-              while (*p == ' ' || *p == ',') p++;
-              if (!*p) break;
-              char *end;
-              long val = strtol(p, &end, 10);
-              if (p == end) break;
-              new_pws.push_back((int)val);
-              p = end;
-            }
-            if (!new_pws.empty()) {
-              id(cat_pill_widths) = new_pws;
-            }
-
 script:
   - id: redraw
     mode: restart
     then:
       - delay: 80ms
-      - component.update: epd
+      - if:
+          condition:
+            lambda: 'return !id(downloading_frames);'
+          then:
+            - component.update: epd
 
   - id: refetch
     mode: single
@@ -747,6 +698,7 @@ script:
           condition:
             wifi.connected:
           timeout: 30s
+      - lambda: 'id(downloading_frames) = true;'
       - component.update: frames
 
 number:
@@ -794,7 +746,6 @@ interval:
                               int p = off + id(sub_idx);
                               if (p < id(page_count)) id(page) = p;
                             }
-                        - script.execute: redraw
                       else:
                         - lambda: |-
                             int cats = id(cat_count) > 0 ? id(cat_count) : 1;
@@ -803,7 +754,6 @@ interval:
                             id(sub_mode) = false;
                             int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
                             if (off < id(page_count)) id(page) = off;
-                        - script.execute: redraw
             - script.execute: refetch
 
 # ---------------------------------------------------------------------------

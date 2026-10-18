@@ -430,6 +430,11 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
 
     is_wide = (w >= h)
 
+    try:
+        fscale = max(0.6, min(1.8, float(el.get("font_scale") or el.get("scale") or 1.0)))
+    except (ValueError, TypeError):
+        fscale = 1.0
+
     # 1 Item: Hero Card
     if n == 1:
         it = active_items[0]
@@ -438,40 +443,41 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
         d.rounded_rectangle([(x, y), (x + w, y + h)], radius=12, outline=T.BLACK, width=2)
         if is_wide:
             if hide_txt:
-                isz = req_icon_sz or min(110, h - 36)
+                isz = req_icon_sz or min(120, h - 32)
                 _draw_icon_glyph(d, it["icon"], x + w // 2, y + h // 2, isz)
             else:
-                isz = req_icon_sz or min(88, h - 36)
+                isz = req_icon_sz or min(96, h - 32)
                 _draw_icon_glyph(d, it["icon"], x + 24 + isz // 2, y + h // 2, isz)
                 tx = x + 24 + isz + 24
-                name_f = T.font(32, bold=True)
+                name_sz = max(18, min(52, int(36 * fscale)))
+                name_f = T.font(name_sz, bold=True)
                 name_txt = _fit_text(it["name"], w - isz - 210, name_f)
-                d.text((tx, y + h // 2 - (14 if sec else 0)), name_txt, font=name_f, fill=T.BLACK, anchor="lm")
+                d.text((tx, y + h // 2 - (int(16 * fscale) if sec else 0)), name_txt, font=name_f, fill=T.BLACK, anchor="lm")
                 if sec:
-                    sec_f = T.font(18, bold=False)
-                    d.text((tx, y + h // 2 + 18), sec, font=sec_f, fill=T.BLACK, anchor="lm")
-            bw, bh = 84, 28
+                    sec_f = T.font(max(13, min(32, int(20 * fscale))), bold=False)
+                    d.text((tx, y + h // 2 + int(20 * fscale)), sec, font=sec_f, fill=T.BLACK, anchor="lm")
+            bw, bh = 90, 32
             bx0 = x + w - bw - 24
             by0 = y + (h - bh) // 2
             d.rounded_rectangle([(bx0, by0), (bx0 + bw, by0 + bh)], radius=6, fill=T.BLACK)
-            d.text((bx0 + bw // 2, by0 + bh // 2), "ACTIVE", font=T.font(13, bold=True), fill=T.WHITE, anchor="mm")
+            d.text((bx0 + bw // 2, by0 + bh // 2), "ACTIVE", font=T.font(14, bold=True), fill=T.WHITE, anchor="mm")
         else:
             mid_y = y + h // 2
             if hide_txt:
-                isz = req_icon_sz or min(100, w // 2)
+                isz = req_icon_sz or min(108, w // 2)
                 _draw_icon_glyph(d, it["icon"], x + w // 2, mid_y, isz)
             else:
-                isz = req_icon_sz or min(80, w // 3)
+                isz = req_icon_sz or min(84, w // 3)
                 _draw_icon_glyph(d, it["icon"], x + w // 2, mid_y - (50 if sec else 30), isz)
-                name_f = T.font(28, bold=True)
+                name_f = T.font(max(18, min(44, int(30 * fscale))), bold=True)
                 name_txt = _fit_text(it["name"], w - 32, name_f)
                 d.text((x + w // 2, mid_y + (20 if sec else 30)), name_txt, font=name_f, fill=T.BLACK, anchor="mm")
                 if sec:
-                    sec_f = T.font(18, bold=False)
+                    sec_f = T.font(max(13, min(28, int(19 * fscale))), bold=False)
                     d.text((x + w // 2, mid_y + 54), sec, font=sec_f, fill=T.BLACK, anchor="mm")
-            pw, ph = 36, 18
+            pw, ph = 40, 20
             d.rounded_rectangle([(x + w - pw - 10, y + 10), (x + w - 10, y + 10 + ph)], radius=4, fill=T.BLACK)
-            d.text((x + w - 10 - pw // 2, y + 10 + ph // 2), "ON", font=T.font(10, bold=True), fill=T.WHITE, anchor="mm")
+            d.text((x + w - 10 - pw // 2, y + 10 + ph // 2), "ON", font=T.font(11, bold=True), fill=T.WHITE, anchor="mm")
         return
 
     # Multi-card layout mode
@@ -521,9 +527,9 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
         st_txt = str(it.get("state") or "on").upper()
         if len(st_txt) > 6:
             st_txt = st_txt[:6]
-        f_badge = T.font(9, bold=True)
-        bw = max(28, T.text_width(st_txt, f_badge) + 10)
-        ph = 16
+        f_badge = T.font(max(9, min(14, int(11 * fscale))), bold=True)
+        bw = max(32, T.text_width(st_txt, f_badge) + 12)
+        ph = max(18, int(19 * fscale))
         bx0 = cx1 - bw - 6
         by0 = cy0 + 6
         d.rounded_rectangle([(bx0, by0), (bx0 + bw, by0 + ph)], radius=4, fill=T.BLACK)
@@ -538,43 +544,48 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
             if req_icon_sz:
                 isz = min(req_icon_sz, max_avail)
             else:
-                isz = min(80, max(42, int(min(cw_i, ch_i) * 0.62)))
+                isz = min(84, max(44, int(min(cw_i, ch_i) * 0.64)))
             _draw_icon_glyph(d, it["icon"], cx0 + cw_i // 2, cy0 + ch_i // 2, isz)
         else:
             # Icon + Labels
             if cw_i > ch_i * 1.25:
                 # Horizontal orientation (wide card)
-                max_avail = ch_i - 22
+                max_avail = ch_i - 20
                 if req_icon_sz:
                     isz = min(req_icon_sz, max_avail)
                 else:
-                    isz = min(54, max(36, ch_i - 32))
+                    isz = min(60, max(38, ch_i - 28))
                 _draw_icon_glyph(d, it["icon"], cx0 + 14 + isz // 2, cy0 + ch_i // 2, isz)
                 tx = cx0 + 14 + isz + 12
-                name_f = T.font(min(22, max(15, cw_i // 13)), bold=True)
+                base_name_sz = min(26, max(17, cw_i // 11))
+                name_f = T.font(max(13, min(36, int(base_name_sz * fscale))), bold=True)
                 avail_tw = max(30, bx0 - tx - 6)
                 name_txt = _fit_text(it["name"], avail_tw, name_f)
-                d.text((tx, cy0 + ch_i // 2 - (10 if sec else 0)), name_txt, font=name_f, fill=T.BLACK, anchor="lm")
+                d.text((tx, cy0 + ch_i // 2 - (int(11 * fscale) if sec else 0)), name_txt, font=name_f, fill=T.BLACK, anchor="lm")
                 if sec:
-                    sec_f = T.font(min(14, max(11, cw_i // 18)), bold=False)
-                    d.text((tx, cy0 + ch_i // 2 + 13), sec, font=sec_f, fill=T.BLACK, anchor="lm")
+                    base_sec_sz = min(16, max(12, cw_i // 16))
+                    sec_f = T.font(max(10, min(24, int(base_sec_sz * fscale))), bold=False)
+                    d.text((tx, cy0 + ch_i // 2 + int(14 * fscale)), sec, font=sec_f, fill=T.BLACK, anchor="lm")
             else:
                 # Vertical orientation (square/tall card)
-                max_avail = min(cw_i - 18, int(ch_i * 0.45))
+                max_avail = min(cw_i - 18, int(ch_i * 0.46))
                 if req_icon_sz:
                     isz = min(req_icon_sz, max_avail)
                 else:
-                    isz = min(50, max(32, int(cw_i * 0.38)))
+                    isz = min(56, max(34, int(cw_i * 0.40)))
 
                 mid_x = cx0 + cw_i // 2
-                icon_y = cy0 + ch_i * (0.33 if sec else 0.38)
+                icon_y = cy0 + ch_i * (0.32 if sec else 0.38)
                 _draw_icon_glyph(d, it["icon"], mid_x, icon_y, isz)
-                name_f = T.font(min(18, max(14, cw_i // 10)), bold=True)
-                name_txt = _fit_text(it["name"], cw_i - 16, name_f)
-                d.text((mid_x, cy0 + ch_i * (0.68 if sec else 0.74)), name_txt, font=name_f, fill=T.BLACK, anchor="mm")
+                base_name_sz = min(22, max(15, cw_i // 9))
+                name_f = T.font(max(12, min(32, int(base_name_sz * fscale))), bold=True)
+                name_txt = _fit_text(it["name"], cw_i - 14, name_f)
+                d.text((mid_x, cy0 + ch_i * (0.67 if sec else 0.74)), name_txt, font=name_f, fill=T.BLACK, anchor="mm")
                 if sec:
-                    sec_f = T.font(min(13, max(10, cw_i // 13)), bold=False)
+                    base_sec_sz = min(15, max(11, cw_i // 12))
+                    sec_f = T.font(max(10, min(22, int(base_sec_sz * fscale))), bold=False)
                     d.text((mid_x, cy0 + ch_i * 0.86), sec, font=sec_f, fill=T.BLACK, anchor="mm")
+
 
 def _parse_val_json(raw_val):
     if raw_val is None:
@@ -589,8 +600,31 @@ def _parse_val_json(raw_val):
     return None
 
 
+def _font_scale(el) -> float:
+    try:
+        return max(0.6, min(1.8, float(el.get("font_scale") or el.get("scale") or 1.0)))
+    except (ValueError, TypeError):
+        return 1.0
+
+
+def _s(px: int, scale: float, min_px: int = 9, max_px: int = 120) -> int:
+    return max(min_px, min(max_px, int(round(px * scale))))
+
+
+def _fit_font(text: str, max_w: int, target_sz: int, min_sz: int = 11, bold: bool = True):
+    """Return the largest font <= target_sz (>= min_sz) that fits text within max_w."""
+    sz = max(min_sz, int(target_sz))
+    while sz > min_sz:
+        f = T.font(sz, bold=bold)
+        if T.text_width(str(text), f) <= max_w:
+            return f
+        sz -= 1
+    return T.font(min_sz, bold=bold)
+
+
 def _draw_calendar_month(img, d, el, raw_val, display=None):
     x, y, w, h = _clamp_box(el, 360, 240, display=display)
+    fscale = _font_scale(el)
     show_border = el.get("show_border") not in (False, "false", 0, "0")
     if show_border:
         d.rounded_rectangle([(x, y), (x + w, y + h)], radius=12, outline=T.BLACK, width=1)
@@ -636,41 +670,44 @@ def _draw_calendar_month(img, d, el, raw_val, display=None):
                 pass
 
     show_header = el.get("show_header") not in (False, "false", 0, "0")
-    header_h = min(32, max(20, h // 8)) if show_header else 0
+    header_h = min(36, max(22, int(h * 0.14))) if show_header else 0
 
     if show_header:
         month_name = calendar.month_name[month].upper()
         header_text = f"{month_name} {year}"
-        header_f = T.font(min(20, max(13, int(header_h * 0.72))), bold=True)
+        header_sz = _s(min(24, max(15, int(header_h * 0.76))), fscale, 13, 36)
+        header_f = _fit_font(header_text, w - 20, header_sz, min_sz=12, bold=True)
         d.text((x + w // 2, y + header_h // 2), header_text, font=header_f, fill=T.BLACK, anchor="mm")
 
     show_weekdays = el.get("show_weekdays") not in (False, "false", 0, "0")
     col_w = w / 7.0
 
     if show_weekdays:
-        weekday_h = min(20, max(14, int(header_h * 0.6 if header_h else 18)))
+        weekday_h = min(24, max(16, int(header_h * 0.65 if header_h else 20)))
         day_names_long = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"] if first_weekday == 0 else ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
         day_names_short = ["M", "T", "W", "T", "F", "S", "S"] if first_weekday == 0 else ["S", "M", "T", "W", "T", "F", "S"]
         use_long = col_w >= 34
         day_labels = day_names_long if use_long else day_names_short
-        wf = T.font(min(13, max(9, int(col_w * 0.3))), bold=True)
+        wf_sz = _s(min(16, max(11, int(col_w * 0.34))), fscale, 9, 22)
+        wf = T.font(wf_sz, bold=True)
         wy = y + header_h + 1
         for c_idx, label in enumerate(day_labels):
             cx = x + int((c_idx + 0.5) * col_w)
             d.text((cx, wy + weekday_h // 2), label, font=wf, fill=T.BLACK, anchor="mm")
-        div_y = wy + weekday_h + 1
+        div_y = wy + weekday_h + 2
         d.line([(x + 6, div_y), (x + w - 6, div_y)], fill=T.BLACK, width=1)
-        grid_y = div_y + 4
+        grid_y = div_y + 3
     else:
         grid_y = y + header_h + 4
 
     c = calendar.Calendar(firstweekday=first_weekday)
     weeks = c.monthdayscalendar(year, month)
     num_rows = len(weeks)
-    grid_h = max(10, y + h - grid_y - 4)
+    grid_h = max(10, y + h - grid_y - 2)
     row_h = grid_h / float(num_rows)
-    cell_f_sz = min(19, max(11, int(min(col_w * 0.45, row_h * 0.52))))
-    font_day = T.font(cell_f_sz, bold=False)
+    base_cell_sz = min(24, max(13, int(min(col_w * 0.52, row_h * 0.64))))
+    cell_f_sz = _s(base_cell_sz, fscale, 11, int(min(col_w * 0.72, row_h * 0.82)))
+    font_day = T.font(cell_f_sz, bold=True)
     font_day_today = T.font(cell_f_sz, bold=True)
 
     for r_idx, week in enumerate(weeks):
@@ -683,7 +720,7 @@ def _draw_calendar_month(img, d, el, raw_val, display=None):
             has_event = day in event_days
 
             if is_today:
-                rad = int(min(col_w * 0.4, row_h * 0.4))
+                rad = int(min(col_w * 0.44, row_h * 0.46))
                 d.ellipse([(cx - rad, cy - rad), (cx + rad, cy + rad)], fill=T.BLACK)
                 d.text((cx, cy), str(day), font=font_day_today, fill=T.WHITE, anchor="mm")
                 if has_event:
@@ -696,12 +733,14 @@ def _draw_calendar_month(img, d, el, raw_val, display=None):
 
 def _draw_calendar_agenda(img, d, el, raw_val, display=None):
     x, y, w, h = _clamp_box(el, 375, 250, display=display)
+    fscale = _font_scale(el)
     show_border = el.get("show_border") not in (False, "false", 0, "0")
     if show_border:
         d.rounded_rectangle([(x, y), (x + w, y + h)], radius=12, outline=T.BLACK, width=1)
 
     title = str(el.get("title") or "Upcoming Events").upper()
-    d.text((x + 14, y + 14), title, font=T.font(12, bold=True), fill=T.BLACK, anchor="lm")
+    hdr_f = T.font(_s(15, fscale, 11, 24), bold=True)
+    d.text((x + 14, y + 16), title, font=hdr_f, fill=T.BLACK, anchor="lm")
 
     events = []
     val_parsed = _parse_val_json(raw_val)
@@ -726,19 +765,20 @@ def _draw_calendar_agenda(img, d, el, raw_val, display=None):
         ]
 
     count_badge = f"{len(events)} EVENTS" if events else "NONE"
-    bf = T.font(9, bold=True)
-    bw = T.text_width(count_badge, bf) + 12
-    d.rounded_rectangle([(x + w - bw - 14, y + 6), (x + w - 14, y + 22)], radius=4, fill=T.BLACK)
-    d.text((x + w - 14 - bw // 2, y + 14), count_badge, font=bf, fill=T.WHITE, anchor="mm")
-    d.line([(x + 10, y + 28), (x + w - 10, y + 28)], fill=T.BLACK, width=1)
+    bf = T.font(_s(11, fscale, 9, 18), bold=True)
+    bw = T.text_width(count_badge, bf) + 14
+    d.rounded_rectangle([(x + w - bw - 14, y + 6), (x + w - 14, y + 26)], radius=4, fill=T.BLACK)
+    d.text((x + w - 14 - bw // 2, y + 16), count_badge, font=bf, fill=T.WHITE, anchor="mm")
+    d.line([(x + 10, y + 32), (x + w - 10, y + 32)], fill=T.BLACK, width=1)
 
     if not events:
-        d.text((x + w // 2, y + h // 2), "No upcoming events scheduled", font=T.font(13, bold=False), fill=T.BLACK, anchor="mm")
+        d.text((x + w // 2, y + h // 2), "No upcoming events scheduled", font=T.font(_s(16, fscale, 12, 26), bold=True), fill=T.BLACK, anchor="mm")
         return
 
-    list_y = y + 34
-    avail_h = (y + h - 10) - list_y
+    list_y = y + 36
+    avail_h = (y + h - 8) - list_y
     max_items = max(1, min(6, int(el.get("max_events", 4))))
+    show_sub = el.get("show_sub") not in (False, "false", 0, "0")
     display_events = events[:max_items]
     item_h = avail_h // len(display_events)
 
@@ -773,35 +813,37 @@ def _draw_calendar_agenda(img, d, el, raw_val, display=None):
             else:
                 dt_str = "EVENT"
 
-        df = T.font(10, bold=True)
-        pill_w = max(52, T.text_width(dt_str, df) + 12)
-        pill_h = 18
+        df = T.font(_s(12, fscale, 9, 20), bold=True)
+        pill_w = max(58, T.text_width(dt_str, df) + 14)
+        pill_h = min(item_h - 6, max(20, _s(22, fscale, 18, 32)))
         py0 = iy_mid - pill_h // 2
         d.rounded_rectangle([(x + 12, py0), (x + 12 + pill_w, py0 + pill_h)], radius=4, fill=T.BLACK)
         d.text((x + 12 + pill_w // 2, iy_mid), dt_str, font=df, fill=T.WHITE, anchor="mm")
 
         # Title
         cal_badge = ev.get("cal_badge")
-        title_x = x + 12 + pill_w + 10
+        title_x = x + 12 + pill_w + 12
         title_w = (x + w - 14) - title_x
         if cal_badge:
-            cbf = T.font(9, bold=True)
-            cb_w = max(24, T.text_width(cal_badge, cbf) + 8)
-            d.rounded_rectangle([(x + w - 14 - cb_w, iy_mid - 8), (x + w - 14, iy_mid + 8)], radius=3, outline=T.BLACK, width=1)
+            cbf = T.font(_s(10, fscale, 8, 16), bold=True)
+            cb_w = max(28, T.text_width(cal_badge, cbf) + 10)
+            d.rounded_rectangle([(x + w - 14 - cb_w, iy_mid - 9), (x + w - 14, iy_mid + 9)], radius=3, outline=T.BLACK, width=1)
             d.text((x + w - 14 - cb_w // 2, iy_mid), cal_badge, font=cbf, fill=T.BLACK, anchor="mm")
             title_w -= (cb_w + 8)
 
-        tf = T.font(min(15, max(12, int(item_h * 0.32))), bold=True)
+        sub_txt = (ev.get("sub") or ev.get("location") or "") if show_sub else ""
+        base_tf_sz = min(22, max(14, int(item_h * (0.40 if sub_txt else 0.52))))
+        tf = T.font(_s(base_tf_sz, fscale, 12, 34), bold=True)
         summary = ev.get("summary") or ev.get("message") or "Untitled Event"
         title_txt = _fit_text(summary, title_w, tf)
 
-        sub_txt = ev.get("sub") or ev.get("location") or ""
-        d.text((title_x, iy_mid - (7 if sub_txt else 0)), title_txt, font=tf, fill=T.BLACK, anchor="lm")
+        d.text((title_x, iy_mid - (int(item_h * 0.18) if sub_txt else 0)), title_txt, font=tf, fill=T.BLACK, anchor="lm")
 
         if sub_txt:
-            sf = T.font(min(12, max(10, int(item_h * 0.24))), bold=False)
+            base_sf_sz = min(16, max(11, int(item_h * 0.28)))
+            sf = T.font(_s(base_sf_sz, fscale, 10, 24), bold=False)
             sub_fit = _fit_text(sub_txt, title_w, sf)
-            d.text((title_x, iy_mid + 9), sub_fit, font=sf, fill=T.BLACK, anchor="lm")
+            d.text((title_x, iy_mid + int(item_h * 0.22)), sub_fit, font=sf, fill=T.BLACK, anchor="lm")
 
         if idx < len(display_events) - 1:
             div_y = iy0 + item_h - 1
@@ -810,25 +852,52 @@ def _draw_calendar_agenda(img, d, el, raw_val, display=None):
 
 _WEATHER_ICON_MAP = {
     "clear-night": "mdi:weather-night",
+    "clear_night": "mdi:weather-night",
     "cloudy": "mdi:weather-cloudy",
     "fog": "mdi:weather-fog",
     "hail": "mdi:weather-hail",
     "lightning": "mdi:weather-lightning",
     "lightning-rainy": "mdi:weather-lightning-rainy",
+    "lightning_rainy": "mdi:weather-lightning-rainy",
     "partlycloudy": "mdi:weather-partly-cloudy",
     "pouring": "mdi:weather-pouring",
     "rainy": "mdi:weather-rainy",
     "snowy": "mdi:weather-snowy",
     "snowy-rainy": "mdi:weather-snowy-rainy",
+    "snowy_rainy": "mdi:weather-snowy-rainy",
     "sunny": "mdi:weather-sunny",
     "windy": "mdi:weather-windy",
     "windy-variant": "mdi:weather-windy-variant",
+    "windy_variant": "mdi:weather-windy-variant",
     "exceptional": "mdi:alert-circle-outline",
+}
+
+_WEATHER_LABEL_MAP = {
+    "clear-night": "Clear Night",
+    "clear_night": "Clear Night",
+    "cloudy": "Cloudy",
+    "fog": "Foggy",
+    "hail": "Hail",
+    "lightning": "Lightning",
+    "lightning-rainy": "Thunderstorm",
+    "lightning_rainy": "Thunderstorm",
+    "partlycloudy": "Partly Cloudy",
+    "pouring": "Heavy Rain",
+    "rainy": "Rainy",
+    "snowy": "Snowy",
+    "snowy-rainy": "Sleet",
+    "snowy_rainy": "Sleet",
+    "sunny": "Sunny",
+    "windy": "Windy",
+    "windy-variant": "Windy & Cloudy",
+    "windy_variant": "Windy & Cloudy",
+    "exceptional": "Severe Alert",
 }
 
 
 def _draw_weather_forecast(img, d, el, raw_val, display=None):
     x, y, w, h = _clamp_box(el, 752, 235, display=display)
+    fscale = _font_scale(el)
     show_border = el.get("show_border") not in (False, "false", 0, "0")
     if show_border:
         d.rounded_rectangle([(x, y), (x + w, y + h)], radius=12, outline=T.BLACK, width=1)
@@ -852,6 +921,7 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
         }
 
     cond = str(data.get("condition") or "partlycloudy").lower()
+    cond_label = _WEATHER_LABEL_MAP.get(cond, cond.replace("-", " ").replace("_", " ").title())
     temp = data.get("temperature", "--")
     unit = str(data.get("unit") or "°C")
     humidity = data.get("humidity")
@@ -860,67 +930,120 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
     forecast = data.get("forecast") or []
 
     cur_icon = _WEATHER_ICON_MAP.get(cond, "mdi:weather-cloudy")
+    show_details = el.get("show_details") not in (False, "false", 0, "0")
+    try:
+        max_f_days = max(1, min(6, int(el.get("forecast_days") or 4)))
+    except (ValueError, TypeError):
+        max_f_days = 4
+    layout_mode = str(el.get("layout_mode") or "auto").lower()
 
-    # Split vs Stacked mode: split when wide landscape, stacked when portrait or tall card
-    is_split = (w >= 480) or (w >= 340 and w >= h)
-    if is_split:
-        hero_w = int(w * 0.42)
-        fore_x = x + hero_w
-        fore_w = w - hero_w
-
-        hero_mid_y = y + h // 2 - 14
-        isz = min(68, max(42, h // 3))
-        _draw_icon_glyph(d, cur_icon, x + 24 + isz // 2, hero_mid_y, isz)
-
-        tx = x + 24 + isz + 16
+    # Determine layout mode: split, stacked, hero_only, or forecast_only
+    if layout_mode == "hero_only":
+        hero_mid_y = y + h // 2 - (16 if show_details else 0)
+        isz = min(110, max(56, int(h * 0.48)))
+        _draw_icon_glyph(d, cur_icon, x + 32 + isz // 2, hero_mid_y, isz)
+        tx = x + 32 + isz + 24
+        avail_hero_w = max(80, (x + w - 24) - tx)
         temp_str = f"{temp}{unit}" if str(temp).endswith("°") or unit.startswith("°") else f"{temp}°"
-        tf = T.font(min(42, max(26, h // 5)), bold=True)
-        d.text((tx, hero_mid_y - 10), temp_str, font=tf, fill=T.BLACK, anchor="lm")
+        tf = _fit_font(temp_str, avail_hero_w, _s(min(76, max(36, int(h * 0.36))), fscale, 28, 110), min_sz=24, bold=True)
+        d.text((tx, hero_mid_y - int(h * 0.08)), temp_str, font=tf, fill=T.BLACK, anchor="lm")
+        cf = _fit_font(cond_label, avail_hero_w, _s(min(28, max(16, int(h * 0.13))), fscale, 14, 42), min_sz=13, bold=True)
+        d.text((tx, hero_mid_y + int(h * 0.14)), cond_label, font=cf, fill=T.BLACK, anchor="lm")
+        if show_details:
+            chip_parts = []
+            if humidity is not None:
+                chip_parts.append(f"HUM {humidity}%")
+            if wind is not None:
+                chip_parts.append(f"WIND {wind} {wind_unit}")
+            if forecast:
+                today_f = forecast[0]
+                th, tl = today_f.get("temperature"), today_f.get("templow")
+                if th is not None and tl is not None:
+                    chip_parts.append(f"H {th:.0f}° · L {tl:.0f}°")
+            if chip_parts:
+                chip_text = "   •   ".join(chip_parts)
+                mf = _fit_font(chip_text, w - 48, _s(16, fscale, 12, 26), min_sz=11, bold=True)
+                d.text((x + 24, y + h - 22), chip_text, font=mf, fill=T.BLACK, anchor="lm")
+        return
 
-        cond_str = cond.replace("-", " ").title()
-        cf = T.font(min(17, max(13, h // 13)), bold=True)
-        d.text((tx, hero_mid_y + 18), cond_str, font=cf, fill=T.BLACK, anchor="lm")
+    is_split = (layout_mode == "split") or (layout_mode == "auto" and ((w >= 480) or (w >= 340 and w >= h)))
+    if layout_mode == "forecast_only":
+        is_split = True
 
-        chips_y = y + h - 22
-        chip_parts = []
-        if humidity is not None:
-            chip_parts.append(f"HUM: {humidity}%")
-        if wind is not None:
-            chip_parts.append(f"WIND: {wind} {wind_unit}")
-        if forecast:
-            today_f = forecast[0]
-            th = today_f.get("temperature")
-            tl = today_f.get("templow")
-            if th is not None and tl is not None:
-                chip_parts.append(f"H: {th:.0f}°  L: {tl:.0f}°")
-            pop = today_f.get("precipitation_probability")
-            precip = today_f.get("precipitation")
-            if pop is not None and float(pop) > 0:
-                chip_parts.append(f"RAIN: {float(pop):.0f}%")
-            elif precip is not None and float(precip) > 0:
-                chip_parts.append(f"RAIN: {float(precip):.1f}mm")
+    if is_split:
+        if layout_mode == "forecast_only":
+            hero_w = 0
+            fore_x = x + 8
+            fore_w = w - 16
+        else:
+            hero_w = int(w * 0.42)
+            fore_x = x + hero_w
+            fore_w = w - hero_w
 
-        if chip_parts:
-            chip_text = "   •   ".join(chip_parts)
-            avail_chip_w = fore_x - x - 36
-            csz = 11
-            if T.text_width(chip_text, T.font(csz, bold=True)) > avail_chip_w:
-                csz = 10
-            if T.text_width(chip_text, T.font(csz, bold=True)) > avail_chip_w:
-                csz = 9
-            mf = T.font(csz, bold=True)
-            d.text((x + 20, chips_y), chip_text, font=mf, fill=T.BLACK, anchor="lm")
+            hero_mid_y = y + int(h * (0.40 if show_details else 0.50))
+            isz = min(84, max(48, int(h * 0.38)))
+            _draw_icon_glyph(d, cur_icon, x + 18 + isz // 2, hero_mid_y, isz)
 
-        # Vertical divider
-        d.line([(fore_x, y + 14), (fore_x, y + h - 14)], fill=T.BLACK, width=1)
+            tx = x + 18 + isz + 14
+            avail_hero_w = max(60, fore_x - tx - 12)
+            temp_str = f"{temp}{unit}" if str(temp).endswith("°") or unit.startswith("°") else f"{temp}°"
+            target_tf_sz = _s(min(56, max(32, int(h * 0.27))), fscale, 24, 88)
+            tf = _fit_font(temp_str, avail_hero_w, target_tf_sz, min_sz=22, bold=True)
+            d.text((tx, hero_mid_y - int(h * 0.07)), temp_str, font=tf, fill=T.BLACK, anchor="lm")
 
-        # Forecast strip (4 days)
-        display_forecast = forecast[1:5] if len(forecast) > 4 else forecast[:4]
+            target_cf_sz = _s(min(22, max(15, int(h * 0.105))), fscale, 13, 34)
+            cf = _fit_font(cond_label, avail_hero_w, target_cf_sz, min_sz=12, bold=True)
+            d.text((tx, hero_mid_y + int(h * 0.13)), cond_label, font=cf, fill=T.BLACK, anchor="lm")
+
+            if show_details:
+                line1_parts = []
+                line2_parts = []
+                if humidity is not None:
+                    line1_parts.append(f"HUM {humidity}%")
+                if wind is not None:
+                    line1_parts.append(f"WIND {wind} {wind_unit}")
+                if forecast:
+                    today_f = forecast[0]
+                    th = today_f.get("temperature")
+                    tl = today_f.get("templow")
+                    if th is not None and tl is not None:
+                        line2_parts.append(f"H {th:.0f}° / L {tl:.0f}°")
+                    pop = today_f.get("precipitation_probability")
+                    precip = today_f.get("precipitation")
+                    if pop is not None and float(pop) > 0:
+                        line2_parts.append(f"RAIN {float(pop):.0f}%")
+                    elif precip is not None and float(precip) > 0:
+                        line2_parts.append(f"RAIN {float(precip):.1f}mm")
+
+                avail_chip_w = fore_x - x - 32
+                combined = "  •  ".join(line1_parts + line2_parts)
+                target_chip_sz = _s(15, fscale, 11, 24)
+                if line2_parts and h >= 165:
+                    # Two clean, large detail lines instead of 1 squeezed microscopic line
+                    l1_txt = "   •   ".join(line1_parts) if line1_parts else "   •   ".join(line2_parts)
+                    l2_txt = "   •   ".join(line2_parts) if line1_parts else ""
+                    mf1 = _fit_font(l1_txt, avail_chip_w, target_chip_sz, min_sz=11, bold=True)
+                    d.text((x + 18, y + h - (36 if l2_txt else 20)), l1_txt, font=mf1, fill=T.BLACK, anchor="lm")
+                    if l2_txt:
+                        mf2 = _fit_font(l2_txt, avail_chip_w, target_chip_sz, min_sz=11, bold=True)
+                        d.text((x + 18, y + h - 16), l2_txt, font=mf2, fill=T.BLACK, anchor="lm")
+                elif combined:
+                    mf = _fit_font(combined, avail_chip_w, target_chip_sz, min_sz=10, bold=True)
+                    d.text((x + 18, y + h - 20), combined, font=mf, fill=T.BLACK, anchor="lm")
+
+            # Vertical divider
+            d.line([(fore_x, y + 12), (fore_x, y + h - 12)], fill=T.BLACK, width=1)
+
+        # Forecast strip
+        display_forecast = forecast[1:1 + max_f_days] if len(forecast) > max_f_days else forecast[:max_f_days]
         n_days = len(display_forecast)
         if n_days > 0:
             day_w = fore_w / float(n_days)
             for i, fcast in enumerate(display_forecast):
                 cx = fore_x + int((i + 0.5) * day_w)
+                if i > 0:
+                    div_x = fore_x + int(i * day_w)
+                    d.line([(div_x, y + 18), (div_x, y + h - 18)], fill=T.BLACK, width=1)
                 dt_raw = fcast.get("datetime")
                 day_name = f"DAY {i+1}"
                 if dt_raw:
@@ -930,50 +1053,63 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
                     except Exception:
                         pass
 
-                d.text((cx, y + 24), day_name, font=T.font(12, bold=True), fill=T.BLACK, anchor="mm")
+                day_f = _fit_font(day_name, int(day_w - 8), _s(17, fscale, 12, 26), min_sz=11, bold=True)
+                d.text((cx, y + int(h * 0.14)), day_name, font=day_f, fill=T.BLACK, anchor="mm")
+
                 f_cond = str(fcast.get("condition") or "cloudy").lower()
                 f_icon = _WEATHER_ICON_MAP.get(f_cond, "mdi:weather-cloudy")
-                _draw_icon_glyph(d, f_icon, cx, y + h // 2 - 2, 34)
+                f_isz = min(54, max(34, int(min(day_w * 0.50, h * 0.25))))
+                _draw_icon_glyph(d, f_icon, cx, y + int(h * 0.45), f_isz)
 
                 hi = fcast.get("temperature")
                 lo = fcast.get("templow")
-                hl_str = f"{hi:.0f}° / {lo:.0f}°" if (hi is not None and lo is not None) else f"{hi or lo or '--'}°"
-                d.text((cx, y + h - 34), hl_str, font=T.font(12, bold=True), fill=T.BLACK, anchor="mm")
+                hl_str = f"{hi:.0f}°/{lo:.0f}°" if (hi is not None and lo is not None) else f"{hi or lo or '--'}°"
+                hl_f = _fit_font(hl_str, int(day_w - 6), _s(19, fscale, 13, 30), min_sz=12, bold=True)
+                d.text((cx, y + int(h * 0.76)), hl_str, font=hl_f, fill=T.BLACK, anchor="mm")
 
                 pop = fcast.get("precipitation_probability")
                 precip = fcast.get("precipitation")
+                rain_str = ""
                 if pop is not None and float(pop) > 0:
-                    d.text((cx, y + h - 18), f"{float(pop):.0f}% rain", font=T.font(10, bold=False), fill=T.BLACK, anchor="mm")
+                    rain_str = f"{float(pop):.0f}% rain"
                 elif precip is not None and float(precip) > 0:
-                    d.text((cx, y + h - 18), f"{float(precip):.1f} mm", font=T.font(10, bold=False), fill=T.BLACK, anchor="mm")
+                    rain_str = f"{float(precip):.1f} mm"
+                if rain_str:
+                    rf = _fit_font(rain_str, int(day_w - 6), _s(14, fscale, 10, 22), min_sz=10, bold=True)
+                    d.text((cx, y + int(h * 0.90)), rain_str, font=rf, fill=T.BLACK, anchor="mm")
         else:
-            d.text((fore_x + fore_w // 2, y + h // 2), "Forecast loading…", font=T.font(13, bold=False), fill=T.BLACK, anchor="mm")
+            d.text((fore_x + fore_w // 2, y + h // 2), "No forecast data", font=T.font(_s(16, fscale, 12, 24), bold=True), fill=T.BLACK, anchor="mm")
     else:
         # Stacked layout (portrait or narrow cards)
-        hero_h = int(h * 0.32)
-        mid_y = y + hero_h // 2 - 8
-        isz = min(54, max(36, hero_h // 2))
-        _draw_icon_glyph(d, cur_icon, x + 36, mid_y, isz)
+        hero_h = int(h * 0.34)
+        mid_y = y + hero_h // 2 - (10 if show_details else 0)
+        isz = min(64, max(40, int(hero_h * 0.55)))
+        _draw_icon_glyph(d, cur_icon, x + 20 + isz // 2, mid_y, isz)
+        tx = x + 20 + isz + 16
         temp_str = f"{temp}{unit}" if str(temp).endswith("°") or unit.startswith("°") else f"{temp}°"
-        d.text((x + 84, mid_y - 10), temp_str, font=T.font(min(38, max(24, int(w * 0.1))), bold=True), fill=T.BLACK, anchor="lm")
-        d.text((x + 84, mid_y + 18), cond.replace("-", " ").title(), font=T.font(15, bold=True), fill=T.BLACK, anchor="lm")
+        tf = _fit_font(temp_str, w - (tx - x) - 16, _s(min(46, max(28, int(w * 0.12))), fscale, 22, 72), min_sz=20, bold=True)
+        d.text((tx, mid_y - 12), temp_str, font=tf, fill=T.BLACK, anchor="lm")
+        cf = _fit_font(cond_label, w - (tx - x) - 16, _s(18, fscale, 13, 28), min_sz=12, bold=True)
+        d.text((tx, mid_y + 18), cond_label, font=cf, fill=T.BLACK, anchor="lm")
 
-        parts = []
-        if humidity is not None:
-            parts.append(f"HUM: {humidity}%")
-        if wind is not None:
-            parts.append(f"WIND: {wind} {wind_unit}")
-        if parts:
-            d.text((x + 20, y + hero_h - 14), "   •   ".join(parts), font=T.font(11, bold=True), fill=T.BLACK, anchor="lm")
+        if show_details:
+            parts = []
+            if humidity is not None:
+                parts.append(f"HUM {humidity}%")
+            if wind is not None:
+                parts.append(f"WIND {wind} {wind_unit}")
+            if parts:
+                mf = _fit_font("   •   ".join(parts), w - 36, _s(14, fscale, 10, 22), min_sz=10, bold=True)
+                d.text((x + 20, y + hero_h - 14), "   •   ".join(parts), font=mf, fill=T.BLACK, anchor="lm")
 
         d.line([(x + 10, y + hero_h), (x + w - 10, y + hero_h)], fill=T.BLACK, width=1)
 
-        display_forecast = forecast[1:5] if len(forecast) > 4 else forecast[:4]
-        n_days = min(4, len(display_forecast))
+        display_forecast = forecast[1:1 + max_f_days] if len(forecast) > max_f_days else forecast[:max_f_days]
+        n_days = min(max_f_days, len(display_forecast))
         if n_days > 0:
-            row_h = (h - hero_h - 14) / float(n_days)
+            row_h = (h - hero_h - 12) / float(n_days)
             for i, fcast in enumerate(display_forecast[:n_days]):
-                ry = y + hero_h + 8 + int(i * row_h)
+                ry = y + hero_h + 6 + int(i * row_h)
                 ry_mid = ry + int(row_h * 0.5)
                 dt_raw = fcast.get("datetime")
                 day_name = f"DAY {i+1}"
@@ -983,13 +1119,14 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
                         day_name = dt.strftime("%A").upper()
                     except Exception:
                         pass
-                d.text((x + 20, ry_mid), day_name, font=T.font(13, bold=True), fill=T.BLACK, anchor="lm")
+                row_f = T.font(_s(16, fscale, 12, 26), bold=True)
+                d.text((x + 20, ry_mid), day_name, font=row_f, fill=T.BLACK, anchor="lm")
                 f_cond = str(fcast.get("condition") or "cloudy").lower()
-                _draw_icon_glyph(d, _WEATHER_ICON_MAP.get(f_cond, "mdi:weather-cloudy"), x + w // 2 - 10, ry_mid, 30)
+                _draw_icon_glyph(d, _WEATHER_ICON_MAP.get(f_cond, "mdi:weather-cloudy"), x + w // 2, ry_mid, min(38, max(26, int(row_h * 0.72))))
                 hi = fcast.get("temperature")
                 lo = fcast.get("templow")
                 hl_str = f"{hi:.0f}° / {lo:.0f}°" if (hi is not None and lo is not None) else f"{hi or lo or '--'}°"
-                d.text((x + w - 20, ry_mid), hl_str, font=T.font(13, bold=True), fill=T.BLACK, anchor="rm")
+                d.text((x + w - 20, ry_mid), hl_str, font=row_f, fill=T.BLACK, anchor="rm")
                 if i < n_days - 1:
                     d.line([(x + 14, ry + int(row_h)), (x + w - 14, ry + int(row_h))], fill=T.BLACK, width=1)
 
@@ -1018,15 +1155,15 @@ def _draw_radar_scope(d, sx, sy, sw, sh, max_r_km, ac_list, tracked_cs=""):
     d.ellipse([(cx - 3, cy - 3), (cx + 3, cy + 3)], fill=T.BLACK)
 
     # Cardinal labels
-    cf = T.font(9, bold=True)
-    d.text((cx, cy - r_scope + 8), "N", font=cf, fill=T.BLACK, anchor="mm")
-    d.text((cx + r_scope - 8, cy), "E", font=cf, fill=T.BLACK, anchor="mm")
-    d.text((cx, cy + r_scope - 8), "S", font=cf, fill=T.BLACK, anchor="mm")
-    d.text((cx - r_scope + 8, cy), "W", font=cf, fill=T.BLACK, anchor="mm")
+    cf = T.font(10, bold=True)
+    d.text((cx, cy - r_scope + 9), "N", font=cf, fill=T.BLACK, anchor="mm")
+    d.text((cx + r_scope - 9, cy), "E", font=cf, fill=T.BLACK, anchor="mm")
+    d.text((cx, cy + r_scope - 9), "S", font=cf, fill=T.BLACK, anchor="mm")
+    d.text((cx - r_scope + 9, cy), "W", font=cf, fill=T.BLACK, anchor="mm")
 
     # Range scale label
-    rf = T.font(8, bold=True)
-    d.text((cx + mid_r + 3, cy - 5), f"{int(max_r_km // 2)}k", font=rf, fill=T.BLACK, anchor="lm")
+    rf = T.font(9, bold=True)
+    d.text((cx + mid_r + 3, cy - 6), f"{int(max_r_km // 2)}k", font=rf, fill=T.BLACK, anchor="lm")
 
     # Plot aircraft blips
     for ac in ac_list[:8]:
@@ -1068,11 +1205,12 @@ def _draw_radar_scope(d, sx, sy, sw, sh, max_r_km, ac_list, tracked_cs=""):
         if cs:
             lx = px + 9 if px >= cx else px - 9
             anchor = "lm" if px >= cx else "rm"
-            d.text((lx, py - 6), cs, font=T.font(9, bold=True), fill=T.BLACK, anchor=anchor)
+            d.text((lx, py - 6), cs, font=T.font(10, bold=True), fill=T.BLACK, anchor=anchor)
 
 
 def _draw_flight_tracker(img, d, el, raw_val, display=None):
     x, y, w, h = _clamp_box(el, 752, 235, display=display)
+    fscale = _font_scale(el)
     show_border = el.get("show_border") not in (False, "false", 0, "0")
     if show_border:
         d.rounded_rectangle([(x, y), (x + w, y + h)], radius=12, outline=T.BLACK, width=1)
@@ -1117,14 +1255,15 @@ def _draw_flight_tracker(img, d, el, raw_val, display=None):
 
     style = str(el.get("style") or "card").lower()
     loc_name = str(el.get("location_name") or el.get("name") or "").strip()
+    show_sub_metrics = el.get("show_sub_metrics") not in (False, "false", 0, "0")
 
     if not aircraft_list:
         mid_x = x + w // 2
         mid_y = y + h // 2
-        _draw_icon_glyph(d, "mdi:radar", mid_x, mid_y - 24, 52)
-        d.text((mid_x, mid_y + 16), "AIRSPACE CLEAR", font=T.font(18, bold=True), fill=T.BLACK, anchor="mm")
+        _draw_icon_glyph(d, "mdi:radar", mid_x, mid_y - 26, 56)
+        d.text((mid_x, mid_y + 16), "AIRSPACE CLEAR", font=T.font(_s(22, fscale, 16, 36), bold=True), fill=T.BLACK, anchor="mm")
         loc_str = f" overhead {loc_name}" if loc_name else " overhead"
-        d.text((mid_x, mid_y + 38), f"No aircraft{loc_str} within {radius} km", font=T.font(12, bold=False), fill=T.BLACK, anchor="mm")
+        d.text((mid_x, mid_y + 42), f"No aircraft{loc_str} within {radius} km", font=T.font(_s(15, fscale, 11, 24), bold=False), fill=T.BLACK, anchor="mm")
         return
 
     sub_idx = int(el.get("sub_index", 0))
@@ -1150,54 +1289,57 @@ def _draw_flight_tracker(img, d, el, raw_val, display=None):
         # Pure Circular PPI Radar Scope
         _draw_radar_scope(d, x + 6, y + 6, w - 12, h - 12, radius, aircraft_list, tracked_cs=callsign)
         hdr_title = f"{loc_name.upper()} RADAR · {radius} KM" if loc_name else f"AIRSPACE RADAR · {radius} KM"
-        d.text((x + 16, y + 16), hdr_title, font=T.font(11, bold=True), fill=T.BLACK, anchor="lm")
+        rf_hdr = T.font(_s(14, fscale, 10, 22), bold=True)
+        d.text((x + 16, y + 18), hdr_title, font=rf_hdr, fill=T.BLACK, anchor="lm")
         target_str = f"TARGET: {callsign} ({dist_km:.1f} KM {bearing})"
         if sub_total > 1:
             target_str = f"[{sub_idx + 1}/{sub_total}] {target_str}"
-        d.text((x + w - 16, y + 16), target_str, font=T.font(11, bold=True), fill=T.BLACK, anchor="rm")
+        d.text((x + w - 16, y + 18), target_str, font=rf_hdr, fill=T.BLACK, anchor="rm")
         return
 
     loc_suffix = f" · {loc_name}" if loc_name else ""
 
     if style == "split" and w >= 480:
         # Split mode: Scope on left, telemetry card on right
-        scope_w = min(h - 10, int(w * 0.38))
+        scope_w = min(h - 10, int(w * 0.36))
         _draw_radar_scope(d, x + 8, y + 8, scope_w, h - 16, radius, aircraft_list, tracked_cs=callsign)
         d.line([(x + scope_w + 14, y + 14), (x + scope_w + 14, y + h - 14)], fill=T.BLACK, width=1)
 
         tx0 = x + scope_w + 26
         tw = w - scope_w - 38
-        top_y = y + 16
-
-        cs_f = T.font(28, bold=True)
-        d.text((tx0, top_y + 14), callsign, font=cs_f, fill=T.BLACK, anchor="lm")
-
-        sub_f = T.font(12, bold=False)
-        sub_title = _fit_text(country, max(40, tw - 120), sub_f)
-        d.text((tx0 + 2, top_y + 36), sub_title, font=sub_f, fill=T.BLACK, anchor="lm")
+        top_y = y + 14
 
         dist_badge = f"{dist_km:.1f} KM {bearing}{loc_suffix}" if dist_km > 0 else (f"OVERHEAD {loc_name}" if loc_name else "OVERHEAD")
-        bf = T.font(10, bold=True)
-        bw = T.text_width(dist_badge, bf) + 14
-        bh = 22
+        bf = T.font(_s(12, fscale, 9, 18), bold=True)
+        bw = T.text_width(dist_badge, bf) + 16
+        bh = 26
         bx1 = x + w - 16
         bx0 = bx1 - bw
         d.rounded_rectangle([(bx0, top_y + 4), (bx1, top_y + 4 + bh)], radius=5, fill=T.BLACK)
         d.text((bx0 + bw // 2, top_y + 4 + bh // 2), dist_badge, font=bf, fill=T.WHITE, anchor="mm")
 
+        avail_cs_w = bx0 - tx0 - 10
         if sub_total > 1:
             pag_str = f"{sub_idx + 1}/{sub_total}"
             pb_w = T.text_width(pag_str, bf) + 12
             pbx1 = bx0 - 6
             pbx0 = pbx1 - pb_w
+            avail_cs_w = pbx0 - tx0 - 10
             d.rounded_rectangle([(pbx0, top_y + 4), (pbx1, top_y + 4 + bh)], radius=5, outline=T.BLACK, width=1)
             d.text((pbx0 + pb_w // 2, top_y + 4 + bh // 2), pag_str, font=bf, fill=T.BLACK, anchor="mm")
 
-        div_y = y + 74
+        cs_f = _fit_font(callsign, max(80, avail_cs_w), _s(34, fscale, 20, 52), min_sz=18, bold=True)
+        d.text((tx0, top_y + 16), callsign, font=cs_f, fill=T.BLACK, anchor="lm")
+
+        sub_f = T.font(_s(15, fscale, 11, 22), bold=False)
+        sub_title = _fit_text(country, max(60, tw - 16), sub_f)
+        d.text((tx0 + 2, top_y + 44), sub_title, font=sub_f, fill=T.BLACK, anchor="lm")
+
+        div_y = y + 78
         d.line([(tx0, div_y), (x + w - 16, div_y)], fill=T.BLACK, width=1)
 
-        cols_y = div_y + 8
-        cols_h = y + h - cols_y - 10
+        cols_y = div_y + 6
+        cols_h = y + h - cols_y - 8
         n_cols = 3
         cw = tw / float(n_cols)
 
@@ -1212,41 +1354,45 @@ def _draw_flight_tracker(img, d, el, raw_val, display=None):
             mid_col_x = col_x + int(cw * 0.5)
             if i > 0:
                 d.line([(col_x, cols_y + 6), (col_x, cols_y + cols_h - 6)], fill=T.BLACK, width=1)
-            d.text((mid_col_x, cols_y + 12), label, font=T.font(9, bold=True), fill=T.BLACK, anchor="mm")
-            d.text((mid_col_x, cols_y + cols_h * 0.50), val_main, font=T.font(16, bold=True), fill=T.BLACK, anchor="mm")
-            d.text((mid_col_x, cols_y + cols_h * 0.82), val_sub, font=T.font(10, bold=False), fill=T.BLACK, anchor="mm")
+            lbl_f = T.font(_s(12, fscale, 9, 18), bold=True)
+            main_f = _fit_font(val_main, int(cw - 12), _s(23, fscale, 15, 38), min_sz=14, bold=True)
+            d.text((mid_col_x, cols_y + int(cols_h * 0.16)), label, font=lbl_f, fill=T.BLACK, anchor="mm")
+            d.text((mid_col_x, cols_y + int(cols_h * (0.52 if show_sub_metrics else 0.60))), val_main, font=main_f, fill=T.BLACK, anchor="mm")
+            if show_sub_metrics:
+                sub_mf = _fit_font(val_sub, int(cw - 12), _s(14, fscale, 10, 22), min_sz=10, bold=False)
+                d.text((mid_col_x, cols_y + int(cols_h * 0.84)), val_sub, font=sub_mf, fill=T.BLACK, anchor="mm")
         return
 
-    # Style: "card" (Original Full-Width Telemetry Card, untouched)
-    top_y = y + 16
-    _draw_icon_glyph(d, "mdi:airplane", x + 30, top_y + 18, 44)
-
-    cs_f = T.font(32, bold=True)
-    d.text((x + 65, top_y + 16), callsign, font=cs_f, fill=T.BLACK, anchor="lm")
-
-    sub_f = T.font(13, bold=False)
-    sub_title = _fit_text(country, max(60, w - 240), sub_f)
-    d.text((x + 67, top_y + 38), sub_title, font=sub_f, fill=T.BLACK, anchor="lm")
+    # Style: "card" (Full-Width Telemetry Card with bold, legible typography)
+    top_y = y + 14
+    _draw_icon_glyph(d, "mdi:airplane", x + 32, top_y + 22, 48)
 
     dist_badge = f"{dist_km:.1f} KM {bearing}{loc_suffix}" if dist_km > 0 else (f"OVERHEAD {loc_name}" if loc_name else "OVERHEAD")
-    bf = T.font(11, bold=True)
-    bw = T.text_width(dist_badge, bf) + 16
-    bh = 24
+    bf = T.font(_s(13, fscale, 10, 20), bold=True)
+    bw = T.text_width(dist_badge, bf) + 18
+    bh = 28
     bx1 = x + w - 20
     bx0 = bx1 - bw
-    d.rounded_rectangle([(bx0, top_y + 6), (bx1, top_y + 6 + bh)], radius=6, fill=T.BLACK)
-    d.text((bx0 + bw // 2, top_y + 6 + bh // 2), dist_badge, font=bf, fill=T.WHITE, anchor="mm")
+    d.rounded_rectangle([(bx0, top_y + 4), (bx1, top_y + 4 + bh)], radius=6, fill=T.BLACK)
+    d.text((bx0 + bw // 2, top_y + 4 + bh // 2), dist_badge, font=bf, fill=T.WHITE, anchor="mm")
 
     if sub_total > 1:
         more_txt = f"FLIGHT {sub_idx + 1} OF {sub_total}"
-        mf = T.font(10, bold=True)
-        d.text((bx1, top_y + 40), more_txt, font=mf, fill=T.BLACK, anchor="rm")
+        mf = T.font(_s(12, fscale, 9, 18), bold=True)
+        d.text((bx1, top_y + 44), more_txt, font=mf, fill=T.BLACK, anchor="rm")
 
-    div_y = y + 76
+    cs_f = _fit_font(callsign, max(100, bx0 - (x + 68) - 12), _s(38, fscale, 24, 58), min_sz=20, bold=True)
+    d.text((x + 68, top_y + 16), callsign, font=cs_f, fill=T.BLACK, anchor="lm")
+
+    sub_f = T.font(_s(16, fscale, 12, 24), bold=False)
+    sub_title = _fit_text(country, max(80, bx0 - (x + 70) - 20), sub_f)
+    d.text((x + 70, top_y + 44), sub_title, font=sub_f, fill=T.BLACK, anchor="lm")
+
+    div_y = y + 78
     d.line([(x + 16, div_y), (x + w - 16, div_y)], fill=T.BLACK, width=1)
 
-    cols_y = div_y + 8
-    cols_h = y + h - cols_y - 10
+    cols_y = div_y + 6
+    cols_h = y + h - cols_y - 8
     n_cols = 4
     cw = (w - 32) / float(n_cols)
 
@@ -1264,13 +1410,18 @@ def _draw_flight_tracker(img, d, el, raw_val, display=None):
         if i > 0:
             d.line([(col_x, cols_y + 6), (col_x, cols_y + cols_h - 6)], fill=T.BLACK, width=1)
 
-        d.text((mid_col_x, cols_y + 14), label, font=T.font(10, bold=True), fill=T.BLACK, anchor="mm")
-        d.text((mid_col_x, cols_y + cols_h * 0.52), val_main, font=T.font(18, bold=True), fill=T.BLACK, anchor="mm")
-        d.text((mid_col_x, cols_y + cols_h * 0.82), val_sub, font=T.font(11, bold=False), fill=T.BLACK, anchor="mm")
+        lbl_f = _fit_font(label, int(cw - 10), _s(12, fscale, 9, 18), min_sz=9, bold=True)
+        main_f = _fit_font(val_main, int(cw - 12), _s(26, fscale, 16, 44), min_sz=15, bold=True)
+        d.text((mid_col_x, cols_y + int(cols_h * 0.16)), label, font=lbl_f, fill=T.BLACK, anchor="mm")
+        d.text((mid_col_x, cols_y + int(cols_h * (0.52 if show_sub_metrics else 0.60))), val_main, font=main_f, fill=T.BLACK, anchor="mm")
+        if show_sub_metrics:
+            sub_mf = _fit_font(val_sub, int(cw - 12), _s(15, fscale, 11, 24), min_sz=10, bold=False)
+            d.text((mid_col_x, cols_y + int(cols_h * 0.84)), val_sub, font=sub_mf, fill=T.BLACK, anchor="mm")
 
 
 def _draw_sports_racing(img, d, el, raw_val, display=None):
     x, y, w, h = _clamp_box(el, 752, 235, display=display)
+    fscale = _font_scale(el)
     show_border = el.get("show_border") not in (False, "false", 0, "0")
     if show_border:
         d.rounded_rectangle([(x, y), (x + w, y + h)], radius=12, outline=T.BLACK, width=1)
@@ -1307,22 +1458,27 @@ def _draw_sports_racing(img, d, el, raw_val, display=None):
     lap = data.get("lap")
     total_laps = data.get("total_laps")
     standings = data.get("standings") or []
-
-    # Header
-    hdr_icon = "mdi:car-electric" if series == "FE" else "mdi:flag-checkered"
-    _draw_icon_glyph(d, hdr_icon, x + 24, y + 21, 24)
-    hf = T.font(13, bold=True)
-    header_txt = _fit_text(f"{series} · {event_name}", w - 180, hf)
-    d.text((x + 44, y + 21), header_txt, font=hf, fill=T.BLACK, anchor="lm")
+    show_teams = el.get("show_teams") not in (False, "false", 0, "0")
+    try:
+        max_drv = max(4, min(10, int(el.get("max_drivers") or 10)))
+    except (ValueError, TypeError):
+        max_drv = 10
 
     # Status badge at top right
     status_txt = f"LAP {lap}/{total_laps}" if (lap and total_laps) else (data.get("clock") or status)
-    bf = T.font(11, bold=True)
+    bf = T.font(_s(13, fscale, 10, 20), bold=True)
     bw = T.text_width(status_txt, bf) + 16
     bx1 = x + w - 16
     bx0 = bx1 - bw
-    d.rounded_rectangle([(bx0, y + 10), (bx1, y + 32)], radius=5, fill=T.BLACK)
+    d.rounded_rectangle([(bx0, y + 8), (bx1, y + 34)], radius=5, fill=T.BLACK)
     d.text((bx0 + bw // 2, y + 21), status_txt, font=bf, fill=T.WHITE, anchor="mm")
+
+    # Header
+    hdr_icon = "mdi:car-electric" if series == "FE" else "mdi:flag-checkered"
+    _draw_icon_glyph(d, hdr_icon, x + 24, y + 21, 26)
+    hf = T.font(_s(16, fscale, 12, 24), bold=True)
+    header_txt = _fit_text(f"{series} · {event_name}", max(80, bx0 - (x + 46) - 10), hf)
+    d.text((x + 46, y + 21), header_txt, font=hf, fill=T.BLACK, anchor="lm")
 
     d.line([(x + 14, y + 42), (x + w - 14, y + 42)], fill=T.BLACK, width=1)
 
@@ -1331,52 +1487,59 @@ def _draw_sports_racing(img, d, el, raw_val, display=None):
         mid_x = x + w // 2
         mid_y = y + h // 2
         mid_icon = "mdi:car-electric" if series == "FE" else "mdi:racing-helmet"
-        _draw_icon_glyph(d, mid_icon, mid_x, mid_y - 20, 46)
+        _draw_icon_glyph(d, mid_icon, mid_x, mid_y - 22, 50)
         circ = data.get("circuit") or ("ePrix Circuit" if series == "FE" else "Grand Prix Circuit")
-        d.text((mid_x, mid_y + 18), circ, font=T.font(16, bold=True), fill=T.BLACK, anchor="mm")
+        d.text((mid_x, mid_y + 18), circ, font=T.font(_s(20, fscale, 14, 32), bold=True), fill=T.BLACK, anchor="mm")
         detail = data.get("detail") or "Session scheduled soon"
-        d.text((mid_x, mid_y + 40), detail, font=T.font(12, bold=False), fill=T.BLACK, anchor="mm")
+        d.text((mid_x, mid_y + 44), detail, font=T.font(_s(15, fscale, 11, 24), bold=False), fill=T.BLACK, anchor="mm")
         return
 
-    # Leaderboard (Top 10: 1-5 left, 6-10 right)
+    # Leaderboard (2 columns)
     col_w = (w - 30) // 2
     mid_div = x + col_w + 15
-    d.line([(mid_div, y + 48), (mid_div, y + h - 14)], fill=T.BLACK, width=1)
+    d.line([(mid_div, y + 46), (mid_div, y + h - 10)], fill=T.BLACK, width=1)
 
-    display_drivers = standings[:10]
-    n_rows = 5
-    row_h = (h - 56) // n_rows
+    display_drivers = standings[:max_drv]
+    n_rows = max(1, math.ceil(len(display_drivers) / 2))
+    row_h = (h - 52) // n_rows
+
+    pos_f = T.font(_s(min(15, max(11, int(row_h * 0.42))), fscale, 10, 22), bold=True)
+    drv_f = T.font(_s(min(19, max(13, int(row_h * 0.54))), fscale, 12, 28), bold=True)
+    team_f = T.font(_s(min(15, max(11, int(row_h * 0.42))), fscale, 10, 22), bold=False)
+    gap_f = T.font(_s(min(15, max(11, int(row_h * 0.44))), fscale, 10, 24), bold=True)
+    tyre_f = T.font(_s(11, fscale, 9, 16), bold=True)
 
     for idx, drv in enumerate(display_drivers):
-        is_right = idx >= 5
+        is_right = idx >= n_rows
         cx0 = (x + 15) if not is_right else (mid_div + 15)
-        r_idx = idx if not is_right else (idx - 5)
-        ry = y + 48 + r_idx * row_h
+        r_idx = idx if not is_right else (idx - n_rows)
+        ry = y + 46 + r_idx * row_h
         ry_mid = ry + row_h // 2
-        rw = (mid_div - 15) if not is_right else (x + w - 15)
+        rw = (mid_div - 14) if not is_right else (x + w - 15)
 
         pos_str = f"P{drv.get('pos', idx + 1)}"
         code = str(drv.get("driver") or drv.get("code") or drv.get("name") or "DRV")[:3].upper()
-        team = str(drv.get("team") or drv.get("constructor") or "")
+        team = str(drv.get("team") or drv.get("constructor") or "") if show_teams else ""
         gap = str(drv.get("gap") or drv.get("interval") or "")
         tyre = str(drv.get("tyre") or "")[:1].upper()
 
-        d.text((cx0 + 2, ry_mid), pos_str, font=T.font(10, bold=True), fill=T.BLACK, anchor="lm")
-        d.text((cx0 + 32, ry_mid), code, font=T.font(13, bold=True), fill=T.BLACK, anchor="lm")
+        d.text((cx0 + 2, ry_mid), pos_str, font=pos_f, fill=T.BLACK, anchor="lm")
+        pos_w = max(32, T.text_width("P10", pos_f) + 6)
+        d.text((cx0 + pos_w, ry_mid), code, font=drv_f, fill=T.BLACK, anchor="lm")
 
-        off_x = cx0 + 66
+        off_x = cx0 + pos_w + max(44, T.text_width("VER", drv_f) + 8)
         if tyre in ("S", "M", "H", "I", "W"):
-            d.rounded_rectangle([(off_x, ry_mid - 7), (off_x + 14, ry_mid + 7)], radius=3, outline=T.BLACK, width=1)
-            d.text((off_x + 7, ry_mid), tyre, font=T.font(9, bold=True), fill=T.BLACK, anchor="mm")
-            off_x += 18
+            d.rounded_rectangle([(off_x, ry_mid - 8), (off_x + 16, ry_mid + 8)], radius=3, outline=T.BLACK, width=1)
+            d.text((off_x + 8, ry_mid), tyre, font=tyre_f, fill=T.BLACK, anchor="mm")
+            off_x += 22
 
         if team:
-            avail_tw = max(30, rw - off_x - (T.text_width(gap, T.font(11, bold=True)) + 12 if gap else 0))
-            team_fit = _fit_text(team, avail_tw, T.font(11, bold=False))
-            d.text((off_x, ry_mid), team_fit, font=T.font(11, bold=False), fill=T.BLACK, anchor="lm")
+            avail_tw = max(24, rw - off_x - (T.text_width(gap, gap_f) + 10 if gap else 0))
+            team_fit = _fit_text(team, avail_tw, team_f)
+            d.text((off_x, ry_mid), team_fit, font=team_f, fill=T.BLACK, anchor="lm")
 
         if gap:
-            d.text((rw, ry_mid), gap, font=T.font(11, bold=True), fill=T.BLACK, anchor="rm")
+            d.text((rw, ry_mid), gap, font=gap_f, fill=T.BLACK, anchor="rm")
 
         if r_idx < n_rows - 1:
             d.line([(cx0, ry + row_h - 1), (rw, ry + row_h - 1)], fill=T.BLACK, width=1)
@@ -1384,6 +1547,7 @@ def _draw_sports_racing(img, d, el, raw_val, display=None):
 
 def _draw_sports_match(img, d, el, raw_val, display=None):
     x, y, w, h = _clamp_box(el, 752, 235, display=display)
+    fscale = _font_scale(el)
     show_border = el.get("show_border") not in (False, "false", 0, "0")
     if show_border:
         d.rounded_rectangle([(x, y), (x + w, y + h)], radius=12, outline=T.BLACK, width=1)
@@ -1419,68 +1583,82 @@ def _draw_sports_match(img, d, el, raw_val, display=None):
     venue = str(data.get("venue") or "").upper()
     header_title = f"{league} · {venue}" if venue else league
     clock = str(data.get("clock") or data.get("status") or "LIVE").upper()
-
-    d.text((x + 20, y + 20), header_title, font=T.font(13, bold=True), fill=T.BLACK, anchor="lm")
+    show_stats = el.get("show_stats") not in (False, "false", 0, "0")
+    show_scorers = el.get("show_scorers") not in (False, "false", 0, "0")
 
     # Clock / Status badge
-    bf = T.font(11, bold=True)
+    bf = T.font(_s(13, fscale, 10, 20), bold=True)
     bw = T.text_width(clock, bf) + 16
     bx1 = x + w - 16
     bx0 = bx1 - bw
-    d.rounded_rectangle([(bx0, y + 10), (bx1, y + 32)], radius=5, fill=T.BLACK)
+    d.rounded_rectangle([(bx0, y + 8), (bx1, y + 34)], radius=5, fill=T.BLACK)
     d.text((bx0 + bw // 2, y + 21), clock, font=bf, fill=T.WHITE, anchor="mm")
 
+    hdr_max_x = bx0 - 10
     # Sub-item pagination badge (e.g. [ 2 / 5 ])
     if sub_total > 1:
         pag_badge = f"{sub_idx + 1}/{sub_total}"
-        pb_f = T.font(10, bold=True)
+        pb_f = T.font(_s(12, fscale, 9, 18), bold=True)
         pb_w = T.text_width(pag_badge, pb_f) + 14
         pbx1 = bx0 - 8
         pbx0 = pbx1 - pb_w
-        d.rounded_rectangle([(pbx0, y + 10), (pbx1, y + 32)], radius=5, outline=T.BLACK, width=1)
+        hdr_max_x = pbx0 - 10
+        d.rounded_rectangle([(pbx0, y + 8), (pbx1, y + 34)], radius=5, outline=T.BLACK, width=1)
         d.text((pbx0 + pb_w // 2, y + 21), pag_badge, font=pb_f, fill=T.BLACK, anchor="mm")
+
+    hf = T.font(_s(16, fscale, 12, 24), bold=True)
+    d.text((x + 20, y + 21), _fit_text(header_title, max(80, hdr_max_x - (x + 20)), hf), font=hf, fill=T.BLACK, anchor="lm")
 
     d.line([(x + 14, y + 42), (x + w - 14, y + 42)], fill=T.BLACK, width=1)
 
+    ev_h = str(data.get("events_home") or "") if show_scorers else ""
+    ev_a = str(data.get("events_away") or "") if show_scorers else ""
+    has_scorers = bool(ev_h or ev_a)
+
     mid_x = x + w // 2
-    hero_y = y + int(h * 0.44)
+    hero_y = y + int(h * (0.46 if has_scorers else 0.56))
 
     h_name = str(data.get("home_team") or "HOME").upper()
     a_name = str(data.get("away_team") or "AWAY").upper()
     h_score = str(data.get("home_score") if data.get("home_score") is not None else "-")
     a_score = str(data.get("away_score") if data.get("away_score") is not None else "-")
 
-    # Team names font
-    tf = T.font(min(28, max(18, w // 28)), bold=True)
-    d.text((mid_x - 130, hero_y - 18), _fit_text(h_name, int(w * 0.3), tf), font=tf, fill=T.BLACK, anchor="rm")
-    d.text((mid_x + 130, hero_y - 18), _fit_text(a_name, int(w * 0.3), tf), font=tf, fill=T.BLACK, anchor="lm")
+    score_gap = int(min(136, max(96, w * 0.17)))
+    team_avail_w = max(80, (mid_x - score_gap) - (x + 20))
+    target_tf_sz = _s(min(36, max(22, w // 21)), fscale, 18, 54)
+    tf_h = _fit_font(h_name, team_avail_w, target_tf_sz, min_sz=16, bold=True)
+    tf_a = _fit_font(a_name, team_avail_w, target_tf_sz, min_sz=16, bold=True)
+
+    h_stat = str(data.get("home_stats") or "") if show_stats else ""
+    a_stat = str(data.get("away_stats") or "") if show_stats else ""
+    team_y_off = -16 if (h_stat or a_stat) else -2
+
+    d.text((mid_x - score_gap, hero_y + team_y_off), _fit_text(h_name, team_avail_w, tf_h), font=tf_h, fill=T.BLACK, anchor="rm")
+    d.text((mid_x + score_gap, hero_y + team_y_off), _fit_text(a_name, team_avail_w, tf_a), font=tf_a, fill=T.BLACK, anchor="lm")
 
     # Stats under team names
-    h_stat = str(data.get("home_stats") or "")
-    a_stat = str(data.get("away_stats") or "")
-    sf = T.font(11, bold=False)
+    sf = T.font(_s(14, fscale, 10, 22), bold=False)
     if h_stat:
-        d.text((mid_x - 130, hero_y + 14), h_stat, font=sf, fill=T.BLACK, anchor="rm")
+        d.text((mid_x - score_gap, hero_y + 18), _fit_text(h_stat, team_avail_w, sf), font=sf, fill=T.BLACK, anchor="rm")
     if a_stat:
-        d.text((mid_x + 130, hero_y + 14), a_stat, font=sf, fill=T.BLACK, anchor="lm")
+        d.text((mid_x + score_gap, hero_y + 18), _fit_text(a_stat, team_avail_w, sf), font=sf, fill=T.BLACK, anchor="lm")
 
     # Big Scores in center
-    sc_f = T.font(min(62, max(44, int(h * 0.28))), bold=True)
-    d.text((mid_x - 55, hero_y - 4), h_score, font=sc_f, fill=T.BLACK, anchor="mm")
-    d.text((mid_x, hero_y - 8), "—", font=T.font(32, bold=True), fill=T.BLACK, anchor="mm")
-    d.text((mid_x + 55, hero_y - 4), a_score, font=sc_f, fill=T.BLACK, anchor="mm")
+    sc_f = T.font(_s(min(70, max(46, int(h * 0.32))), fscale, 36, 96), bold=True)
+    d.text((mid_x - int(score_gap * 0.44), hero_y - 4), h_score, font=sc_f, fill=T.BLACK, anchor="mm")
+    d.text((mid_x, hero_y - 8), "—", font=T.font(_s(34, fscale, 22, 48), bold=True), fill=T.BLACK, anchor="mm")
+    d.text((mid_x + int(score_gap * 0.44), hero_y - 4), a_score, font=sc_f, fill=T.BLACK, anchor="mm")
 
     # Match highlights / scorers
-    ev_h = str(data.get("events_home") or "")
-    ev_a = str(data.get("events_away") or "")
-    if ev_h or ev_a:
-        div_y2 = y + h - 54
+    if has_scorers:
+        div_y2 = y + h - 48
         d.line([(x + 20, div_y2), (x + w - 20, div_y2)], fill=T.BLACK, width=1)
-        ef = T.font(12, bold=True)
+        ef = T.font(_s(15, fscale, 11, 24), bold=True)
         if ev_h:
-            d.text((mid_x - 30, y + h - 26), _fit_text(ev_h, int(w * 0.42), ef), font=ef, fill=T.BLACK, anchor="rm")
+            d.text((mid_x - 24, y + h - 22), _fit_text(ev_h, int(w * 0.44), ef), font=ef, fill=T.BLACK, anchor="rm")
         if ev_a:
-            d.text((mid_x + 30, y + h - 26), _fit_text(ev_a, int(w * 0.42), ef), font=ef, fill=T.BLACK, anchor="lm")
+            d.text((mid_x + 24, y + h - 22), _fit_text(ev_a, int(w * 0.44), ef), font=ef, fill=T.BLACK, anchor="lm")
+
 
 
 DRAWERS = {
