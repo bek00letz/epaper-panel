@@ -1,6 +1,9 @@
 # Changelog
 
-## 0.8.36
+## 0.8.37
+- **Dynamic Framebuffer Orientation Auto-Detection:**
+  - **Direct Framebuffer Geometry Detection:** `draw_overlays` now analyzes the physical framebuffer layout in real time. Because the footer hairline rule physically spans row 31 in 180° orientation and row 240 in 0° orientation, the engine auto-detects the exact orientation directly from memory.
+  - **Dynamic Inversion & Padlock Coordinates:** Resolves coordinates as `rx = is_180 ? px : ((dw - 1) - px); ry = is_180 ? ((dh - 1) - py) : py;`. In 180° mode, the active category pill inverts on the left footer (`x = 96..206, y = 3..27`), sub-item pills on the right (`x = 704..752, y = 3..27`), and padlock badges align adjacent to the pills. In 0° mode, the overlays dynamically track the footer to the top-right buffer mapping.
 - **Physical Overlay Geometry Alignment & Seamless Fast Refresh:**
   - **Restored Native DisplayBuffer Overlay Transform:** Restored physical buffer coordinate inversion `rx = (dw - 1) - px; ry = (dh - 1) - py;` in `draw_overlays` matching CrowPanel 5.79" physical hardware memory mapping. The category pill now inverts cleanly on the left footer, sub-mode pills on the right footer, and padlock badges render precisely adjacent to the pills.
   - **Removed Aggressive Waveform Settle Clears:** Removed the 5-second idle settle full refresh trigger that caused unnecessary 1840 ms screen flashes when pausing dial rotation. Dial scrolling remains silky-smooth with 480 ms partial refreshes, letting the native `full_update_every: 10` cycle handle waveform maintenance without disruptive flashes.

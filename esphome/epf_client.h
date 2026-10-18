@@ -826,12 +826,37 @@ class PanelController {
     int cat_x0 = (dw >= 400) ? 96 : (16 + 55);
     int cat_x1 = cat_x0 + cat_w;
 
+    // Robust orientation resolution:
+    // 1. Check header flag first.
+    // 2. Auto-detect from framebuffer geometry as definitive ground truth:
+    //    The footer rule line spans 90+ black bytes across row 31 in 180° mount, and row 240 in 0° mount.
+    bool is_180 = EpfClient::instance().is_orientation_180();
+    if (dw == 792 && dh == 272) {
+      size_t stride = 99;
+      int black_31 = 0, black_240 = 0;
+      for (size_t b = 10; b < stride - 10; b++) {
+        if (raw_buf[31 * stride + b] == 0x00) black_31++;
+        if (raw_buf[240 * stride + b] == 0x00) black_240++;
+      }
+      if (black_31 > 40) {
+        is_180 = true;
+      } else if (black_240 > 40) {
+        is_180 = false;
+      }
+    }
+
+    static int last_logged_orient = -1;
+    if (last_logged_orient != (is_180 ? 1 : 0)) {
+      last_logged_orient = (is_180 ? 1 : 0);
+      ESP_LOGI(TAG, "Overlay transform active: %s (is_180=%d)", is_180 ? "180°" : "0°", (int)is_180);
+    }
+
     auto invert_rounded_pill = [&](int x0, int y0, int x1, int y1, int r) {
       for (int py = y0; py <= y1; py++) {
         for (int px = x0; px <= x1; px++) {
           if (in_rounded_box(px, py, x0, y0, x1, y1, r)) {
-            int rx = (dw - 1) - px;
-            int ry = (dh - 1) - py;
+            int rx = is_180 ? px : ((dw - 1) - px);
+            int ry = is_180 ? ((dh - 1) - py) : py;
             if (rx >= 0 && rx < dw && ry >= 0 && ry < dh) {
               size_t byte_off = ((size_t)ry * dw + rx) / 8;
               uint8_t bit = 7 - (rx % 8);
@@ -866,8 +891,8 @@ class PanelController {
 
             // White ink for padlock shackle and body; black ink for rounded background and keyhole
             bool white_ink = (is_shackle || is_body) && !is_keyhole;
-            int rx = (dw - 1) - px;
-            int ry = (dh - 1) - py;
+            int rx = is_180 ? px : ((dw - 1) - px);
+            int ry = is_180 ? ((dh - 1) - py) : py;
             if (rx >= 0 && rx < dw && ry >= 0 && ry < dh) {
               size_t byte_off = ((size_t)ry * dw + rx) / 8;
               uint8_t bit = 7 - (rx % 8);
