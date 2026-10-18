@@ -57,14 +57,16 @@ Two subtle hardware/firmware race conditions originally caused intermittent blac
 1. **Torn In-Flight Downloads:** ESPHome's `online_image` clears/reallocates its target PSRAM buffer as soon as an HTTP download starts (`GET /frames.png`), taking ~5–6 s to decode a multi-page strip. If the 10-second rotation interval or a remote action fired mid-download, the display lambda blitted an uninitialized/zeroed PSRAM buffer (`COLOR_ON` with `invert_colors: true` = solid black screen).
 2. **Asynchronous Sensor Desync:** `sensor.epaper_categories` (`ha_cat_offsets`, `ha_cat_sizes`, `ha_cat_pill_widths`) arrived over the ESPHome native API out of lockstep with the HTTP strip download, so a remote `page_step` could compute a slice offset beyond the strip height (`y_offset >= strip.height`).
 
-To eliminate both races atomically:
-- **Self-Describing Metadata Row (`meta_y`):** `server.py` encodes a binary header in the bottom-right pixels of the first frame (`y = dh - 1`, `x` starting backward from `dw - 1`, 1 bit per pixel, MSB first):
+To eliminate both races atomically and keep manual scrolling responsive:
+- **Self-Describing Metadata Row (`meta_y`):** `server.py` encodes a binary header on row `meta_y = dh * total_slices` (`x = 0 ..`, 1 bit per pixel, MSB first):
   - `Byte 0`: `0xA5` magic marker (`10100101`)
-  - `Byte 1`: `total_slices`
-  - `Byte 2`: `cat_count` (`N`, up to 32)
+  - `Byte 1`: `0x01` format version
+  - `Byte 2`: `cat_count` (`N`, up to 30)
   - `Bytes 3 .. 3 + 3·N - 1`: `(offset, size, pill_width)` tuple for each category
-  - `Byte 3 + 3·N`: `0xA5` when **Night / Quiet Hours** (`quiet_hours_active`) is active, or `0x00` when inactive.
-- **Atomic Parse & `downloading_frames` Guard:** `esphome/crowpanel-epaper.yaml` sets `id(downloading_frames) = true` before `component.update: frames` and clears it inside `on_download_finished` (and `on_error`), where it parses the `0xA5` header directly from the decoded `frames` buffer. All `redraw`, `page_step`, `mode_toggle`, `lock_toggle`, and `show_page` actions check `downloading_frames` and defer (`pending_redraw = true`) until decoding finishes.
+  - `Byte 3 + 3·N`: `0xA5` when **Night / Quiet Hours** (`quiet_hours_active`) is active, or `0x00` when inactive
+  - `Bytes 3 + 3·N + 1 .. + 2`: `rotate_seconds` (`(rot_sec >> 8) & 0xFF`, `rot_sec & 0xFF`) so local PSRAM rotation interval syncs without reflashing
+  - `Bytes 3 + 3·N + 3 .. + 4`: 16-bit MD5 content hash (`etag_b0`, `etag_b1`) so `HTTP 304 Not Modified` responses skip redundant physical e-paper refreshes
+- **Atomic Parse, `downloading_frames` Guard & 15s Manual Scroll Debounce (`user_cool_sec`):** `esphome/crowpanel-epaper.yaml` sets `id(downloading_frames) = true` before `component.update: frames` and clears it inside `on_download_finished`. Any manual button or remote action resets `user_cool_sec = 0`. Incoming background `refresh_now` actions route through `request_refetch`, which defers downloads (`pending_refetch = true`) whenever `user_cool_sec < 15` and executes them 15 seconds after manual scrolling stops. Per-category sub-item positions are tracked in `cat_sub_pos` so each rotation pass through a multi-item category advances sequentially (`1/N`, `2/N`, `3/N`) and survives 1-minute background refreshes.
 
 ## Measured numbers
 

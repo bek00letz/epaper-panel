@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.8.26
+- **Manual Scroll Protection & 15-Second Background Fetch Debounce (`user_cool_sec` & `request_refetch`):**
+  - Eliminated device freezes when scrolling manually through pages while a 1-minute background update fires.
+  - Every physical button press (`key_next`, `key_prev`, `key_ok`, `key_top`, `key_bottom`) and remote action (`page_step`, `mode_toggle`, `lock_toggle`, `category_step`, `sub_step`, `show_page`, `show_category`) now starts a **15-second interaction cooldown (`user_cool_sec`)**.
+  - Incoming `refresh_now` pushes from Home Assistant and internal refresh timers now route through `request_refetch`, which checks `user_cool_sec < 15`. If the user is actively scrolling, the network download is **paused/deferred (`pending_refetch = true`)** and automatically executed 15 seconds after manual scrolling stops.
+  - Reduced `online_image` `buffer_size` from `32768` to `4096` (and `http_request` `buffer_size_rx` to `4096`) so multi-page PNG decoding yields to the ESPHome main loop between 4 KB chunks rather than blocking in a single 14-second `loop()` call.
+- **Decoupled Fast Local PSRAM Page Rotation (`rotate_sec`) vs Background Network Fetch (`panel_refresh_interval`):**
+  - Previously, every rotation step on the ESP32 triggered `script.execute: refetch` (making an HTTP request on every page turn) and ignored the Studio UI's `rotate_seconds` (`#rotinterval`) setting.
+  - The self-describing metadata row in `frames.png` now encodes `rotate_seconds` (2 bytes MSB/LSB) alongside a 16-bit content hash (`etag_b0`, `etag_b1`).
+  - The ESP32 now runs a 5-second interval loop that rotates pages **locally in PSRAM** every `rotate_sec` (`30s` default, ~480 ms blit, zero network activity) while `fetch_idle_sec` independently triggers background data fetches every `panel_refresh_interval` minutes.
+- **Sequential Sub-Item Rotation Memory Across Category Passes (`cat_sub_pos`):**
+  - Fixed multi-item categories (Watch/Media feeds, Airspace Radar flights, Sports matches) always resetting `sub_idx = 0` on every rotation pass or after a 1-minute data refresh.
+  - Added per-category sub-item position memory (`std::vector<int> cat_sub_pos`) on the ESP32. Pass 1 through a multi-item category now displays sub-item `1/N`, Pass 2 displays `2/N`, Pass 3 displays `3/N`, and background 1-minute `frames.png` refreshes preserve both `cat_sub_pos` and the currently displayed `sub_idx` without resetting the rotation timer.
+- **HTTP `304 Not Modified` & `Last-Modified` Cleanups:**
+  - Added RFC 2822 `Last-Modified` header to `_frame_headers()` in `server.py`, eliminating `[W][http_request:032]: No header with name last-modified found` in ESPHome logs.
+  - When `online_image` receives `HTTP 304 (Not Modified)` and the 16-bit strip hash (`last_strip_hash`) and page index are unchanged, `on_download_finished` now skips the redundant physical e-paper `redraw`.
+
 ## 0.8.25
 - **Configurable Night / Quiet Hours (Zero-Ghosting Deep Idle):**
   - Added an optional, fully configurable **Night / Quiet Hours** schedule (`quiet_hours`) accessible via the top toolbar (`🌙 Quiet`) or **Settings → Night / Quiet Hours…** (`enabled: false` by default).

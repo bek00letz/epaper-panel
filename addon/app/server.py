@@ -24,6 +24,7 @@ import sys
 import time
 import urllib.parse
 from datetime import datetime, timedelta, timezone
+from email.utils import formatdate
 from zoneinfo import ZoneInfo
 from pathlib import Path
 
@@ -439,6 +440,8 @@ class Frames:
         self.cat_count: int = 1
         self.quiet_active: bool = False
         self.quiet_reason: str = "disabled"
+        self.rotate_seconds: int = 30
+        self.last_modified: str = ""
         self.rendered_at = None
         self.error = None
 
@@ -1913,6 +1916,10 @@ async def build_frames(session):
         live = await eligible_pages(session, spec)
 
     quiet_active, quiet_reason = await evaluate_quiet_hours(session, spec)
+    try:
+        rot_sec = max(5, min(3600, int(spec.get("rotate_seconds") or 30)))
+    except (TypeError, ValueError):
+        rot_sec = 30
 
     if not live:
         cw, _ = T.canvas_dims(orient, display=display)
@@ -1922,7 +1929,7 @@ async def build_frames(session):
             clock=datetime.now().strftime("%H:%M"), label="empty", orientation=orient, display=display)
         one = T.orient_for_panel(T.to_1bit(img), orient, display=display)
         png = _png(one)
-        return png, png, [png], [], [0], [1], ["empty"], [110], quiet_active, quiet_reason
+        return png, png, [png], [], [0], [1], ["empty"], [110], quiet_active, quiet_reason, rot_sec
 
     vals = await gather_values(session, spec, set(live))
 
@@ -2060,15 +2067,23 @@ async def build_frames(session):
         strip.paste(im, (0, i * dh))
         slice_pngs.append(_png(im))
 
+    slices_digest = hashlib.md5(b"".join(slice_pngs)).digest()
+    etag_b0, etag_b1 = slices_digest[0], slices_digest[1]
+
     # Self-describing image header on row meta_y:
     meta_y = dh * len(imgs)
-    # Magic 0xA5, version 0x01, cat_count, followed by (offset, size, pill_width) triples, then quiet_hours flag (0xA5=quiet, 0x00=active)
+    # Magic 0xA5, version 0x01, cat_count, followed by (offset, size, pill_width) triples,
+    # then quiet_hours flag (0xA5=quiet, 0x00=active), rotate_seconds (2 bytes MSB/LSB), and 2-byte content hash
     payload = [0xA5, 0x01, len(cat_offsets)]
     for off, sz, pw in zip(cat_offsets, cat_sizes, cat_pill_widths):
         payload.append(min(255, int(off)))
         payload.append(min(255, int(sz)))
         payload.append(min(255, int(pw)))
     payload.append(0xA5 if quiet_active else 0x00)
+    payload.append((rot_sec >> 8) & 0xFF)
+    payload.append(rot_sec & 0xFF)
+    payload.append(etag_b0)
+    payload.append(etag_b1)
 
     px_x = 0
     for byte_val in payload:
@@ -2079,12 +2094,12 @@ async def build_frames(session):
                 strip.putpixel((px_x, meta_y), 0 if bit else 1)
             px_x += 1
 
-    return _png(strip), slice_pngs[0], slice_pngs, live, cat_offsets, cat_sizes, cat_names, cat_pill_widths, quiet_active, quiet_reason
+    return _png(strip), slice_pngs[0], slice_pngs, live, cat_offsets, cat_sizes, cat_names, cat_pill_widths, quiet_active, quiet_reason, rot_sec
 
 
 async def refresh_frames(session):
     """Build a new Frames snapshot and atomically swap FRAMES."""
-    strip, single, slices, names, cat_offsets, cat_sizes, cat_names, cat_pill_widths, quiet_active, quiet_reason = await build_frames(session)
+    strip, single, slices, names, cat_offsets, cat_sizes, cat_names, cat_pill_widths, quiet_active, quiet_reason, rot_sec = await build_frames(session)
     old_f = globals().get("FRAMES")
     has_prev = old_f is not None and getattr(old_f, "rendered_at", None)
     struct_changed = (
@@ -2096,10 +2111,15 @@ async def refresh_frames(session):
         )
     )
     quiet_changed = bool(has_prev and getattr(old_f, "quiet_active", False) != quiet_active)
+    rot_changed = bool(has_prev and getattr(old_f, "rotate_seconds", 30) != rot_sec)
     nxt = Frames()
     nxt.strip, nxt.single, nxt.slices, nxt.names = strip, single, slices, names
     nxt.strip_etag = _etag(strip)
     nxt.single_etag = _etag(single)
+    if has_prev and old_f.strip_etag == nxt.strip_etag and getattr(old_f, "last_modified", ""):
+        nxt.last_modified = old_f.last_modified
+    else:
+        nxt.last_modified = formatdate(timeval=None, localtime=False, usegmt=True)
     nxt.rendered_at = datetime.now().isoformat(timespec="seconds")
     nxt.cat_offsets = cat_offsets
     nxt.cat_sizes = cat_sizes
@@ -2108,20 +2128,21 @@ async def refresh_frames(session):
     nxt.cat_count = len(cat_offsets)
     nxt.quiet_active = quiet_active
     nxt.quiet_reason = quiet_reason
+    nxt.rotate_seconds = rot_sec
     globals()["FRAMES"] = nxt
-    print(f"rendered {names} ({len(strip)}B strip, {nxt.cat_count} cats, offsets: {cat_offsets}, sizes: {cat_sizes}, quiet: {quiet_active} [{quiet_reason}])", flush=True)
+    print(f"rendered {names} ({len(strip)}B strip, {nxt.cat_count} cats, offsets: {cat_offsets}, sizes: {cat_sizes}, rot: {rot_sec}s, quiet: {quiet_active} [{quiet_reason}])", flush=True)
     await publish_category_sensors(session, nxt)
     if quiet_changed:
         print(f"Quiet Hours state transitioned to {quiet_active} ({quiet_reason}) -- syncing panel state", flush=True)
         globals()["LAST_PANEL_PUSH_TIME"] = time.time()
         await push_panel_update(advance_page=False)
-    elif struct_changed:
+    elif struct_changed or rot_changed:
         spec = load_layouts()
         allow_alerts = bool((spec.get("quiet_hours") or {}).get("allow_alerts", True))
         if quiet_active and not (ALERT["name"] and allow_alerts):
-            print(f"Category structure changed during Quiet Hours ({quiet_reason}) -- deferring panel push", flush=True)
+            print(f"Layout/rotation changed during Quiet Hours ({quiet_reason}) -- deferring panel push", flush=True)
         else:
-            print("Category structure changed -- pushing immediate refresh to panel", flush=True)
+            print("Category structure or rotation interval changed -- pushing immediate refresh to panel", flush=True)
             globals()["LAST_PANEL_PUSH_TIME"] = time.time()
             await push_panel_update(advance_page=False)
     return nxt
@@ -2233,9 +2254,11 @@ def _frame_headers(f=None, etag=None, page_count=1):
     panel_cfg = load_panel_setup()
     m_int = re.search(r"\d+", str(panel_cfg.get("refresh_interval", "5")))
     panel_int = int(m_int.group(0)) if m_int else 5
+    last_mod = (getattr(f, "last_modified", "") if f is not None else "") or formatdate(timeval=None, localtime=False, usegmt=True)
 
     h = {
         "Cache-Control": "no-cache",
+        "Last-Modified": last_mod,
         "X-Next-Refresh-Seconds": str(panel_int * 60),
         "X-Rotate-Seconds": rot_sec,
         "X-Quiet-Hours": "1" if quiet_on else "0",
@@ -2948,6 +2971,9 @@ psram:
   - id: cat_pill_widths
     type: std::vector<int>
     restore_value: false
+  - id: cat_sub_pos
+    type: std::vector<int>
+    restore_value: false
   - id: sub_mode
     type: bool
     restore_value: false
@@ -2956,6 +2982,34 @@ psram:
     type: int
     restore_value: false
     initial_value: '0'
+  - id: rotate_sec
+    type: int
+    restore_value: false
+    initial_value: '30'
+  - id: fetch_idle_sec
+    type: int
+    restore_value: false
+    initial_value: '0'
+  - id: user_cool_sec
+    type: int
+    restore_value: false
+    initial_value: '999'
+  - id: pending_refetch
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+  - id: pending_redraw
+    type: bool
+    restore_value: false
+    initial_value: 'false'
+  - id: last_strip_hash
+    type: int
+    restore_value: false
+    initial_value: '-1'
+  - id: last_drawn_page
+    type: int
+    restore_value: false
+    initial_value: '-1'
   - id: last_ok_press_ms
     type: uint32_t
     restore_value: false
@@ -2985,12 +3039,15 @@ api:
   actions:
     - action: refresh_now
       then:
-        - script.execute: refetch
+        - script.execute: request_refetch
     - action: show_page
       variables:
         index: int
       then:
         - lambda: |-
+            id(idle_sec) = 0;
+            id(user_cool_sec) = 0;
+            id(pending_redraw) = true;
             if (index >= 0 && index < id(page_count)) {{
               id(page) = index;
               for (int c = (int)id(cat_offsets).size() - 1; c >= 0; c--) {{
@@ -3008,6 +3065,9 @@ api:
         sub: int
       then:
         - lambda: |-
+            id(idle_sec) = 0;
+            id(user_cool_sec) = 0;
+            id(pending_redraw) = true;
             int cats = id(cat_count) > 0 ? id(cat_count) : 1;
             if (category >= 0 && category < cats) {{
               id(cat_idx) = category;
@@ -3024,6 +3084,8 @@ api:
       then:
         - lambda: |-
             id(idle_sec) = 0;
+            id(user_cool_sec) = 0;
+            id(pending_redraw) = true;
             int cats = id(cat_count) > 0 ? id(cat_count) : 1;
             if (id(cat_idx) >= cats) id(cat_idx) = 0;
 
@@ -3032,22 +3094,30 @@ api:
               int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
               if (sz > 1) {{
                 id(sub_idx) = ((id(sub_idx) + delta) % sz + sz) % sz;
+                if ((int)id(cat_sub_pos).size() <= c_idx) id(cat_sub_pos).resize(cats, 0);
+                id(cat_sub_pos)[c_idx] = (id(sub_idx) + 1) % sz;
                 int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
                 int p = off + id(sub_idx);
                 if (p < id(page_count)) id(page) = p;
               }}
             }} else {{
               id(cat_idx) = ((id(cat_idx) + delta) % cats + cats) % cats;
-              id(sub_idx) = 0;
+              int c_idx = id(cat_idx);
+              int sz = (c_idx < id(cat_sizes).size() && id(cat_sizes)[c_idx] > 0) ? id(cat_sizes)[c_idx] : 1;
+              if ((int)id(cat_sub_pos).size() <= c_idx) id(cat_sub_pos).resize(cats, 0);
+              id(sub_idx) = (sz > 1) ? (id(cat_sub_pos)[c_idx] % sz) : 0;
               id(sub_mode) = false;
-              int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
-              if (off < id(page_count)) id(page) = off;
+              int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
+              int p = off + id(sub_idx);
+              if (p < id(page_count)) id(page) = p;
             }}
         - script.execute: redraw
     - action: mode_toggle
       then:
         - lambda: |-
             id(idle_sec) = 0;
+            id(user_cool_sec) = 0;
+            id(pending_redraw) = true;
             int c_idx = id(cat_idx);
             int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
             if (sz > 1) {{
@@ -3064,12 +3134,18 @@ api:
       then:
         - lambda: |-
             id(idle_sec) = 0;
+            id(user_cool_sec) = 0;
+            id(pending_redraw) = true;
             int cats = id(cat_count) > 0 ? id(cat_count) : 1;
             id(cat_idx) = ((id(cat_idx) + delta) % cats + cats) % cats;
-            id(sub_idx) = 0;
+            int c_idx = id(cat_idx);
+            int sz = (c_idx < id(cat_sizes).size() && id(cat_sizes)[c_idx] > 0) ? id(cat_sizes)[c_idx] : 1;
+            if ((int)id(cat_sub_pos).size() <= c_idx) id(cat_sub_pos).resize(cats, 0);
+            id(sub_idx) = (sz > 1) ? (id(cat_sub_pos)[c_idx] % sz) : 0;
             id(sub_mode) = false;
-            int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
-            if (off < id(page_count)) id(page) = off;
+            int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
+            int p = off + id(sub_idx);
+            if (p < id(page_count)) id(page) = p;
         - script.execute: redraw
     - action: sub_step
       variables:
@@ -3077,10 +3153,15 @@ api:
       then:
         - lambda: |-
             id(idle_sec) = 0;
+            id(user_cool_sec) = 0;
+            id(pending_redraw) = true;
+            int cats = id(cat_count) > 0 ? id(cat_count) : 1;
             int c_idx = id(cat_idx);
             int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
             if (sz > 1) {{
               id(sub_idx) = ((id(sub_idx) + delta) % sz + sz) % sz;
+              if ((int)id(cat_sub_pos).size() <= c_idx) id(cat_sub_pos).resize(cats, 0);
+              id(cat_sub_pos)[c_idx] = (id(sub_idx) + 1) % sz;
               int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
               int p = off + id(sub_idx);
               if (p < id(page_count)) id(page) = p;
@@ -3090,6 +3171,8 @@ api:
       then:
         - lambda: |-
             id(idle_sec) = 0;
+            id(user_cool_sec) = 0;
+            id(pending_redraw) = true;
             id(pinned) = !id(pinned);
             if (id(pinned)) id(cat_pinned) = false;
             ESP_LOGI("panel", "Panel lock: %d", id(pinned));
@@ -3098,6 +3181,8 @@ api:
       then:
         - lambda: |-
             id(idle_sec) = 0;
+            id(user_cool_sec) = 0;
+            id(pending_redraw) = true;
             id(cat_pinned) = !id(cat_pinned);
             if (id(cat_pinned)) id(pinned) = false;
             ESP_LOGI("panel", "Category lock: %d", id(cat_pinned));
@@ -3106,6 +3191,8 @@ api:
       then:
         - lambda: |-
             id(idle_sec) = 0;
+            id(user_cool_sec) = 0;
+            id(pending_redraw) = true;
             if (id(sub_mode)) {{
               id(pinned) = !id(pinned);
               if (id(pinned)) id(cat_pinned) = false;
@@ -3151,20 +3238,21 @@ switch:
 http_request:
   verify_ssl: false
   timeout: 15s
-  buffer_size_rx: 8192
+  buffer_size_rx: 4096
 
 online_image:
   - id: frames
     url: ${{frames_url}}
     format: png
     type: BINARY
-    buffer_size: 32768
+    buffer_size: 4096
     on_download_finished:
       - lambda: |-
           id(downloading_frames) = false;
           int h = id(frames).get_height();
           id(page_count) = (h >= ${{page_h}}) ? h / ${{page_h}} : 1;
           id(have_frames) = true;
+          int new_strip_hash = -1;
 
           // Check if self-describing metadata row is present (height == page_count * page_h + 1)
           if (h >= id(page_count) * ${{page_h}} + 1) {{
@@ -3191,6 +3279,9 @@ online_image:
                 id(cat_sizes).clear();
                 id(cat_pill_widths).clear();
                 id(cat_count) = num_cats;
+                if ((int)id(cat_sub_pos).size() < num_cats) {{
+                  id(cat_sub_pos).resize(num_cats, 0);
+                }}
                 for (int i = 0; i < num_cats; i++) {{
                   int off = read_byte(3 + i * 3);
                   int sz = read_byte(3 + i * 3 + 1);
@@ -3199,9 +3290,19 @@ online_image:
                   id(cat_sizes).push_back(sz);
                   id(cat_pill_widths).push_back(pw > 0 ? pw : 110);
                 }}
-                int qh_flag = read_byte(3 + num_cats * 3);
+                int base_idx = 3 + num_cats * 3;
+                int qh_flag = read_byte(base_idx);
                 id(quiet_hours_active) = (qh_flag == 0xA5);
-                ESP_LOGI("panel", "Loaded metadata directly from frames.png: %d categories (quiet_hours=%d)", num_cats, id(quiet_hours_active));
+                int r_hi = read_byte(base_idx + 1);
+                int r_lo = read_byte(base_idx + 2);
+                int r_sec = (r_hi << 8) | r_lo;
+                if (r_sec >= 5 && r_sec <= 3600) {{
+                  id(rotate_sec) = r_sec;
+                }}
+                int h_b0 = read_byte(base_idx + 3);
+                int h_b1 = read_byte(base_idx + 4);
+                new_strip_hash = (h_b0 << 8) | h_b1;
+                ESP_LOGI("panel", "Loaded metadata directly from frames.png: %d categories (rot=%ds, quiet=%d)", num_cats, id(rotate_sec), id(quiet_hours_active));
               }}
             }}
           }}
@@ -3211,6 +3312,9 @@ online_image:
             id(cat_sizes).clear();
             id(cat_pill_widths).clear();
             id(cat_count) = id(page_count);
+            if ((int)id(cat_sub_pos).size() < id(page_count)) {{
+              id(cat_sub_pos).resize(id(page_count), 0);
+            }}
             for (int i = 0; i < id(page_count); i++) {{
               id(cat_offsets).push_back(i);
               id(cat_sizes).push_back(1);
@@ -3224,13 +3328,23 @@ online_image:
             id(sub_idx) = 0;
             id(sub_mode) = false;
           }} else if (id(sub_idx) < 0 || id(sub_idx) >= sz) {{
-            id(sub_idx) = 0;
+            id(sub_idx) = id(cat_sub_pos)[c_idx] % sz;
           }}
           int off = (c_idx < (int)id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
           int p = off + id(sub_idx);
           id(page) = (p >= 0 && p < id(page_count)) ? p : 0;
           ESP_LOGI("panel", "%d pages (%d categories) held locally, showing cat=%d sub=%d page=%d", id(page_count), id(cat_count), id(cat_idx), id(sub_idx), id(page));
-      - script.execute: redraw
+          if (new_strip_hash != -1 && new_strip_hash == id(last_strip_hash) && !id(pending_redraw) && id(page) == id(last_drawn_page)) {{
+            ESP_LOGI("panel", "Strip unchanged (HTTP 304) -- skipping physical e-paper refresh");
+          }} else {{
+            id(last_strip_hash) = new_strip_hash;
+            id(pending_redraw) = true;
+          }}
+      - if:
+          condition:
+            lambda: 'return id(pending_redraw);'
+          then:
+            - script.execute: redraw
     on_error:
       - lambda: 'id(downloading_frames) = false;'
       - if:
@@ -3238,7 +3352,11 @@ online_image:
             lambda: 'return id(have_frames);'
           then:
             - logger.log: "frames.png fetch failed - keeping cached strip in PSRAM"
-            - script.execute: redraw
+            - if:
+                condition:
+                  lambda: 'return id(pending_redraw);'
+                then:
+                  - script.execute: redraw
           else:
             - logger.log: "frames.png missing - falling back to single frame"
             - component.update: frame
@@ -3247,7 +3365,7 @@ online_image:
     url: ${{frame_url}}
     format: png
     type: BINARY
-    buffer_size: 32768
+    buffer_size: 4096
     on_download_finished:
       - lambda: 'id(have_single) = true;'
       - component.update: epd
@@ -3267,6 +3385,8 @@ binary_sensor:
       - logger.log: "KEY next (dial forward)"
       - lambda: |-
           id(idle_sec) = 0;
+          id(user_cool_sec) = 0;
+          id(pending_redraw) = true;
           int cats = id(cat_count) > 0 ? id(cat_count) : 1;
           if (id(cat_idx) >= cats) id(cat_idx) = 0;
 
@@ -3275,16 +3395,22 @@ binary_sensor:
             int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
             if (sz > 1) {{
               id(sub_idx) = (id(sub_idx) + 1) % sz;
+              if ((int)id(cat_sub_pos).size() <= c_idx) id(cat_sub_pos).resize(cats, 0);
+              id(cat_sub_pos)[c_idx] = (id(sub_idx) + 1) % sz;
               int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
               int p = off + id(sub_idx);
               if (p < id(page_count)) id(page) = p;
             }}
           }} else {{
             id(cat_idx) = (id(cat_idx) + 1) % cats;
-            id(sub_idx) = 0;
+            int c_idx = id(cat_idx);
+            int sz = (c_idx < id(cat_sizes).size() && id(cat_sizes)[c_idx] > 0) ? id(cat_sizes)[c_idx] : 1;
+            if ((int)id(cat_sub_pos).size() <= c_idx) id(cat_sub_pos).resize(cats, 0);
+            id(sub_idx) = (sz > 1) ? (id(cat_sub_pos)[c_idx] % sz) : 0;
             id(sub_mode) = false;
-            int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
-            if (off < id(page_count)) id(page) = off;
+            int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
+            int p = off + id(sub_idx);
+            if (p < id(page_count)) id(page) = p;
           }}
       - script.execute: redraw
 
@@ -3297,6 +3423,8 @@ binary_sensor:
       - logger.log: "KEY prev (dial backward)"
       - lambda: |-
           id(idle_sec) = 0;
+          id(user_cool_sec) = 0;
+          id(pending_redraw) = true;
           int cats = id(cat_count) > 0 ? id(cat_count) : 1;
           if (id(cat_idx) >= cats) id(cat_idx) = 0;
 
@@ -3305,16 +3433,22 @@ binary_sensor:
             int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
             if (sz > 1) {{
               id(sub_idx) = (id(sub_idx) - 1 + sz) % sz;
+              if ((int)id(cat_sub_pos).size() <= c_idx) id(cat_sub_pos).resize(cats, 0);
+              id(cat_sub_pos)[c_idx] = (id(sub_idx) + 1) % sz;
               int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
               int p = off + id(sub_idx);
               if (p < id(page_count)) id(page) = p;
             }}
           }} else {{
             id(cat_idx) = (id(cat_idx) - 1 + cats) % cats;
-            id(sub_idx) = 0;
+            int c_idx = id(cat_idx);
+            int sz = (c_idx < id(cat_sizes).size() && id(cat_sizes)[c_idx] > 0) ? id(cat_sizes)[c_idx] : 1;
+            if ((int)id(cat_sub_pos).size() <= c_idx) id(cat_sub_pos).resize(cats, 0);
+            id(sub_idx) = (sz > 1) ? (id(cat_sub_pos)[c_idx] % sz) : 0;
             id(sub_mode) = false;
-            int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
-            if (off < id(page_count)) id(page) = off;
+            int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
+            int p = off + id(sub_idx);
+            if (p < id(page_count)) id(page) = p;
           }}
       - script.execute: redraw
 
@@ -3330,6 +3464,8 @@ binary_sensor:
           - logger.log: "KEY ok: long hold (toggle category vs sub-item mode)"
           - lambda: |-
               id(idle_sec) = 0;
+              id(user_cool_sec) = 0;
+              id(pending_redraw) = true;
               int c_idx = id(cat_idx);
               int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
               if (sz > 1) {{
@@ -3353,6 +3489,8 @@ binary_sensor:
           - logger.log: "KEY top: short click (toggle category lock)"
           - lambda: |-
               id(idle_sec) = 0;
+              id(user_cool_sec) = 0;
+              id(pending_redraw) = true;
               id(cat_pinned) = !id(cat_pinned);
               if (id(cat_pinned)) id(pinned) = false;
               ESP_LOGI("panel", "Category lock: %d", id(cat_pinned));
@@ -3363,6 +3501,8 @@ binary_sensor:
           - logger.log: "KEY top: long hold (toggle panel lock)"
           - lambda: |-
               id(idle_sec) = 0;
+              id(user_cool_sec) = 0;
+              id(pending_redraw) = true;
               id(pinned) = !id(pinned);
               if (id(pinned)) id(cat_pinned) = false;
               ESP_LOGI("panel", "Panel lock: %d", id(pinned));
@@ -3380,6 +3520,8 @@ binary_sensor:
           - logger.log: "KEY bottom: short click (reset to first page)"
           - lambda: |-
               id(idle_sec) = 0;
+              id(user_cool_sec) = 0;
+              id(pending_redraw) = true;
               id(cat_idx) = 0;
               id(sub_idx) = 0;
               id(page) = 0;
@@ -3390,7 +3532,11 @@ binary_sensor:
         max_length: 6000ms
         then:
           - logger.log: "KEY bottom: long hold (force refetch)"
-          - lambda: 'id(idle_sec) = 0;'
+          - lambda: |-
+              id(idle_sec) = 0;
+              id(fetch_idle_sec) = 0;
+              id(pending_refetch) = false;
+              id(pending_redraw) = true;
           - script.execute: refetch
 
 sensor:
@@ -3414,7 +3560,29 @@ script:
           condition:
             lambda: 'return !id(downloading_frames);'
           then:
+            - lambda: |-
+                id(pending_redraw) = false;
+                id(last_drawn_page) = id(page);
             - component.update: epd
+
+  - id: request_refetch
+    mode: restart
+    then:
+      - if:
+          condition:
+            lambda: |-
+              if (id(downloading_frames)) {{
+                id(pending_refetch) = true;
+                return false;
+              }}
+              if (id(user_cool_sec) < 15) {{
+                id(pending_refetch) = true;
+                ESP_LOGI("panel", "Manual scroll active (cooldown %ds/15s) -- deferring background refetch", id(user_cool_sec));
+                return false;
+              }}
+              return true;
+          then:
+            - script.execute: refetch
 
   - id: refetch
     mode: single
@@ -3423,7 +3591,10 @@ script:
           condition:
             wifi.connected:
           timeout: 30s
-      - lambda: 'id(downloading_frames) = true;'
+      - lambda: |-
+          id(downloading_frames) = true;
+          id(pending_refetch) = false;
+          id(fetch_idle_sec) = 0;
       - component.update: frames
 
 number:
@@ -3441,17 +3612,26 @@ number:
     mode: box
 
 interval:
-  - interval: 10s
+  - interval: 5s
     then:
       - lambda: |-
-          id(idle_sec) += 10;
+          id(idle_sec) += 5;
+          id(fetch_idle_sec) += 5;
+          if (id(user_cool_sec) < 1000) id(user_cool_sec) += 5;
       - if:
           condition:
             lambda: |-
-              if (id(quiet_hours_active)) return false;
-              int target_sec = (int)(id(panel_refresh_interval).state * 60.0);
-              if (target_sec < 10) target_sec = 10;
-              return (id(idle_sec) >= target_sec);
+              return id(pending_refetch) && id(user_cool_sec) >= 15 && !id(downloading_frames);
+          then:
+            - logger.log: "Manual scroll cooldown complete (15s) -- running deferred background refetch"
+            - script.execute: refetch
+      - if:
+          condition:
+            lambda: |-
+              if (id(quiet_hours_active) || id(downloading_frames) || !id(have_frames)) return false;
+              if (id(user_cool_sec) < 15) return false;
+              int rot_target = id(rotate_sec) >= 5 ? id(rotate_sec) : 30;
+              return (id(idle_sec) >= rot_target);
           then:
             - lambda: |-
                 id(idle_sec) = 0;
@@ -3464,23 +3644,52 @@ interval:
                         lambda: 'return id(cat_pinned);'
                       then:
                         - lambda: |-
+                            int cats = id(cat_count) > 0 ? id(cat_count) : 1;
                             int c_idx = id(cat_idx);
                             int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
                             if (sz > 1) {{
                               id(sub_idx) = (id(sub_idx) + 1) % sz;
+                              if ((int)id(cat_sub_pos).size() <= c_idx) id(cat_sub_pos).resize(cats, 0);
+                              id(cat_sub_pos)[c_idx] = (id(sub_idx) + 1) % sz;
                               int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
                               int p = off + id(sub_idx);
                               if (p < id(page_count)) id(page) = p;
+                              id(pending_redraw) = true;
                             }}
                       else:
                         - lambda: |-
                             int cats = id(cat_count) > 0 ? id(cat_count) : 1;
                             id(cat_idx) = (id(cat_idx) + 1) % cats;
-                            id(sub_idx) = 0;
+                            int c_idx = id(cat_idx);
+                            int sz = (c_idx < (int)id(cat_sizes).size() && id(cat_sizes)[c_idx] > 0) ? id(cat_sizes)[c_idx] : 1;
+                            if ((int)id(cat_sub_pos).size() <= c_idx) id(cat_sub_pos).resize(cats, 0);
+                            if (sz > 1) {{
+                              id(sub_idx) = id(cat_sub_pos)[c_idx] % sz;
+                              id(cat_sub_pos)[c_idx] = (id(sub_idx) + 1) % sz;
+                            }} else {{
+                              id(sub_idx) = 0;
+                            }}
                             id(sub_mode) = false;
-                            int off = (id(cat_idx) < id(cat_offsets).size()) ? id(cat_offsets)[id(cat_idx)] : id(cat_idx);
-                            if (off < id(page_count)) id(page) = off;
-            - script.execute: refetch
+                            int off = (c_idx < (int)id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
+                            int p = off + id(sub_idx);
+                            if (p < id(page_count)) id(page) = p;
+                            id(pending_redraw) = true;
+                            ESP_LOGI("panel", "Auto-rotated to cat=%d sub=%d/%d (page=%d)", c_idx, id(sub_idx) + 1, sz, id(page));
+                  - if:
+                      condition:
+                        lambda: 'return id(pending_redraw);'
+                      then:
+                        - script.execute: redraw
+      - if:
+          condition:
+            lambda: |-
+              if (id(quiet_hours_active) || id(downloading_frames)) return false;
+              int fetch_target = (int)(id(panel_refresh_interval).state * 60.0);
+              if (fetch_target < 30) fetch_target = 30;
+              return (id(fetch_idle_sec) >= fetch_target);
+          then:
+            - lambda: 'id(fetch_idle_sec) = 0;'
+            - script.execute: request_refetch
 """
 
     secrets_text = f"""# Put these in your ESPHome secrets.yaml if using !secret references:

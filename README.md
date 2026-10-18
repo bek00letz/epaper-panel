@@ -130,7 +130,9 @@ Category 3 (Flights)     ──>  [Plane 1: BAW71LK]   ─>  [Plane 2: THY41Y]
 Category 4 (Scores)      ──>  [Game 1: Bulls v Bucks] ─> [Game 2: Knicks v Raptors]
 ```
 
-- **Atomic Self-Describing Strip Metadata:** Every `/frames.png` image embeds a binary metadata header (`0xA5` magic byte, category count, `(offset, size, pill_width)` per category, and `quiet_hours_active`) in the bottom-right pixels of the strip. The ESP32 parses this header atomically inside `on_download_finished` and guards all display blits with `downloading_frames`, guaranteeing zero torn frames, zero black "sleep-like" screens during background downloads, and zero category/sub-item index desync.
+- **Sequential Sub-Item Rotation Memory (`cat_sub_pos`):** Every category remembers which sub-item it showed last (`cat_sub_pos[c]`). On pass 1 through a multi-item category (e.g. Watch, Airspace Radar, Sports), the panel shows sub-item `1/N`, on pass 2 it shows `2/N`, on pass 3 it shows `3/N`, and so on. Background 1-minute data refreshes preserve `cat_sub_pos` and `sub_idx` so sub-item rotation never resets to page 1.
+- **Manual Scroll Protection & 15s Debounce (`user_cool_sec` & `request_refetch`):** Every physical button press and remote scroll action starts a 15-second interaction cooldown (`user_cool_sec`). If a background 1-minute update (`refresh_now`) triggers while you are manually scrolling, the network download is automatically paused (`pending_refetch = true`) so scrolling never freezes, and resumes 15 seconds after you stop scrolling.
+- **Atomic Self-Describing Strip Metadata:** Every `/frames.png` image embeds a binary metadata header (`0xA5` magic byte, category count, `(offset, size, pill_width)` per category, `quiet_hours_active`, 2-byte `rotate_seconds`, and a 2-byte content hash) on the metadata row of the strip. The ESP32 parses this header atomically inside `on_download_finished` and guards all display blits with `downloading_frames`.
 
 ### Physical Controls & Button Mapping
 
