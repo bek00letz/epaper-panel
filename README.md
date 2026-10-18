@@ -1,4 +1,4 @@
-> Vibecoded with Opus 5.
+> Vibecoded! While I strive to keep things safe and limit vulnerabilities, you should be aware and use at your own risk.
 
 # E-paper panel
 
