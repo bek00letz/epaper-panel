@@ -2839,12 +2839,14 @@ function props() {
         <option value="card"${(!el.style || el.style === "card") ? " selected" : ""}>Telemetry Card (Default)</option>
         <option value="split"${el.style === "split" ? " selected" : ""}>Radar Scope + Telemetry (Split)</option>
         <option value="radar"${el.style === "radar" ? " selected" : ""}>PPI Radar Scope (Tactical Circular)</option>
-      </select></div>` +
-      f("radius", "airspace radius (km)", "number", "35") +
-      `<div class="row"><label>card border</label>
+      </select></div>
+      <div class="row"><label>airspace radius (km)</label>
+        <input type="number" min="5" max="250" data-k="radius" value="${Math.min(250, el.radius || 35)}">
+      </div>
+      <div class="row"><label>card border</label>
         <input type="checkbox" data-k="show_border"${el.show_border !== false ? " checked" : ""}>
       </div>
-      <div class="chip">Live ADS-B flight tracker tracking planes flying above your home via OpenSky. Choose between <b>Telemetry Card</b>, a tactical circular <b>PPI Radar Scope</b>, or <b>Split View</b>. Set Page Tier to <b>Show only when active</b> with <code>{{ states('sensor.overhead_aircraft_count') | int(0) > 0 }}</code> to display only when planes are overhead!</div>`;
+      <div class="chip">Live ADS-B flight tracker tracking planes flying above your home via Flightradar24 &amp; ADS-B. Choose between <b>Telemetry Card</b>, a tactical circular <b>PPI Radar Scope</b>, or <b>Split View</b>. Set Page Tier to <b>Show only when active</b> with <code>{{ states('sensor.overhead_aircraft_count') | int(0) > 0 }}</code> to display only when planes are overhead!</div>`;
   } else if (el.type === "sports_racing") {
     h += `<div class="row"><label>series</label><select data-k="series">
         <option value="f1"${(!el.series || el.series === "f1") ? " selected" : ""}>Formula 1 (F1)</option>
@@ -2870,10 +2872,16 @@ function props() {
       </select></div>` +
       f("team", "team filter (optional)", "text", "e.g. Arsenal or Celtics") +
       f("entity", "ha teamtracker entity (optional)", "text", "sensor.arsenal", "entities-dl") +
-      `<div class="row"><label>card border</label>
+      `<div class="row"><label>show before (hrs)</label>
+        <input type="number" step="0.5" min="0" max="12" data-k="pre_buffer_hours" value="${el.pre_buffer_hours !== undefined ? el.pre_buffer_hours : 2}">
+      </div>
+      <div class="row"><label>show after (hrs)</label>
+        <input type="number" step="0.5" min="0" max="12" data-k="post_buffer_hours" value="${el.post_buffer_hours !== undefined ? el.post_buffer_hours : 2}">
+      </div>
+      <div class="row"><label>card border</label>
         <input type="checkbox" data-k="show_border"${el.show_border !== false ? " checked" : ""}>
       </div>
-      <div class="chip">Live head-to-head match scoreboard with large typography, match clock / period badge, team records, and scorer highlights. Seamlessly reads <code>ha-teamtracker</code> entities from Home Assistant, or streams directly from public ESPN scoreboards.</div>`;
+      <div class="chip">Live head-to-head match scoreboard with large typography, match clock / period badge, team records, and scorer highlights. Integrates automatically with <code>sensor.sports_premier_league</code> active window (turns on before kickoff and off after final whistle).</div>`;
   }
   h += "</div>";
 
@@ -3881,14 +3889,17 @@ const PRESETS = [
   {
     id: "sports_match",
     title: "Live Sports Match Scoreboard",
-    desc: "Head-to-head live score, period clock (e.g. 74' · 2nd Half), team names, record stats, and scorer highlights. Works with HA ha-teamtracker or public ESPN scoreboards.",
+    desc: "Head-to-head live score, period clock (e.g. 74' · 2nd Half), team names, record stats, and scorer highlights. Automatically active on matchdays from pre-kickoff to post-whistle.",
     tier: "when",
+    show_if: "{{ is_state('sensor.sports_premier_league', 'active') }}",
     makeElements: (ent) => [
       {
         type: "sports_match",
         league: "soccer/eng.1",
         team: "",
         entity: ent || "",
+        pre_buffer_hours: 2,
+        post_buffer_hours: 2,
         x: 18, y: 14, w: 756, h: 222,
         show_border: true
       }

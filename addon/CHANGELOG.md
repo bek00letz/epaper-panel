@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.8.21
+- **Real-Time ADS-B Flight Tracking:**
+  - Replaced deprecated/rate-limited OpenSky Network feed with ultra-fast, rate-limit-free Flightradar24 live feed with OpenSky fallback.
+  - Automatically fetches live aircraft within range of Home Assistant home coordinates (`zone.home`), delivering flight routes (`BEY → DUS`), aircraft models (`A320`, `B77W`), speed, altitude, and heading.
+  - Dynamically synchronizes `sensor.overhead_aircraft_count` and `sensor.closest_aircraft` to the card's configured radius (clamped to realistic ADS-B line-of-sight: max 250 km).
+- **Dynamic Sports Matchday Active Window:**
+  - Added smart matchday active window computation engine for all leagues (Premier League, UEFA Champions League, La Liga, Bundesliga, Serie A, NBA, NFL, MLB, NHL).
+  - Automatically prioritizes today's games (`?dates=YYYYMMDD`) over previous round results, dynamically showing the card from configurable pre-match buffer (default: 2 hrs before kickoff) until post-match buffer (default: 2 hrs after final whistle).
+  - Automatically keeps card active if any game is live / in progress.
+  - Publishes `sensor.sports_{league_slug}` (e.g. `sensor.sports_premier_league`, `sensor.sports_nba`) with state `active`/`idle` and rich matchday metadata for 1-click Page Tier conditional display (`show_if: "{{ is_state('sensor.sports_premier_league', 'active') }}"`).
+  - Added configurable pre-kickoff and post-whistle buffer controls to the Visual Editor inspector.
+
 ## 0.8.20
 - **Feed / Watch Sub-Item Cycling:**
   - Resolved issue where secondary episode detail elements in the watch/feed card remained frozen on the first item's episode title.

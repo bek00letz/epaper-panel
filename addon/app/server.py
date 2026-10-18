@@ -538,61 +538,129 @@ async def get_home_coordinates(session):
 
 async def fetch_overhead_aircraft(session, radius_km=35.0):
     now = time.time()
-    if now - _aircraft_cache["at"] < 45.0 and _aircraft_cache["items"] is not None:
+    if now - _aircraft_cache["at"] < 30.0 and _aircraft_cache["items"] is not None:
         return _aircraft_cache["items"]
 
     lat, lon = await get_home_coordinates(session)
-    radius_km = max(5.0, min(150.0, float(radius_km or 35.0)))
+    radius_km = max(5.0, min(250.0, float(radius_km or 35.0)))
     d_lat = radius_km / 111.0
     cos_lat = max(0.01, math.cos(math.radians(lat)))
     d_lon = radius_km / (111.0 * cos_lat)
 
-    url = (
+    # 1. Primary: Flightradar24 high-speed live feed (rate-limit free, global coverage)
+    fr24_url = (
+        f"https://data-cloud.flightradar24.com/zones/fcgi/feed.js"
+        f"?bounds={lat + d_lat:.3f},{lat - d_lat:.3f},{lon - d_lon:.3f},{lon + d_lon:.3f}"
+        f"&faa=1&satellite=1&mlat=1&flarm=1&adsb=1&gnd=0&air=1&vehicles=0&estimated=1&maxage=14400&gliders=0&stats=0"
+    )
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    }
+    timeout = aiohttp.ClientTimeout(total=6)
+    try:
+        async with session.get(fr24_url, headers=headers, timeout=timeout) as r:
+            if r.status == 200:
+                data = await r.json(content_type=None)
+                aircraft = []
+                for k, v in data.items():
+                    if k in ("full_count", "version", "stats") or not isinstance(v, list) or len(v) < 14:
+                        continue
+                    a_lat, a_lon = v[1], v[2]
+                    if a_lat is None or a_lon is None:
+                        continue
+                    # On ground flag (v[14] == 1)
+                    if len(v) > 14 and v[14] == 1:
+                        continue
+                    dist = _haversine_km(lat, lon, a_lat, a_lon)
+                    if dist > radius_km:
+                        continue
+                    b_deg, cardinal = _bearing_calc(lat, lon, a_lat, a_lon)
+                    cs = str(v[16] or v[13] or v[0]).strip().upper()
+                    origin = str(v[11] or "").strip()
+                    dest = str(v[12] or "").strip()
+                    ac_type = str(v[8] or "").strip()
+                    airline = str(v[18] or "").strip()
+                    route = f"{origin} → {dest}" if (origin and dest) else (origin or dest or "")
+                    desc_parts = [p for p in (route, ac_type, airline) if p]
+                    desc = " · ".join(desc_parts) if desc_parts else "Commercial Flight"
+
+                    alt_ft = float(v[4]) if v[4] is not None else 0.0
+                    alt_m = alt_ft * 0.3048
+                    spd_kts = float(v[5]) if v[5] is not None else 0.0
+                    spd_ms = spd_kts * 0.514444
+                    v_rate_fpm = float(v[15]) if len(v) > 15 and v[15] is not None else 0.0
+                    v_rate_ms = v_rate_fpm * 0.00508
+
+                    aircraft.append({
+                        "icao24": str(v[0]).upper(),
+                        "callsign": cs,
+                        "country": desc,
+                        "latitude": a_lat,
+                        "longitude": a_lon,
+                        "altitude_m": round(alt_m, 1),
+                        "velocity_ms": round(spd_ms, 1),
+                        "track_deg": float(v[3]) if v[3] is not None else 0.0,
+                        "vertical_rate": round(v_rate_ms, 2),
+                        "distance_km": round(dist, 1),
+                        "bearing_deg": round(b_deg, 1),
+                        "bearing_cardinal": cardinal,
+                        "origin": origin,
+                        "destination": dest,
+                        "model": ac_type
+                    })
+                aircraft.sort(key=lambda a: a["distance_km"])
+                _aircraft_cache["at"] = now
+                _aircraft_cache["items"] = aircraft
+                return aircraft
+    except Exception as exc:
+        print(f"FR24 fetch error: {exc!r}", flush=True)
+
+    # 2. Fallback: OpenSky Network
+    opensky_url = (
         f"https://opensky-network.org/api/states/all"
         f"?lamin={lat - d_lat:.4f}&lamax={lat + d_lat:.4f}"
         f"&lomin={lon - d_lon:.4f}&lomax={lon + d_lon:.4f}"
     )
-    headers = {"User-Agent": "Crowpanel-Epaper/0.8.9 (HomeAssistant Addon)"}
-    timeout = aiohttp.ClientTimeout(total=8)
     try:
-        async with session.get(url, headers=headers, timeout=timeout) as r:
-            if r.status != 200:
-                return _aircraft_cache["items"]
-            data = await r.json()
-            raw_states = data.get("states") or []
-            aircraft = []
-            for s in raw_states:
-                if not s or len(s) < 12 or s[8] is True:
-                    continue
-                a_lon, a_lat = s[5], s[6]
-                if a_lon is None or a_lat is None:
-                    continue
-                dist = _haversine_km(lat, lon, a_lat, a_lon)
-                if dist > radius_km:
-                    continue
-                b_deg, cardinal = _bearing_calc(lat, lon, a_lat, a_lon)
-                cs = str(s[1]).strip() if s[1] else str(s[0]).upper()
-                aircraft.append({
-                    "icao24": str(s[0]).upper(),
-                    "callsign": cs,
-                    "country": str(s[2] or "Commercial"),
-                    "latitude": a_lat,
-                    "longitude": a_lon,
-                    "altitude_m": float(s[7]) if s[7] is not None else 0.0,
-                    "velocity_ms": float(s[9]) if s[9] is not None else 0.0,
-                    "track_deg": float(s[10]) if s[10] is not None else 0.0,
-                    "vertical_rate": float(s[11]) if s[11] is not None else 0.0,
-                    "distance_km": round(dist, 1),
-                    "bearing_deg": round(b_deg, 1),
-                    "bearing_cardinal": cardinal
-                })
-            aircraft.sort(key=lambda a: a["distance_km"])
-            _aircraft_cache["at"] = now
-            _aircraft_cache["items"] = aircraft
-            return aircraft
+        async with session.get(opensky_url, headers={"User-Agent": "Crowpanel-Epaper/0.8.21"}, timeout=timeout) as r:
+            if r.status == 200:
+                data = await r.json()
+                raw_states = data.get("states") or []
+                aircraft = []
+                for s in raw_states:
+                    if not s or len(s) < 12 or s[8] is True:
+                        continue
+                    a_lon, a_lat = s[5], s[6]
+                    if a_lon is None or a_lat is None:
+                        continue
+                    dist = _haversine_km(lat, lon, a_lat, a_lon)
+                    if dist > radius_km:
+                        continue
+                    b_deg, cardinal = _bearing_calc(lat, lon, a_lat, a_lon)
+                    cs = str(s[1]).strip() if s[1] else str(s[0]).upper()
+                    aircraft.append({
+                        "icao24": str(s[0]).upper(),
+                        "callsign": cs,
+                        "country": str(s[2] or "Commercial"),
+                        "latitude": a_lat,
+                        "longitude": a_lon,
+                        "altitude_m": float(s[7]) if s[7] is not None else 0.0,
+                        "velocity_ms": float(s[9]) if s[9] is not None else 0.0,
+                        "track_deg": float(s[10]) if s[10] is not None else 0.0,
+                        "vertical_rate": float(s[11]) if s[11] is not None else 0.0,
+                        "distance_km": round(dist, 1),
+                        "bearing_deg": round(b_deg, 1),
+                        "bearing_cardinal": cardinal
+                    })
+                aircraft.sort(key=lambda a: a["distance_km"])
+                _aircraft_cache["at"] = now
+                _aircraft_cache["items"] = aircraft
+                return aircraft
     except Exception as exc:
-        print(f"fetch_overhead_aircraft error: {exc!r}", flush=True)
-        return _aircraft_cache["items"]
+        print(f"OpenSky fallback error: {exc!r}", flush=True)
+
+    return _aircraft_cache["items"] or []
+
 
 
 async def fetch_weather_forecast(session, entity_id, fallback=None):
@@ -813,6 +881,52 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None):
         return _racing_cache.get(raw_key, {}).get("data") or event_data
 
 
+LEAGUE_MAP = {
+    "premier_league": "soccer/eng.1",
+    "epl": "soccer/eng.1",
+    "champions_league": "soccer/uefa.champions",
+    "ucl": "soccer/uefa.champions",
+    "la_liga": "soccer/esp.1",
+    "bundesliga": "soccer/ger.1",
+    "serie_a": "soccer/ita.1",
+    "mls": "soccer/usa.1",
+    "nba": "basketball/nba",
+    "wnba": "basketball/wnba",
+    "nfl": "football/nfl",
+    "college_football": "football/college-football",
+    "mlb": "baseball/mlb",
+    "nhl": "hockey/nhl"
+}
+
+LEAGUE_SLUGS = {
+    "soccer/eng.1": "premier_league",
+    "premier_league": "premier_league",
+    "epl": "premier_league",
+    "soccer/uefa.champions": "champions_league",
+    "champions_league": "champions_league",
+    "ucl": "champions_league",
+    "soccer/esp.1": "la_liga",
+    "la_liga": "la_liga",
+    "soccer/ger.1": "bundesliga",
+    "bundesliga": "bundesliga",
+    "soccer/ita.1": "serie_a",
+    "serie_a": "serie_a",
+    "soccer/usa.1": "mls",
+    "mls": "mls",
+    "basketball/nba": "nba",
+    "nba": "nba",
+    "basketball/wnba": "wnba",
+    "wnba": "wnba",
+    "football/nfl": "nfl",
+    "nfl": "nfl",
+    "football/college-football": "college_football",
+    "baseball/mlb": "mlb",
+    "mlb": "mlb",
+    "hockey/nhl": "nhl",
+    "nhl": "nhl"
+}
+
+
 def _parse_espn_event(ev, league_title="MATCH"):
     comp = (ev.get("competitions") or [{}])[0]
     competitors = comp.get("competitors") or []
@@ -825,7 +939,22 @@ def _parse_espn_event(ev, league_title="MATCH"):
     clock_val = comp.get("status", {}).get("displayClock")
     is_live = (st_state == "in")
 
-    clock_badge = f"{clock_val} · {st_desc}" if (clock_val and clock_val != "0'" and is_live) else st_desc
+    date_str = ev.get("date") or comp.get("date") or ""
+    kickoff_time_str = ""
+    if date_str:
+        try:
+            kickoff_dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+            kickoff_time_str = kickoff_dt.strftime("%H:%M")
+        except Exception:
+            pass
+
+    if is_live:
+        clock_badge = f"{clock_val} · {st_desc}" if (clock_val and clock_val != "0'") else st_desc
+    elif st_state == "pre":
+        clock_badge = f"Kickoff {kickoff_time_str}" if kickoff_time_str else st_desc
+    else:
+        clock_badge = st_desc
+
     venue_title = comp.get("venue", {}).get("fullName") or ""
 
     home_id = str(home.get("team", {}).get("id") or "")
@@ -849,6 +978,8 @@ def _parse_espn_event(ev, league_title="MATCH"):
         "clock": clock_badge,
         "status": st_state.upper(),
         "is_live": is_live,
+        "kickoff_iso": date_str,
+        "kickoff_time": kickoff_time_str,
         "home_team": home.get("team", {}).get("displayName") or home.get("team", {}).get("shortDisplayName") or "HOME",
         "home_score": home.get("score") if home.get("score") is not None else "-",
         "home_stats": (home.get("records") or [{}])[0].get("summary", ""),
@@ -857,6 +988,102 @@ def _parse_espn_event(ev, league_title="MATCH"):
         "away_stats": (away.get("records") or [{}])[0].get("summary", ""),
         "events_home": ", ".join(events_home[:3]),
         "events_away": ", ".join(events_away[:3])
+    }
+
+
+async def compute_sports_active_window(session, entity_or_league="soccer/eng.1", pre_buffer_hours=2.0, post_buffer_hours=2.0):
+    raw_input = str(entity_or_league or "soccer/eng.1").strip()
+    slug_in = raw_input.lower().replace("-", "_").replace(" ", "_")
+    endpoint_path = LEAGUE_MAP.get(slug_in, raw_input)
+    if "/" not in endpoint_path:
+        endpoint_path = f"soccer/{endpoint_path}"
+    slug = LEAGUE_SLUGS.get(endpoint_path, LEAGUE_SLUGS.get(slug_in, slug_in.replace("/", "_")))
+
+    sport_key = endpoint_path.split("/")[0]
+    durations = {"soccer": 2.0, "basketball": 2.5, "football": 3.25, "baseball": 2.75, "hockey": 2.5}
+    est_duration_hours = durations.get(sport_key, 2.0)
+
+    now_utc = datetime.now(timezone.utc)
+    today_str = now_utc.strftime("%Y%m%d")
+    yesterday_str = (now_utc - timedelta(days=1)).strftime("%Y%m%d")
+
+    headers = {"User-Agent": "Crowpanel-Epaper/0.8.21 (HomeAssistant Addon)"}
+    timeout = aiohttp.ClientTimeout(total=6)
+
+    today_url = f"https://site.api.espn.com/apis/site/v2/sports/{endpoint_path}/scoreboard?dates={today_str}"
+    events = []
+    league_title = "MATCH"
+    try:
+        async with session.get(today_url, headers=headers, timeout=timeout) as r:
+            if r.status == 200:
+                data = await r.json()
+                events = data.get("events") or []
+                league_title = (data.get("leagues") or [{}])[0].get("name") or "MATCH"
+    except Exception as exc:
+        print(f"compute_sports_active_window error: {exc!r}", flush=True)
+
+    yesterday_events = []
+    if not events or now_utc.hour < 12:
+        yest_url = f"https://site.api.espn.com/apis/site/v2/sports/{endpoint_path}/scoreboard?dates={yesterday_str}"
+        try:
+            async with session.get(yest_url, headers=headers, timeout=timeout) as r:
+                if r.status == 200:
+                    ydata = await r.json()
+                    yesterday_events = ydata.get("events") or []
+                    if not events:
+                        league_title = (ydata.get("leagues") or [{}])[0].get("name") or league_title
+        except Exception:
+            pass
+
+    all_candidate_events = events + yesterday_events
+    game_times = []
+    is_live = False
+    today_parsed = []
+
+    for ev in events:
+        parsed = _parse_espn_event(ev, league_title)
+        today_parsed.append(parsed)
+
+    for ev in all_candidate_events:
+        st_state = ev.get("status", {}).get("type", {}).get("state")
+        if st_state == "in":
+            is_live = True
+        d_str = ev.get("date")
+        if d_str:
+            try:
+                dt = datetime.fromisoformat(d_str.replace("Z", "+00:00"))
+                if ev in events or st_state == "in":
+                    game_times.append(dt)
+            except Exception:
+                pass
+
+    first_ko = min(game_times) if game_times else None
+    last_ko = max(game_times) if game_times else None
+
+    win_start = (first_ko - timedelta(hours=pre_buffer_hours)) if first_ko else None
+    win_end = (last_ko + timedelta(hours=est_duration_hours + post_buffer_hours)) if last_ko else None
+
+    is_active = is_live or (bool(win_start and win_end and (win_start <= now_utc <= win_end)))
+
+    summaries = []
+    for m in today_parsed:
+        summaries.append(f"{m['away_team']} at {m['home_team']}")
+
+    return {
+        "slug": slug,
+        "league_name": league_title,
+        "is_active": is_active,
+        "state": "active" if is_active else "idle",
+        "is_live": is_live,
+        "matches_today": len(events),
+        "first_kickoff": first_ko.isoformat() if first_ko else None,
+        "last_kickoff": last_ko.isoformat() if last_ko else None,
+        "window_start": win_start.isoformat() if win_start else None,
+        "window_end": win_end.isoformat() if win_end else None,
+        "pre_buffer_hours": pre_buffer_hours,
+        "post_buffer_hours": post_buffer_hours,
+        "matches_summary": ", ".join(summaries[:6]),
+        "today_matches": today_parsed
     }
 
 
@@ -908,66 +1135,66 @@ async def fetch_sports_match(session, entity_or_league="soccer/eng.1", team=None
         return cached["data"]
 
     # 3. Approach B: Map friendly league names to ESPN endpoint
-    league_map = {
-        "premier_league": "soccer/eng.1",
-        "epl": "soccer/eng.1",
-        "champions_league": "soccer/uefa.champions",
-        "ucl": "soccer/uefa.champions",
-        "la_liga": "soccer/esp.1",
-        "bundesliga": "soccer/ger.1",
-        "serie_a": "soccer/ita.1",
-        "mls": "soccer/usa.1",
-        "nba": "basketball/nba",
-        "wnba": "basketball/wnba",
-        "nfl": "football/nfl",
-        "college_football": "football/college-football",
-        "mlb": "baseball/mlb",
-        "nhl": "hockey/nhl"
-    }
     slug = raw_input.lower().replace("-", "_").replace(" ", "_")
-    endpoint_path = league_map.get(slug, raw_input)
+    endpoint_path = LEAGUE_MAP.get(slug, raw_input)
     if "/" not in endpoint_path:
         endpoint_path = f"soccer/{endpoint_path}"
 
-    url = f"https://site.api.espn.com/apis/site/v2/sports/{endpoint_path}/scoreboard"
-    headers = {"User-Agent": "Crowpanel-Epaper/0.8.11 (HomeAssistant Addon)"}
+    now_utc = datetime.now(timezone.utc)
+    today_str = now_utc.strftime("%Y%m%d")
+
+    url_today = f"https://site.api.espn.com/apis/site/v2/sports/{endpoint_path}/scoreboard?dates={today_str}"
+    url_default = f"https://site.api.espn.com/apis/site/v2/sports/{endpoint_path}/scoreboard"
+    headers = {"User-Agent": "Crowpanel-Epaper/0.8.21 (HomeAssistant Addon)"}
     timeout = aiohttp.ClientTimeout(total=6)
 
     try:
-        async with session.get(url, headers=headers, timeout=timeout) as r:
-            if r.status != 200:
-                return cached["data"] if cached else None
-            data = await r.json()
-            events = data.get("events") or []
-            if not events:
-                return cached["data"] if cached else None
+        events = []
+        league_title = "MATCH"
+        # First try today's games so today's upcoming/live matches take precedence
+        async with session.get(url_today, headers=headers, timeout=timeout) as r:
+            if r.status == 200:
+                data = await r.json()
+                events = data.get("events") or []
+                league_title = (data.get("leagues") or [{}])[0].get("name") or "MATCH"
 
-            league_title = (data.get("leagues") or [{}])[0].get("name") or "MATCH"
-            parsed_matches = [_parse_espn_event(ev, league_title) for ev in events]
+        # If no games today, fall back to default scoreboard (upcoming or current round)
+        if not events:
+            async with session.get(url_default, headers=headers, timeout=timeout) as r:
+                if r.status == 200:
+                    data = await r.json()
+                    events = data.get("events") or []
+                    league_title = (data.get("leagues") or [{}])[0].get("name") or league_title
 
-            if team:
-                query = str(team).lower().strip()
-                matched, others = [], []
-                for m in parsed_matches:
-                    if (query in m["home_team"].lower() or query in m["away_team"].lower()):
-                        matched.append(m)
-                    else:
-                        others.append(m)
-                parsed_matches = matched + others
-            else:
-                def _st_sort(m):
-                    st = m.get("status", "")
-                    if st == "IN": return 0
-                    if st == "PRE": return 1
-                    return 2
-                parsed_matches.sort(key=_st_sort)
+        if not events:
+            return cached["data"] if cached else None
 
-            is_any_live = any(m.get("is_live") for m in parsed_matches)
-            _sports_match_cache[cache_key] = {"at": now, "data": parsed_matches, "is_live": is_any_live}
-            return parsed_matches
+        parsed_matches = [_parse_espn_event(ev, league_title) for ev in events]
+
+        if team:
+            query = str(team).lower().strip()
+            matched, others = [], []
+            for m in parsed_matches:
+                if (query in m["home_team"].lower() or query in m["away_team"].lower()):
+                    matched.append(m)
+                else:
+                    others.append(m)
+            parsed_matches = matched + others
+        else:
+            def _st_sort(m):
+                st = m.get("status", "")
+                if st == "IN": return 0
+                if st == "PRE": return 1
+                return 2
+            parsed_matches.sort(key=_st_sort)
+
+        is_any_live = any(m.get("is_live") for m in parsed_matches)
+        _sports_match_cache[cache_key] = {"at": now, "data": parsed_matches, "is_live": is_any_live}
+        return parsed_matches
     except Exception as exc:
         print(f"fetch_sports_match error: {exc!r}", flush=True)
         return cached["data"] if cached else None
+
 
 
 async def enrich_page_values(session, page, vals):
@@ -1068,18 +1295,96 @@ async def publish_computed(session):
 
     # Publish overhead aircraft sensor to Home Assistant
     try:
-        aircraft = await fetch_overhead_aircraft(session, radius_km=35.0)
+        flight_radius = 35.0
+        try:
+            cur_spec = load_layouts()
+            for p in cur_spec.get("pages", {}).values():
+                for el in p.get("elements", []):
+                    if el.get("type") == "flight_tracker":
+                        flight_radius = float(el.get("radius") or 35.0)
+                        break
+        except Exception:
+            pass
+        aircraft = await fetch_overhead_aircraft(session, radius_km=flight_radius)
         closest_cs = aircraft[0]["callsign"] if aircraft else "None"
-        await publish_entity(session, "sensor.overhead_aircraft_count", len(aircraft),
-                             {"unit_of_measurement": "aircraft", "friendly_name": "Overhead Aircraft Count",
-                              "closest_callsign": closest_cs, "icon": "mdi:airplane"})
+        attrs = {
+            "unit_of_measurement": "aircraft",
+            "friendly_name": "Overhead Aircraft Count",
+            "closest_callsign": closest_cs,
+            "radius_km": flight_radius,
+            "icon": "mdi:airplane"
+        }
+        if aircraft:
+            attrs["closest_distance_km"] = aircraft[0]["distance_km"]
+            attrs["closest_bearing"] = aircraft[0]["bearing_cardinal"]
+            attrs["closest_route"] = aircraft[0].get("origin", "") + " → " + aircraft[0].get("destination", "") if (aircraft[0].get("origin") and aircraft[0].get("destination")) else ""
+            attrs["closest_model"] = aircraft[0].get("model", "")
+        await publish_entity(session, "sensor.overhead_aircraft_count", len(aircraft), attrs)
         if aircraft:
             await publish_entity(session, "sensor.closest_aircraft", closest_cs,
                                  {"friendly_name": "Closest Aircraft", "distance_km": aircraft[0]["distance_km"],
                                   "bearing": aircraft[0]["bearing_cardinal"], "altitude_m": aircraft[0]["altitude_m"],
-                                  "country": aircraft[0]["country"], "icon": "mdi:airplane"})
+                                  "country": aircraft[0]["country"], "model": aircraft[0].get("model", ""),
+                                  "icon": "mdi:airplane"})
     except Exception as exc:
         print(f"publish aircraft sensor failed: {exc!r}", flush=True)
+
+    # Publish sports match status sensors to Home Assistant
+    try:
+        cur_spec = load_layouts()
+        sports_elements = []
+        for p in cur_spec.get("pages", {}).values():
+            for el in p.get("elements", []):
+                if el.get("type") == "sports_match":
+                    sports_elements.append(el)
+
+        leagues_to_publish = []
+        if sports_elements:
+            for el in sports_elements:
+                lg = el.get("league") or "soccer/eng.1"
+                pre_b = float(el.get("pre_buffer_hours", 2.0))
+                post_b = float(el.get("post_buffer_hours", 2.0))
+                leagues_to_publish.append((lg, pre_b, post_b))
+        else:
+            leagues_to_publish.append(("soccer/eng.1", 2.0, 2.0))
+
+        seen_leagues = set()
+        for lg, pre_b, post_b in leagues_to_publish:
+            if lg in seen_leagues:
+                continue
+            seen_leagues.add(lg)
+            win_info = await compute_sports_active_window(session, lg, pre_buffer_hours=pre_b, post_buffer_hours=post_b)
+            slug = win_info["slug"]
+            sensor_id = f"sensor.sports_{slug}"
+            sport_icon = "mdi:soccer"
+            if "nba" in slug or "basketball" in lg:
+                sport_icon = "mdi:basketball"
+            elif "nfl" in slug or "football" in lg:
+                sport_icon = "mdi:football"
+            elif "mlb" in slug or "baseball" in lg:
+                sport_icon = "mdi:baseball"
+            elif "nhl" in slug or "hockey" in lg:
+                sport_icon = "mdi:hockey-puck"
+
+            await publish_entity(
+                session, sensor_id, win_info["state"],
+                {
+                    "friendly_name": f"{win_info['league_name']} Matchday",
+                    "is_active": win_info["is_active"],
+                    "is_live": win_info["is_live"],
+                    "matches_today": win_info["matches_today"],
+                    "first_kickoff": win_info["first_kickoff"],
+                    "last_kickoff": win_info["last_kickoff"],
+                    "window_start": win_info["window_start"],
+                    "window_end": win_info["window_end"],
+                    "pre_buffer_hours": win_info["pre_buffer_hours"],
+                    "post_buffer_hours": win_info["post_buffer_hours"],
+                    "matches_summary": win_info["matches_summary"],
+                    "icon": sport_icon
+                }
+            )
+    except Exception as exc:
+        print(f"publish sports matchday sensor failed: {exc!r}", flush=True)
 
     # Publish Formula 1 status sensor
     try:

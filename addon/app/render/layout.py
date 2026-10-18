@@ -1077,7 +1077,7 @@ def _draw_flight_tracker(img, d, el, raw_val, display=None):
     if show_border:
         d.rounded_rectangle([(x, y), (x + w, y + h)], radius=12, outline=T.BLACK, width=1)
 
-    radius = int(el.get("radius") or 35)
+    radius = max(5, min(250, int(el.get("radius") or 35)))
     aircraft_list = []
     val_parsed = _parse_val_json(raw_val)
     if isinstance(val_parsed, list):
