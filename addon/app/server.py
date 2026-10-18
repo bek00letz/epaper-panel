@@ -79,8 +79,12 @@ def load_fixture():
 
 def eval_fixture_template(tpl: str) -> str:
     """Evaluate common HA templates against fixture.json when running offline."""
-    states = load_fixture().get("states", {})
-    s = str(tpl or "").strip()
+    states = dict(load_fixture().get("states", {}))
+    for eid, info in _epaper_published_entities.items():
+        attrs = dict(info.get("attributes") or {})
+        attrs["state"] = info.get("state", "")
+        states[eid] = attrs
+    s = migrate_legacy_entity_refs(str(tpl or "").strip())
 
     # Handle dynamic_grid JSON template: `[{% for e in [...] %}`
     if "[{% for e in [" in s and 'states(e) | to_json' in s:
@@ -262,6 +266,35 @@ def load_layouts():
     return {"rotation": [], "pages": {}}
 
 
+LEGACY_ENTITY_MAP = {
+    "sensor.overhead_aircraft_count": "sensor.epaper_flights_overhead",
+    "sensor.closest_aircraft": "sensor.epaper_closest_aircraft",
+    "sensor.f1_status": "sensor.epaper_racing_f1",
+    "sensor.formula_e_status": "sensor.epaper_racing_fe",
+}
+
+_epaper_published_entities: dict[str, dict] = {}
+
+
+def migrate_legacy_entity_refs(text: str) -> str:
+    """Upgrade legacy non-prefixed add-on sensor names to canonical sensor.epaper_* names."""
+    if not text or not isinstance(text, str):
+        return text
+    out = text
+    for old_id, new_id in LEGACY_ENTITY_MAP.items():
+        if old_id in out:
+            out = out.replace(old_id, new_id)
+    # Migrate sensor.sports_<slug> -> sensor.epaper_sports_<slug>
+    out = re.sub(r"\bsensor\.sports_([a-z0-9_]+)\b", r"sensor.epaper_sports_\1", out)
+    # Also upgrade old racing show_if `states('sensor.epaper_racing_f1') in ['IN', 'PRE']` -> `is_state('sensor.epaper_racing_f1', 'active')`
+    out = re.sub(
+        r"states\(\s*'(sensor\.epaper_racing_[a-z0-9_]+)'\s*\)\s+in\s+\[\s*'IN'\s*,\s*'PRE'\s*\]",
+        r"is_state('\1', 'active')",
+        out,
+    )
+    return out
+
+
 def sanitize_layouts(spec: dict) -> dict:
     """Validate and normalize a layout spec before saving."""
     raw_pages = spec.get("pages")
@@ -273,10 +306,19 @@ def sanitize_layouts(spec: dict) -> dict:
         if not PAGE_RE.match(clean_name) or not isinstance(p, dict):
             continue
         tier = p.get("tier") if p.get("tier") in ("rotate", "when", "alert") else "rotate"
-        els = [el for el in (p.get("elements") or []) if isinstance(el, dict)]
+        els = []
+        for raw_el in (p.get("elements") or []):
+            if not isinstance(raw_el, dict):
+                continue
+            el = dict(raw_el)
+            if isinstance(el.get("entity"), str) and el["entity"]:
+                el["entity"] = migrate_legacy_entity_refs(el["entity"].strip())
+            if isinstance(el.get("show_if"), str) and el["show_if"]:
+                el["show_if"] = migrate_legacy_entity_refs(el["show_if"].strip())
+            els.append(el)
         entry = {"tier": tier, "elements": els}
         if p.get("show_if") and isinstance(p.get("show_if"), str):
-            entry["show_if"] = p["show_if"].strip()
+            entry["show_if"] = migrate_legacy_entity_refs(p["show_if"].strip())
         if tier == "alert":
             entry["hold_minutes"] = max(1, min(1440, int(p.get("hold_minutes") or 10)))
         pages[clean_name] = entry
@@ -329,7 +371,7 @@ def sanitize_layouts(spec: dict) -> dict:
                     "name": str(cp.get("name"))[:60],
                     "desc": str(cp.get("desc") or "Custom saved layout preset")[:140],
                     "tier": cp.get("tier") if cp.get("tier") in ("rotate", "when", "alert") else "rotate",
-                    "show_if": str(cp.get("show_if") or "").strip(),
+                    "show_if": migrate_legacy_entity_refs(str(cp.get("show_if") or "").strip()),
                     "elements": [el for el in cp["elements"] if isinstance(el, dict)],
                 })
 
@@ -380,16 +422,31 @@ async def ha_template(session, tpl) -> str | None:
         return None
 
 
-async def publish_entity(session, entity_id, state, attrs=None):
-    """Push a computed value into Home Assistant as a real entity."""
-    if not HA_TOKEN or not valid_entity_id(entity_id):
+async def publish_entity(session, entity_id, state, attrs=None, register_mqtt=True):
+    """Push a computed value into Home Assistant as a real entity and record it for the Studio picker."""
+    if not valid_entity_id(entity_id):
         return
-    safe_eid = urllib.parse.quote(entity_id.strip(), safe=".")
+    clean_id = entity_id.strip()
+    merged_attrs = dict(attrs or {})
+    if clean_id.startswith("sensor.epaper_"):
+        merged_attrs.setdefault("source", "epaper_studio")
+        fn = merged_attrs.get("friendly_name") or clean_id
+        if not str(fn).startswith("E-Paper"):
+            merged_attrs["friendly_name"] = f"E-Paper · {fn}"
+        _epaper_published_entities[clean_id] = {
+            "entity_id": clean_id,
+            "state": str(state)[:255],
+            "attributes": merged_attrs,
+            "register_mqtt": register_mqtt,
+        }
+    if not HA_TOKEN:
+        return
+    safe_eid = urllib.parse.quote(clean_id, safe=".")
     try:
         await ha_json(session, f"/states/{safe_eid}", method="POST",
-                      json={"state": str(state)[:255], "attributes": attrs or {}})
+                      json={"state": str(state)[:255], "attributes": merged_attrs})
     except Exception as exc:
-        print(f"publish {entity_id} failed: {exc!r}", flush=True)
+        print(f"publish {clean_id} failed: {exc!r}", flush=True)
 
 
 SEP = "<<<|epaper|>>>"
@@ -1302,7 +1359,11 @@ def _parse_espn_event(ev, league_title="MATCH", tz_name=None):
     }
 
 
-async def compute_sports_active_window(session, entity_or_league="soccer/eng.1", pre_buffer_hours=2.0, post_buffer_hours=2.0, tz_name=None):
+_sports_window_cache: dict[str, dict] = {}
+_racing_window_cache: dict[str, dict] = {}
+
+
+async def compute_sports_active_window(session, entity_or_league="soccer/eng.1", pre_buffer_hours=2.0, post_buffer_hours=2.0, tz_name=None, team=None):
     if not tz_name:
         tz_name = await get_home_timezone(session)
     raw_input = str(entity_or_league or "soccer/eng.1").strip()
@@ -1311,6 +1372,13 @@ async def compute_sports_active_window(session, entity_or_league="soccer/eng.1",
     if "/" not in endpoint_path:
         endpoint_path = f"soccer/{endpoint_path}"
     slug = LEAGUE_SLUGS.get(endpoint_path, LEAGUE_SLUGS.get(slug_in, slug_in.replace("/", "_")))
+    team_q = str(team or "").strip().lower()
+
+    cache_key = f"{endpoint_path}:{pre_buffer_hours}:{post_buffer_hours}:{tz_name}:{team_q}"
+    now_ts = time.time()
+    cached = _sports_window_cache.get(cache_key)
+    if cached and (now_ts - cached["at"] < 60.0):
+        return cached["data"]
 
     sport_key = endpoint_path.split("/")[0]
     durations = {"soccer": 2.0, "basketball": 2.5, "football": 3.25, "baseball": 2.75, "hockey": 2.5}
@@ -1320,7 +1388,7 @@ async def compute_sports_active_window(session, entity_or_league="soccer/eng.1",
     today_str = now_utc.strftime("%Y%m%d")
     yesterday_str = (now_utc - timedelta(days=1)).strftime("%Y%m%d")
 
-    headers = {"User-Agent": "Crowpanel-Epaper/0.8.23 (HomeAssistant Addon)"}
+    headers = {"User-Agent": "Crowpanel-Epaper/0.8.27 (HomeAssistant Addon)"}
     timeout = aiohttp.ClientTimeout(total=6)
 
     today_url = f"https://site.api.espn.com/apis/site/v2/sports/{endpoint_path}/scoreboard?dates={today_str}"
@@ -1348,12 +1416,26 @@ async def compute_sports_active_window(session, entity_or_league="soccer/eng.1",
         except Exception:
             pass
 
-    all_candidate_events = events + yesterday_events
+    def _matches_team_filter(ev_obj):
+        if not team_q:
+            return True
+        comp = (ev_obj.get("competitions") or [{}])[0]
+        for c in (comp.get("competitors") or []):
+            t_info = c.get("team") or {}
+            names = f"{t_info.get('displayName', '')} {t_info.get('shortDisplayName', '')} {t_info.get('abbreviation', '')}".lower()
+            if team_q in names:
+                return True
+        return False
+
+    filtered_today = [ev for ev in events if _matches_team_filter(ev)]
+    filtered_yesterday = [ev for ev in yesterday_events if _matches_team_filter(ev)]
+    all_candidate_events = filtered_today + filtered_yesterday
+
     game_times = []
     is_live = False
     today_parsed = []
 
-    for ev in events:
+    for ev in filtered_today:
         parsed = _parse_espn_event(ev, league_title, tz_name=tz_name)
         today_parsed.append(parsed)
 
@@ -1365,7 +1447,7 @@ async def compute_sports_active_window(session, entity_or_league="soccer/eng.1",
         if d_str:
             try:
                 dt = datetime.fromisoformat(d_str.replace("Z", "+00:00"))
-                if ev in events or st_state == "in":
+                if ev in filtered_today or st_state == "in":
                     game_times.append(dt)
             except Exception:
                 pass
@@ -1392,13 +1474,14 @@ async def compute_sports_active_window(session, entity_or_league="soccer/eng.1",
     win_start_local = win_start.astimezone(local_tz).strftime("%H:%M") if win_start else None
     win_end_local = win_end.astimezone(local_tz).strftime("%H:%M") if win_end else None
 
-    return {
+    result = {
         "slug": slug,
+        "sensor_id": f"sensor.epaper_sports_{slug}",
         "league_name": league_title,
         "is_active": is_active,
         "state": "active" if is_active else "idle",
         "is_live": is_live,
-        "matches_today": len(events),
+        "matches_today": len(filtered_today),
         "first_kickoff": first_ko.isoformat() if first_ko else None,
         "first_kickoff_local": first_ko_local,
         "last_kickoff": last_ko.isoformat() if last_ko else None,
@@ -1410,9 +1493,191 @@ async def compute_sports_active_window(session, entity_or_league="soccer/eng.1",
         "time_zone": tz_name,
         "pre_buffer_hours": pre_buffer_hours,
         "post_buffer_hours": post_buffer_hours,
+        "team_filter": team or "",
         "matches_summary": ", ".join(summaries[:6]),
-        "today_matches": today_parsed
+        "today_matches": today_parsed,
     }
+    _sports_window_cache[cache_key] = {"at": now_ts, "data": result}
+    return result
+
+
+async def compute_racing_active_window(session, series="f1", pre_buffer_hours=2.0, post_buffer_hours=2.0, window_mode="session", tz_name=None):
+    """Compute whether a Motorsport series (F1, Formula E, NASCAR, IndyCar) is in an active session/race-weekend window."""
+    if not tz_name:
+        tz_name = await get_home_timezone(session)
+    raw_s = str(series or "f1").strip().lower()
+    if raw_s in ("fe", "formula_e", "formula-e", "formulae"):
+        slug = "fe"
+        series_title = "Formula E"
+    elif raw_s in ("nascar", "nascar-premier"):
+        slug = "nascar"
+        series_title = "NASCAR"
+    elif raw_s in ("indycar", "irl"):
+        slug = "indycar"
+        series_title = "IndyCar"
+    else:
+        slug = "f1"
+        series_title = "Formula 1"
+
+    w_mode = "weekend" if str(window_mode).strip().lower() == "weekend" else "session"
+    cache_key = f"{slug}:{pre_buffer_hours}:{post_buffer_hours}:{w_mode}:{tz_name}"
+    now_ts = time.time()
+    cached = _racing_window_cache.get(cache_key)
+    if cached and (now_ts - cached["at"] < 60.0):
+        return cached["data"]
+
+    now_utc = datetime.now(timezone.utc)
+    cur_year = now_utc.year
+    headers = {"User-Agent": "Crowpanel-Epaper/0.8.27 (HomeAssistant Addon)"}
+    timeout = aiohttp.ClientTimeout(total=6)
+
+    sessions_list: list[tuple[str, datetime, float]] = []  # (session_label, start_utc, duration_hours)
+    event_name = f"{series_title} Championship"
+    circuit_name = ""
+    is_live = False
+
+    # 1. For F1 and Formula E, check sportstimes session database for exact FP1/FP2/FP3/Quali/Sprint/Race UTC timestamps
+    if slug in ("f1", "fe"):
+        for yr in (cur_year, cur_year + 1):
+            db_url = f"https://raw.githubusercontent.com/sportstimes/f1/main/_db/{slug}/{yr}.json"
+            try:
+                async with session.get(db_url, headers=headers, timeout=timeout) as r:
+                    if r.status == 200:
+                        fdata = await r.json(content_type=None)
+                        races = fdata.get("races") or []
+                        for race in races:
+                            sess_dict = race.get("sessions") or {}
+                            r_sessions = []
+                            for sk, sv in sess_dict.items():
+                                if not sv:
+                                    continue
+                                try:
+                                    sdt = datetime.fromisoformat(str(sv).replace("Z", "+00:00"))
+                                    dur = 2.5 if sk.lower() in ("gp", "race") else 1.5
+                                    r_sessions.append((sk, sdt, dur))
+                                except Exception:
+                                    pass
+                            r_sessions.sort(key=lambda x: x[1])
+                            if not r_sessions:
+                                continue
+                            # Pick the race weekend whose final session + post_buffer + 12h hasn't long passed
+                            if r_sessions[-1][1] + timedelta(hours=r_sessions[-1][2] + max(post_buffer_hours, 6.0)) >= now_utc:
+                                event_name = race.get("name") or event_name
+                                circuit_name = race.get("location") or ""
+                                sessions_list = r_sessions
+                                break
+                        if sessions_list:
+                            break
+            except Exception:
+                pass
+
+    # 2. Also check ESPN racing scoreboard (for live status and NASCAR/IndyCar/F1 fallback)
+    espn_map = {"f1": "f1", "nascar": "nascar-premier", "indycar": "irl"}
+    if slug in espn_map:
+        espn_url = f"https://site.api.espn.com/apis/site/v2/sports/racing/{espn_map[slug]}/scoreboard"
+        try:
+            async with session.get(espn_url, headers=headers, timeout=timeout) as r:
+                if r.status == 200:
+                    data = await r.json()
+                    events = data.get("events") or []
+                    if events:
+                        ev = events[0]
+                        event_name = ev.get("name") or event_name
+                        circuit_name = (ev.get("circuit") or {}).get("fullName") or circuit_name
+                        st_state = ev.get("status", {}).get("type", {}).get("state") or "pre"
+                        if st_state == "in":
+                            is_live = True
+                        if not sessions_list:
+                            for comp in (ev.get("competitions") or []):
+                                c_date = comp.get("date") or ev.get("date")
+                                c_type = (comp.get("type") or {}).get("text") or "Session"
+                                c_state = (comp.get("status") or {}).get("type", {}).get("state")
+                                if c_state == "in":
+                                    is_live = True
+                                if c_date:
+                                    try:
+                                        cdt = datetime.fromisoformat(str(c_date).replace("Z", "+00:00"))
+                                        dur = 2.5 if "race" in c_type.lower() else 1.5
+                                        sessions_list.append((c_type, cdt, dur))
+                                    except Exception:
+                                        pass
+                            if not sessions_list and ev.get("date"):
+                                try:
+                                    edt = datetime.fromisoformat(str(ev["date"]).replace("Z", "+00:00"))
+                                    sessions_list.append(("Race", edt, 2.5))
+                                except Exception:
+                                    pass
+                            sessions_list.sort(key=lambda x: x[1])
+        except Exception:
+            pass
+
+    active_win_start = None
+    active_win_end = None
+    active_session_label = ""
+    is_active = is_live
+
+    if sessions_list:
+        for s_label, s_dt, s_dur in sessions_list:
+            if s_dt <= now_utc <= s_dt + timedelta(hours=s_dur):
+                is_live = True
+                is_active = True
+
+        if w_mode == "weekend":
+            first_label, first_dt, _ = sessions_list[0]
+            last_label, last_dt, last_dur = sessions_list[-1]
+            w_start = first_dt - timedelta(hours=pre_buffer_hours)
+            w_end = last_dt + timedelta(hours=last_dur + post_buffer_hours)
+            active_win_start = w_start
+            active_win_end = w_end
+            active_session_label = f"{first_label} – {last_label}"
+            if w_start <= now_utc <= w_end:
+                is_active = True
+        else:
+            # Session-by-session mode: find the currently active session window, or the next upcoming one
+            chosen = None
+            for s_label, s_dt, s_dur in sessions_list:
+                w_start = s_dt - timedelta(hours=pre_buffer_hours)
+                w_end = s_dt + timedelta(hours=s_dur + post_buffer_hours)
+                if w_start <= now_utc <= w_end:
+                    is_active = True
+                    chosen = (s_label, w_start, w_end)
+                    break
+                elif w_start > now_utc and chosen is None:
+                    chosen = (s_label, w_start, w_end)
+            if chosen is None:
+                s_label, s_dt, s_dur = sessions_list[-1]
+                chosen = (s_label, s_dt - timedelta(hours=pre_buffer_hours), s_dt + timedelta(hours=s_dur + post_buffer_hours))
+            active_session_label, active_win_start, active_win_end = chosen
+
+    try:
+        local_tz = ZoneInfo(tz_name)
+    except Exception:
+        local_tz = timezone.utc
+
+    win_start_local = active_win_start.astimezone(local_tz).strftime("%a %H:%M") if active_win_start else None
+    win_end_local = active_win_end.astimezone(local_tz).strftime("%a %H:%M") if active_win_end else None
+
+    result = {
+        "slug": slug,
+        "sensor_id": f"sensor.epaper_racing_{slug}",
+        "series_name": series_title,
+        "event_name": event_name,
+        "circuit": circuit_name,
+        "session_name": active_session_label,
+        "is_active": is_active,
+        "state": "active" if is_active else "idle",
+        "is_live": is_live,
+        "window_mode": w_mode,
+        "window_start": active_win_start.isoformat() if active_win_start else None,
+        "window_start_local": win_start_local,
+        "window_end": active_win_end.isoformat() if active_win_end else None,
+        "window_end_local": win_end_local,
+        "time_zone": tz_name,
+        "pre_buffer_hours": pre_buffer_hours,
+        "post_buffer_hours": post_buffer_hours,
+    }
+    _racing_window_cache[cache_key] = {"at": now_ts, "data": result}
+    return result
 
 
 async def fetch_sports_match(session, entity_or_league="soccer/eng.1", team=None, fallback=None, tz_name=None):
@@ -1475,7 +1740,7 @@ async def fetch_sports_match(session, entity_or_league="soccer/eng.1", team=None
 
     url_today = f"https://site.api.espn.com/apis/site/v2/sports/{endpoint_path}/scoreboard?dates={today_str}"
     url_default = f"https://site.api.espn.com/apis/site/v2/sports/{endpoint_path}/scoreboard"
-    headers = {"User-Agent": "Crowpanel-Epaper/0.8.23 (HomeAssistant Addon)"}
+    headers = {"User-Agent": "Crowpanel-Epaper/0.8.27 (HomeAssistant Addon)"}
     timeout = aiohttp.ClientTimeout(total=6)
 
     try:
@@ -1581,26 +1846,108 @@ async def gather_values(session, spec, names):
     return out
 
 
+def _is_builtin_widget_gate(page: dict) -> dict | None:
+    """Return the composite element that drives this page's active window if applicable."""
+    els = page.get("elements") or []
+    widget = next((e for e in els if isinstance(e, dict) and e.get("type") in ("sports_match", "sports_racing", "flight_tracker")), None)
+    if not widget:
+        return None
+    show_if = str(page.get("show_if") or "").strip()
+    if not show_if or widget.get("auto_window"):
+        return widget
+    # Also intercept any show_if that points to our built-in sports/racing/flight sensors
+    # so switching leagues or series in the widget inspector always evaluates the widget's live config!
+    builtin_patterns = (
+        "sensor.epaper_sports_",
+        "sensor.sports_",
+        "sensor.epaper_racing_",
+        "sensor.f1_status",
+        "sensor.formula_e_status",
+        "sensor.epaper_flights_overhead",
+        "sensor.overhead_aircraft_count",
+    )
+    if any(pat in show_if for pat in builtin_patterns):
+        return widget
+    return None
+
+
+async def _evaluate_widget_gate(session, widget: dict, home_tz: str) -> bool:
+    """Directly evaluate the active window for a sports_match, sports_racing, or flight_tracker widget."""
+    wtype = widget.get("type")
+    el_tz = widget.get("timezone") or home_tz
+    try:
+        pre_b = float(widget.get("pre_buffer_hours")) if widget.get("pre_buffer_hours") is not None else 2.0
+    except (ValueError, TypeError):
+        pre_b = 2.0
+    try:
+        post_b = float(widget.get("post_buffer_hours")) if widget.get("post_buffer_hours") is not None else 2.0
+    except (ValueError, TypeError):
+        post_b = 2.0
+
+    if wtype == "sports_match":
+        lg = widget.get("league") or "soccer/eng.1"
+        team = widget.get("team")
+        win = await compute_sports_active_window(session, lg, pre_buffer_hours=pre_b, post_buffer_hours=post_b, tz_name=el_tz, team=team)
+        return bool(win.get("is_active"))
+    if wtype == "sports_racing":
+        series = widget.get("series") or "f1"
+        w_mode = widget.get("window_mode") or "session"
+        win = await compute_racing_active_window(session, series, pre_buffer_hours=pre_b, post_buffer_hours=post_b, window_mode=w_mode, tz_name=el_tz)
+        return bool(win.get("is_active"))
+    if wtype == "flight_tracker":
+        radius = float(widget.get("radius") or 35.0)
+        custom_lat = widget.get("lat") or widget.get("latitude")
+        custom_lon = widget.get("lon") or widget.get("lng") or widget.get("longitude")
+        aircraft = await fetch_overhead_aircraft(session, radius_km=radius, lat=custom_lat, lon=custom_lon)
+        return len(aircraft or []) > 0
+    return True
+
+
 async def eligible_pages(session, spec):
-    """Pages whose tier and show_if say they belong in the rotation now."""
+    """Pages whose tier and show_if (or built-in widget active window) say they belong in the rotation now."""
     rotation = spec.get("rotation", [])
     defs = spec.get("pages", {})
-    gates = {n: defs[n]["show_if"] for n in set(rotation)
-             if n in defs and defs[n].get("tier") == "when" and defs[n].get("show_if")}
-    passed = await resolve_templates(session, gates) if gates else {}
+    home_tz = await get_home_timezone(session)
+
+    widget_gates: dict[str, dict] = {}
+    template_gates: dict[str, str] = {}
+
+    for n in set(rotation):
+        p = defs.get(n)
+        if not p or p.get("tier") != "when":
+            continue
+        w_gate = _is_builtin_widget_gate(p)
+        if w_gate is not None:
+            widget_gates[n] = w_gate
+        elif p.get("show_if"):
+            template_gates[n] = p["show_if"]
+
+    passed = await resolve_templates(session, template_gates) if template_gates else {}
+    widget_results: dict[str, bool] = {}
+    for n, w_el in widget_gates.items():
+        try:
+            widget_results[n] = await _evaluate_widget_gate(session, w_el, home_tz)
+        except Exception as exc:
+            print(f"widget gate eval error for {n}: {exc!r}", flush=True)
+            widget_results[n] = False
+
     live = []
     for name in rotation:
         page = defs.get(name)
         if page is None or page.get("tier") == "alert":
             continue
-        if name in gates and str(passed.get(name, "")).strip().lower() not in ("true", "on", "yes", "1"):
-            continue
+        if name in widget_results:
+            if not widget_results[name]:
+                continue
+        elif name in template_gates:
+            if str(passed.get(name, "")).strip().lower() not in ("true", "on", "yes", "1"):
+                continue
         live.append(name)
     return live or [n for n in rotation if n in defs and defs[n].get("tier") != "alert"][:1]
 
 
 async def publish_category_sensors(session, cur_f):
-    if not HA_TOKEN or not cur_f or not cur_f.rendered_at:
+    if not cur_f or not cur_f.rendered_at:
         return
     try:
         await publish_entity(session, "sensor.epaper_category_count", cur_f.cat_count,
@@ -1619,7 +1966,7 @@ async def publish_category_sensors(session, cur_f):
 
 
 async def publish_computed(session):
-    """Run every configured source and publish what it returns."""
+    """Run configured data sources and publish on-demand sensors for active E-Paper Studio widgets."""
     srcs = load_sources()
     if srcs:
         ctx = {"ha_base": HA_BASE, "ha_token": HA_TOKEN, "session": session}
@@ -1628,104 +1975,108 @@ async def publish_computed(session):
                 _feed_items_cache[entity_id] = attrs["items"]
             await publish_entity(session, entity_id, state, attrs)
 
-    # Publish overhead aircraft sensor to Home Assistant
-    try:
-        flight_radius = 35.0
-        custom_lat = None
-        custom_lon = None
-        custom_loc = None
-        try:
-            cur_spec = load_layouts()
-            for p in cur_spec.get("pages", {}).values():
-                for el in p.get("elements", []):
-                    if el.get("type") == "flight_tracker":
-                        flight_radius = float(el.get("radius") or 35.0)
-                        if el.get("lat") is not None and el.get("lon") is not None:
-                            try:
-                                custom_lat = float(el.get("lat"))
-                                custom_lon = float(el.get("lon"))
-                            except (ValueError, TypeError):
-                                pass
-                        if el.get("location_name"):
-                            custom_loc = str(el.get("location_name")).strip()
-                        break
-        except Exception:
-            pass
-        aircraft = await fetch_overhead_aircraft(session, radius_km=flight_radius, lat=custom_lat, lon=custom_lon)
-        closest_cs = aircraft[0]["callsign"] if aircraft else "None"
-        friendly_sensor_name = f"Overhead Aircraft ({custom_loc})" if custom_loc else "Overhead Aircraft Count"
-        attrs = {
-            "unit_of_measurement": "aircraft",
-            "friendly_name": friendly_sensor_name,
-            "closest_callsign": closest_cs,
-            "radius_km": flight_radius,
-            "location_name": custom_loc or "Home",
-            "icon": "mdi:airplane"
-        }
-        if custom_lat is not None and custom_lon is not None:
-            attrs["latitude"] = custom_lat
-            attrs["longitude"] = custom_lon
-        if aircraft:
-            attrs["closest_distance_km"] = aircraft[0]["distance_km"]
-            attrs["closest_bearing"] = aircraft[0]["bearing_cardinal"]
-            attrs["closest_route"] = aircraft[0].get("origin", "") + " → " + aircraft[0].get("destination", "") if (aircraft[0].get("origin") and aircraft[0].get("destination")) else ""
-            attrs["closest_model"] = aircraft[0].get("model", "")
-        await publish_entity(session, "sensor.overhead_aircraft_count", len(aircraft), attrs)
-        if aircraft:
-            ac0 = aircraft[0]
-            alt_m0 = float(ac0.get("altitude_m") or 0.0)
-            spd_ms0 = float(ac0.get("velocity_ms") or 0.0)
-            await publish_entity(session, "sensor.closest_aircraft", closest_cs,
-                                 {"friendly_name": "Closest Aircraft",
-                                  "distance_km": ac0.get("distance_km"),
-                                  "bearing": ac0.get("bearing_cardinal"),
-                                  "altitude_m": int(alt_m0),
-                                  "altitude_ft": int(alt_m0 * 3.28084),
-                                  "speed_kts": int(spd_ms0 * 1.94384),
-                                  "speed_kmh": int(spd_ms0 * 3.6),
-                                  "track_deg": int(ac0.get("track_deg") or 0),
-                                  "country": ac0.get("country"),
-                                  "model": ac0.get("model", ""),
-                                  "location_name": custom_loc or "Home",
-                                  "icon": "mdi:airplane"})
-    except Exception as exc:
-        print(f"publish aircraft sensor failed: {exc!r}", flush=True)
-
-    # Publish sports match status sensors to Home Assistant
+    cur_spec = load_layouts()
+    spec_text = json.dumps(cur_spec)
     home_tz = await get_home_timezone(session)
-    try:
-        cur_spec = load_layouts()
-        sports_elements = []
-        for p in cur_spec.get("pages", {}).values():
-            for el in p.get("elements", []):
-                if el.get("type") == "sports_match":
-                    sports_elements.append(el)
 
+    flight_elements = []
+    sports_elements = []
+    racing_elements = []
+    for p in cur_spec.get("pages", {}).values():
+        for el in p.get("elements", []):
+            t = el.get("type")
+            if t == "flight_tracker":
+                flight_elements.append(el)
+            elif t == "sports_match":
+                sports_elements.append(el)
+            elif t == "sports_racing":
+                racing_elements.append(el)
+
+    # 1. On-demand Overhead Aircraft sensors (only when flight_tracker or flight sensor is used)
+    if flight_elements or "epaper_flights_overhead" in spec_text or "epaper_closest_aircraft" in spec_text or "overhead_aircraft_count" in spec_text:
+        try:
+            flight_radius = 35.0
+            custom_lat = None
+            custom_lon = None
+            custom_loc = None
+            if flight_elements:
+                el = flight_elements[0]
+                flight_radius = float(el.get("radius") or 35.0)
+                if el.get("lat") is not None and el.get("lon") is not None:
+                    try:
+                        custom_lat = float(el.get("lat"))
+                        custom_lon = float(el.get("lon"))
+                    except (ValueError, TypeError):
+                        pass
+                if el.get("location_name"):
+                    custom_loc = str(el.get("location_name")).strip()
+
+            aircraft = await fetch_overhead_aircraft(session, radius_km=flight_radius, lat=custom_lat, lon=custom_lon)
+            closest_cs = aircraft[0]["callsign"] if aircraft else "None"
+            friendly_sensor_name = f"E-Paper · Flights Overhead ({custom_loc})" if custom_loc else "E-Paper · Flights Overhead"
+            attrs = {
+                "unit_of_measurement": "aircraft",
+                "friendly_name": friendly_sensor_name,
+                "closest_callsign": closest_cs,
+                "radius_km": flight_radius,
+                "location_name": custom_loc or "Home",
+                "icon": "mdi:airplane"
+            }
+            if custom_lat is not None and custom_lon is not None:
+                attrs["latitude"] = custom_lat
+                attrs["longitude"] = custom_lon
+            if aircraft:
+                attrs["closest_distance_km"] = aircraft[0]["distance_km"]
+                attrs["closest_bearing"] = aircraft[0]["bearing_cardinal"]
+                attrs["closest_route"] = aircraft[0].get("origin", "") + " → " + aircraft[0].get("destination", "") if (aircraft[0].get("origin") and aircraft[0].get("destination")) else ""
+                attrs["closest_model"] = aircraft[0].get("model", "")
+            await publish_entity(session, "sensor.epaper_flights_overhead", len(aircraft), attrs)
+            if aircraft:
+                ac0 = aircraft[0]
+                alt_m0 = float(ac0.get("altitude_m") or 0.0)
+                spd_ms0 = float(ac0.get("velocity_ms") or 0.0)
+                await publish_entity(session, "sensor.epaper_closest_aircraft", closest_cs,
+                                     {"friendly_name": "E-Paper · Closest Aircraft",
+                                      "distance_km": ac0.get("distance_km"),
+                                      "bearing": ac0.get("bearing_cardinal"),
+                                      "altitude_m": int(alt_m0),
+                                      "altitude_ft": int(alt_m0 * 3.28084),
+                                      "speed_kts": int(spd_ms0 * 1.94384),
+                                      "speed_kmh": int(spd_ms0 * 3.6),
+                                      "track_deg": int(ac0.get("track_deg") or 0),
+                                      "country": ac0.get("country"),
+                                      "model": ac0.get("model", ""),
+                                      "location_name": custom_loc or "Home",
+                                      "icon": "mdi:airplane"})
+        except Exception as exc:
+            print(f"publish aircraft sensor failed: {exc!r}", flush=True)
+
+    # 2. On-demand Sports Matchday Window sensors (only for leagues actually present in pages)
+    try:
         leagues_to_publish = []
-        if sports_elements:
-            for el in sports_elements:
-                lg = el.get("league") or "soccer/eng.1"
-                el_tz = el.get("timezone") or home_tz
-                try:
-                    pre_b = float(el.get("pre_buffer_hours")) if el.get("pre_buffer_hours") is not None else 2.0
-                except (ValueError, TypeError):
-                    pre_b = 2.0
-                try:
-                    post_b = float(el.get("post_buffer_hours")) if el.get("post_buffer_hours") is not None else 2.0
-                except (ValueError, TypeError):
-                    post_b = 2.0
-                leagues_to_publish.append((lg, pre_b, post_b, el_tz))
-        else:
-            leagues_to_publish.append(("soccer/eng.1", 2.0, 2.0, home_tz))
+        for el in sports_elements:
+            lg = el.get("league") or "soccer/eng.1"
+            el_tz = el.get("timezone") or home_tz
+            team = el.get("team")
+            try:
+                pre_b = float(el.get("pre_buffer_hours")) if el.get("pre_buffer_hours") is not None else 2.0
+            except (ValueError, TypeError):
+                pre_b = 2.0
+            try:
+                post_b = float(el.get("post_buffer_hours")) if el.get("post_buffer_hours") is not None else 2.0
+            except (ValueError, TypeError):
+                post_b = 2.0
+            leagues_to_publish.append((lg, pre_b, post_b, el_tz, team))
 
         seen_leagues = set()
-        for lg, pre_b, post_b, s_tz in leagues_to_publish:
-            if lg in seen_leagues:
+        for lg, pre_b, post_b, s_tz, team in leagues_to_publish:
+            key = f"{lg}:{team or ''}"
+            if key in seen_leagues:
                 continue
-            seen_leagues.add(lg)
-            win_info = await compute_sports_active_window(session, lg, pre_buffer_hours=pre_b, post_buffer_hours=post_b, tz_name=s_tz)
+            seen_leagues.add(key)
+            win_info = await compute_sports_active_window(session, lg, pre_buffer_hours=pre_b, post_buffer_hours=post_b, tz_name=s_tz, team=team)
             slug = win_info["slug"]
-            sensor_id = f"sensor.sports_{slug}"
+            sensor_id = f"sensor.epaper_sports_{slug}"
             sport_icon = "mdi:soccer"
             if "nba" in slug or "basketball" in lg:
                 sport_icon = "mdi:basketball"
@@ -1739,7 +2090,7 @@ async def publish_computed(session):
             await publish_entity(
                 session, sensor_id, win_info["state"],
                 {
-                    "friendly_name": f"{win_info['league_name']} Matchday",
+                    "friendly_name": f"E-Paper · {win_info['league_name']} Matchday",
                     "is_active": win_info["is_active"],
                     "is_live": win_info["is_live"],
                     "matches_today": win_info["matches_today"],
@@ -1754,6 +2105,7 @@ async def publish_computed(session):
                     "time_zone": win_info.get("time_zone"),
                     "pre_buffer_hours": win_info["pre_buffer_hours"],
                     "post_buffer_hours": win_info["post_buffer_hours"],
+                    "team_filter": win_info.get("team_filter", ""),
                     "matches_summary": win_info["matches_summary"],
                     "icon": sport_icon
                 }
@@ -1761,66 +2113,88 @@ async def publish_computed(session):
     except Exception as exc:
         print(f"publish sports matchday sensor failed: {exc!r}", flush=True)
 
-    # Publish Formula 1 & Formula E motorsport status sensors
+    # 3. On-demand Motorsport Session/Race Window sensors (only for series actually present in pages)
     try:
-        f1_data = await fetch_racing_data(session, "f1", tz_name=home_tz)
-        if f1_data:
-            f1_st = f1_data.get("status") or "PRE"
-            await publish_entity(session, "sensor.f1_status", f1_st,
-                                 {"friendly_name": "Formula 1 Status",
-                                  "event_name": f1_data.get("event_name"),
-                                  "circuit": f1_data.get("circuit"),
-                                  "detail": f1_data.get("detail"),
-                                  "clock": f1_data.get("clock"),
-                                  "icon": "mdi:racing-helmet"})
-    except Exception as exc:
-        print(f"publish f1 status failed: {exc!r}", flush=True)
+        series_to_publish = []
+        for el in racing_elements:
+            ser = el.get("series") or "f1"
+            el_tz = el.get("timezone") or home_tz
+            w_mode = el.get("window_mode") or "session"
+            try:
+                pre_b = float(el.get("pre_buffer_hours")) if el.get("pre_buffer_hours") is not None else 2.0
+            except (ValueError, TypeError):
+                pre_b = 2.0
+            try:
+                post_b = float(el.get("post_buffer_hours")) if el.get("post_buffer_hours") is not None else 2.0
+            except (ValueError, TypeError):
+                post_b = 2.0
+            series_to_publish.append((ser, pre_b, post_b, w_mode, el_tz))
 
-    try:
-        fe_data = await fetch_racing_data(session, "fe", tz_name=home_tz)
-        if fe_data:
-            fe_st = fe_data.get("status") or "PRE"
-            await publish_entity(session, "sensor.formula_e_status", fe_st,
-                                 {"friendly_name": "Formula E Status",
-                                  "event_name": fe_data.get("event_name"),
-                                  "circuit": fe_data.get("circuit"),
-                                  "detail": fe_data.get("detail"),
-                                  "clock": fe_data.get("clock"),
-                                  "icon": "mdi:car-electric"})
+        seen_series = set()
+        for ser, pre_b, post_b, w_mode, r_tz in series_to_publish:
+            if ser in seen_series:
+                continue
+            seen_series.add(ser)
+            win_info = await compute_racing_active_window(session, ser, pre_buffer_hours=pre_b, post_buffer_hours=post_b, window_mode=w_mode, tz_name=r_tz)
+            slug = win_info["slug"]
+            sensor_id = f"sensor.epaper_racing_{slug}"
+            r_data = await fetch_racing_data(session, slug, tz_name=r_tz)
+            r_icon = "mdi:car-electric" if slug == "fe" else "mdi:racing-helmet"
+            await publish_entity(
+                session, sensor_id, win_info["state"],
+                {
+                    "friendly_name": f"E-Paper · {win_info['series_name']} Window",
+                    "is_active": win_info["is_active"],
+                    "is_live": win_info["is_live"],
+                    "session_status": (r_data or {}).get("status", "PRE"),
+                    "event_name": (r_data or {}).get("event_name") or win_info["event_name"],
+                    "circuit": (r_data or {}).get("circuit") or win_info["circuit"],
+                    "session_name": win_info["session_name"],
+                    "detail": (r_data or {}).get("detail", ""),
+                    "clock": (r_data or {}).get("clock", ""),
+                    "window_mode": win_info["window_mode"],
+                    "window_start": win_info["window_start"],
+                    "window_start_local": win_info["window_start_local"],
+                    "window_end": win_info["window_end"],
+                    "window_end_local": win_info["window_end_local"],
+                    "pre_buffer_hours": win_info["pre_buffer_hours"],
+                    "post_buffer_hours": win_info["post_buffer_hours"],
+                    "icon": r_icon,
+                }
+            )
     except Exception as exc:
-        print(f"publish formula e status failed: {exc!r}", flush=True)
+        print(f"publish racing window sensor failed: {exc!r}", flush=True)
 
-    # Publish E-Paper panel system status sensors & MQTT discovery
+    # 4. Publish E-Paper panel system status sensors & MQTT discovery
     try:
         cur_f = globals().get("FRAMES")
         if cur_f and cur_f.rendered_at:
             await publish_entity(session, "sensor.epaper_panel_last_render", cur_f.rendered_at,
-                                 {"friendly_name": "E-Paper Last Render", "icon": "mdi:clock-check-outline",
+                                 {"friendly_name": "E-Paper · Last Render", "icon": "mdi:clock-check-outline",
                                   "pages_count": len(cur_f.names), "active_pages": cur_f.names,
                                   "device_class": "timestamp"})
             await publish_category_sensors(session, cur_f)
             await publish_mqtt_discovery(session, cur_f)
-    except Exception as exc:
+    except Exception:
         pass
 
 
-_mqtt_discovery_published = False
+_mqtt_discovered_ids: set[str] = set()
 
 
 async def publish_mqtt_discovery(session, frames):
-    """Publish Home Assistant MQTT Auto-Discovery entities if MQTT integration is active."""
-    global _mqtt_discovery_published
+    """Publish Home Assistant MQTT Auto-Discovery with unique_id & device info for all active sensor.epaper_* entities."""
     if not HA_TOKEN:
         return
     try:
-        if not _mqtt_discovery_published:
-            dev_info = {
-                "identifiers": ["epaper_panel_hub"],
-                "name": "E-Paper Display Panel",
-                "manufacturer": "Elecrow",
-                "model": "CrowPanel E-Paper",
-                "sw_version": "0.8.17"
-            }
+        dev_info = {
+            "identifiers": ["epaper_panel_hub"],
+            "name": "E-Paper Studio",
+            "manufacturer": "Elecrow",
+            "model": "CrowPanel E-Paper",
+            "sw_version": "0.8.27"
+        }
+        if "epaper_panel_refresh_button" not in _mqtt_discovered_ids:
             btn_payload = {
                 "name": "E-Paper Refresh Now",
                 "unique_id": "epaper_panel_refresh_button",
@@ -1833,26 +2207,53 @@ async def publish_mqtt_discovery(session, frames):
                 "payload": json.dumps(btn_payload),
                 "retain": True
             })
-            sens_payload = {
-                "name": "E-Paper Last Render",
-                "unique_id": "epaper_panel_last_render",
-                "state_topic": "homeassistant/epaper_panel/last_render",
-                "device_class": "timestamp",
-                "icon": "mdi:clock-check-outline",
-                "device": dev_info
-            }
-            await call_ha_service(session, "mqtt", "publish", {
-                "topic": "homeassistant/sensor/epaper_panel/last_render/config",
-                "payload": json.dumps(sens_payload),
-                "retain": True
-            })
-            _mqtt_discovery_published = True
+            _mqtt_discovered_ids.add("epaper_panel_refresh_button")
 
-        if frames and frames.rendered_at:
+        for eid, info in list(_epaper_published_entities.items()):
+            if not eid.startswith("sensor.epaper_") or not info.get("register_mqtt", True):
+                continue
+            obj_id = eid.split(".", 1)[1]  # e.g. epaper_sports_premier_league
+            attrs = dict(info.get("attributes") or {})
+            fname = attrs.get("friendly_name") or obj_id.replace("_", " ").title()
+            icon = attrs.get("icon") or "mdi:tablet-dashboard"
+            dev_class = attrs.get("device_class")
+            unit = attrs.get("unit_of_measurement")
+
+            state_topic = f"homeassistant/epaper_panel/{obj_id}/state"
+            attr_topic = f"homeassistant/epaper_panel/{obj_id}/attributes"
+
+            if obj_id not in _mqtt_discovered_ids:
+                cfg_payload = {
+                    "name": fname,
+                    "unique_id": f"epaper_studio_{obj_id}",
+                    "default_entity_id": f"sensor.{obj_id}",
+                    "object_id": obj_id,
+                    "state_topic": state_topic,
+                    "json_attributes_topic": attr_topic,
+                    "icon": icon,
+                    "device": dev_info,
+                }
+                if dev_class:
+                    cfg_payload["device_class"] = dev_class
+                if unit:
+                    cfg_payload["unit_of_measurement"] = unit
+                await call_ha_service(session, "mqtt", "publish", {
+                    "topic": f"homeassistant/sensor/epaper_panel/{obj_id}/config",
+                    "payload": json.dumps(cfg_payload),
+                    "retain": True,
+                })
+                _mqtt_discovered_ids.add(obj_id)
+
             await call_ha_service(session, "mqtt", "publish", {
-                "topic": "homeassistant/epaper_panel/last_render",
-                "payload": str(frames.rendered_at),
-                "retain": True
+                "topic": state_topic,
+                "payload": str(info.get("state", "")),
+                "retain": True,
+            })
+            clean_attrs = {k: v for k, v in attrs.items() if k not in ("friendly_name", "icon", "unit_of_measurement", "device_class")}
+            await call_ha_service(session, "mqtt", "publish", {
+                "topic": attr_topic,
+                "payload": json.dumps(clean_attrs),
+                "retain": True,
             })
     except Exception:
         pass
@@ -2455,31 +2856,48 @@ async def api_layouts_put(request):
 
 async def api_entities(request):
     """Entity list for the picker. Cached briefly -- it is a big response."""
+    by_id = {}
     if not HA_TOKEN:
         states = load_fixture().get("states", {})
-        items = sorted(
-            ({"entity_id": eid,
-              "name": info.get("friendly_name") or eid,
-              "state": info.get("state"),
-              "unit": info.get("unit") or ""}
-             for eid, info in states.items()),
-            key=lambda e: e["entity_id"])
-        return web.json_response(items)
+        for eid, info in states.items():
+            by_id[eid] = {
+                "entity_id": eid,
+                "name": info.get("friendly_name") or eid,
+                "state": info.get("state"),
+                "unit": info.get("unit") or "",
+                "is_epaper": eid.startswith("sensor.epaper_"),
+            }
+    else:
+        if time.time() - _entity_cache["at"] >= 30 or not _entity_cache["items"]:
+            try:
+                states = await ha_json(SHARED_SESSION, "/states")
+            except Exception as exc:
+                return web.json_response({"error": repr(exc)}, status=502)
+            _entity_cache.update(at=time.time(), items=states)
+        for s in (_entity_cache["items"] or []):
+            if isinstance(s, dict) and "entity_id" in s:
+                eid = s["entity_id"]
+                attrs = s.get("attributes") or {}
+                by_id[eid] = {
+                    "entity_id": eid,
+                    "name": attrs.get("friendly_name") or eid,
+                    "state": s.get("state"),
+                    "unit": attrs.get("unit_of_measurement") or "",
+                    "is_epaper": eid.startswith("sensor.epaper_") or attrs.get("source") == "epaper_studio",
+                }
 
-    if time.time() - _entity_cache["at"] < 60 and _entity_cache["items"]:
-        return web.json_response(_entity_cache["items"])
-    try:
-        states = await ha_json(SHARED_SESSION, "/states")
-    except Exception as exc:
-        return web.json_response({"error": repr(exc)}, status=502)
-    items = sorted(
-        ({"entity_id": s["entity_id"],
-          "name": (s.get("attributes") or {}).get("friendly_name") or s["entity_id"],
-          "state": s.get("state"),
-          "unit": (s.get("attributes") or {}).get("unit_of_measurement") or ""}
-         for s in states if isinstance(s, dict) and "entity_id" in s),
-        key=lambda e: e["entity_id"])
-    _entity_cache.update(at=time.time(), items=items)
+    # Always merge live E-Paper Studio published entities so newly added widgets appear immediately
+    for eid, info in _epaper_published_entities.items():
+        attrs = info.get("attributes") or {}
+        by_id[eid] = {
+            "entity_id": eid,
+            "name": attrs.get("friendly_name") or eid,
+            "state": info.get("state"),
+            "unit": attrs.get("unit_of_measurement") or "",
+            "is_epaper": True,
+        }
+
+    items = sorted(by_id.values(), key=lambda e: (0 if e.get("is_epaper") else 1, e["entity_id"]))
     return web.json_response(items)
 
 
@@ -2489,7 +2907,9 @@ async def api_attributes(request):
     if not valid_entity_id(eid):
         return web.json_response([])
 
-    if not HA_TOKEN:
+    if eid in _epaper_published_entities:
+        attrs = dict(_epaper_published_entities[eid].get("attributes") or {})
+    elif not HA_TOKEN:
         attrs = dict((load_fixture().get("states") or {}).get(eid) or {})
         attrs.pop("state", None)
     else:

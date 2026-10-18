@@ -70,7 +70,7 @@ Click **`🌙 Quiet`** in the top toolbar (or **Settings → Night / Quiet Hours
 
 ## Built-In Live Integrations & Composite Cards
 
-In addition to rendering any Home Assistant entity, the add-on includes built-in data engines that require zero external API keys:
+In addition to rendering any Home Assistant entity, the add-on includes built-in data engines that require zero external API keys. All add-on-generated entities use the **`sensor.epaper_*`** namespace (tagged with an **`E-PAPER`** badge and filterable via the **`✦ E-Paper`** chip in the Studio's Entities Explorer) and are published **on-demand** only for widgets present in your layouts:
 
 - **Weather & Multi-Day Forecast (`weather_forecast`):**
   - Displays current conditions alongside a 3-to-5 day forecast (`Split Hero + Forecast` or `Full-Width Forecast Only`).
@@ -78,12 +78,13 @@ In addition to rendering any Home Assistant entity, the add-on includes built-in
 - **Real-Time ADS-B Airspace Radar (`flight_tracker`):**
   - Live aircraft tracking via Flightradar24 (with OpenSky fallback) around your `zone.home` coordinates or any custom airport preset (`TSR`, `LHR`, `JFK`, `FRA`, or custom `lat`/`lon`).
   - Renders a 1-bit Plan Position Indicator (PPI) radar scope with range rings, heading vectors, callsigns, routes (`BEY → DUS`), aircraft ICAO types (`A320`, `B77W`), altitude, and groundspeed, expanding multiple overhead aircraft into parallel sub-pages.
-  - Publishes `sensor.overhead_aircraft_count` and `sensor.closest_aircraft` to Home Assistant.
-- **Motorsport Pit-Wall (`sports_racing` — Formula 1 & Formula E):**
-  - Live calendar, circuit telemetry, practice/qualifying/sprint/race session countdowns (automatically converted to your local timezone), and live standings/results for **Formula 1 (`f1`)** and **Formula E (`fe`)**.
-  - Publishes `sensor.f1_race_status` and `sensor.formula_e_status` (`PRE`, `IN`, `POST`).
+  - Includes a self-contained **Only show page when aircraft overhead (> 0)** toggle in the Studio inspector and publishes `sensor.epaper_flights_overhead` and `sensor.epaper_closest_aircraft` on demand.
+- **Motorsport Pit-Wall (`sports_racing` — Formula 1, Formula E, NASCAR & IndyCar):**
+  - Live calendar, circuit telemetry, practice/qualifying/sprint/race session countdowns (automatically converted to your local timezone), and live standings/results for **Formula 1 (`f1`)**, **Formula E (`fe`)**, **NASCAR (`nascar`)**, and **IndyCar (`indycar`)**.
+  - Includes self-contained **Active Race Window** controls directly in the Studio inspector: toggle **Only show page during active race window**, choose **Around Each Session (FP / Quali / Race)** or **Entire Race Weekend (FP1 → Checkered Flag)**, and set **`show before (hrs)`** and **`show after (hrs)`** without touching Home Assistant sensor settings. Publishes `sensor.epaper_racing_<series>` (`active` / `idle`) on demand.
 - **Live Sports Scoreboard (`sports_match`):**
-  - Tracks **Premier League**, **UEFA Champions League**, **La Liga**, **Bundesliga**, **Serie A**, **NBA**, **NFL**, **MLB**, and **NHL** with localized kickoff times, live scores, and automatic matchday active windows (`sensor.sports_{league_slug}` becomes `active` from `pre_hours` before kickoff until `post_hours` after the final whistle).
+  - Tracks **Premier League**, **UEFA Champions League**, **La Liga**, **Bundesliga**, **Serie A**, **NBA**, **NFL**, **MLB**, and **NHL** with optional team filtering, localized kickoff times, live scores, and scorer highlights.
+  - Includes self-contained **Active Matchday Window** controls directly in the Studio inspector (`Only show page during active matchday window`, `show before (hrs)`, `show after (hrs)`). Switching leagues or filtering by team automatically updates the active window and publishes the matching `sensor.epaper_sports_<league>` (`active` / `idle`) sensor on demand.
 
 ---
 

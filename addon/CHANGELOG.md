@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.8.27
+- **Self-Contained Active Window Controls for Sports, Racing & Flight Cards (Zero Manual HA Sensor Wiring):**
+  - Previously, making `sports_match` only appear on matchdays required manually creating/wiring a `show_if` check against `sensor.sports_premier_league`, which broke when switching leagues (e.g. to Champions League or NBA) and didn't exist at all for `sports_racing` (Formula 1, Formula E, NASCAR, IndyCar).
+  - **`sports_match` (All 9 Leagues + Optional Team Filter):** Added an **Only show page during active matchday window** toggle, `show before (hrs)`, and `show after (hrs)` directly in the Studio element inspector. Switching leagues (`Premier League`, `UEFA Champions League`, `La Liga`, `Bundesliga`, `Serie A`, `NBA`, `NFL`, `MLB`, `NHL`) or specifying a `team` filter automatically updates the active window and syncs the page condition — no manual Home Assistant sensor creation or editing required.
+  - **`sports_racing` (Formula 1, Formula E, NASCAR & IndyCar):** Added `compute_racing_active_window()` in `server.py` and full inspector controls (**Only show page during active race window**, **Window Mode**: `Around Each Session (FP / Quali / Race)` vs `Entire Race Weekend (FP1 → Checkered Flag)`, `show before (hrs)`, and `show after (hrs)`). Evaluates both the `sportstimes` session schedule (`fp1`, `fp2`, `fp3`, `qualifying`, `sprint`, `gp`/`race`) and live ESPN telemetry.
+  - **`flight_tracker`:** Added **Only show page when aircraft overhead (> 0)** toggle directly in the widget inspector.
+  - **Direct Python Evaluation in `eligible_pages()`:** Pages with `tier: "when"` containing `sports_match`, `sports_racing`, or `flight_tracker` now evaluate their widget's live active window directly in Python (`_evaluate_widget_gate()`), so active windows work out-of-the-box even before Home Assistant polls any external sensor.
+- **Unified `sensor.epaper_*` Namespace, On-Demand Publishing (No Bloat) & MQTT `unique_id` Support:**
+  - All add-on-generated sensors now use the `sensor.epaper_*` prefix (`sensor.epaper_sports_<league>`, `sensor.epaper_racing_<series>`, `sensor.epaper_flights_overhead`, `sensor.epaper_closest_aircraft`, `sensor.epaper_quiet_hours`, `sensor.epaper_panel_last_render`, plus user data sources `sensor.epaper_<slug>`) with `attribution: "E-Paper Studio"`.
+  - **On-Demand Only (Zero Entity Bloat):** `publish_computed()` scans `layouts.json` and only polls/publishes sports, racing, or flight sensors for leagues, series, or radars actually present on your pages.
+  - **Automatic Legacy Sensor Migration:** Existing layouts, `show_if` rules, and exploded widgets referencing legacy names (`sensor.sports_*`, `sensor.f1_status`, `sensor.formula_e_status`, `sensor.overhead_aircraft_count`, `sensor.closest_aircraft`) are automatically migrated to `sensor.epaper_*` in `sanitize_layouts()`.
+  - **MQTT Auto-Discovery `unique_id` & Device Grouping:** All active `sensor.epaper_*` sensors are registered via MQTT Auto-Discovery (`publish_mqtt_discovery`) with a deterministic `unique_id` and grouped under the **E-Paper Studio** device in Home Assistant when an MQTT broker is present.
+  - **`✦ E-Paper` Filter Chip & `E-PAPER` Badge in Studio Entity Picker:** Added a dedicated **`✦ E-Paper`** filter pill and **`E-PAPER`** badge in the right-rail Entities Explorer so app-native sensors are immediately recognizable.
+
 ## 0.8.26
 - **Manual Scroll Protection & 15-Second Background Fetch Debounce (`user_cool_sec` & `request_refetch`):**
   - Eliminated device freezes when scrolling manually through pages while a 1-minute background update fires.
