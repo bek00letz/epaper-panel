@@ -2418,28 +2418,96 @@ function preview() {
 }
 
 /* Snapping Guides */
+function normalizeLineParity(el, targetCenter = null, axis = "x") {
+  if (!el || el.type !== "line") return;
+  const thick = Math.max(1, Number(el.thickness || el.stroke || 2));
+  const isVert = el.h >= el.w;
+  if (isVert && axis === "x") {
+    const cx = targetCenter !== null ? targetCenter : (el.x + el.w / 2);
+    // Ensure (el.w - thick) is even so the line is dead-center inside its box
+    let baseW = Math.max(thick + 6, el.w || 8);
+    if ((baseW % 2) !== (thick % 2)) baseW += 1;
+    el.w = baseW;
+    el.x = Math.round(cx - el.w / 2);
+  } else if (!isVert && axis === "y") {
+    const cy = targetCenter !== null ? targetCenter : (el.y + el.h / 2);
+    let baseH = Math.max(thick + 6, el.h || 8);
+    if ((baseH % 2) !== (thick % 2)) baseH += 1;
+    el.h = baseH;
+    el.y = Math.round(cy - el.h / 2);
+  }
+}
+
 function guides(el, i) {
   const cw = curW(), ch = curH(), m = curMargin(), sh = curSafeH();
   const xs = [0, m, cw / 2, cw - m, cw], ys = [0, 26, ch / 2, sh, ch];
   els().forEach((o, j) => {
     if (j !== i && !multiSel.has(j)) {
-      xs.push(o.x, o.x + o.w / 2, o.x + o.w);
-      ys.push(o.y, o.y + o.h / 2, o.y + o.h);
+      if (o.type === "line" && o.h >= o.w) {
+        // Vertical line: only expose its centerline horizontally
+        xs.push(o.x + o.w / 2);
+        ys.push(o.y, o.y + o.h / 2, o.y + o.h);
+      } else if (o.type === "line" && o.w > o.h) {
+        // Horizontal line: only expose its centerline vertically
+        xs.push(o.x, o.x + o.w / 2, o.x + o.w);
+        ys.push(o.y + o.h / 2);
+      } else {
+        xs.push(o.x, o.x + o.w / 2, o.x + o.w);
+        ys.push(o.y, o.y + o.h / 2, o.y + o.h);
+      }
     }
   });
-  const near = (v, list) => {
-    for (const t of list) if (Math.abs(v - t) <= SNAP) return t;
-    return null;
-  };
+
+  const isVertLine = el.type === "line" && el.h >= el.w;
+  const isHorizLine = el.type === "line" && el.w > el.h;
+
+  // Prioritize center ("c" / "m") first and pick the closest snap target within SNAP
+  const xCandidates = isVertLine
+    ? [[el.x + el.w / 2, "c"]]
+    : [[el.x + el.w / 2, "c"], [el.x, "l"], [el.x + el.w, "r"]];
+  const yCandidates = isHorizLine
+    ? [[el.y + el.h / 2, "m"]]
+    : [[el.y + el.h / 2, "m"], [el.y, "t"], [el.y + el.h, "b"]];
+
   let gx = null, gy = null;
-  for (const [val, set] of [[el.x, "l"], [el.x + el.w / 2, "c"], [el.x + el.w, "r"]]) {
-    const t = near(val, xs);
-    if (t !== null) { el.x = Math.round(t - (set === "c" ? el.w / 2 : set === "r" ? el.w : 0)); gx = t; break; }
+  let bestDx = SNAP + 0.01, bestXSet = null;
+  for (const [val, set] of xCandidates) {
+    for (const t of xs) {
+      const dist = Math.abs(val - t);
+      if (dist < bestDx) {
+        bestDx = dist;
+        gx = t;
+        bestXSet = set;
+      }
+    }
   }
-  for (const [val, set] of [[el.y, "t"], [el.y + el.h / 2, "m"], [el.y + el.h, "b"]]) {
-    const t = near(val, ys);
-    if (t !== null) { el.y = Math.round(t - (set === "m" ? el.h / 2 : set === "b" ? el.h : 0)); gy = t; break; }
+  if (gx !== null && bestXSet !== null) {
+    if (isVertLine) {
+      normalizeLineParity(el, gx, "x");
+    } else {
+      el.x = Math.round(gx - (bestXSet === "c" ? el.w / 2 : bestXSet === "r" ? el.w : 0));
+    }
   }
+
+  let bestDy = SNAP + 0.01, bestYSet = null;
+  for (const [val, set] of yCandidates) {
+    for (const t of ys) {
+      const dist = Math.abs(val - t);
+      if (dist < bestDy) {
+        bestDy = dist;
+        gy = t;
+        bestYSet = set;
+      }
+    }
+  }
+  if (gy !== null && bestYSet !== null) {
+    if (isHorizLine) {
+      normalizeLineParity(el, gy, "y");
+    } else {
+      el.y = Math.round(gy - (bestYSet === "m" ? el.h / 2 : bestYSet === "b" ? el.h : 0));
+    }
+  }
+
   canvas.querySelectorAll(".guide").forEach(n => n.remove());
   if (gx !== null) {
     const g = document.createElement("div");
@@ -2459,7 +2527,14 @@ function guidesResize(el, i) {
   const cw = curW(), ch = curH(), m = curMargin(), sh = curSafeH();
   const xs = [m, cw / 2, cw - m], ys = [26, ch / 2, sh];
   els().forEach((o, j) => { if (j !== i) { xs.push(o.x, o.x + o.w); ys.push(o.y, o.y + o.h); } });
-  const near = (v, list) => { for (const t of list) if (Math.abs(v - t) <= SNAP) return t; return null; };
+  const near = (v, list) => {
+    let best = null, bestD = SNAP + 0.01;
+    for (const t of list) {
+      const d = Math.abs(v - t);
+      if (d < bestD) { bestD = d; best = t; }
+    }
+    return best;
+  };
   let gx = near(el.x + el.w, xs), gy = near(el.y + el.h, ys);
   if (gx !== null) el.w = Math.round(gx - el.x);
   if (gy !== null) el.h = Math.round(gy - el.y);
@@ -2540,7 +2615,8 @@ canvas.addEventListener("pointermove", e => {
       if (!e.altKey) guides(el, drag.i);
     }
   } else {
-    el.w = Math.max(16, Math.min(cw - o.x, Math.round(o.w + dx)));
+    const minW = el.type === "line" ? 4 : 16;
+    el.w = Math.max(minW, Math.min(cw - o.x, Math.round(o.w + dx)));
     el.h = Math.max(4, Math.min(ch - o.y, Math.round(o.h + dy)));
     if (!e.altKey) guidesResize(el, drag.i);
   }
@@ -3082,10 +3158,42 @@ function props() {
 
     const selItems = () => Array.from(multiSel).map(idx => els()[idx]).filter(Boolean);
     $("m_align_l").onclick = () => { snapshot(); const minX = Math.min(...selItems().map(x => x.x)); selItems().forEach(x => x.x = minX); paint(); preview(); };
-    $("m_align_cx").onclick = () => { snapshot(); const minX = Math.min(...selItems().map(x => x.x)), maxR = Math.max(...selItems().map(x => x.x + x.w)), mid = (minX + maxR) / 2; selItems().forEach(x => x.x = Math.round(mid - x.w / 2)); paint(); preview(); };
+    $("m_align_cx").onclick = () => {
+      snapshot();
+      const items = selItems();
+      const nonLines = items.filter(x => !(x.type === "line" && x.h >= x.w));
+      const ref = nonLines.length ? nonLines : items;
+      const minX = Math.min(...ref.map(x => x.x)), maxR = Math.max(...ref.map(x => x.x + x.w));
+      const mid = Math.round((minX + maxR) / 2);
+      items.forEach(x => {
+        if (x.type === "line" && x.h >= x.w) {
+          normalizeLineParity(x, mid, "x");
+        } else {
+          if (x.type === "icon" && (x.w % 2) !== 0) x.w += 1;
+          x.x = Math.round(mid - x.w / 2);
+        }
+      });
+      paint(); preview();
+    };
     $("m_align_r").onclick = () => { snapshot(); const maxR = Math.max(...selItems().map(x => x.x + x.w)); selItems().forEach(x => x.x = maxR - x.w); paint(); preview(); };
     $("m_align_t").onclick = () => { snapshot(); const minY = Math.min(...selItems().map(x => x.y)); selItems().forEach(x => x.y = minY); paint(); preview(); };
-    $("m_align_cy").onclick = () => { snapshot(); const minY = Math.min(...selItems().map(x => x.y)), maxB = Math.max(...selItems().map(x => x.y + x.h)), mid = (minY + maxB) / 2; selItems().forEach(x => x.y = Math.round(mid - x.h / 2)); paint(); preview(); };
+    $("m_align_cy").onclick = () => {
+      snapshot();
+      const items = selItems();
+      const nonLines = items.filter(x => !(x.type === "line" && x.w > x.h));
+      const ref = nonLines.length ? nonLines : items;
+      const minY = Math.min(...ref.map(x => x.y)), maxB = Math.max(...ref.map(x => x.y + x.h));
+      const mid = Math.round((minY + maxB) / 2);
+      items.forEach(x => {
+        if (x.type === "line" && x.w > x.h) {
+          normalizeLineParity(x, mid, "y");
+        } else {
+          if (x.type === "icon" && (x.h % 2) !== 0) x.h += 1;
+          x.y = Math.round(mid - x.h / 2);
+        }
+      });
+      paint(); preview();
+    };
     $("m_align_b").onclick = () => { snapshot(); const maxB = Math.max(...selItems().map(x => x.y + x.h)); selItems().forEach(x => x.y = maxB - x.h); paint(); preview(); };
     $("m_dist_h").onclick = () => {
       const items = selItems().sort((a, b) => a.x - b.x);
@@ -3202,7 +3310,17 @@ function props() {
       </div>
       <div class="chip">Crisp pixel-aligned 1-bit QR code scannable by any phone camera from across the room.</div>`;
   } else if (el.type === "line") {
-    h += f("thickness", "thickness", "number");
+    const isVert = el.h >= el.w;
+    const lenVal = isVert ? el.h : el.w;
+    h += `<div class="row"><label>direction</label><select id="line_dir_sel">
+        <option value="h"${!isVert ? " selected" : ""}>Horizontal (―)</option>
+        <option value="v"${isVert ? " selected" : ""}>Vertical (│)</option>
+      </select></div>
+      <div class="row"><label>length (px)</label>
+        <input id="line_len_inp" type="number" min="4" max="960" value="${esc(lenVal)}">
+      </div>` +
+      f("thickness", "thickness (px)", "number", "2") +
+      `<div class="chip">Pixel-centered 1-bit divider rule. Snaps and aligns by its exact stroke centerline.</div>`;
   } else if (el.type === "dynamic_grid") {
     if (!Array.isArray(el.items)) el.items = [];
     h += f("header_title", "header title", "text", "e.g. Active Blanket Zones") +
@@ -3735,11 +3853,51 @@ function props() {
       }
       props();
     }
+    if (k === "thickness" && el.type === "line") {
+      normalizeLineParity(el, null, el.h >= el.w ? "x" : "y");
+      props();
+    }
     if (["icon", "header_icon", "invert", "pill", "bar_style"].includes(k)) {
       props();
     }
     paint(); preview();
   });
+
+  const lineDirSel = box.querySelector("#line_dir_sel");
+  const lineLenInp = box.querySelector("#line_len_inp");
+  if (lineDirSel) {
+    lineDirSel.onchange = () => {
+      snapshot();
+      const cx = el.x + el.w / 2, cy = el.y + el.h / 2;
+      const len = Math.max(16, el.h >= el.w ? el.h : el.w);
+      const thick = Math.max(1, Number(el.thickness || el.stroke || 2));
+      const padSpan = (thick % 2 === 0) ? Math.max(8, thick + 6) : Math.max(9, thick + 6);
+      if (lineDirSel.value === "v") {
+        el.w = padSpan;
+        el.h = Math.min(curSafeH() - 8, len);
+        el.x = Math.max(0, Math.min(curW() - el.w, Math.round(cx - el.w / 2)));
+        el.y = Math.max(0, Math.min(curH() - el.h, Math.round(cy - el.h / 2)));
+      } else {
+        el.w = Math.min(curW() - 8, len);
+        el.h = padSpan;
+        el.x = Math.max(0, Math.min(curW() - el.w, Math.round(cx - el.w / 2)));
+        el.y = Math.max(0, Math.min(curH() - el.h, Math.round(cy - el.h / 2)));
+      }
+      props(); paint(); preview();
+    };
+  }
+  if (lineLenInp) {
+    lineLenInp.onchange = () => {
+      snapshot();
+      const newLen = Math.max(4, Math.min(960, Number(lineLenInp.value) || 60));
+      if (el.h >= el.w) {
+        el.h = Math.max(el.w + 1, newLen);
+      } else {
+        el.w = Math.max(el.h + 1, newLen);
+      }
+      props(); paint(); preview();
+    };
+  }
 
   box.querySelectorAll(".flight-preset-btn").forEach(btn => {
     btn.onclick = () => {
@@ -3873,8 +4031,28 @@ function props() {
 
   wireContent(el, box);
   if (el.show === "attribute" && el.entity) loadAttributes(el.entity);
-  $("aligncx").onclick = () => { snapshot(); el.x = Math.round((curW() - el.w) / 2); paint(); preview(); };
-  $("aligncy").onclick = () => { snapshot(); el.y = Math.round((curSafeH() - el.h) / 2); paint(); preview(); };
+  $("aligncx").onclick = () => {
+    snapshot();
+    const targetCx = curW() / 2;
+    if (el.type === "line" && el.h >= el.w) {
+      normalizeLineParity(el, targetCx, "x");
+    } else {
+      if (el.type === "icon" && (el.w % 2) !== 0) el.w += 1;
+      el.x = Math.round(targetCx - el.w / 2);
+    }
+    paint(); preview();
+  };
+  $("aligncy").onclick = () => {
+    snapshot();
+    const targetCy = curSafeH() / 2;
+    if (el.type === "line" && el.w > el.h) {
+      normalizeLineParity(el, targetCy, "y");
+    } else {
+      if (el.type === "icon" && (el.h % 2) !== 0) el.h += 1;
+      el.y = Math.round(targetCy - el.h / 2);
+    }
+    paint(); preview();
+  };
   $("alignfw").onclick = () => { snapshot(); const m = curMargin(); el.x = m; el.w = curW() - m * 2; paint(); preview(); };
   $("layerup").onclick = () => {
     if (sel >= els().length - 1) return;

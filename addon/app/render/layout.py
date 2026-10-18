@@ -169,6 +169,37 @@ def _draw_text(img, d, el, text, metrics=None, distance_m=3.0, display=None):
     d.text((ax, y + h // 2), text, font=f, fill=fg, anchor=anchor)
 
 
+@lru_cache(maxsize=256)
+def _render_mdi_1bit_crop(ch: str, size: int):
+    """Render an MDI glyph at `size` and return its tight 1-bit cropped mask ('L', 255=ink, 0=bg)."""
+    f = _mdi_font(size)
+    l, t, r, b = f.getbbox(ch)
+    gw, gh = max(1, r - l + 6), max(1, b - t + 6)
+    tmp = Image.new("L", (gw, gh), T.WHITE)
+    ImageDraw.Draw(tmp).text((-l + 3, -t + 3), ch, font=f, fill=T.BLACK)
+    bw = T.to_1bit(tmp)
+    inv = bw.point(lambda p: 255 if p == 0 else 0, mode="L")
+    ibbox = inv.getbbox()
+    if not ibbox:
+        return None
+    return inv.crop(ibbox)
+
+
+def _mask_symmetry_error(mask, target_parity: int) -> float:
+    iw, ih = mask.size
+    parity_pen = 0.0 if (iw % 2) == target_parity else 1.0
+    mid = iw / 2.0
+    px = mask.load()
+    errs = []
+    for y in (2, ih // 4, ih // 2, (3 * ih) // 4, max(0, ih - 3)):
+        if 0 <= y < ih:
+            xs = [x for x in range(iw) if px[x, y] > 0]
+            if xs:
+                rc = (xs[0] + xs[-1] + 1) / 2.0
+                errs.append(abs(rc - mid))
+    return parity_pen + (max(errs) if errs else 0.0)
+
+
 def _draw_icon(img, d, el, _text, display=None):
     name = str(el.get("icon", ""))
     x, y, w, h = _clamp_box(el, 100, 100, display=display)
@@ -194,18 +225,40 @@ def _draw_icon(img, d, el, _text, display=None):
         return
     ch = chr(cp)
     pad = 10 if has_bg else 0
-    size = max(8, min(360, int(el["size"]))) if el.get("size") else _fit_glyph(ch, max(8, w - pad * 2), max(8, h - pad * 2))
-    f = _mdi_font(size)
-    d.text((x + w // 2, y + h // 2), ch, font=f, fill=T.WHITE if invert else T.BLACK, anchor="mm")
+    max_iw, max_ih = max(8, w - pad * 2), max(8, h - pad * 2)
+    if el.get("size"):
+        size = max(8, min(360, int(el["size"])))
+        mask = _render_mdi_1bit_crop(ch, size)
+    else:
+        base_size = _fit_glyph(ch, max_iw, max_ih)
+        mask = _render_mdi_1bit_crop(ch, base_size)
+        best_score = _mask_symmetry_error(mask, w % 2) if mask is not None else 999.0
+        if best_score > 0.0:
+            for delta in (-1, 1, -2, 2, -3, 3):
+                cand_sz = max(8, min(360, base_size + delta))
+                cand_mask = _render_mdi_1bit_crop(ch, cand_sz)
+                if cand_mask is not None and cand_mask.size[0] <= max_iw and cand_mask.size[1] <= max_ih:
+                    sc = _mask_symmetry_error(cand_mask, w % 2) + abs(delta) * 0.01
+                    if sc < best_score:
+                        best_score = sc
+                        mask = cand_mask
+    if mask is None:
+        return
+    ink_w, ink_h = mask.size
+    px_x = int(round(x + (w - ink_w) / 2.0))
+    px_y = int(round(y + (h - ink_h) / 2.0))
+    img.paste(T.WHITE if invert else T.BLACK, (px_x, px_y, px_x + ink_w, px_y + ink_h), mask)
 
 
 def _draw_line(img, d, el, _text, display=None):
     x, y, w, h = _clamp_box(el, 200, 2, display=display)
     thick = max(1, min(32, int(el.get("thickness") or el.get("stroke") or 2)))
     if h >= w:                                   # taller than wide -> vertical
-        d.line([(x + w // 2, y), (x + w // 2, y + h)], fill=T.BLACK, width=thick)
+        x0 = int(round(x + (w - thick) / 2.0))
+        d.rectangle([(x0, y), (x0 + thick - 1, y + h - 1)], fill=T.BLACK)
     else:
-        d.line([(x, y + h // 2), (x + w, y + h // 2)], fill=T.BLACK, width=thick)
+        y0 = int(round(y + (h - thick) / 2.0))
+        d.rectangle([(x, y0), (x + w - 1, y0 + thick - 1)], fill=T.BLACK)
 
 
 def _draw_box(img, d, el, _text, display=None):
