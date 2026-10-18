@@ -4316,6 +4316,9 @@ function applySetupResponse(r) {
     conn.className = "chip";
     conn.innerHTML = `<b>Ready to set up:</b> generate your ESPHome YAML below, flash it in ESPHome Dashboard, and adopt the device in Home Assistant.`;
   }
+  if (r.esphome_synced) {
+    msg("✓ Auto-synced to ESPHome Dashboard (/config/esphome/) — ready to install!");
+  }
 }
 
 async function savePanelSetup(extra = {}) {

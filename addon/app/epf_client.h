@@ -1,4 +1,6 @@
 #pragma once
+#ifndef EPF_CLIENT_H_
+#define EPF_CLIENT_H_
 
 #include <cstdint>
 #include <cstring>
@@ -1004,4 +1006,6 @@ class PanelController {
     id(pinned_cat_id), id(pinned_sub_id), id(idle_sec), id(user_cool_sec), \
     id(pending_redraw), id(quiet_hours_active), id(page_count), id(cat_count), \
     id(cat_offsets), id(cat_sizes), id(cat_pill_widths), id(cat_ids), id(sub_ids))
+
+#endif  // EPF_CLIENT_H_
 

@@ -3232,10 +3232,14 @@ def generate_esphome_yaml(cfg: dict) -> tuple[str, str]:
         wifi_ssid_line = _yaml_str(ssid)
         wifi_pw_line = _yaml_str(pw)
 
-    if disp["esphome_component"].startswith("github://"):
-        ext_comp_block = f"""external_components:
-  - source: {disp["esphome_component"]}
+    extra_ext = f"\n  - source: {disp['esphome_component']}" if disp["esphome_component"].startswith("github://") else ""
+    ext_comp_block = f"""external_components:
+  - source: github://bek00letz/epaper-panel@main
+    components: [epf]{extra_ext}
+
+epf:
 """
+    if disp["esphome_component"].startswith("github://"):
         display_platform_block = f"""display:
   - platform: crowpanel_epaper
     id: epd
@@ -3251,7 +3255,6 @@ def generate_esphome_yaml(cfg: dict) -> tuple[str, str]:
     update_interval: never
     auto_clear_enabled: false"""
     else:
-        ext_comp_block = ""
         display_platform_block = f"""display:
   - platform: waveshare_epaper
     id: epd
@@ -3278,8 +3281,6 @@ substitutions:
 esphome:
   name: ${{name}}
   friendly_name: E-paper panel
-  includes:
-    - epf_client.h
   on_boot:
     priority: -100
     then:
@@ -3996,12 +3997,24 @@ async def api_panel_setup_post(request):
         masked_cfg["wifi_password"] = feeds.SECRET_MASK
     yaml_cfg = masked_cfg if body.get("wifi_password") == feeds.SECRET_MASK else saved
     yaml_text, secrets_text = generate_esphome_yaml(yaml_cfg)
+    esphome_dir = Path("/config/esphome")
+    esphome_synced = False
+    if esphome_dir.exists() and esphome_dir.is_dir():
+        try:
+            device_slug = re.sub(r"[^a-z0-9_]+", "_", saved.get("device_name", "crowpanel-epaper").lower()).strip("_") or "crowpanel_epaper"
+            target_yaml = esphome_dir / f"{device_slug}.yaml"
+            target_yaml.write_text(yaml_text, encoding="utf-8")
+            esphome_synced = True
+            print(f"Auto-synced ESPHome config to {target_yaml}", flush=True)
+        except Exception as e:
+            print(f"Could not auto-sync to /config/esphome: {e}", flush=True)
     conn = await _detect_panel_connection(saved["device_name"])
     return web.json_response({
         "saved": True,
         "config": masked_cfg,
         "yaml": yaml_text,
         "secrets_yaml": secrets_text,
+        "esphome_synced": esphome_synced,
         "frame_port": saved.get("frame_port", FRAME_PORT),
         "has_frame_token": bool(FRAME_TOKEN),
         "panel": conn,

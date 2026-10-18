@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.31
+- **Frictionless Zero-Copy ESPHome Setup (`components/epf` & Auto-Sync):**
+  - **Zero Manual Header Copying:** Packaged the `epf` streaming client as an ESPHome external component (`components/epf`). ESPHome now downloads the C++ engine directly from GitHub automatically alongside display drivers. No curl commands, no SSH, and no manual file dragging into `/config/esphome/`.
+  - **Direct ESPHome Dashboard Auto-Sync:** Mapped `/config:rw` in the add-on manifest. Saving settings in E-Paper Studio automatically syncs the generated YAML directly into `/config/esphome/{device_name}.yaml`. Users can simply open ESPHome Dashboard in Home Assistant and click **Install**.
+
 ## 0.8.30
 - **EPF (E-Paper Frame v3.0) Binary Streaming Protocol (`epf.py` & `epf_client.h`):**
   - **Eliminated 14.1s PNG decode blackout:** Directly streams 1-bit binary frames packed to SSD1683 scanline byte boundaries (12.8 KB for 6 pages vs. 35+ KB PNG).
