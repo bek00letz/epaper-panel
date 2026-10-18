@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.8.30
+- **EPF (E-Paper Frame v3.0) Binary Streaming Protocol (`epf.py` & `epf_client.h`):**
+  - **Eliminated 14.1s PNG decode blackout:** Directly streams 1-bit binary frames packed to SSD1683 scanline byte boundaries (12.8 KB for 6 pages vs. 35+ KB PNG).
+  - 64-byte aligned binary header, directory tables, CRC-32 integrity validation, and HTTP 304 / ETag caching.
+  - Zero-allocation static double-buffered PSRAM streaming (`front_buf_` vs. `back_buf_`) with atomic pointer swap—eliminating in-place buffer destruction, tearing, and decode freezes.
+- **Microsecond Display Blit & Overlays:**
+  - Page blits reduced from 346 ms to ~80 microseconds.
+  - Inverted navigation pill and padlock badge render directly into the display buffer in <50 microseconds without modifying the cached bitmap.
+- **Unified `PanelController` C++ Architecture:**
+  - Physical buttons/rotary dial and BILRESA remote / Home Assistant API actions share the exact same C++ state machine, auto-rotation timers, and identity locking logic.
+- **Waveform & Settle Polish:**
+  - Full electrophoretic clears are suppressed during active scrolling (`user_cool_sec < 5s`). Smart settle clear kicks in smoothly only after browsing rests.
+- **Studio Setup Upgrade:**
+  - Added "Download epf_client.h" companion button in the E-Paper Studio device setup dialog.
+
 ## 0.8.29
 - **Identity-Based Category & Sub-Item Locking Architecture (Impervious to Dynamic Rotation Shifts):**
   - **The Bug:** When a user pinned a specific sub-item (such as a live sports match or overhead flight) and a background refresh occurred that altered the number of categories (e.g. from 9 to 10), numeric position indices (`cat_idx = 8`) shifted. The category at position 8 became an unrelated single-page category (`sz = 1`), resetting `sub_idx = 0` and drifting the display to another page while the lock icon remained rendered.
