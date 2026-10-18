@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.32
+- **Compilation & Secrets Self-Healing:**
+  - **Fixed undeclared `alert_interrupt`:** Corrected legacy PNG fallback lambda in generated ESPHome YAML.
+  - **Fixed `Secret 'api_encryption_key' not defined`:** Added `_inspect_existing_secrets()` to check `/config/esphome/secrets.yaml`. If API or OTA keys are not declared in `secrets.yaml`, the generator automatically embeds literal keys so ESPHome builds cleanly without manual secret creation.
+
 ## 0.8.31
 - **Frictionless Zero-Copy ESPHome Setup (`components/epf` & Auto-Sync):**
   - **Zero Manual Header Copying:** Packaged the `epf` streaming client as an ESPHome external component (`components/epf`). ESPHome now downloads the C++ engine directly from GitHub automatically alongside display drivers. No curl commands, no SSH, and no manual file dragging into `/config/esphome/`.

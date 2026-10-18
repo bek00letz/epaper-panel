@@ -3159,6 +3159,25 @@ def _yaml_str(s: str) -> str:
     return f'"{escaped}"'
 
 
+def _inspect_existing_secrets() -> set[str]:
+    """Scan /config/esphome/secrets.yaml for declared secret keys."""
+    for p in (Path("/config/esphome/secrets.yaml"), Path(__file__).parent / "secrets.yaml"):
+        if p.exists() and p.is_file():
+            found = set()
+            try:
+                for line in p.read_text(encoding="utf-8", errors="ignore").splitlines():
+                    line = line.strip()
+                    if line and not line.startswith("#") and ":" in line:
+                        k = line.split(":", 1)[0].strip()
+                        if k:
+                            found.add(k)
+                if found:
+                    return found
+            except Exception:
+                pass
+    return set()
+
+
 def generate_esphome_yaml(cfg: dict) -> tuple[str, str]:
     """Build ready-to-flash crowpanel-epaper.yaml and companion secrets.yaml."""
     display_id = cfg.get("display") or load_layouts().get("display", T.DEFAULT_DISPLAY)
@@ -3223,13 +3242,25 @@ def generate_esphome_yaml(cfg: dict) -> tuple[str, str]:
     pill_vy0 = dh - 28
     pill_vy1 = dh - 4
 
-    api_key_line = "!secret api_encryption_key" if use_secrets else _yaml_str(api_key)
-    ota_pw_line = "!secret ota_password" if use_secrets else _yaml_str(ota_pw)
-    if use_secrets or not ssid:
+    known_secrets = _inspect_existing_secrets()
+    if use_secrets and "api_encryption_key" in known_secrets:
+        api_key_line = "!secret api_encryption_key"
+    else:
+        api_key_line = _yaml_str(api_key)
+
+    if use_secrets and "ota_password" in known_secrets:
+        ota_pw_line = "!secret ota_password"
+    else:
+        ota_pw_line = _yaml_str(ota_pw)
+
+    if (use_secrets or not ssid) and "wifi_ssid" in known_secrets:
         wifi_ssid_line = "!secret wifi_ssid"
-        wifi_pw_line = "!secret wifi_password"
     else:
         wifi_ssid_line = _yaml_str(ssid)
+
+    if (use_secrets or not pw) and "wifi_password" in known_secrets:
+        wifi_pw_line = "!secret wifi_password"
+    else:
         wifi_pw_line = _yaml_str(pw)
 
     extra_ext = f"\n  - source: {disp['esphome_component']}" if disp["esphome_component"].startswith("github://") else ""
@@ -3566,7 +3597,7 @@ online_image:
           fake_hdr.page_count = id(page_count);
           fake_hdr.cat_count = id(cat_count);
           fake_hdr.rotate_sec = id(rotate_sec);
-          fake_hdr.flags = (alert_interrupt ? 0x0001 : 0) | (id(quiet_hours_active) ? 0x0002 : 0);
+          fake_hdr.flags = (id(quiet_hours_active) ? 0x0002 : 0);
           std::vector<epf::EpfCategoryRecord> fake_cats;
           for (size_t c = 0; c < id(cat_offsets).size(); c++) {{
             epf::EpfCategoryRecord cr = {{}};
