@@ -23,7 +23,7 @@ import secrets
 import sys
 import time
 import urllib.parse
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import aiohttp
@@ -1342,8 +1342,14 @@ async def publish_computed(session):
         if sports_elements:
             for el in sports_elements:
                 lg = el.get("league") or "soccer/eng.1"
-                pre_b = float(el.get("pre_buffer_hours", 2.0))
-                post_b = float(el.get("post_buffer_hours", 2.0))
+                try:
+                    pre_b = float(el.get("pre_buffer_hours")) if el.get("pre_buffer_hours") is not None else 2.0
+                except (ValueError, TypeError):
+                    pre_b = 2.0
+                try:
+                    post_b = float(el.get("post_buffer_hours")) if el.get("post_buffer_hours") is not None else 2.0
+                except (ValueError, TypeError):
+                    post_b = 2.0
                 leagues_to_publish.append((lg, pre_b, post_b))
         else:
             leagues_to_publish.append(("soccer/eng.1", 2.0, 2.0))
