@@ -639,6 +639,7 @@ online_image:
             id(last_strip_hash) = new_strip_hash;
             id(pending_redraw) = true;
           }
+          SYNC_PANEL_FROM_GLOBALS();
       - if:
           condition:
             lambda: 'return id(pending_redraw);'
@@ -903,7 +904,18 @@ interval:
           then:
             - logger.log: "Manual scroll cooldown complete (15s) -- running deferred background refetch"
             - script.execute: refetch
-      # 2. Local PSRAM Page Rotation
+      # 2. Settle Full Waveform Clear: After scrolling, settle ghosting if idle 3-7s
+      - if:
+          condition:
+            lambda: |-
+              if (id(downloading_frames) || !id(have_frames)) return false;
+              return epf::PanelController::instance().check_settle_clear();
+          then:
+            - lambda: |-
+                id(epd).force_full_update();
+                epf::PanelController::instance().record_full_update();
+            - script.execute: redraw
+      # 3. Local PSRAM Page Rotation
       - if:
           condition:
             lambda: |-

@@ -3594,28 +3594,284 @@ online_image:
           id(have_frames) = true;
           int new_strip_hash = -1;
 
-          epf::EpfHeader fake_hdr = {{}};
-          fake_hdr.page_count = id(page_count);
-          fake_hdr.cat_count = id(cat_count);
-          fake_hdr.rotate_sec = id(rotate_sec);
-          fake_hdr.flags = (id(quiet_hours_active) ? 0x0002 : 0);
-          std::vector<epf::EpfCategoryRecord> fake_cats;
-          for (size_t c = 0; c < id(cat_offsets).size(); c++) {{
-            epf::EpfCategoryRecord cr = {{}};
-            cr.cat_id = (c < id(cat_ids).size()) ? id(cat_ids)[c] : 0;
-            cr.offset_page = id(cat_offsets)[c];
-            cr.page_count = (c < id(cat_sizes).size()) ? id(cat_sizes)[c] : 1;
-            cr.pill_width = (c < id(cat_pill_widths).size()) ? id(cat_pill_widths)[c] : 110;
-            fake_cats.push_back(cr);
+          std::vector<uint32_t> old_cat_ids = id(cat_ids);
+          std::vector<int> old_cat_sub_pos = id(cat_sub_pos);
+          bool v2_valid = false;
+          bool alert_interrupt = false;
+          std::vector<uint32_t> new_cat_ids;
+          std::vector<uint32_t> new_sub_ids;
+
+          int meta_y = id(page_count) * ${{page_h}};
+          if (h > meta_y) {{
+            int total_bytes = (h - meta_y) * {dw} / 8;
+            auto read_byte = [&](int byte_idx) -> int {{
+              if (byte_idx < 0 || byte_idx >= total_bytes) return -1;
+              int start_px = byte_idx * 8;
+              int py = meta_y + (start_px / {dw});
+              int col_offset = start_px % {dw};
+              if (py >= h) return -1;
+              int val = 0;
+              for (int b = 0; b < 8; b++) {{
+                if (id(frames).get_pixel(col_offset + b, py).red < 128) {{
+                  val |= (1 << (7 - b));
+                }}
+              }}
+              return val;
+            }};
+
+            int magic = read_byte(0);
+            int version = read_byte(1);
+            if (magic == 0xA5) {{
+              int num_cats = read_byte(2);
+              if (num_cats > 0 && num_cats <= 30) {{
+                id(cat_offsets).clear();
+                id(cat_sizes).clear();
+                id(cat_pill_widths).clear();
+                id(cat_count) = num_cats;
+
+                for (int i = 0; i < num_cats; i++) {{
+                  int off = read_byte(3 + i * 3);
+                  int sz = read_byte(3 + i * 3 + 1);
+                  int pw = read_byte(3 + i * 3 + 2);
+                  id(cat_offsets).push_back(off);
+                  id(cat_sizes).push_back(sz);
+                  id(cat_pill_widths).push_back(pw > 0 ? pw : 110);
+                }}
+                int base_idx = 3 + num_cats * 3;
+                int qh_flag = read_byte(base_idx);
+                id(quiet_hours_active) = (qh_flag == 0xA5);
+                int r_hi = read_byte(base_idx + 1);
+                int r_lo = read_byte(base_idx + 2);
+                int r_sec = (r_hi << 8) | r_lo;
+                if (r_sec >= 5 && r_sec <= 3600) {{
+                  id(rotate_sec) = r_sec;
+                }}
+                int h_b0 = read_byte(base_idx + 3);
+                int h_b1 = read_byte(base_idx + 4);
+                new_strip_hash = (h_b0 << 8) | h_b1;
+
+                if (version >= 2) {{
+                  int ext = base_idx + 5;
+                  int flags = read_byte(ext);
+                  int p_hi = read_byte(ext + 1);
+                  int p_lo = read_byte(ext + 2);
+                  int meta_pages = (p_hi << 8) | p_lo;
+                  if (meta_pages == id(page_count)) {{
+                    uint8_t running_crc = 0;
+                    int expected_len = ext + 3 + (num_cats + meta_pages) * 4;
+                    bool read_ok = true;
+                    for (int b = 0; b < expected_len; b++) {{
+                      int bv = read_byte(b);
+                      if (bv < 0) {{ read_ok = false; break; }}
+                      uint8_t byte_val = (uint8_t)bv;
+                      running_crc ^= byte_val;
+                      for (int k = 0; k < 8; k++) {{
+                        running_crc = (running_crc & 0x80) ? ((running_crc << 1) ^ 0x07) : (running_crc << 1);
+                      }}
+                    }}
+                    int crc_byte = read_byte(expected_len);
+                    if (read_ok && crc_byte == (int)running_crc) {{
+                      alert_interrupt = (flags & 0x01) != 0;
+                      int pos = ext + 3;
+                      for (int i = 0; i < num_cats; i++) {{
+                        uint32_t cid = ((uint32_t)read_byte(pos) << 24) |
+                                       ((uint32_t)read_byte(pos + 1) << 16) |
+                                       ((uint32_t)read_byte(pos + 2) << 8) |
+                                       ((uint32_t)read_byte(pos + 3));
+                        new_cat_ids.push_back(cid);
+                        pos += 4;
+                      }}
+                      for (int i = 0; i < meta_pages; i++) {{
+                        uint32_t sid = ((uint32_t)read_byte(pos) << 24) |
+                                       ((uint32_t)read_byte(pos + 1) << 16) |
+                                       ((uint32_t)read_byte(pos + 2) << 8) |
+                                       ((uint32_t)read_byte(pos + 3));
+                        new_sub_ids.push_back(sid);
+                        pos += 4;
+                      }}
+                      v2_valid = true;
+                      id(cat_ids) = new_cat_ids;
+                      id(sub_ids) = new_sub_ids;
+                    }}
+                  }}
+                }}
+              }}
+            }}
           }}
-          std::vector<epf::EpfPageRecord> fake_pages;
-          for (size_t p = 0; p < id(sub_ids).size(); p++) {{
-            epf::EpfPageRecord pr = {{}};
-            pr.sub_id = id(sub_ids)[p];
-            fake_pages.push_back(pr);
+
+          if (id(cat_offsets).empty() || id(cat_count) <= 0) {{
+            id(cat_offsets).clear();
+            id(cat_sizes).clear();
+            id(cat_pill_widths).clear();
+            id(cat_ids).clear();
+            id(sub_ids).clear();
+            id(cat_count) = id(page_count);
+            for (int i = 0; i < id(page_count); i++) {{
+              id(cat_offsets).push_back(i);
+              id(cat_sizes).push_back(1);
+              id(cat_pill_widths).push_back(110);
+            }}
           }}
-          epf::PanelController::instance().on_stream_loaded(fake_hdr, fake_cats, fake_pages);
-          SYNC_PANEL_GLOBALS();
+
+          std::vector<int> new_cat_sub_pos(id(cat_count), 0);
+          for (int i = 0; i < id(cat_count); i++) {{
+            if (v2_valid && i < (int)new_cat_ids.size()) {{
+              uint32_t cid = new_cat_ids[i];
+              for (size_t j = 0; j < old_cat_ids.size(); j++) {{
+                if (old_cat_ids[j] == cid && j < old_cat_sub_pos.size()) {{
+                  new_cat_sub_pos[i] = old_cat_sub_pos[j];
+                  break;
+                }}
+              }}
+            }} else if (i < (int)old_cat_sub_pos.size()) {{
+              new_cat_sub_pos[i] = old_cat_sub_pos[i];
+            }}
+          }}
+          id(cat_sub_pos) = new_cat_sub_pos;
+
+          bool resolved = false;
+          if (v2_valid && alert_interrupt) {{
+            id(cat_idx) = 0;
+            id(sub_idx) = 0;
+            id(page) = 0;
+            id(sub_mode) = false;
+            id(pinned) = false;
+            id(cat_pinned) = false;
+            id(pinned_cat_id) = 0;
+            id(pinned_sub_id) = 0;
+            resolved = true;
+          }}
+
+          if (!resolved && id(pinned)) {{
+            if (v2_valid && id(pinned_sub_id) != 0) {{
+              int found_page = -1;
+              for (size_t p = 0; p < id(sub_ids).size(); p++) {{
+                if (id(sub_ids)[p] == id(pinned_sub_id)) {{
+                  found_page = (int)p;
+                  break;
+                }}
+              }}
+              if (found_page >= 0 && found_page < id(page_count)) {{
+                int found_cat = 0;
+                int found_sub = 0;
+                for (int c = 0; c < id(cat_count); c++) {{
+                  int off = (c < (int)id(cat_offsets).size()) ? id(cat_offsets)[c] : c;
+                  int sz = (c < (int)id(cat_sizes).size()) ? id(cat_sizes)[c] : 1;
+                  if (found_page >= off && found_page < off + sz) {{
+                    found_cat = c;
+                    found_sub = found_page - off;
+                    break;
+                  }}
+                }}
+                id(cat_idx) = found_cat;
+                id(sub_idx) = found_sub;
+                id(page) = found_page;
+                id(sub_mode) = (id(cat_sizes)[found_cat] > 1);
+                resolved = true;
+              }} else {{
+                id(pinned) = false;
+                id(pinned_sub_id) = 0;
+              }}
+            }}
+          }}
+
+          if (!resolved && id(cat_pinned)) {{
+            if (v2_valid && id(pinned_cat_id) != 0) {{
+              int found_cat = -1;
+              for (size_t c = 0; c < id(cat_ids).size(); c++) {{
+                if (id(cat_ids)[c] == id(pinned_cat_id)) {{
+                  found_cat = (int)c;
+                  break;
+                }}
+              }}
+              if (found_cat >= 0 && found_cat < id(cat_count)) {{
+                id(cat_idx) = found_cat;
+                int sz = (found_cat < (int)id(cat_sizes).size()) ? id(cat_sizes)[found_cat] : 1;
+                if (sz <= 1) {{
+                  id(sub_idx) = 0;
+                  id(sub_mode) = false;
+                }} else if (id(sub_idx) < 0 || id(sub_idx) >= sz) {{
+                  id(sub_idx) = id(cat_sub_pos)[found_cat] % sz;
+                }}
+                int off = (found_cat < (int)id(cat_offsets).size()) ? id(cat_offsets)[found_cat] : found_cat;
+                id(page) = off + id(sub_idx);
+                resolved = true;
+              }} else {{
+                id(cat_pinned) = false;
+                id(pinned_cat_id) = 0;
+              }}
+            }}
+          }}
+
+          if (!resolved && v2_valid) {{
+            if (id(cur_sub_id) != 0) {{
+              int found_page = -1;
+              for (size_t p = 0; p < id(sub_ids).size(); p++) {{
+                if (id(sub_ids)[p] == id(cur_sub_id)) {{
+                  found_page = (int)p;
+                  break;
+                }}
+              }}
+              if (found_page >= 0 && found_page < id(page_count)) {{
+                int found_cat = 0;
+                int found_sub = 0;
+                for (int c = 0; c < id(cat_count); c++) {{
+                  int off = (c < (int)id(cat_offsets).size()) ? id(cat_offsets)[c] : c;
+                  int sz = (c < (int)id(cat_sizes).size()) ? id(cat_sizes)[c] : 1;
+                  if (found_page >= off && found_page < off + sz) {{
+                    found_cat = c;
+                    found_sub = found_page - off;
+                    break;
+                  }}
+                }}
+                id(cat_idx) = found_cat;
+                id(sub_idx) = found_sub;
+                id(page) = found_page;
+                resolved = true;
+              }}
+            }}
+            if (!resolved && id(cur_cat_id) != 0) {{
+              int found_cat = -1;
+              for (size_t c = 0; c < id(cat_ids).size(); c++) {{
+                if (id(cat_ids)[c] == id(cur_cat_id)) {{
+                  found_cat = (int)c;
+                  break;
+                }}
+              }}
+              if (found_cat >= 0 && found_cat < id(cat_count)) {{
+                id(cat_idx) = found_cat;
+                int sz = (found_cat < (int)id(cat_sizes).size()) ? id(cat_sizes)[found_cat] : 1;
+                if (sz <= 1) {{
+                  id(sub_idx) = 0;
+                  id(sub_mode) = false;
+                }} else if (id(sub_idx) < 0 || id(sub_idx) >= sz) {{
+                  id(sub_idx) = id(cat_sub_pos)[found_cat] % sz;
+                }}
+                int off = (found_cat < (int)id(cat_offsets).size()) ? id(cat_offsets)[found_cat] : found_cat;
+                id(page) = off + id(sub_idx);
+                resolved = true;
+              }}
+            }}
+          }}
+
+          if (!resolved) {{
+            if (id(cat_idx) < 0 || id(cat_idx) >= id(cat_count)) id(cat_idx) = 0;
+            int c_idx = id(cat_idx);
+            int sz = (c_idx < (int)id(cat_sizes).size() && id(cat_sizes)[c_idx] > 0) ? id(cat_sizes)[c_idx] : 1;
+            if (sz <= 1) {{
+              id(sub_idx) = 0;
+              id(sub_mode) = false;
+            }} else if (id(sub_idx) < 0 || id(sub_idx) >= sz) {{
+              id(sub_idx) = id(cat_sub_pos)[c_idx] % sz;
+            }}
+            int off = (c_idx < (int)id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
+            int p = off + id(sub_idx);
+            id(page) = (p >= 0 && p < id(page_count)) ? p : 0;
+          }}
+
+          id(cur_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
+          id(cur_sub_id) = (id(page) < (int)id(sub_ids).size()) ? id(sub_ids)[id(page)] : 0;
+          SYNC_PANEL_FROM_GLOBALS();
 
           if (new_strip_hash != -1 && new_strip_hash == id(last_strip_hash) && !id(pending_redraw) && id(page) == id(last_drawn_page)) {{
             ESP_LOGI("panel", "Strip unchanged (HTTP 304) -- skipping physical e-paper refresh");
@@ -3880,7 +4136,18 @@ interval:
           then:
             - logger.log: "Manual scroll cooldown complete (15s) -- running deferred background refetch"
             - script.execute: refetch
-      # 2. Local PSRAM Page Rotation
+      # 2. Settle Full Waveform Clear: After scrolling, settle ghosting if idle 3-7s
+      - if:
+          condition:
+            lambda: |-
+              if (id(downloading_frames) || !id(have_frames)) return false;
+              return epf::PanelController::instance().check_settle_clear();
+          then:
+            - lambda: |-
+                id(epd).force_full_update();
+                epf::PanelController::instance().record_full_update();
+            - script.execute: redraw
+      # 3. Local PSRAM Page Rotation
       - if:
           condition:
             lambda: |-

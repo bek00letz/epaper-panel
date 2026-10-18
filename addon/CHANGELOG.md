@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.34
+- **Precision Overlay Coordinates & Navigation Hierarchy:**
+  - **Corrected Horizontal Overlay Inversion:** Fixed ternary orientation mapping in `draw_overlays` (`rx = is_180 ? ((dw - 1) - px) : px`) where unrotated (0°) orientations previously mirrored X coordinates to the opposite side of the screen. The active category pill now highlights strictly on the left over `[ X/Y CATEGORY ]`, and sub-item pills highlight on the right over `[ A/B ]`.
+  - **Human-Aligned Serial Navigation Logs:** Updated serial output in `page_step`, `mode_toggle`, and `check_auto_rotate` to log 1-indexed category and page counts (`cat=4/11 sub=1/1 (page=4/14)`), directly matching what is printed on the physical e-paper footer and eliminating confusion between 0-indexed internal variables and 1-indexed screen labels.
+  - **Idle Settle Full Waveform Clear:** Added an automatic settle clear trigger to `interval: 5s`. After rapid dial scrolling, the panel waits until the user settles (3–7s idle) before performing a single full refresh pass to clean e-ink ghosting, completely eliminating mid-interaction flashing while actively turning the dial.
+  - **Synchronized Web UI YAML Generator:** Fully synchronized `addon/app/server.py` `generate_esphome_yaml()` with `crowpanel-epaper.yaml` to ensure fallback PNG metadata parsing and `SYNC_PANEL_FROM_GLOBALS()` remain identical across both deployment paths.
+
 ## 0.8.33
 - **E-Ink Footer Polish & Stream Retention:**
   - **Fixed Multi-Page Collapse on Refetch:** Removed conditional override in `refetch` that requested single-page `/frame.epf` when `pinned` was true. The panel now unconditionally fetches full multi-page `/frames.epf` so rotation categories and pages are never collapsed down to a single page in PSRAM, preserving sub-item rotation memory and locks across background updates.

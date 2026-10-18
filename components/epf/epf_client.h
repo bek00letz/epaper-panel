@@ -390,6 +390,7 @@ class PanelController {
         int off = (c_idx < (int)cat_offsets_.size()) ? cat_offsets_[c_idx] : c_idx;
         int p = off + sub_idx_;
         if (p < page_count_) page_ = p;
+        ESP_LOGI(TAG, "Nav (sub): cat=%d/%d sub=%d/%d (page=%d/%d)", c_idx + 1, cats, sub_idx_ + 1, sz, page_ + 1, page_count_);
       }
     } else {
       cat_idx_ = ((cat_idx_ + delta) % cats + cats) % cats;
@@ -401,6 +402,7 @@ class PanelController {
       int off = (c_idx < (int)cat_offsets_.size()) ? cat_offsets_[c_idx] : c_idx;
       int p = off + sub_idx_;
       if (p < page_count_) page_ = p;
+      ESP_LOGI(TAG, "Nav (cat): cat=%d/%d sub=%d/%d (page=%d/%d)", c_idx + 1, cats, sub_idx_ + 1, sz, page_ + 1, page_count_);
     }
     update_current_identities_();
   }
@@ -419,6 +421,7 @@ class PanelController {
     int off = (c_idx < (int)cat_offsets_.size()) ? cat_offsets_[c_idx] : c_idx;
     int p = off + sub_idx_;
     if (p < page_count_) page_ = p;
+    ESP_LOGI(TAG, "Nav (cat): cat=%d/%d sub=%d/%d (page=%d/%d)", c_idx + 1, cats, sub_idx_ + 1, sz, page_ + 1, page_count_);
     update_current_identities_();
   }
 
@@ -436,6 +439,7 @@ class PanelController {
       int off = (c_idx < (int)cat_offsets_.size()) ? cat_offsets_[c_idx] : c_idx;
       int p = off + sub_idx_;
       if (p < page_count_) page_ = p;
+      ESP_LOGI(TAG, "Nav (sub): cat=%d/%d sub=%d/%d (page=%d/%d)", c_idx + 1, cats, sub_idx_ + 1, sz, page_ + 1, page_count_);
       update_current_identities_();
     }
   }
@@ -444,14 +448,15 @@ class PanelController {
     idle_sec_ = 0;
     user_cool_sec_ = 0;
     pending_redraw_ = true;
+    int cats = cat_count_ > 0 ? cat_count_ : 1;
     int c_idx = cat_idx_;
     int sz = (c_idx < (int)cat_sizes_.size()) ? cat_sizes_[c_idx] : 1;
     if (sz > 1) {
       sub_mode_ = !sub_mode_;
-      ESP_LOGI(TAG, "Navigation mode toggled: sub_mode=%d (sz=%d)", sub_mode_, sz);
+      ESP_LOGI(TAG, "Navigation mode toggled: sub_mode=%d (cat=%d/%d, sz=%d)", sub_mode_, c_idx + 1, cats, sz);
     } else {
       sub_mode_ = false;
-      ESP_LOGI(TAG, "Single-page category (sz=%d), staying in category mode", sz);
+      ESP_LOGI(TAG, "Single-page category (cat=%d/%d, sz=%d), staying in category mode", c_idx + 1, cats, sz);
     }
   }
 
@@ -585,7 +590,7 @@ class PanelController {
       if (p < page_count_) page_ = p;
       update_current_identities_();
       pending_redraw_ = true;
-      ESP_LOGI(TAG, "Auto-rotated to cat=%d sub=%d/%d (page=%d)", c_idx, sub_idx_ + 1, sz, page_);
+      ESP_LOGI(TAG, "Auto-rotated to cat=%d/%d sub=%d/%d (page=%d/%d)", c_idx + 1, cats, sub_idx_ + 1, sz, page_ + 1, page_count_);
       return true;
     }
   }
@@ -830,16 +835,15 @@ class PanelController {
     int cat_x1 = cat_x0 + cat_w;
 
     bool is_180 = EpfClient::instance().is_orientation_180();
-    // Default to true for CrowPanel 5.79" which is mounted upside-down (180°)
     if (!EpfClient::instance().has_stream()) {
-      is_180 = true;
+      is_180 = false;
     }
 
     auto invert_rounded_pill = [&](int x0, int y0, int x1, int y1, int r) {
       for (int py = y0; py <= y1; py++) {
         for (int px = x0; px <= x1; px++) {
           if (in_rounded_box(px, py, x0, y0, x1, y1, r)) {
-            int rx = is_180 ? px : ((dw - 1) - px);
+            int rx = is_180 ? ((dw - 1) - px) : px;
             int ry = is_180 ? ((dh - 1) - py) : py;
             if (rx >= 0 && rx < dw && ry >= 0 && ry < dh) {
               size_t byte_off = ((size_t)ry * dw + rx) / 8;
@@ -875,7 +879,7 @@ class PanelController {
 
             // White ink for padlock shackle and body; black ink for rounded background and keyhole
             bool white_ink = (is_shackle || is_body) && !is_keyhole;
-            int rx = is_180 ? px : ((dw - 1) - px);
+            int rx = is_180 ? ((dw - 1) - px) : px;
             int ry = is_180 ? ((dh - 1) - py) : py;
             if (rx >= 0 && rx < dw && ry >= 0 && ry < dh) {
               size_t byte_off = ((size_t)ry * dw + rx) / 8;
@@ -967,6 +971,39 @@ class PanelController {
     sub_ids = sub_ids_;
   }
 
+  template<typename GPage, typename GCIdx, typename GSIdx, typename GSM,
+           typename GPin, typename GCPin, typename GCCat, typename GCSub,
+           typename GPCat, typename GPSub, typename GIdle, typename GCool,
+           typename GRedraw, typename GQH, typename GCount, typename GCntCat,
+           typename GOffs, typename GSizes, typename GPW, typename GCIds, typename GSIds>
+  void sync_from_globals(const GPage &page, const GCIdx &cat_idx, const GSIdx &sub_idx, const GSM &sub_mode,
+                         const GPin &pinned, const GCPin &cat_pinned, const GCCat &cur_cat_id, const GCSub &cur_sub_id,
+                         const GPCat &pinned_cat_id, const GPSub &pinned_sub_id, const GIdle &idle_sec, const GCool &user_cool_sec,
+                         const GRedraw &pending_redraw, const GQH &quiet_hours, const GCount &page_count, const GCntCat &cat_count,
+                         const GOffs &cat_offsets, const GSizes &cat_sizes, const GPW &cat_pill_widths, const GCIds &cat_ids, const GSIds &sub_ids) {
+    page_ = page;
+    cat_idx_ = cat_idx;
+    sub_idx_ = sub_idx;
+    sub_mode_ = sub_mode;
+    pinned_ = pinned;
+    cat_pinned_ = cat_pinned;
+    cur_cat_id_ = cur_cat_id;
+    cur_sub_id_ = cur_sub_id;
+    pinned_cat_id_ = pinned_cat_id;
+    pinned_sub_id_ = pinned_sub_id;
+    idle_sec_ = idle_sec;
+    user_cool_sec_ = user_cool_sec;
+    pending_redraw_ = pending_redraw;
+    quiet_hours_active_ = quiet_hours;
+    page_count_ = page_count;
+    cat_count_ = cat_count;
+    cat_offsets_ = cat_offsets;
+    cat_sizes_ = cat_sizes;
+    cat_pill_widths_ = cat_pill_widths;
+    cat_ids_ = cat_ids;
+    sub_ids_ = sub_ids;
+  }
+
  private:
   PanelController() = default;
 
@@ -1014,6 +1051,14 @@ class PanelController {
 
 #define SYNC_PANEL_GLOBALS() \
   epf::PanelController::instance().sync_to_globals( \
+    id(page), id(cat_idx), id(sub_idx), id(sub_mode), \
+    id(pinned), id(cat_pinned), id(cur_cat_id), id(cur_sub_id), \
+    id(pinned_cat_id), id(pinned_sub_id), id(idle_sec), id(user_cool_sec), \
+    id(pending_redraw), id(quiet_hours_active), id(page_count), id(cat_count), \
+    id(cat_offsets), id(cat_sizes), id(cat_pill_widths), id(cat_ids), id(sub_ids))
+
+#define SYNC_PANEL_FROM_GLOBALS() \
+  epf::PanelController::instance().sync_from_globals( \
     id(page), id(cat_idx), id(sub_idx), id(sub_mode), \
     id(pinned), id(cat_pinned), id(cur_cat_id), id(cur_sub_id), \
     id(pinned_cat_id), id(pinned_sub_id), id(idle_sec), id(user_cool_sec), \
