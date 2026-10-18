@@ -81,7 +81,7 @@ async def fetch(src, ctx):
             detail = f"{n} new episodes" if n != 1 else "1 new episode"
         else:
             title, detail = it.get("Name"), "film"
-        out.append({"title": title or "?", "detail": f"{detail} · {human_ago(added)}"})
+        out.append({"id": str(it.get("Id") or it.get("id") or title or "?"), "title": title or "?", "detail": f"{detail} · {human_ago(added)}"})
 
     name = src["name"]
     top = out[0] if out else None

@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.8.29
+- **Identity-Based Category & Sub-Item Locking Architecture (Impervious to Dynamic Rotation Shifts):**
+  - **The Bug:** When a user pinned a specific sub-item (such as a live sports match or overhead flight) and a background refresh occurred that altered the number of categories (e.g. from 9 to 10), numeric position indices (`cat_idx = 8`) shifted. The category at position 8 became an unrelated single-page category (`sz = 1`), resetting `sub_idx = 0` and drifting the display to another page while the lock icon remained rendered.
+  - **Self-Describing Metadata Version 2 (`stripmeta.py`):** Extended strip metadata with 32-bit Blake2s stable identities for every category (`cat_ids`) and every slice (`sub_ids`), an alert interrupt flag (`FLAG_INTERRUPT`), 16-bit slice count, and CRC-8 data integrity validation. Fully backward-compatible with v1 firmware streams. Multi-row packing automatically wraps metadata across rows when needed without altering the page count integer division (`h / page_h`).
+  - **Dynamic Sub-Item Discovery & Disambiguation (`subitems.py`):** Automatically discovers sub-items across all composite widgets (`sports_match`, `flight_tracker`, `feed`/Jellyfin/Watch, and generic composite layouts), deriving stable content IDs (ESPN event IDs, flight callsigns, Jellyfin item IDs) with guaranteed collision avoidance.
+  - **Hardware & Generator Firmware Parity (`crowpanel-epaper.yaml` & `server.py`):**
+    - Firmware tracks `pinned_cat_id`, `pinned_sub_id`, `cur_cat_id`, and `cur_sub_id` rather than fragile numeric indices.
+    - Upon download completion (`on_download_finished`), the panel resolves active positions by searching `sub_ids` for the pinned sub-item or `cat_ids` for the pinned category. If categories are inserted or removed, the locked sub-item remains locked and displayed on screen without jumping.
+    - Cyclic rotation memory (`cat_sub_pos`) is remapped across category identities so sequential sub-item rotation (`1/N → 2/N → 3/N`) is never scrambled when categories are inserted or deleted.
+    - If a locked event finishes and departs the rotation, the lock releases gracefully with diagnostic logging.
+
 ## 0.8.28
 - **Pixel-Exact Centering & Symmetry for Icons and Lines (`layout.py` & `index.html`):**
   - **Root Cause 1 (`_draw_line` off-center inside its box):** Previously, `_draw_line` called `d.line([(x + w // 2, y), (x + w // 2, y + h)], width=thick)`, which in Pillow draws an even-width stroke at columns `[x + w//2 .. x + w//2 + thick - 1]`. For an `8px`-wide vertical line box (`[x .. x+7]`, center `x + 4.0`) with `thick=2`, Pillow drew at columns `[x+4, x+5]`, leaving **4 blank pixels on the left and 2 blank pixels on the right** (+1.0px right-shift inside its own box). Replaced `d.line` with exact pixel-centered rectangle coordinates (`x0 = round(x + (w - thick) / 2.0)`) so lines have identical left/right (or top/bottom) padding inside their bounding box (`0.0px` shift).

@@ -34,7 +34,7 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).parent))
 import feeds  # noqa: E402
-from render import layout, theme as T  # noqa: E402
+from render import layout, stripmeta, subitems, theme as T  # noqa: E402
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 WEB_DIR = Path(__file__).parent / "web"
@@ -494,6 +494,8 @@ class Frames:
         self.cat_sizes: list[int] = [1]
         self.cat_pill_widths: list[int] = [110]
         self.cat_names: list[str] = []
+        self.cat_ids: list[int] = []
+        self.sub_ids: list[int] = []
         self.cat_count: int = 1
         self.quiet_active: bool = False
         self.quiet_reason: str = "disabled"
@@ -1341,6 +1343,7 @@ def _parse_espn_event(ev, league_title="MATCH", tz_name=None):
                 events_away.append(entry_str)
 
     return {
+        "id": str(ev.get("id") or comp.get("id") or f"{home_id}_{str(away.get('team', {}).get('id') or '')}"),
         "league": league_title,
         "venue": venue_title,
         "clock": clock_badge,
@@ -1710,6 +1713,7 @@ async def fetch_sports_match(session, entity_or_league="soccer/eng.1", team=None
         venue = attrs.get("venue") or ""
         league_name = attrs.get("league") or "MATCH"
         return [{
+            "id": str(attrs.get("event_id") or attrs.get("id") or f"{home}_{away}"),
             "league": league_name,
             "venue": venue,
             "clock": clock_str,
@@ -2330,7 +2334,7 @@ async def build_frames(session):
             clock=datetime.now().strftime("%H:%M"), label="empty", orientation=orient, display=display)
         one = T.orient_for_panel(T.to_1bit(img), orient, display=display)
         png = _png(one)
-        return png, png, [png], [], [0], [1], ["empty"], [110], quiet_active, quiet_reason, rot_sec
+        return png, png, [png], [], [0], [1], ["empty"], [110], quiet_active, quiet_reason, rot_sec, [stripmeta.identity("empty")], [stripmeta.identity("empty:0")]
 
     vals = await gather_values(session, spec, set(live))
 
@@ -2346,37 +2350,18 @@ async def build_frames(session):
     cat_sizes = []
     cat_names = []
     cat_pill_widths = []
+    cat_sub_keys = []
 
     for cat_i, cat_name in enumerate(live):
         page_def = spec["pages"][cat_name]
         page_vals = vals.get(cat_name, {})
         elements = page_def.get("elements", [])
 
-        # Determine sub_count for this category
-        sub_count = 1
-        sub_type = None
-
-        # 1. Flight tracker element
-        for el_idx, el in enumerate(elements):
-            if el.get("type") == "flight_tracker":
-                fl_list = page_vals.get(el_idx)
-                if isinstance(fl_list, list) and len(fl_list) > 1:
-                    sub_count = max(sub_count, min(len(fl_list), 5))
-                    sub_type = "flight"
-            elif el.get("type") == "sports_match":
-                sm_list = page_vals.get(el_idx)
-                if isinstance(sm_list, list) and len(sm_list) > 1:
-                    sub_count = max(sub_count, min(len(sm_list), 6))
-                    sub_type = "sports"
-
-        # 2. Feed items (e.g. Jellyfin, Watch, or any feed sensor with an 'items' attribute)
-        feed_entity = None
-        feed_items = None
+        # Fetch any uncached feed items
         for el in elements:
             ent = str(el.get("entity", ""))
             if ent.startswith("sensor.epaper_") and not ent.endswith("_count") and not ent.startswith("sensor.epaper_category_") and not ent.startswith("sensor.epaper_panel_"):
-                items = _feed_items_cache.get(ent)
-                if not items:
+                if ent not in _feed_items_cache:
                     try:
                         st_data = await ha_json(session, f"/states/{ent}")
                         items = (st_data.get("attributes") or {}).get("items")
@@ -2384,12 +2369,11 @@ async def build_frames(session):
                             _feed_items_cache[ent] = items
                     except Exception:
                         pass
-                if items and isinstance(items, list) and len(items) > 1:
-                    feed_entity = ent
-                    feed_items = items
-                    sub_count = max(sub_count, min(len(feed_items), 5))
-                    sub_type = "feed"
-                    break
+
+        sub_count, sub_type, sub_keys, feed_items, feed_entity = subitems.inspect_category_subitems(
+            page_def, page_vals, _feed_items_cache
+        )
+        cat_sub_keys.append(sub_keys)
 
         cat_display_name = cat_name.replace("_", " ").upper()
         cat_label = f"{cat_i + 1}/{len(live)}  {cat_display_name}"
@@ -2424,14 +2408,14 @@ async def build_frames(session):
                     val_str = str(el.get("value", "")).strip()
                     cur_val = str(cloned_vals.get(el_idx, "")).strip()
 
-                    # 1. Detail / Episode field: matches attribute 'detail', a template referencing detail, or the initial top detail text
+                    # 1. Detail / Episode field
                     is_detail = (
                         (ent and (ent == feed_entity or ent == "sensor.epaper_watch") and el.get("show") == "attribute" and "detail" in str(el.get("attribute", "")).lower())
                         or ("detail" in val_str.lower() and any(k in val_str.lower() for k in ("state_attr", "states", feed_entity, "watch", "jelly", "item")))
                         or (bool(top_detail) and cur_val == top_detail)
                     )
 
-                    # 2. Show title field: matches feed entity, or the initial top show title
+                    # 2. Show title field
                     is_title = (
                         (ent and (ent == feed_entity or ent == "sensor.epaper_watch") and el.get("show") != "attribute")
                         or (bool(top_title) and cur_val == top_title)
@@ -2462,45 +2446,36 @@ async def build_frames(session):
                 battery_pct=None, series=series.get(cat_name), orientation=orient, display=display)
             imgs.append(T.orient_for_panel(T.to_1bit(img), orient, display=display))
 
-    strip = Image.new("1", (dw, dh * len(imgs) + 1), 1)
-    slice_pngs = []
-    for i, im in enumerate(imgs):
-        strip.paste(im, (0, i * dh))
-        slice_pngs.append(_png(im))
-
+    slice_pngs = [_png(im) for im in imgs]
     slices_digest = hashlib.md5(b"".join(slice_pngs)).digest()
     etag_b0, etag_b1 = slices_digest[0], slices_digest[1]
 
-    # Self-describing image header on row meta_y:
-    meta_y = dh * len(imgs)
-    # Magic 0xA5, version 0x01, cat_count, followed by (offset, size, pill_width) triples,
-    # then quiet_hours flag (0xA5=quiet, 0x00=active), rotate_seconds (2 bytes MSB/LSB), and 2-byte content hash
-    payload = [0xA5, 0x01, len(cat_offsets)]
-    for off, sz, pw in zip(cat_offsets, cat_sizes, cat_pill_widths):
-        payload.append(min(255, int(off)))
-        payload.append(min(255, int(sz)))
-        payload.append(min(255, int(pw)))
-    payload.append(0xA5 if quiet_active else 0x00)
-    payload.append((rot_sec >> 8) & 0xFF)
-    payload.append(rot_sec & 0xFF)
-    payload.append(etag_b0)
-    payload.append(etag_b1)
+    cat_ids, sub_ids = subitems.compute_identities(live, cat_sub_keys)
+    meta = stripmeta.StripMeta(
+        offsets=cat_offsets,
+        sizes=cat_sizes,
+        pill_widths=cat_pill_widths,
+        cat_ids=cat_ids,
+        sub_ids=sub_ids,
+        quiet=quiet_active,
+        rotate_seconds=rot_sec,
+        content_hash=(etag_b0 << 8) | etag_b1,
+        interrupt=bool(alert)
+    )
+    payload = stripmeta.encode(meta)
+    meta_rows = stripmeta.rows_needed(len(payload), dw)
 
-    px_x = 0
-    for byte_val in payload:
-        for b in range(8):
-            bit = (byte_val >> (7 - b)) & 1
-            if px_x < dw:
-                # In PIL mode "1", 0 = black (decoded as red < 128 in ESPHome), 1 = white
-                strip.putpixel((px_x, meta_y), 0 if bit else 1)
-            px_x += 1
+    strip = Image.new("1", (dw, dh * len(imgs) + meta_rows), 1)
+    for i, im in enumerate(imgs):
+        strip.paste(im, (0, i * dh))
+    stripmeta.paint(strip, dh * len(imgs), payload)
 
-    return _png(strip), slice_pngs[0], slice_pngs, live, cat_offsets, cat_sizes, cat_names, cat_pill_widths, quiet_active, quiet_reason, rot_sec
+    return _png(strip), slice_pngs[0], slice_pngs, live, cat_offsets, cat_sizes, cat_names, cat_pill_widths, quiet_active, quiet_reason, rot_sec, cat_ids, sub_ids
 
 
 async def refresh_frames(session):
     """Build a new Frames snapshot and atomically swap FRAMES."""
-    strip, single, slices, names, cat_offsets, cat_sizes, cat_names, cat_pill_widths, quiet_active, quiet_reason, rot_sec = await build_frames(session)
+    strip, single, slices, names, cat_offsets, cat_sizes, cat_names, cat_pill_widths, quiet_active, quiet_reason, rot_sec, cat_ids, sub_ids = await build_frames(session)
     old_f = globals().get("FRAMES")
     has_prev = old_f is not None and getattr(old_f, "rendered_at", None)
     struct_changed = (
@@ -2508,7 +2483,9 @@ async def refresh_frames(session):
             old_f.cat_offsets != cat_offsets or
             old_f.cat_sizes != cat_sizes or
             old_f.cat_names != cat_names or
-            getattr(old_f, "cat_pill_widths", None) != cat_pill_widths
+            getattr(old_f, "cat_pill_widths", None) != cat_pill_widths or
+            getattr(old_f, "cat_ids", None) != cat_ids or
+            getattr(old_f, "sub_ids", None) != sub_ids
         )
     )
     quiet_changed = bool(has_prev and getattr(old_f, "quiet_active", False) != quiet_active)
@@ -2526,6 +2503,8 @@ async def refresh_frames(session):
     nxt.cat_sizes = cat_sizes
     nxt.cat_names = cat_names
     nxt.cat_pill_widths = cat_pill_widths
+    nxt.cat_ids = cat_ids
+    nxt.sub_ids = sub_ids
     nxt.cat_count = len(cat_offsets)
     nxt.quiet_active = quiet_active
     nxt.quiet_reason = quiet_reason
@@ -2713,6 +2692,8 @@ async def api_manifest(request):
         "cat_offsets": f.cat_offsets,
         "cat_sizes": f.cat_sizes,
         "cat_names": f.cat_names,
+        "cat_ids": getattr(f, "cat_ids", []),
+        "sub_ids": getattr(f, "sub_ids", []),
         "quiet_active": f.quiet_active,
         "quiet_reason": f.quiet_reason,
         "rendered_at": f.rendered_at,
@@ -2729,6 +2710,8 @@ async def public_status(request):
         "cat_offsets": f.cat_offsets,
         "cat_sizes": f.cat_sizes,
         "cat_names": f.cat_names,
+        "cat_ids": getattr(f, "cat_ids", []),
+        "sub_ids": getattr(f, "sub_ids", []),
         "quiet_active": f.quiet_active,
         "quiet_reason": f.quiet_reason,
         "rendered_at": f.rendered_at,
@@ -2758,6 +2741,8 @@ async def status(request):
         "cat_offsets": f.cat_offsets,
         "cat_sizes": f.cat_sizes,
         "cat_names": f.cat_names,
+        "cat_ids": getattr(f, "cat_ids", []),
+        "sub_ids": getattr(f, "sub_ids", []),
         "quiet_active": f.quiet_active,
         "quiet_reason": f.quiet_reason,
         "error": f.error,
@@ -3394,6 +3379,28 @@ psram:
   - id: cat_sub_pos
     type: std::vector<int>
     restore_value: false
+  - id: cat_ids
+    type: std::vector<uint32_t>
+    restore_value: false
+  - id: sub_ids
+    type: std::vector<uint32_t>
+    restore_value: false
+  - id: pinned_cat_id
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
+  - id: pinned_sub_id
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
+  - id: cur_cat_id
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
+  - id: cur_sub_id
+    type: uint32_t
+    restore_value: false
+    initial_value: '0'
   - id: sub_mode
     type: bool
     restore_value: false
@@ -3477,6 +3484,14 @@ api:
                   break;
                 }}
               }}
+              id(cur_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
+              id(cur_sub_id) = (id(page) < (int)id(sub_ids).size()) ? id(sub_ids)[id(page)] : 0;
+              if (id(pinned)) {{
+                id(pinned_sub_id) = id(cur_sub_id);
+                id(pinned_cat_id) = id(cur_cat_id);
+              }} else if (id(cat_pinned)) {{
+                id(pinned_cat_id) = id(cur_cat_id);
+              }}
             }}
         - script.execute: redraw
     - action: show_category
@@ -3491,11 +3506,19 @@ api:
             int cats = id(cat_count) > 0 ? id(cat_count) : 1;
             if (category >= 0 && category < cats) {{
               id(cat_idx) = category;
-              int sz = (category < id(cat_sizes).size()) ? id(cat_sizes)[category] : 1;
+              int sz = (category < (int)id(cat_sizes).size()) ? id(cat_sizes)[category] : 1;
               id(sub_idx) = (sub >= 0 && sub < sz) ? sub : 0;
-              int off = (category < id(cat_offsets).size()) ? id(cat_offsets)[category] : category;
+              int off = (category < (int)id(cat_offsets).size()) ? id(cat_offsets)[category] : category;
               int p = off + id(sub_idx);
               if (p < id(page_count)) id(page) = p;
+              id(cur_cat_id) = (category < (int)id(cat_ids).size()) ? id(cat_ids)[category] : 0;
+              id(cur_sub_id) = (id(page) < (int)id(sub_ids).size()) ? id(sub_ids)[id(page)] : 0;
+              if (id(pinned)) {{
+                id(pinned_sub_id) = id(cur_sub_id);
+                id(pinned_cat_id) = id(cur_cat_id);
+              }} else if (id(cat_pinned)) {{
+                id(pinned_cat_id) = id(cur_cat_id);
+              }}
             }}
         - script.execute: redraw
     - action: page_step
@@ -3511,25 +3534,33 @@ api:
 
             if (id(sub_mode)) {{
               int c_idx = id(cat_idx);
-              int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
+              int sz = (c_idx < (int)id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
               if (sz > 1) {{
                 id(sub_idx) = ((id(sub_idx) + delta) % sz + sz) % sz;
                 if ((int)id(cat_sub_pos).size() <= c_idx) id(cat_sub_pos).resize(cats, 0);
                 id(cat_sub_pos)[c_idx] = (id(sub_idx) + 1) % sz;
-                int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
+                int off = (c_idx < (int)id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
                 int p = off + id(sub_idx);
                 if (p < id(page_count)) id(page) = p;
               }}
             }} else {{
               id(cat_idx) = ((id(cat_idx) + delta) % cats + cats) % cats;
               int c_idx = id(cat_idx);
-              int sz = (c_idx < id(cat_sizes).size() && id(cat_sizes)[c_idx] > 0) ? id(cat_sizes)[c_idx] : 1;
+              int sz = (c_idx < (int)id(cat_sizes).size() && id(cat_sizes)[c_idx] > 0) ? id(cat_sizes)[c_idx] : 1;
               if ((int)id(cat_sub_pos).size() <= c_idx) id(cat_sub_pos).resize(cats, 0);
               id(sub_idx) = (sz > 1) ? (id(cat_sub_pos)[c_idx] % sz) : 0;
               id(sub_mode) = false;
-              int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
+              int off = (c_idx < (int)id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
               int p = off + id(sub_idx);
               if (p < id(page_count)) id(page) = p;
+            }}
+            id(cur_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
+            id(cur_sub_id) = (id(page) < (int)id(sub_ids).size()) ? id(sub_ids)[id(page)] : 0;
+            if (id(pinned)) {{
+              id(pinned_sub_id) = id(cur_sub_id);
+              id(pinned_cat_id) = id(cur_cat_id);
+            }} else if (id(cat_pinned)) {{
+              id(pinned_cat_id) = id(cur_cat_id);
             }}
         - script.execute: redraw
     - action: mode_toggle
@@ -3539,7 +3570,7 @@ api:
             id(user_cool_sec) = 0;
             id(pending_redraw) = true;
             int c_idx = id(cat_idx);
-            int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
+            int sz = (c_idx < (int)id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
             if (sz > 1) {{
               id(sub_mode) = !id(sub_mode);
               ESP_LOGI("panel", "Navigation mode toggled: sub_mode=%d (sz=%d)", id(sub_mode), sz);
@@ -3559,13 +3590,18 @@ api:
             int cats = id(cat_count) > 0 ? id(cat_count) : 1;
             id(cat_idx) = ((id(cat_idx) + delta) % cats + cats) % cats;
             int c_idx = id(cat_idx);
-            int sz = (c_idx < id(cat_sizes).size() && id(cat_sizes)[c_idx] > 0) ? id(cat_sizes)[c_idx] : 1;
+            int sz = (c_idx < (int)id(cat_sizes).size() && id(cat_sizes)[c_idx] > 0) ? id(cat_sizes)[c_idx] : 1;
             if ((int)id(cat_sub_pos).size() <= c_idx) id(cat_sub_pos).resize(cats, 0);
             id(sub_idx) = (sz > 1) ? (id(cat_sub_pos)[c_idx] % sz) : 0;
             id(sub_mode) = false;
-            int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
+            int off = (c_idx < (int)id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
             int p = off + id(sub_idx);
             if (p < id(page_count)) id(page) = p;
+            id(cur_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
+            id(cur_sub_id) = (id(page) < (int)id(sub_ids).size()) ? id(sub_ids)[id(page)] : 0;
+            if (id(cat_pinned)) {{
+              id(pinned_cat_id) = id(cur_cat_id);
+            }}
         - script.execute: redraw
     - action: sub_step
       variables:
@@ -3577,14 +3613,20 @@ api:
             id(pending_redraw) = true;
             int cats = id(cat_count) > 0 ? id(cat_count) : 1;
             int c_idx = id(cat_idx);
-            int sz = (c_idx < id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
+            int sz = (c_idx < (int)id(cat_sizes).size()) ? id(cat_sizes)[c_idx] : 1;
             if (sz > 1) {{
               id(sub_idx) = ((id(sub_idx) + delta) % sz + sz) % sz;
               if ((int)id(cat_sub_pos).size() <= c_idx) id(cat_sub_pos).resize(cats, 0);
               id(cat_sub_pos)[c_idx] = (id(sub_idx) + 1) % sz;
-              int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
+              int off = (c_idx < (int)id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
               int p = off + id(sub_idx);
               if (p < id(page_count)) id(page) = p;
+              id(cur_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
+              id(cur_sub_id) = (id(page) < (int)id(sub_ids).size()) ? id(sub_ids)[id(page)] : 0;
+              if (id(pinned)) {{
+                id(pinned_sub_id) = id(cur_sub_id);
+                id(pinned_cat_id) = id(cur_cat_id);
+              }}
             }}
         - script.execute: redraw
     - action: hold_toggle
@@ -3594,8 +3636,15 @@ api:
             id(user_cool_sec) = 0;
             id(pending_redraw) = true;
             id(pinned) = !id(pinned);
-            if (id(pinned)) id(cat_pinned) = false;
-            ESP_LOGI("panel", "Panel lock: %d", id(pinned));
+            if (id(pinned)) {{
+              id(cat_pinned) = false;
+              id(pinned_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
+              id(pinned_sub_id) = (id(page) < (int)id(sub_ids).size()) ? id(sub_ids)[id(page)] : 0;
+            }} else {{
+              id(pinned_cat_id) = 0;
+              id(pinned_sub_id) = 0;
+            }}
+            ESP_LOGI("panel", "Panel lock: %d (cat_id=0x%08X, sub_id=0x%08X)", id(pinned), id(pinned_cat_id), id(pinned_sub_id));
         - script.execute: redraw
     - action: category_pin_toggle
       then:
@@ -3604,8 +3653,14 @@ api:
             id(user_cool_sec) = 0;
             id(pending_redraw) = true;
             id(cat_pinned) = !id(cat_pinned);
-            if (id(cat_pinned)) id(pinned) = false;
-            ESP_LOGI("panel", "Category lock: %d", id(cat_pinned));
+            if (id(cat_pinned)) {{
+              id(pinned) = false;
+              id(pinned_sub_id) = 0;
+              id(pinned_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
+            }} else {{
+              id(pinned_cat_id) = 0;
+            }}
+            ESP_LOGI("panel", "Category lock: %d (cat_id=0x%08X)", id(cat_pinned), id(pinned_cat_id));
         - script.execute: redraw
     - action: lock_toggle
       then:
@@ -3615,12 +3670,27 @@ api:
             id(pending_redraw) = true;
             if (id(sub_mode)) {{
               id(pinned) = !id(pinned);
-              if (id(pinned)) id(cat_pinned) = false;
-              ESP_LOGI("panel", "Contextual lock (sub_mode): panel lock=%d", id(pinned));
+              if (id(pinned)) {{
+                id(cat_pinned) = false;
+                id(pinned_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
+                id(pinned_sub_id) = (id(page) < (int)id(sub_ids).size()) ? id(sub_ids)[id(page)] : 0;
+              }} else {{
+                id(pinned_cat_id) = 0;
+                id(pinned_sub_id) = 0;
+              }}
+              ESP_LOGI("panel", "Contextual lock (sub_mode): panel lock=%d (cat_id=0x%08X, sub_id=0x%08X)",
+                       id(pinned), id(pinned_cat_id), id(pinned_sub_id));
             }} else {{
               id(cat_pinned) = !id(cat_pinned);
-              if (id(cat_pinned)) id(pinned) = false;
-              ESP_LOGI("panel", "Contextual lock (cat_mode): cat lock=%d", id(cat_pinned));
+              if (id(cat_pinned)) {{
+                id(pinned) = false;
+                id(pinned_sub_id) = 0;
+                id(pinned_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
+              }} else {{
+                id(pinned_cat_id) = 0;
+              }}
+              ESP_LOGI("panel", "Contextual lock (cat_mode): cat lock=%d (cat_id=0x%08X)",
+                       id(cat_pinned), id(pinned_cat_id));
             }}
         - script.execute: redraw
 
@@ -3674,24 +3744,33 @@ online_image:
           id(have_frames) = true;
           int new_strip_hash = -1;
 
-          // Check if self-describing metadata row is present (height == page_count * page_h + 1)
-          if (h >= id(page_count) * ${{page_h}} + 1) {{
-            int meta_y = id(page_count) * ${{page_h}};
+          std::vector<uint32_t> old_cat_ids = id(cat_ids);
+          std::vector<int> old_cat_sub_pos = id(cat_sub_pos);
+          bool v2_valid = false;
+          bool alert_interrupt = false;
+          std::vector<uint32_t> new_cat_ids;
+          std::vector<uint32_t> new_sub_ids;
+
+          int meta_y = id(page_count) * ${{page_h}};
+          if (h > meta_y) {{
+            int total_bytes = (h - meta_y) * {dw} / 8;
             auto read_byte = [&](int byte_idx) -> int {{
-              int val = 0;
+              if (byte_idx < 0 || byte_idx >= total_bytes) return -1;
               int start_px = byte_idx * 8;
+              int py = meta_y + (start_px / {dw});
+              int col_offset = start_px % {dw};
+              if (py >= h) return -1;
+              int val = 0;
               for (int b = 0; b < 8; b++) {{
-                if (start_px + b < {dw}) {{
-                  // Bit 1 was written as 0 (black in PNG, red < 128 in get_pixel)
-                  if (id(frames).get_pixel(start_px + b, meta_y).red < 128) {{
-                    val |= (1 << (7 - b));
-                  }}
+                if (id(frames).get_pixel(col_offset + b, py).red < 128) {{
+                  val |= (1 << (7 - b));
                 }}
               }}
               return val;
             }};
 
             int magic = read_byte(0);
+            int version = read_byte(1);
             if (magic == 0xA5) {{
               int num_cats = read_byte(2);
               if (num_cats > 0 && num_cats <= 30) {{
@@ -3699,9 +3778,7 @@ online_image:
                 id(cat_sizes).clear();
                 id(cat_pill_widths).clear();
                 id(cat_count) = num_cats;
-                if ((int)id(cat_sub_pos).size() < num_cats) {{
-                  id(cat_sub_pos).resize(num_cats, 0);
-                }}
+
                 for (int i = 0; i < num_cats; i++) {{
                   int off = read_byte(3 + i * 3);
                   int sz = read_byte(3 + i * 3 + 1);
@@ -3722,7 +3799,57 @@ online_image:
                 int h_b0 = read_byte(base_idx + 3);
                 int h_b1 = read_byte(base_idx + 4);
                 new_strip_hash = (h_b0 << 8) | h_b1;
-                ESP_LOGI("panel", "Loaded metadata directly from frames.png: %d categories (rot=%ds, quiet=%d)", num_cats, id(rotate_sec), id(quiet_hours_active));
+
+                if (version >= 2) {{
+                  int ext = base_idx + 5;
+                  int flags = read_byte(ext);
+                  int p_hi = read_byte(ext + 1);
+                  int p_lo = read_byte(ext + 2);
+                  int meta_pages = (p_hi << 8) | p_lo;
+                  if (meta_pages == id(page_count)) {{
+                    uint8_t running_crc = 0;
+                    int expected_len = ext + 3 + (num_cats + meta_pages) * 4;
+                    bool read_ok = true;
+                    for (int b = 0; b < expected_len; b++) {{
+                      int bv = read_byte(b);
+                      if (bv < 0) {{ read_ok = false; break; }}
+                      uint8_t byte_val = (uint8_t)bv;
+                      running_crc ^= byte_val;
+                      for (int k = 0; k < 8; k++) {{
+                        running_crc = (running_crc & 0x80) ? ((running_crc << 1) ^ 0x07) : (running_crc << 1);
+                      }}
+                    }}
+                    int crc_byte = read_byte(expected_len);
+                    if (read_ok && crc_byte == (int)running_crc) {{
+                      alert_interrupt = (flags & 0x01) != 0;
+                      int pos = ext + 3;
+                      for (int i = 0; i < num_cats; i++) {{
+                        uint32_t cid = ((uint32_t)read_byte(pos) << 24) |
+                                       ((uint32_t)read_byte(pos + 1) << 16) |
+                                       ((uint32_t)read_byte(pos + 2) << 8) |
+                                       ((uint32_t)read_byte(pos + 3));
+                        new_cat_ids.push_back(cid);
+                        pos += 4;
+                      }}
+                      for (int i = 0; i < meta_pages; i++) {{
+                        uint32_t sid = ((uint32_t)read_byte(pos) << 24) |
+                                       ((uint32_t)read_byte(pos + 1) << 16) |
+                                       ((uint32_t)read_byte(pos + 2) << 8) |
+                                       ((uint32_t)read_byte(pos + 3));
+                        new_sub_ids.push_back(sid);
+                        pos += 4;
+                      }}
+                      v2_valid = true;
+                      id(cat_ids) = new_cat_ids;
+                      id(sub_ids) = new_sub_ids;
+                      ESP_LOGI("panel", "Parsed v2 metadata: %d categories, %d slices, CRC-8 OK", num_cats, meta_pages);
+                    }} else {{
+                      ESP_LOGW("panel", "Metadata v2 CRC-8 mismatch: got 0x%02X, expected 0x%02X", crc_byte, running_crc);
+                    }}
+                  }}
+                }}
+                ESP_LOGI("panel", "Loaded metadata directly from frames.png: %d categories (rot=%ds, quiet=%d, v2=%d)",
+                         num_cats, id(rotate_sec), id(quiet_hours_active), v2_valid);
               }}
             }}
           }}
@@ -3731,29 +3858,194 @@ online_image:
             id(cat_offsets).clear();
             id(cat_sizes).clear();
             id(cat_pill_widths).clear();
+            id(cat_ids).clear();
+            id(sub_ids).clear();
             id(cat_count) = id(page_count);
-            if ((int)id(cat_sub_pos).size() < id(page_count)) {{
-              id(cat_sub_pos).resize(id(page_count), 0);
-            }}
             for (int i = 0; i < id(page_count); i++) {{
               id(cat_offsets).push_back(i);
               id(cat_sizes).push_back(1);
               id(cat_pill_widths).push_back(110);
             }}
           }}
-          if (id(cat_idx) < 0 || id(cat_idx) >= id(cat_count)) id(cat_idx) = 0;
-          int c_idx = id(cat_idx);
-          int sz = (c_idx < (int)id(cat_sizes).size() && id(cat_sizes)[c_idx] > 0) ? id(cat_sizes)[c_idx] : 1;
-          if (sz <= 1) {{
-            id(sub_idx) = 0;
-            id(sub_mode) = false;
-          }} else if (id(sub_idx) < 0 || id(sub_idx) >= sz) {{
-            id(sub_idx) = id(cat_sub_pos)[c_idx] % sz;
+
+          // Remap sub-item sequential rotation positions by category identity to preserve
+          // positions across category insertions, reorderings, or deletions.
+          std::vector<int> new_cat_sub_pos(id(cat_count), 0);
+          for (int i = 0; i < id(cat_count); i++) {{
+            if (v2_valid && i < (int)new_cat_ids.size()) {{
+              uint32_t cid = new_cat_ids[i];
+              for (size_t j = 0; j < old_cat_ids.size(); j++) {{
+                if (old_cat_ids[j] == cid && j < old_cat_sub_pos.size()) {{
+                  new_cat_sub_pos[i] = old_cat_sub_pos[j];
+                  break;
+                }}
+              }}
+            }} else if (i < (int)old_cat_sub_pos.size()) {{
+              new_cat_sub_pos[i] = old_cat_sub_pos[i];
+            }}
           }}
-          int off = (c_idx < (int)id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
-          int p = off + id(sub_idx);
-          id(page) = (p >= 0 && p < id(page_count)) ? p : 0;
-          ESP_LOGI("panel", "%d pages (%d categories) held locally, showing cat=%d sub=%d page=%d", id(page_count), id(cat_count), id(cat_idx), id(sub_idx), id(page));
+          id(cat_sub_pos) = new_cat_sub_pos;
+
+          bool resolved = false;
+
+          // 1. Alert interrupt: HA alert banner has taken over the screen
+          if (v2_valid && alert_interrupt) {{
+            id(cat_idx) = 0;
+            id(sub_idx) = 0;
+            id(page) = 0;
+            id(sub_mode) = false;
+            id(pinned) = false;
+            id(cat_pinned) = false;
+            id(pinned_cat_id) = 0;
+            id(pinned_sub_id) = 0;
+            resolved = true;
+            ESP_LOGW("panel", "ALERT INTERRUPT active: forcing page 0");
+          }}
+
+          // 2. Sub-item Lock (Panel Lock): pinned to a specific sub-item
+          if (!resolved && id(pinned)) {{
+            if (v2_valid && id(pinned_sub_id) != 0) {{
+              int found_page = -1;
+              for (size_t p = 0; p < id(sub_ids).size(); p++) {{
+                if (id(sub_ids)[p] == id(pinned_sub_id)) {{
+                  found_page = (int)p;
+                  break;
+                }}
+              }}
+              if (found_page >= 0 && found_page < id(page_count)) {{
+                int found_cat = 0;
+                int found_sub = 0;
+                for (int c = 0; c < id(cat_count); c++) {{
+                  int off = (c < (int)id(cat_offsets).size()) ? id(cat_offsets)[c] : c;
+                  int sz = (c < (int)id(cat_sizes).size()) ? id(cat_sizes)[c] : 1;
+                  if (found_page >= off && found_page < off + sz) {{
+                    found_cat = c;
+                    found_sub = found_page - off;
+                    break;
+                  }}
+                }}
+                id(cat_idx) = found_cat;
+                id(sub_idx) = found_sub;
+                id(page) = found_page;
+                id(sub_mode) = (id(cat_sizes)[found_cat] > 1);
+                resolved = true;
+                ESP_LOGI("panel", "Sub-item lock preserved: sub_id=0x%08X -> cat=%d sub=%d page=%d",
+                         id(pinned_sub_id), id(cat_idx), id(sub_idx), id(page));
+              }} else {{
+                ESP_LOGW("panel", "Pinned sub-item 0x%08X no longer in rotation; releasing lock", id(pinned_sub_id));
+                id(pinned) = false;
+                id(pinned_sub_id) = 0;
+              }}
+            }}
+          }}
+
+          // 3. Category Lock: pinned to a specific category
+          if (!resolved && id(cat_pinned)) {{
+            if (v2_valid && id(pinned_cat_id) != 0) {{
+              int found_cat = -1;
+              for (size_t c = 0; c < id(cat_ids).size(); c++) {{
+                if (id(cat_ids)[c] == id(pinned_cat_id)) {{
+                  found_cat = (int)c;
+                  break;
+                }}
+              }}
+              if (found_cat >= 0 && found_cat < id(cat_count)) {{
+                id(cat_idx) = found_cat;
+                int sz = (found_cat < (int)id(cat_sizes).size()) ? id(cat_sizes)[found_cat] : 1;
+                if (sz <= 1) {{
+                  id(sub_idx) = 0;
+                  id(sub_mode) = false;
+                }} else if (id(sub_idx) < 0 || id(sub_idx) >= sz) {{
+                  id(sub_idx) = id(cat_sub_pos)[found_cat] % sz;
+                }}
+                int off = (found_cat < (int)id(cat_offsets).size()) ? id(cat_offsets)[found_cat] : found_cat;
+                id(page) = off + id(sub_idx);
+                resolved = true;
+                ESP_LOGI("panel", "Category lock preserved: cat_id=0x%08X -> cat=%d sub=%d page=%d",
+                         id(pinned_cat_id), id(cat_idx), id(sub_idx), id(page));
+              }} else {{
+                ESP_LOGW("panel", "Pinned category 0x%08X no longer in rotation; releasing lock", id(pinned_cat_id));
+                id(cat_pinned) = false;
+                id(pinned_cat_id) = 0;
+              }}
+            }}
+          }}
+
+          // 4. Unlocked: stay on the same sub-item or category if still present (prevents jarring jumps)
+          if (!resolved && v2_valid) {{
+            if (id(cur_sub_id) != 0) {{
+              int found_page = -1;
+              for (size_t p = 0; p < id(sub_ids).size(); p++) {{
+                if (id(sub_ids)[p] == id(cur_sub_id)) {{
+                  found_page = (int)p;
+                  break;
+                }}
+              }}
+              if (found_page >= 0 && found_page < id(page_count)) {{
+                int found_cat = 0;
+                int found_sub = 0;
+                for (int c = 0; c < id(cat_count); c++) {{
+                  int off = (c < (int)id(cat_offsets).size()) ? id(cat_offsets)[c] : c;
+                  int sz = (c < (int)id(cat_sizes).size()) ? id(cat_sizes)[c] : 1;
+                  if (found_page >= off && found_page < off + sz) {{
+                    found_cat = c;
+                    found_sub = found_page - off;
+                    break;
+                  }}
+                }}
+                id(cat_idx) = found_cat;
+                id(sub_idx) = found_sub;
+                id(page) = found_page;
+                resolved = true;
+              }}
+            }}
+            if (!resolved && id(cur_cat_id) != 0) {{
+              int found_cat = -1;
+              for (size_t c = 0; c < id(cat_ids).size(); c++) {{
+                if (id(cat_ids)[c] == id(cur_cat_id)) {{
+                  found_cat = (int)c;
+                  break;
+                }}
+              }}
+              if (found_cat >= 0 && found_cat < id(cat_count)) {{
+                id(cat_idx) = found_cat;
+                int sz = (found_cat < (int)id(cat_sizes).size()) ? id(cat_sizes)[found_cat] : 1;
+                if (sz <= 1) {{
+                  id(sub_idx) = 0;
+                  id(sub_mode) = false;
+                }} else if (id(sub_idx) < 0 || id(sub_idx) >= sz) {{
+                  id(sub_idx) = id(cat_sub_pos)[found_cat] % sz;
+                }}
+                int off = (found_cat < (int)id(cat_offsets).size()) ? id(cat_offsets)[found_cat] : found_cat;
+                id(page) = off + id(sub_idx);
+                resolved = true;
+              }}
+            }}
+          }}
+
+          // 5. Fallback: Positional clamping
+          if (!resolved) {{
+            if (id(cat_idx) < 0 || id(cat_idx) >= id(cat_count)) id(cat_idx) = 0;
+            int c_idx = id(cat_idx);
+            int sz = (c_idx < (int)id(cat_sizes).size() && id(cat_sizes)[c_idx] > 0) ? id(cat_sizes)[c_idx] : 1;
+            if (sz <= 1) {{
+              id(sub_idx) = 0;
+              id(sub_mode) = false;
+            }} else if (id(sub_idx) < 0 || id(sub_idx) >= sz) {{
+              id(sub_idx) = id(cat_sub_pos)[c_idx] % sz;
+            }}
+            int off = (c_idx < (int)id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
+            int p = off + id(sub_idx);
+            id(page) = (p >= 0 && p < id(page_count)) ? p : 0;
+          }}
+
+          // Keep active identity trackers current
+          id(cur_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
+          id(cur_sub_id) = (id(page) < (int)id(sub_ids).size()) ? id(sub_ids)[id(page)] : 0;
+
+          ESP_LOGI("panel", "%d pages (%d categories) held locally, showing cat=%d sub=%d page=%d (cat_id=0x%08X, sub_id=0x%08X)",
+                   id(page_count), id(cat_count), id(cat_idx), id(sub_idx), id(page), id(cur_cat_id), id(cur_sub_id));
+
           if (new_strip_hash != -1 && new_strip_hash == id(last_strip_hash) && !id(pending_redraw) && id(page) == id(last_drawn_page)) {{
             ESP_LOGI("panel", "Strip unchanged (HTTP 304) -- skipping physical e-paper refresh");
           }} else {{
@@ -3832,6 +4124,14 @@ binary_sensor:
             int p = off + id(sub_idx);
             if (p < id(page_count)) id(page) = p;
           }}
+          id(cur_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
+          id(cur_sub_id) = (id(page) < (int)id(sub_ids).size()) ? id(sub_ids)[id(page)] : 0;
+          if (id(pinned)) {{
+            id(pinned_sub_id) = id(cur_sub_id);
+            id(pinned_cat_id) = id(cur_cat_id);
+          }} else if (id(cat_pinned)) {{
+            id(pinned_cat_id) = id(cur_cat_id);
+          }}
       - script.execute: redraw
 
   - platform: gpio
@@ -3869,6 +4169,14 @@ binary_sensor:
             int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
             int p = off + id(sub_idx);
             if (p < id(page_count)) id(page) = p;
+          }}
+          id(cur_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
+          id(cur_sub_id) = (id(page) < (int)id(sub_ids).size()) ? id(sub_ids)[id(page)] : 0;
+          if (id(pinned)) {{
+            id(pinned_sub_id) = id(cur_sub_id);
+            id(pinned_cat_id) = id(cur_cat_id);
+          }} else if (id(cat_pinned)) {{
+            id(pinned_cat_id) = id(cur_cat_id);
           }}
       - script.execute: redraw
 
@@ -3912,8 +4220,14 @@ binary_sensor:
               id(user_cool_sec) = 0;
               id(pending_redraw) = true;
               id(cat_pinned) = !id(cat_pinned);
-              if (id(cat_pinned)) id(pinned) = false;
-              ESP_LOGI("panel", "Category lock: %d", id(cat_pinned));
+              if (id(cat_pinned)) {{
+                id(pinned) = false;
+                id(pinned_sub_id) = 0;
+                id(pinned_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
+              }} else {{
+                id(pinned_cat_id) = 0;
+              }}
+              ESP_LOGI("panel", "Category lock: %d (cat_id=0x%08X)", id(cat_pinned), id(pinned_cat_id));
           - script.execute: redraw
       - min_length: 750ms
         max_length: 6000ms
@@ -3924,8 +4238,15 @@ binary_sensor:
               id(user_cool_sec) = 0;
               id(pending_redraw) = true;
               id(pinned) = !id(pinned);
-              if (id(pinned)) id(cat_pinned) = false;
-              ESP_LOGI("panel", "Panel lock: %d", id(pinned));
+              if (id(pinned)) {{
+                id(cat_pinned) = false;
+                id(pinned_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
+                id(pinned_sub_id) = (id(page) < (int)id(sub_ids).size()) ? id(sub_ids)[id(page)] : 0;
+              }} else {{
+                id(pinned_cat_id) = 0;
+                id(pinned_sub_id) = 0;
+              }}
+              ESP_LOGI("panel", "Panel lock: %d (cat_id=0x%08X, sub_id=0x%08X)", id(pinned), id(pinned_cat_id), id(pinned_sub_id));
           - script.execute: redraw
 
   - platform: gpio
@@ -3946,6 +4267,14 @@ binary_sensor:
               id(sub_idx) = 0;
               id(page) = 0;
               id(sub_mode) = false;
+              id(cur_cat_id) = (id(cat_ids).size() > 0) ? id(cat_ids)[0] : 0;
+              id(cur_sub_id) = (id(sub_ids).size() > 0) ? id(sub_ids)[0] : 0;
+              if (id(pinned)) {{
+                id(pinned_sub_id) = id(cur_sub_id);
+                id(pinned_cat_id) = id(cur_cat_id);
+              }} else if (id(cat_pinned)) {{
+                id(pinned_cat_id) = id(cur_cat_id);
+              }}
               ESP_LOGI("panel", "Reset to page 0");
           - script.execute: redraw
       - min_length: 750ms
@@ -4074,6 +4403,8 @@ interval:
                               int off = (c_idx < id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
                               int p = off + id(sub_idx);
                               if (p < id(page_count)) id(page) = p;
+                              id(cur_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
+                              id(cur_sub_id) = (id(page) < (int)id(sub_ids).size()) ? id(sub_ids)[id(page)] : 0;
                               id(pending_redraw) = true;
                             }}
                       else:
@@ -4093,6 +4424,8 @@ interval:
                             int off = (c_idx < (int)id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
                             int p = off + id(sub_idx);
                             if (p < id(page_count)) id(page) = p;
+                            id(cur_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
+                            id(cur_sub_id) = (id(page) < (int)id(sub_ids).size()) ? id(sub_ids)[id(page)] : 0;
                             id(pending_redraw) = true;
                             ESP_LOGI("panel", "Auto-rotated to cat=%d sub=%d/%d (page=%d)", c_idx, id(sub_idx) + 1, sz, id(page));
                   - if:

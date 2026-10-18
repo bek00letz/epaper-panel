@@ -57,16 +57,22 @@ Two subtle hardware/firmware race conditions originally caused intermittent blac
 1. **Torn In-Flight Downloads:** ESPHome's `online_image` clears/reallocates its target PSRAM buffer as soon as an HTTP download starts (`GET /frames.png`), taking ~5–6 s to decode a multi-page strip. If the 10-second rotation interval or a remote action fired mid-download, the display lambda blitted an uninitialized/zeroed PSRAM buffer (`COLOR_ON` with `invert_colors: true` = solid black screen).
 2. **Asynchronous Sensor Desync:** `sensor.epaper_categories` (`ha_cat_offsets`, `ha_cat_sizes`, `ha_cat_pill_widths`) arrived over the ESPHome native API out of lockstep with the HTTP strip download, so a remote `page_step` could compute a slice offset beyond the strip height (`y_offset >= strip.height`).
 
-To eliminate both races atomically and keep manual scrolling responsive:
-- **Self-Describing Metadata Row (`meta_y`):** `server.py` encodes a binary header on row `meta_y = dh * total_slices` (`x = 0 ..`, 1 bit per pixel, MSB first):
+To eliminate both races atomically and keep manual scrolling and locks responsive:
+- **Self-Describing Metadata Rows (`meta_y`):** `server.py` encodes a binary header starting at row `meta_y = dh * total_slices` (`x = 0 ..`, 1 bit per pixel, MSB first, black = 1, wrapping row-major across rows if needed):
   - `Byte 0`: `0xA5` magic marker (`10100101`)
-  - `Byte 1`: `0x01` format version
+  - `Byte 1`: `0x02` format version (version 2)
   - `Byte 2`: `cat_count` (`N`, up to 30)
-  - `Bytes 3 .. 3 + 3·N - 1`: `(offset, size, pill_width)` tuple for each category
+  - `Bytes 3 .. 3 + 3·N - 1`: `(offset, size, pill_width)` tuple for each category (v1 backward-compatible prefix)
   - `Byte 3 + 3·N`: `0xA5` when **Night / Quiet Hours** (`quiet_hours_active`) is active, or `0x00` when inactive
   - `Bytes 3 + 3·N + 1 .. + 2`: `rotate_seconds` (`(rot_sec >> 8) & 0xFF`, `rot_sec & 0xFF`) so local PSRAM rotation interval syncs without reflashing
-  - `Bytes 3 + 3·N + 3 .. + 4`: 16-bit MD5 content hash (`etag_b0`, `etag_b1`) so `HTTP 304 Not Modified` responses skip redundant physical e-paper refreshes
-- **Atomic Parse, `downloading_frames` Guard & 15s Manual Scroll Debounce (`user_cool_sec`):** `esphome/crowpanel-epaper.yaml` sets `id(downloading_frames) = true` before `component.update: frames` and clears it inside `on_download_finished`. Any manual button or remote action resets `user_cool_sec = 0`. Incoming background `refresh_now` actions route through `request_refetch`, which defers downloads (`pending_refetch = true`) whenever `user_cool_sec < 15` and executes them 15 seconds after manual scrolling stops. Per-category sub-item positions are tracked in `cat_sub_pos` so each rotation pass through a multi-item category advances sequentially (`1/N`, `2/N`, `3/N`) and survives 1-minute background refreshes.
+  - `Bytes 3 + 3·N + 3 .. + 4`: 16-bit content hash (`etag_b0`, `etag_b1`) so `HTTP 304 Not Modified` responses skip redundant physical e-paper refreshes
+  - `Byte 3 + 3·N + 5`: `flags` (bit 0: `FLAG_INTERRUPT` indicating an emergency Home Assistant alert owns the screen)
+  - `Bytes 3 + 3·N + 6 .. + 7`: `page_count` (`P`, 16-bit big-endian)
+  - `N × 4 Bytes`: 32-bit Blake2s stable identities for each category (`cat_ids`)
+  - `P × 4 Bytes`: 32-bit Blake2s stable identities for each slice (`sub_ids`, derived from ESPN event IDs, flight callsigns, Jellyfin items, or layout keys)
+  - Final Byte: CRC-8 checksum (polynomial `0x07`, init `0x00`) covering all preceding bytes
+- **Identity-Based Locking & Navigation Resolution:** Firmware tracks `pinned_cat_id`, `pinned_sub_id`, `cur_cat_id`, and `cur_sub_id` rather than numeric indices (`cat_idx`, `sub_idx`). When background downloads arrive (`on_download_finished`), even if new categories are inserted or removed, the panel searches `sub_ids` for the locked slice or `cat_ids` for the locked category, remapping `page`, `cat_idx`, and `sub_idx` losslessly. Sub-item rotation memory (`cat_sub_pos`) is remapped across category identity vectors so category insertions never scramble per-category cyclic rotation. If a locked event finishes and departs the rotation, the lock releases cleanly with diagnostic logging.
+- **Atomic Parse, `downloading_frames` Guard & 15s Manual Scroll Debounce (`user_cool_sec`):** `esphome/crowpanel-epaper.yaml` sets `id(downloading_frames) = true` before `component.update: frames` and clears it inside `on_download_finished`. Any manual button or remote action resets `user_cool_sec = 0`. Incoming background `refresh_now` actions route through `request_refetch`, which defers downloads (`pending_refetch = true`) whenever `user_cool_sec < 15` and executes them 15 seconds after manual scrolling stops.
 - **Self-Contained Widget Active Windows & On-Demand `sensor.epaper_*` Publishing:**
   - Composite widgets (`sports_match`, `sports_racing`, `flight_tracker`) store their active-window parameters (`pre_buffer_hours`, `post_buffer_hours`, `window_mode`, `team`, `auto_window`) directly on the element in `layouts.json`.
   - During `eligible_pages()`, `_evaluate_widget_gate()` evaluates `compute_sports_active_window()`, `compute_racing_active_window()`, or `fetch_overhead_flights()` directly in Python so `tier: "when"` pages work immediately without requiring users to create or configure Home Assistant helper sensors.
