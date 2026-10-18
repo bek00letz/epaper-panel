@@ -600,14 +600,6 @@ class PanelController {
   }
 
   bool check_settle_clear() {
-    // Settle clear: if user has settled (idle 3-7 seconds) after interacting,
-    // and accumulated >= 8 partial refreshes, request full refresh to clean ghosting.
-    if (user_cool_sec_ >= 3 && user_cool_sec_ < 8 && partial_updates_since_full_ >= 8) {
-      partial_updates_since_full_ = 0;
-      ESP_LOGI(TAG, "Waveform Settle: User settled (%ds idle) with %d partials -> clean full clear",
-               user_cool_sec_, partial_updates_since_full_);
-      return true;
-    }
     return false;
   }
 
@@ -834,17 +826,12 @@ class PanelController {
     int cat_x0 = (dw >= 400) ? 96 : (16 + 55);
     int cat_x1 = cat_x0 + cat_w;
 
-    bool is_180 = EpfClient::instance().is_orientation_180();
-    if (!EpfClient::instance().has_stream()) {
-      is_180 = false;
-    }
-
     auto invert_rounded_pill = [&](int x0, int y0, int x1, int y1, int r) {
       for (int py = y0; py <= y1; py++) {
         for (int px = x0; px <= x1; px++) {
           if (in_rounded_box(px, py, x0, y0, x1, y1, r)) {
-            int rx = is_180 ? ((dw - 1) - px) : px;
-            int ry = is_180 ? ((dh - 1) - py) : py;
+            int rx = (dw - 1) - px;
+            int ry = (dh - 1) - py;
             if (rx >= 0 && rx < dw && ry >= 0 && ry < dh) {
               size_t byte_off = ((size_t)ry * dw + rx) / 8;
               uint8_t bit = 7 - (rx % 8);
@@ -879,8 +866,8 @@ class PanelController {
 
             // White ink for padlock shackle and body; black ink for rounded background and keyhole
             bool white_ink = (is_shackle || is_body) && !is_keyhole;
-            int rx = is_180 ? ((dw - 1) - px) : px;
-            int ry = is_180 ? ((dh - 1) - py) : py;
+            int rx = (dw - 1) - px;
+            int ry = (dh - 1) - py;
             if (rx >= 0 && rx < dw && ry >= 0 && ry < dh) {
               size_t byte_off = ((size_t)ry * dw + rx) / 8;
               uint8_t bit = 7 - (rx % 8);

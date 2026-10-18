@@ -795,12 +795,7 @@ script:
                 id(pending_redraw) = false;
                 epf::PanelController::instance().clear_pending_redraw();
                 id(last_drawn_page) = id(page);
-                if (epf::PanelController::instance().check_settle_clear()) {
-                  id(epd).force_full_update();
-                  epf::PanelController::instance().record_full_update();
-                } else {
-                  epf::PanelController::instance().record_partial_update();
-                }
+                epf::PanelController::instance().record_partial_update();
             - component.update: epd
 
   - id: request_refetch
@@ -904,17 +899,7 @@ interval:
           then:
             - logger.log: "Manual scroll cooldown complete (15s) -- running deferred background refetch"
             - script.execute: refetch
-      # 2. Settle Full Waveform Clear: After scrolling, settle ghosting if idle 3-7s
-      - if:
-          condition:
-            lambda: |-
-              if (id(downloading_frames) || !id(have_frames)) return false;
-              return epf::PanelController::instance().check_settle_clear();
-          then:
-            - lambda: |-
-                id(epd).force_full_update();
-                epf::PanelController::instance().record_full_update();
-            - script.execute: redraw
+
       # 3. Local PSRAM Page Rotation
       - if:
           condition:

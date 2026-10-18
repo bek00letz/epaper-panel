@@ -1,6 +1,9 @@
 # Changelog
 
-## 0.8.35
+## 0.8.36
+- **Physical Overlay Geometry Alignment & Seamless Fast Refresh:**
+  - **Restored Native DisplayBuffer Overlay Transform:** Restored physical buffer coordinate inversion `rx = (dw - 1) - px; ry = (dh - 1) - py;` in `draw_overlays` matching CrowPanel 5.79" physical hardware memory mapping. The category pill now inverts cleanly on the left footer, sub-mode pills on the right footer, and padlock badges render precisely adjacent to the pills.
+  - **Removed Aggressive Waveform Settle Clears:** Removed the 5-second idle settle full refresh trigger that caused unnecessary 1840 ms screen flashes when pausing dial rotation. Dial scrolling remains silky-smooth with 480 ms partial refreshes, letting the native `full_update_every: 10` cycle handle waveform maintenance without disruptive flashes.
 - **ESPHome External Component Cache Auto-Refresh & Compiler Hardening:**
   - **Added `refresh: 0s` to `external_components`:** ESPHome by default caches external Git repositories for 24 hours (`refresh: 1d`), which caused ESPHome Dashboard builds to compile against stale cached headers even after new commits were pushed. Adding `refresh: 0s` ensures ESPHome pulls the latest git commit on every build.
   - **Guarded `SYNC_PANEL_FROM_GLOBALS`:** Wrapped `SYNC_PANEL_FROM_GLOBALS()` with `#ifdef SYNC_PANEL_FROM_GLOBALS` in both `crowpanel-epaper.yaml` and the Python YAML generator. This ensures builds will never fail even if compiling against an existing or cached header.
