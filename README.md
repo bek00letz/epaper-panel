@@ -144,8 +144,8 @@ The CrowPanel features five discrete physical inputs: a 3-way rocker dial (rotat
 | **Top Button** | Physical Top | `GPIO 1` | `GPIO 2` | **Short Press (<750ms):** Toggle **Category Lock** (`cat_pinned`).<br>**Long Hold (≥750ms):** Toggle **Panel Lock** (`pinned`). |
 | **Rocker Turn Forward** | Right / Clockwise | `GPIO 6` | `GPIO 4` | **In Category Mode:** Advance to next category.<br>**In Sub-Item Mode:** Advance to next sub-item within current category. |
 | **Rocker Turn Backward** | Left / Counter-Clockwise | `GPIO 4` | `GPIO 6` | **In Category Mode:** Return to previous category.<br>**In Sub-Item Mode:** Return to previous sub-item within current category. |
-| **Rocker Center Push** | Push Inward | `GPIO 5` | `GPIO 5` | **Short Press:** Does nothing (prevents rotary scroll wobble from accidentally switching modes).<br>**Long Hold (≥1000ms):** Toggle between **Category Navigation Mode** and **Sub-Item Navigation Mode**. |
-| **Bottom Button** | Physical Bottom | `GPIO 2` | `GPIO 1` | **Short Press (<750ms):** Jump to **Page 1 (Category 1)**.<br>**Long Hold (≥750ms):** Force an immediate network refetch from Home Assistant. |
+| **Rocker Center Push** | Push Inward | `GPIO 5` | `GPIO 5` | **Press:** Switch between **categories** and the current category's **items**. A press within 0.4 s of turning the dial is ignored, because the dial tilts as it turns. |
+| **Bottom Button** | Physical Bottom | `GPIO 2` | `GPIO 1` | **Short Press (<750ms):** Jump to **Page 1 (Category 1)**.<br>**Long Hold (≥750ms):** Download new frames now and clear ghosting in the same redraw (one flash). |
 
 ### ESPHome Native Actions (IKEA BILRESA / Zigbee / Matter Remotes)
 

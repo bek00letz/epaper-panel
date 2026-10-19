@@ -18,6 +18,11 @@
   - **Ghost clearing**: *On automatic changes* (new), or *Every Nth refresh*
     (the old behaviour, as a one-tap revert).
   - **Clear ghosting**: a button that clears the screen now.
+- **A quick press on the dial's centre switches modes again.** You no longer
+  need to hold it for a second. A press within 0.4 s of turning the dial is
+  ignored, because the dial tilts as it turns.
+- **Holding the bottom button refreshes and clears ghosting** in the same
+  redraw: one flash, not two.
 - **One entry point for every input.** The dial, the buttons, remotes and
   Home Assistant actions all go through `PanelController::dispatch()`, as the
   architecture spec intends, and each input is logged once.

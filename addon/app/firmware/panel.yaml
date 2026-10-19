@@ -42,6 +42,11 @@ external_components:
 @DISPLAY_COMPONENT@
 epf:
 
+globals:
+  - id: last_dial_ms
+    type: uint32_t
+    initial_value: '0'
+
 font:
   - file: "gfonts://Lato@700"
     id: diag_big
@@ -146,7 +151,9 @@ binary_sensor:
     pin: {number: @NEXT_PIN@, mode: {input: true, pullup: true}, inverted: true}
     filters: [delayed_on: 25ms, delayed_off: 25ms]
     on_press:
-      - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::NEXT);'
+      - lambda: |-
+          id(last_dial_ms) = millis();
+          epf::PanelController::instance().dispatch(epf::NavAction::NEXT);
       - script.execute: redraw
 
   - platform: gpio
@@ -155,22 +162,31 @@ binary_sensor:
     pin: {number: @PREV_PIN@, mode: {input: true, pullup: true}, inverted: true}
     filters: [delayed_on: 25ms, delayed_off: 25ms]
     on_press:
-      - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::PREV);'
+      - lambda: |-
+          id(last_dial_ms) = millis();
+          epf::PanelController::instance().dispatch(epf::NavAction::PREV);
       - script.execute: redraw
 
-  # Dial centre: hold 1 s to switch between categories and their items. A short
-  # press does nothing, so tilting the dial while scrolling can't switch modes.
+  # Dial centre: press to switch between categories and their items. The dial
+  # tilts as it turns and can press the centre by accident, so a click within
+  # 0.4 s of a turn is ignored.
   - platform: gpio
     id: key_ok
     internal: true
     pin: {number: 5, mode: {input: true, pullup: true}, inverted: true}
     filters: [delayed_on: 30ms, delayed_off: 30ms]
     on_click:
-      - min_length: 1000ms
+      - min_length: 30ms
         max_length: 5000ms
         then:
-          - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::MODE_TOGGLE);'
-          - script.execute: redraw
+          - if:
+              condition:
+                lambda: 'return millis() - id(last_dial_ms) > 400;'
+              then:
+                - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::MODE_TOGGLE);'
+                - script.execute: redraw
+              else:
+                - logger.log: "Ignored a centre click right after turning the dial"
 
   # Top button: click locks the category, hold locks the page.
   - platform: gpio
@@ -190,7 +206,8 @@ binary_sensor:
           - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::PIN_PAGE_TOGGLE);'
           - script.execute: redraw
 
-  # Bottom button: click goes to the first page, hold downloads new frames now.
+  # Bottom button: click goes to the first page. Hold downloads new frames now
+  # and clears ghosting with the same redraw: one flash, not two.
   - platform: gpio
     id: key_bottom
     internal: true
@@ -205,6 +222,7 @@ binary_sensor:
       - min_length: 750ms
         max_length: 6000ms
         then:
+          - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::CLEAR_GHOSTING);'
           - script.execute: refetch
 
 sensor:
@@ -326,9 +344,14 @@ interval:
           if (result == epf::FetchResult::OK) {
             panel.on_stream_loaded(client.stream());
             id(redraw).execute();
-          } else if (result != epf::FetchResult::NOT_MODIFIED) {
-            int every = std::max(30, (int) (id(panel_refresh_interval).state * 60.0f));
-            panel.retry_fetch_in(30, every);
+          } else {
+            if (result != epf::FetchResult::NOT_MODIFIED) {
+              int every = std::max(30, (int) (id(panel_refresh_interval).state * 60.0f));
+              panel.retry_fetch_in(30, every);
+            }
+            // Nothing new, but a redraw is still owed (e.g. the clear on a
+            // long press of the bottom button).
+            if (panel.pending_redraw()) id(redraw).execute();
           }
 
   - interval: 5s
