@@ -1,0 +1,639 @@
+<title>E-paper editor redesign</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: a reading column for the findings; each direction is a live editor window at real proportions. */
+:root {
+  --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", system-ui, sans-serif;
+  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --bg: #f5f5f7;
+  --surface: #ffffff;
+  --surface-2: #f2f2f6;
+  --fill: rgba(118, 118, 128, 0.12);
+  --fill-2: rgba(118, 118, 128, 0.2);
+  --fg: #1d1d1f;
+  --fg-2: rgba(60, 60, 67, 0.64);
+  --fg-3: rgba(60, 60, 67, 0.36);
+  --sep: rgba(60, 60, 67, 0.16);
+  --accent: #007aff;
+  --accent-soft: rgba(0, 122, 255, 0.12);
+  --on-accent: #ffffff;
+  --green: #28a745;
+  --orange: #c26a00;
+  --red: #e5352b;
+  --device: #232326;
+  --device-edge: #3a3a3e;
+  --paper: #fbfbf9;
+  --ink: #111110;
+  --scrim: rgba(0, 0, 0, 0.28);
+  --shadow-pop: 0 10px 34px rgba(0, 0, 0, 0.16), 0 1px 3px rgba(0, 0, 0, 0.08);
+  --shadow-win: 0 18px 50px rgba(0, 0, 0, 0.12), 0 2px 6px rgba(0, 0, 0, 0.06);
+
+  --r-win: 12px;
+  --r-card: 10px;
+  --r-ctl: 7px;
+  --spring: linear(0, 0.006, 0.025 2.8%, 0.101 6.1%, 0.539 18.9%, 0.721 25.3%, 0.849 31.5%, 0.937 38.1%, 0.968 41.8%, 0.991 45.7%, 1.006 50.1%, 1.015 55%, 1.017 63.9%, 1.001);
+  --dur: 0.32s;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141416; --surface: #1e1e20; --surface-2: #28282b; --fill: rgba(118, 118, 128, 0.24); --fill-2: rgba(118, 118, 128, 0.34);
+    --fg: #f5f5f7; --fg-2: rgba(235, 235, 245, 0.62); --fg-3: rgba(235, 235, 245, 0.32); --sep: rgba(84, 84, 88, 0.55);
+    --accent: #0a84ff; --accent-soft: rgba(10, 132, 255, 0.2); --green: #32d74b; --orange: #ff9f0a; --red: #ff453a;
+    --device: #0c0c0d; --device-edge: #2c2c2f; --scrim: rgba(0, 0, 0, 0.5);
+    --shadow-pop: 0 12px 36px rgba(0, 0, 0, 0.55), 0 0 0 0.5px rgba(255, 255, 255, 0.08);
+    --shadow-win: 0 18px 50px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.07);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141416; --surface: #1e1e20; --surface-2: #28282b; --fill: rgba(118, 118, 128, 0.24); --fill-2: rgba(118, 118, 128, 0.34);
+  --fg: #f5f5f7; --fg-2: rgba(235, 235, 245, 0.62); --fg-3: rgba(235, 235, 245, 0.32); --sep: rgba(84, 84, 88, 0.55);
+  --accent: #0a84ff; --accent-soft: rgba(10, 132, 255, 0.2); --green: #32d74b; --orange: #ff9f0a; --red: #ff453a;
+  --device: #0c0c0d; --device-edge: #2c2c2f; --scrim: rgba(0, 0, 0, 0.5);
+  --shadow-pop: 0 12px 36px rgba(0, 0, 0, 0.55), 0 0 0 0.5px rgba(255, 255, 255, 0.08);
+  --shadow-win: 0 18px 50px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.07);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--fg); font: 15px/1.5 var(--font); -webkit-font-smoothing: antialiased; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: 2px; }
+@media (prefers-reduced-motion: reduce) { :root { --dur: 0.01s; } }
+
+.wrap { max-width: 1240px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.read { max-width: 760px; }
+
+/* Masthead and section switcher */
+.masthead { padding-block: 32px 8px; }
+.kicker { font-size: 13px; color: var(--fg-2); font-variant-numeric: tabular-nums; }
+h1 { font: 700 34px/1.12 var(--font-display); letter-spacing: -0.022em; margin: 4px 0 20px; text-wrap: balance; }
+h2 { font: 700 26px/1.2 var(--font-display); letter-spacing: -0.018em; margin: 0 0 8px; text-wrap: balance; }
+h3 { font: 600 19px/1.3 var(--font-display); letter-spacing: -0.01em; margin: 36px 0 10px; }
+h4 { font: 600 15px/1.35 var(--font); margin: 18px 0 6px; }
+p { margin: 0 0 12px; }
+.muted { color: var(--fg-2); }
+code { font: 13px var(--mono); background: var(--fill); padding: 1px 5px; border-radius: 5px; }
+
+.navbar { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: saturate(1.6) blur(18px); -webkit-backdrop-filter: saturate(1.6) blur(18px); border-bottom: 0.5px solid var(--sep); }
+.navbar .wrap { padding-block: 10px; overflow-x: auto; }
+.seg { display: inline-flex; background: var(--fill); border-radius: 9px; padding: 2px; gap: 2px; white-space: nowrap; }
+.seg button { border: 0; background: none; border-radius: 7px; padding: 6px 14px; min-height: 32px; font-size: 13px; font-weight: 500; color: var(--fg); cursor: pointer; transition: background var(--dur) var(--spring), transform 0.12s; }
+.seg button:active { transform: scale(0.97); }
+.seg button[aria-selected="true"], .seg button[aria-pressed="true"] { background: var(--surface); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.04); font-weight: 600; }
+@media (pointer: coarse) { .seg button { min-height: 44px; } }
+
+section[role="tabpanel"] { padding-block: 24px 64px; animation: fadein 0.35s var(--spring); }
+@keyframes fadein { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* Findings */
+.lede { font-size: 19px; line-height: 1.45; color: var(--fg); margin-bottom: 20px; text-wrap: pretty; }
+.callout { background: var(--surface); border-radius: var(--r-card); padding: 16px 18px; margin: 16px 0; box-shadow: 0 0 0 0.5px var(--sep); }
+.callout strong { font-weight: 600; }
+.tbl-wrap { overflow-x: auto; margin: 8px 0 16px; background: var(--surface); border-radius: var(--r-card); box-shadow: 0 0 0 0.5px var(--sep); }
+table { border-collapse: collapse; width: 100%; font-size: 14px; }
+th, td { text-align: left; padding: 10px 14px; vertical-align: top; border-bottom: 0.5px solid var(--sep); }
+th { font-weight: 600; font-size: 13px; color: var(--fg-2); background: var(--surface-2); }
+tr:last-child td { border-bottom: 0; }
+td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.best { color: var(--green); font-weight: 600; }
+ul.plain { margin: 0 0 12px; padding-left: 20px; }
+ul.plain li { margin: 4px 0; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+.grid2 .callout { margin: 0; }
+.pill { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--accent-soft); color: var(--accent); vertical-align: 2px; }
+.pill.grey { background: var(--fill); color: var(--fg-2); }
+
+/* Direction head */
+.dir-head { display: flex; flex-wrap: wrap; gap: 12px 24px; align-items: flex-end; justify-content: space-between; margin-bottom: 16px; }
+.dir-head > div:first-child { max-width: 720px; min-width: 0; }
+.dir-head p { color: var(--fg-2); margin: 0; }
+.hint-row { font-size: 13px; color: var(--fg-2); margin: 12px 0 0; }
+kbd { font: 12px var(--font); background: var(--surface); border-radius: 5px; padding: 1px 6px; box-shadow: 0 0 0 0.5px var(--sep), 0 1px 0 var(--sep); }
+
+.mockhost { height: 640px; max-width: 100%; margin: 0 auto; transition: max-width 0.4s var(--spring); }
+.mockhost.phone { max-width: 390px; height: 760px; }
+
+ol.steps { margin: 4px 0 0; padding-left: 20px; }
+ol.steps li { margin: 2px 0; }
+.tasks { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px; }
+.task { background: var(--surface); border-radius: var(--r-card); padding: 14px 16px; box-shadow: 0 0 0 0.5px var(--sep); font-size: 14px; min-width: 0; }
+.task h4 { margin: 0 0 4px; }
+.count { font-size: 12px; color: var(--fg-2); font-variant-numeric: tabular-nums; margin-top: 8px; }
+.count b { color: var(--green); font-weight: 600; }
+
+/* ================================================================
+   The mock editor window
+   ================================================================ */
+.win { container: win / inline-size; position: relative; height: 100%; display: flex; flex-direction: column; background: var(--surface); border-radius: var(--r-win); box-shadow: var(--shadow-win); overflow: hidden; font-size: 13px; line-height: 1.4; user-select: none; -webkit-user-select: none; }
+.win input, .win textarea { user-select: text; -webkit-user-select: text; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+.tb { display: flex; align-items: center; gap: 4px; min-height: 52px; padding: 8px 10px; border-bottom: 0.5px solid var(--sep); background: var(--surface); flex: none; }
+.tb .title { font: 600 15px var(--font-display); letter-spacing: -0.01em; padding: 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.tb .spacer { flex: 1; }
+.tb .sep { width: 0.5px; height: 20px; background: var(--sep); margin: 0 4px; }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 32px; min-width: 32px; padding: 0 10px; border: 0; border-radius: var(--r-ctl); background: transparent; color: var(--fg); font-size: 13px; font-weight: 500; cursor: pointer; position: relative; transition: background 0.15s, transform 0.12s var(--spring), opacity 0.15s; white-space: nowrap; }
+.btn::after { content: ""; position: absolute; inset: -6px -2px; }
+.btn:hover { background: var(--fill); }
+.btn:active { transform: scale(0.95); background: var(--fill-2); }
+.btn[disabled] { opacity: 0.35; pointer-events: none; }
+.btn.icon { padding: 0; width: 32px; }
+.btn.tinted { background: var(--fill); }
+.btn.primary { background: var(--accent); color: var(--on-accent); font-weight: 600; padding: 0 14px; }
+.btn.primary:hover { background: color-mix(in srgb, var(--accent) 88%, black); }
+.btn.danger { color: var(--red); }
+.btn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+.btn .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--on-accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--on-accent) 30%, transparent); }
+@media (pointer: coarse) { .btn { min-height: 44px; min-width: 44px; } .btn.icon { width: 44px; } }
+.ic { display: inline-flex; width: 18px; height: 18px; flex: none; }
+.ic svg { width: 100%; height: 100%; }
+.ic.sm { width: 15px; height: 15px; }
+
+.statuspill { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 12px; border-radius: 999px; background: var(--fill); border: 0; font-size: 12.5px; font-weight: 500; cursor: pointer; transition: transform 0.12s var(--spring), background 0.15s; white-space: nowrap; }
+.statuspill:hover { background: var(--fill-2); }
+.statuspill:active { transform: scale(0.96); }
+.statuspill .led { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex: none; }
+.statuspill .led.wait { background: var(--orange); }
+
+.body { flex: 1; min-height: 0; display: grid; position: relative; }
+.v-a .body { grid-template-columns: 232px minmax(0, 1fr) 288px; }
+.v-b .body, .v-c .body.editor { grid-template-columns: minmax(0, 1fr) 288px; }
+.v-c .body.home { grid-template-columns: minmax(0, 1fr); }
+.v-lab .body { grid-template-columns: minmax(0, 1fr) 232px; }
+
+/* Stage */
+.stage { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--surface-2); position: relative; }
+.canvasbar { display: flex; align-items: center; gap: 6px; padding: 8px 12px 0; min-height: 40px; font-size: 12.5px; color: var(--fg-2); }
+.canvasbar .crumb { display: flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.canvasarea { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 12px 20px; position: relative; }
+.device { width: 100%; max-width: 860px; padding: 12px; background: var(--device); border-radius: 16px; box-shadow: inset 0 0 0 1px var(--device-edge), 0 8px 24px rgba(0, 0, 0, 0.18); }
+.device.portrait { max-width: 220px; }
+
+/* The panel: drawn in panel pixels, scaled with container units. */
+.panel { container: panel / inline-size; position: relative; width: 100%; aspect-ratio: 792 / 272; background: var(--paper); color: var(--ink); border-radius: 3px; overflow: hidden; touch-action: none; }
+.panel .pe { position: absolute; display: flex; align-items: center; overflow: hidden; line-height: 1; white-space: nowrap; font-family: "Lato", "Helvetica Neue", Arial, sans-serif; }
+.panel .pe-icon svg, .panel .pe-curve svg { width: 100%; height: 100%; display: block; }
+.panel .footer { position: absolute; left: 0; right: 0; bottom: 0; height: calc(36 * 100cqw / 792); border-top: calc(2 * 100cqw / 792) solid var(--ink); display: flex; align-items: center; gap: calc(8 * 100cqw / 792); padding: 0 calc(16 * 100cqw / 792); font: 700 calc(16 * 100cqw / 792) / 1 "Lato", "Helvetica Neue", Arial, sans-serif; }
+.panel .footer .fp { padding: calc(2 * 100cqw / 792) calc(8 * 100cqw / 792); border-radius: calc(6 * 100cqw / 792); }
+.panel .footer .fp.on { background: var(--ink); color: var(--paper); }
+.panel .footer .clock { margin-left: auto; }
+.panel.editable { cursor: default; }
+.panel .ov { position: absolute; inset: 0; pointer-events: none; }
+.ovbox { position: absolute; border-radius: 2px; }
+.ovbox.hov { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 70%, transparent); }
+.ovbox.sel { box-shadow: inset 0 0 0 2px var(--accent); }
+.ovbox.sel.multi { box-shadow: inset 0 0 0 1.5px var(--accent); background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.ovbox.stk { outline: 1.5px dashed color-mix(in srgb, var(--fg-2) 70%, transparent); outline-offset: -1.5px; animation: stkin 0.25s ease-out both; }
+.ovbox.pick { box-shadow: inset 0 0 0 2px var(--accent), 0 0 0 4px color-mix(in srgb, var(--accent) 28%, transparent); background: color-mix(in srgb, var(--accent) 10%, transparent); animation: pop var(--dur) var(--spring) both; }
+@keyframes pop { from { transform: scale(1.04); opacity: 0.4; } to { transform: none; opacity: 1; } }
+@keyframes stkin { from { opacity: 0; } to { opacity: 1; } }
+.hd { position: absolute; width: 10px; height: 10px; background: #fff; border: 1.5px solid var(--accent); border-radius: 50%; pointer-events: auto; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25); touch-action: none; }
+.hd::after { content: ""; position: absolute; inset: -10px; }
+.hd.nw { left: -6px; top: -6px; cursor: nwse-resize; } .hd.se { right: -6px; bottom: -6px; cursor: nwse-resize; }
+.hd.ne { right: -6px; top: -6px; cursor: nesw-resize; } .hd.sw { left: -6px; bottom: -6px; cursor: nesw-resize; }
+.guide { position: absolute; background: #ff2d92; pointer-events: none; }
+.guide.v { width: 1px; top: 0; bottom: 0; } .guide.h { height: 1px; left: 0; right: 0; }
+.pickchip { position: absolute; transform: translate(-50%, calc(-100% - 10px)); background: var(--fg); color: var(--surface); font: 600 11.5px var(--font); padding: 4px 9px; border-radius: 999px; white-space: nowrap; pointer-events: none; animation: chipin var(--dur) var(--spring) both; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2); font-variant-numeric: tabular-nums; }
+@keyframes chipin { from { opacity: 0; transform: translate(-50%, calc(-100% - 2px)) scale(0.9); } to { opacity: 1; transform: translate(-50%, calc(-100% - 10px)); } }
+
+/* Page lists: strip (B), sidebar (A), home (C) */
+.strip { flex: none; display: flex; align-items: flex-start; gap: 10px; overflow-x: auto; padding: 4px 16px 14px; position: relative; scroll-padding: 16px; }
+.strip .lead { flex: none; align-self: center; font-size: 11.5px; color: var(--fg-2); width: 54px; line-height: 1.25; }
+.strip .lead b { display: block; color: var(--fg); font-weight: 600; font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.tile { flex: none; width: 128px; border: 0; background: none; padding: 0; text-align: left; cursor: pointer; position: relative; border-radius: 8px; transition: transform 0.18s var(--spring); }
+.tile:active { transform: scale(0.97); }
+.tile .thumb { border-radius: 6px; box-shadow: 0 0 0 0.5px var(--sep), 0 1px 2px rgba(0, 0, 0, 0.08); overflow: hidden; display: block; transition: box-shadow 0.2s; }
+.tile[aria-current="page"] .thumb { box-shadow: 0 0 0 2.5px var(--accent); }
+.tile .tname { display: flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 500; margin-top: 5px; padding: 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile .tsub { font-size: 11px; color: var(--fg-2); padding: 0 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile.hidden-now .thumb { opacity: 0.5; }
+.tile.repeat .thumb { opacity: 0.72; }
+.tile.lifted { z-index: 3; transform: scale(1.05); }
+.tile.lifted .thumb { box-shadow: 0 0 0 2.5px var(--accent), 0 10px 24px rgba(0, 0, 0, 0.25); }
+.addtile { flex: none; width: 64px; aspect-ratio: 792 / 600; display: grid; place-items: center; border-radius: 8px; border: 1.5px dashed var(--fg-3); background: none; color: var(--fg-2); cursor: pointer; }
+.addtile:hover { color: var(--accent); border-color: var(--accent); }
+.groupsep { flex: none; width: 0.5px; align-self: stretch; background: var(--sep); margin: 0 4px; }
+.grouplab { flex: none; writing-mode: vertical-rl; transform: rotate(180deg); font-size: 11px; color: var(--fg-2); align-self: center; }
+.layersdock { position: absolute; left: 12px; top: 4px; bottom: 8px; width: 220px; background: var(--surface); border-radius: 12px; box-shadow: var(--shadow-pop); display: flex; flex-direction: column; z-index: 4; animation: popin 0.26s var(--spring) both; padding-bottom: 6px; }
+.canvasarea.withdock { padding-left: 244px; }
+@container win (max-width: 700px) { .canvasarea.withdock { padding-left: 10px; } .layersdock { left: 8px; right: 8px; width: auto; top: auto; height: 46%; } }
+.insert-mark { position: absolute; background: var(--accent); border-radius: 2px; pointer-events: none; z-index: 4; }
+.badge { display: inline-flex; align-items: center; font-size: 10.5px; font-weight: 600; padding: 0 6px; height: 16px; border-radius: 999px; background: var(--fill); color: var(--fg-2); flex: none; }
+.badge.when { background: color-mix(in srgb, var(--orange) 16%, transparent); color: var(--orange); }
+.badge.alert { background: color-mix(in srgb, var(--red) 14%, transparent); color: var(--red); }
+
+.nav { min-width: 0; min-height: 0; border-right: 0.5px solid var(--sep); display: flex; flex-direction: column; background: var(--surface); }
+.navsec { display: flex; flex-direction: column; min-height: 0; }
+.navsec.pages { flex: 1.2; }
+.navsec.layers { flex: 1; border-top: 0.5px solid var(--sep); }
+.navhead { display: flex; align-items: center; justify-content: space-between; padding: 10px 12px 4px 14px; font-size: 12px; font-weight: 600; color: var(--fg-2); }
+.navlist { overflow-y: auto; padding: 0 8px 8px; position: relative; display: flex; flex-direction: column; gap: 2px; }
+.navlist .sub { font-size: 11px; font-weight: 600; color: var(--fg-3); padding: 8px 8px 2px; }
+.row { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 36px; padding: 4px 8px; border: 0; border-radius: 7px; background: none; text-align: left; cursor: pointer; position: relative; transition: background 0.12s, transform 0.18s var(--spring); }
+.row:hover { background: var(--fill); }
+.row[aria-current="page"], .row[aria-selected="true"] { background: var(--accent-soft); }
+.row[aria-selected="true"] .rmain { color: var(--accent); }
+.row.hov { background: var(--fill); }
+.row .rthumb { width: 58px; flex: none; border-radius: 4px; overflow: hidden; box-shadow: 0 0 0 0.5px var(--sep); }
+.row .rtext { min-width: 0; flex: 1; display: flex; flex-direction: column; }
+.row .rmain { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .rsub { font-size: 11px; color: var(--fg-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.row .glyph { width: 22px; height: 22px; flex: none; display: grid; place-items: center; color: var(--fg-2); }
+.row.lifted { background: var(--surface); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18), 0 0 0 0.5px var(--sep); z-index: 3; }
+.row.dim .rthumb { opacity: 0.5; }
+.row .grip { color: var(--fg-3); opacity: 0; transition: opacity 0.15s; }
+.row:hover .grip, .row:focus-visible .grip { opacity: 1; }
+@media (pointer: coarse) { .row { min-height: 44px; } .row .grip { opacity: 1; } }
+
+.nowcard { margin: 10px; padding: 10px 12px; border-radius: 9px; background: var(--surface-2); border: 0; text-align: left; cursor: pointer; display: block; width: calc(100% - 20px); transition: transform 0.15s var(--spring); }
+.nowcard:active { transform: scale(0.98); }
+.nowcard .l1 { display: flex; align-items: center; gap: 7px; font-weight: 600; }
+.nowcard .l2 { font-size: 11.5px; color: var(--fg-2); margin-top: 2px; }
+.led { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex: none; display: inline-block; }
+.led.wait { background: var(--orange); }
+
+.home { overflow-y: auto; background: var(--surface-2); }
+.home-inner { max-width: 720px; margin: 0 auto; padding: 16px; }
+.hero { background: var(--surface); border-radius: 12px; padding: 14px 16px; display: grid; gap: 4px; box-shadow: 0 0 0 0.5px var(--sep); border: 0; text-align: left; width: 100%; cursor: pointer; }
+.hero .big { font: 600 17px var(--font-display); display: flex; align-items: center; gap: 8px; }
+.home .grp { margin-top: 18px; }
+.home .grp > .glab { font-size: 12px; font-weight: 600; color: var(--fg-2); padding: 0 4px 6px; display: flex; justify-content: space-between; }
+.home .list { background: var(--surface); border-radius: 12px; padding: 4px; box-shadow: 0 0 0 0.5px var(--sep); display: flex; flex-direction: column; gap: 2px; position: relative; }
+.home .row { min-height: 64px; }
+.home .row .rthumb { width: 132px; }
+
+/* Inspector */
+.insp { min-width: 0; min-height: 0; border-left: 0.5px solid var(--sep); background: var(--surface); display: flex; flex-direction: column; }
+.insp-head { display: flex; align-items: center; gap: 8px; padding: 12px 14px 8px; min-height: 48px; }
+.insp-head .ttl { font: 600 15px var(--font-display); letter-spacing: -0.01em; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.insp-head .kind { font-size: 11.5px; color: var(--fg-2); display: block; font-weight: 500; font-family: var(--font); letter-spacing: 0; }
+.insp-head .grab { display: none; }
+.insp-body { overflow-y: auto; flex: 1; padding: 0 0 16px; }
+.insp-tabs { padding: 0 14px 8px; }
+.insp-tabs .seg { display: flex; }
+.insp-tabs .seg button { flex: 1; padding: 4px 8px; min-height: 28px; }
+.isec { padding: 10px 14px; border-top: 0.5px solid var(--sep); }
+.isec > .slab { font-size: 12px; font-weight: 600; color: var(--fg-2); margin-bottom: 8px; display: flex; justify-content: space-between; align-items: center; }
+.field { display: grid; grid-template-columns: 84px minmax(0, 1fr); align-items: center; gap: 8px; margin: 6px 0; }
+.field > label, .field > .lab { color: var(--fg-2); font-size: 12.5px; }
+.inp { width: 100%; min-height: 32px; padding: 5px 9px; border-radius: var(--r-ctl); border: 0; background: var(--fill); font-size: 13px; transition: box-shadow 0.15s; min-width: 0; }
+.inp:focus { outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); background: var(--surface); }
+select.inp { appearance: none; -webkit-appearance: none; padding-right: 26px; background-image: linear-gradient(45deg, transparent 50%, var(--fg-2) 50%), linear-gradient(135deg, var(--fg-2) 50%, transparent 50%); background-position: calc(100% - 13px) 55%, calc(100% - 9px) 55%; background-size: 4px 4px; background-repeat: no-repeat; cursor: pointer; }
+@media (pointer: coarse) { .inp { min-height: 44px; } }
+.quad { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.quad label { display: grid; gap: 2px; font-size: 10.5px; color: var(--fg-2); text-align: center; }
+.quad .inp { text-align: center; font-variant-numeric: tabular-nums; padding: 5px 2px; }
+.btnrow { display: flex; gap: 6px; flex-wrap: wrap; }
+.btnrow .btn { flex: 1; background: var(--fill); }
+.btnrow .btn:hover { background: var(--fill-2); }
+.segc { display: flex; background: var(--fill); border-radius: var(--r-ctl); padding: 2px; gap: 2px; }
+.segc button { flex: 1; min-height: 28px; border: 0; border-radius: 5px; background: none; cursor: pointer; font-size: 12.5px; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; gap: 4px; transition: background 0.2s var(--spring); }
+.segc button[aria-pressed="true"] { background: var(--surface); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.14); font-weight: 600; }
+@media (pointer: coarse) { .segc button { min-height: 40px; } }
+.entbtn { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 4px 9px; border: 0; border-radius: var(--r-ctl); background: var(--fill); text-align: left; cursor: pointer; }
+.entbtn:hover { background: var(--fill-2); }
+.entbtn .e1 { font-weight: 500; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.entbtn .e2 { font: 11px var(--mono); color: var(--fg-2); display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.entbtn .ev { margin-left: auto; font-size: 12px; color: var(--fg-2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.legible { display: flex; align-items: center; gap: 6px; font-size: 12px; margin-top: 6px; padding: 6px 9px; border-radius: var(--r-ctl); background: color-mix(in srgb, var(--green) 12%, transparent); color: var(--fg); }
+.legible.bad { background: color-mix(in srgb, var(--orange) 14%, transparent); }
+.legible .led { background: var(--green); } .legible.bad .led { background: var(--orange); }
+details.more > summary { list-style: none; cursor: pointer; font-size: 12.5px; color: var(--accent); padding: 4px 0; display: flex; align-items: center; gap: 4px; }
+details.more > summary::-webkit-details-marker { display: none; }
+details.more[open] > summary .ic { transform: rotate(90deg); }
+details.more > summary .ic { transition: transform 0.25s var(--spring); }
+.empty-note { color: var(--fg-2); font-size: 12.5px; padding: 8px 14px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chipbtn { border: 0; border-radius: 999px; background: var(--fill); padding: 4px 11px; min-height: 28px; font-size: 12.5px; cursor: pointer; }
+.chipbtn[aria-pressed="true"] { background: var(--accent); color: var(--on-accent); font-weight: 600; }
+
+/* Phone: the inspector becomes a sheet, the sidebar a drawer. */
+@container win (max-width: 700px) {
+  .v-a .body, .v-b .body, .v-c .body.editor, .v-lab .body { grid-template-columns: minmax(0, 1fr); }
+  .v-a .nav { position: absolute; inset: 0 auto 0 0; width: min(300px, 86%); z-index: 6; box-shadow: var(--shadow-pop); transform: translateX(-104%); transition: transform var(--dur) var(--spring); }
+  .v-a .nav.open { transform: none; }
+  .insp { position: absolute; left: 0; right: 0; bottom: 0; height: 66%; z-index: 5; border-left: 0; border-radius: 14px 14px 0 0; box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.16), 0 0 0 0.5px var(--sep); transform: translateY(calc(100% - 64px)); transition: transform var(--dur) var(--spring); }
+  .insp.open { transform: none; }
+  .insp-head { cursor: pointer; flex-direction: row; padding-top: 16px; }
+  .insp-head .grab { display: block; position: absolute; top: 6px; left: 50%; width: 36px; height: 5px; margin-left: -18px; border-radius: 3px; background: var(--fg-3); }
+  .stage { padding-bottom: 64px; }
+  .canvasarea { padding: 8px 10px; align-items: flex-start; padding-top: 24px; }
+  .device { padding: 7px; border-radius: 11px; }
+  .tb .hide-phone { display: none; }
+  .tile { width: 104px; }
+  .home .row .rthumb { width: 96px; }
+  .v-lab .side { display: none; }
+}
+@container win (min-width: 701px) { .show-phone { display: none !important; } }
+
+/* Popovers, sheets, menus, toast: one system */
+.layer { position: absolute; inset: 0; pointer-events: none; z-index: 20; }
+.scrim { position: absolute; inset: 0; background: var(--scrim); pointer-events: auto; animation: fade 0.2s ease-out both; }
+@keyframes fade { from { opacity: 0; } }
+.sheet { position: absolute; left: 50%; top: 50%; width: min(560px, calc(100% - 32px)); max-height: calc(100% - 48px); transform: translate(-50%, -50%); background: var(--surface); border-radius: 14px; box-shadow: var(--shadow-pop); display: flex; flex-direction: column; pointer-events: auto; animation: sheetin var(--dur) var(--spring) both; overflow: hidden; }
+.sheet.wide { width: min(760px, calc(100% - 32px)); height: min(520px, calc(100% - 48px)); }
+@keyframes sheetin { from { opacity: 0; transform: translate(-50%, -46%) scale(0.98); } }
+.sheet-head { display: flex; align-items: center; gap: 8px; padding: 14px 14px 10px 18px; }
+.sheet-head h5 { font: 600 17px var(--font-display); margin: 0; flex: 1; letter-spacing: -0.01em; }
+.sheet-body { overflow-y: auto; padding: 0 18px 12px; flex: 1; min-height: 0; }
+.sheet-foot { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 18px 16px; border-top: 0.5px solid var(--sep); }
+@container win (max-width: 700px) {
+  .sheet, .sheet.wide { left: 0; right: 0; top: auto; bottom: 0; width: 100%; height: auto; max-height: 88%; transform: none; border-radius: 14px 14px 0 0; animation: sheetup var(--dur) var(--spring) both; }
+  @keyframes sheetup { from { transform: translateY(40%); opacity: 0; } }
+}
+.pop { position: absolute; width: 300px; max-height: 70%; overflow: auto; background: var(--surface); border-radius: 12px; box-shadow: var(--shadow-pop); pointer-events: auto; padding: 6px; transform-origin: top center; animation: popin 0.26s var(--spring) both; }
+@keyframes popin { from { opacity: 0; transform: scale(0.96) translateY(-4px); } }
+.menu { min-width: 200px; width: auto; padding: 5px; }
+.menu .mi { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 30px; padding: 4px 10px; border: 0; border-radius: 6px; background: none; text-align: left; cursor: pointer; font-size: 13px; }
+.menu .mi:hover, .menu .mi:focus-visible { background: var(--accent); color: var(--on-accent); outline: none; }
+.menu .mi .kb { margin-left: auto; color: var(--fg-3); font-size: 12px; padding-left: 16px; }
+.menu .mi:hover .kb { color: inherit; opacity: 0.8; }
+.menu .mi[disabled] { opacity: 0.4; pointer-events: none; }
+.menu .msep { height: 0.5px; background: var(--sep); margin: 4px 6px; }
+.menu .mlab { font-size: 11px; font-weight: 600; color: var(--fg-2); padding: 6px 10px 2px; }
+@media (pointer: coarse) { .menu .mi { min-height: 44px; } }
+
+.search { display: flex; align-items: center; gap: 6px; background: var(--fill); border-radius: 8px; padding: 0 8px; margin: 4px; }
+.search input { border: 0; background: none; min-height: 34px; flex: 1; outline: none; font-size: 13.5px; min-width: 0; }
+.search .ic { color: var(--fg-2); }
+.optlist { display: flex; flex-direction: column; gap: 1px; padding: 4px 0; }
+.opt { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px; padding: 4px 10px; border: 0; border-radius: 7px; background: none; text-align: left; cursor: pointer; }
+.opt:hover, .opt:focus-visible, .opt.active { background: var(--fill); outline: none; }
+.opt .o1 { font-weight: 500; display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.opt .o2 { font-size: 11.5px; color: var(--fg-2); display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.opt .ov2 { margin-left: auto; font-size: 12px; color: var(--fg-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.opt .glyph { width: 28px; height: 28px; border-radius: 7px; background: var(--fill); display: grid; place-items: center; flex: none; color: var(--fg); }
+.typegrid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; padding: 4px; }
+.typegrid button { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 8px 2px; border: 0; border-radius: 8px; background: none; cursor: pointer; font-size: 11.5px; min-height: 60px; }
+.typegrid button:hover, .typegrid button:focus-visible { background: var(--fill); outline: none; }
+.typegrid .ic { width: 22px; height: 22px; }
+.poplab { font-size: 11px; font-weight: 600; color: var(--fg-2); padding: 8px 10px 2px; }
+
+.presetgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; padding: 2px; }
+.presetgrid button { border: 0; background: none; padding: 0; text-align: left; cursor: pointer; border-radius: 8px; transition: transform 0.15s var(--spring); }
+.presetgrid button:active { transform: scale(0.97); }
+.presetgrid .thumb { border-radius: 6px; overflow: hidden; display: block; box-shadow: 0 0 0 0.5px var(--sep); }
+.presetgrid button:hover .thumb, .presetgrid button:focus-visible .thumb { box-shadow: 0 0 0 2.5px var(--accent); }
+.presetgrid .pt { font-weight: 600; font-size: 13px; margin-top: 6px; }
+.presetgrid .pd { font-size: 12px; color: var(--fg-2); }
+
+.settings { display: grid; grid-template-columns: 170px minmax(0, 1fr); flex: 1; min-height: 0; }
+.settings nav { border-right: 0.5px solid var(--sep); padding: 4px 8px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+.settings .pane { overflow-y: auto; padding: 4px 18px 18px; }
+.group { background: var(--surface-2); border-radius: 10px; padding: 2px 12px; margin: 8px 0 14px; }
+.group .gr { display: flex; align-items: center; gap: 12px; min-height: 44px; border-bottom: 0.5px solid var(--sep); padding: 6px 0; }
+.group .gr:last-child { border-bottom: 0; }
+.group .gr > span:first-child { flex: 1; min-width: 0; }
+.group .gr small { display: block; color: var(--fg-2); font-size: 11.5px; }
+.group .gr .inp { width: auto; max-width: 180px; }
+.gtitle { font-size: 12px; font-weight: 600; color: var(--fg-2); margin: 14px 0 0 4px; }
+@container win (max-width: 700px) { .settings { grid-template-columns: 1fr; } .settings nav { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 0.5px solid var(--sep); padding: 6px 12px; } .settings nav .row { width: auto; flex: none; } }
+
+.switch { position: relative; width: 44px; height: 26px; flex: none; border-radius: 999px; background: var(--fill-2); border: 0; cursor: pointer; transition: background 0.25s; }
+.switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 22px; height: 22px; border-radius: 50%; background: #fff; box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2); transition: transform var(--dur) var(--spring); }
+.switch[aria-checked="true"] { background: var(--green); }
+.switch[aria-checked="true"]::after { transform: translateX(18px); }
+
+.toast { position: absolute; left: 50%; bottom: 20px; transform: translate(-50%, 20px); opacity: 0; background: var(--fg); color: var(--surface); border-radius: 12px; padding: 9px 9px 9px 16px; min-height: 40px; display: flex; align-items: center; gap: 12px; font-size: 13px; font-weight: 500; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25); pointer-events: none; transition: transform var(--dur) var(--spring), opacity 0.2s; z-index: 30; max-width: calc(100% - 32px); }
+.toast.on { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
+.toast button { border: 0; background: color-mix(in srgb, var(--surface) 20%, transparent); color: var(--surface); border-radius: 7px; padding: 5px 10px; font-weight: 600; cursor: pointer; }
+.toast:not(:has(button:not([hidden]))) { padding-right: 16px; }
+@container win (max-width: 700px) { .toast { bottom: 76px; } }
+
+.banner { display: flex; align-items: center; gap: 10px; padding: 7px 12px; font-size: 12.5px; background: color-mix(in srgb, var(--accent) 10%, var(--surface)); border-bottom: 0.5px solid var(--sep); animation: fadein 0.3s var(--spring); }
+.banner .ic { color: var(--accent); }
+
+.pairs { display: grid; gap: 4px; margin: 8px 0; }
+.pairs div { display: grid; grid-template-columns: 1fr 20px 1fr; gap: 6px; align-items: center; font-size: 12.5px; padding: 6px 8px; background: var(--surface-2); border-radius: 7px; }
+.pairs .none { color: var(--fg-2); }
+.cmpgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.cmpcard { border: 0; padding: 8px; border-radius: 10px; background: var(--surface-2); text-align: left; cursor: pointer; box-shadow: 0 0 0 0.5px var(--sep); }
+.cmpcard[aria-pressed="true"] { box-shadow: 0 0 0 2.5px var(--accent); }
+.cmpcard .thumb { border-radius: 5px; overflow: hidden; display: block; }
+.cmpcard .ct { font-weight: 600; margin-top: 6px; font-size: 13px; }
+.cmpcard .cs { font-size: 11.5px; color: var(--fg-2); }
+
+/* Lab */
+.lab { display: grid; gap: 20px; }
+.labcard { background: var(--surface); border-radius: 14px; padding: 18px; box-shadow: 0 0 0 0.5px var(--sep); min-width: 0; }
+.labcard h3 { margin-top: 0; }
+.labhost { height: 430px; margin-top: 12px; }
+.labhost.short { height: 360px; }
+.log { margin-top: 10px; font-size: 13px; color: var(--fg-2); min-height: 20px; font-variant-numeric: tabular-nums; }
+.duo { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin-top: 12px; }
+.duo > div { min-width: 0; }
+.duo .cap { font-size: 13px; font-weight: 600; margin-bottom: 6px; display: flex; gap: 8px; align-items: center; }
+.counter { display: flex; gap: 16px; font-size: 13px; margin-top: 8px; font-variant-numeric: tabular-nums; color: var(--fg-2); }
+.counter b { color: var(--fg); font-size: 15px; }
+.counter b.bad { color: var(--red); }
+</style>
+
+<div class="masthead wrap">
+  <div class="kicker">E-paper panel add-on · editor redesign · from v0.9.7</div>
+  <h1>Giving the editor its flow back</h1>
+</div>
+<div class="navbar"><div class="wrap">
+  <div class="seg" role="tablist" aria-label="Sections">
+    <button role="tab" id="tab-findings" aria-controls="findings" aria-selected="true">Findings</button>
+    <button role="tab" id="tab-a" aria-controls="a" aria-selected="false">A · Navigator</button>
+    <button role="tab" id="tab-b" aria-controls="b" aria-selected="false">B · Canvas and strip</button>
+    <button role="tab" id="tab-c" aria-controls="c" aria-selected="false">C · Home and editor</button>
+    <button role="tab" id="tab-fixes" aria-controls="fixes" aria-selected="false">Fixes for A, B, C</button>
+  </div>
+</div></div>
+
+<main class="wrap">
+
+<section id="findings" role="tabpanel" aria-labelledby="tab-findings">
+ <div class="read">
+  <p class="lede">The editor can do 77 things, and nearly all of them are worth keeping. What broke is <em>where</em> they live: the four things you work on (the panel, the rotation, a page, an element) are each spread across three or four places, saving is invisible, and the canvas doesn't do what your hand expects.</p>
+  <p>Below: what I found, five everyday tasks counted today and in each direction, and the decisions I need from you. The three directions are clickable in the tabs above; each has a phone view. My recommendation is <strong>B</strong>.</p>
+
+  <h3>The four things you work on</h3>
+ </div>
+  <div class="tbl-wrap"><table>
+   <thead><tr><th>Thing</th><th>Where it lives today</th><th>Where it lives in B</th></tr></thead>
+   <tbody>
+    <tr><td><b>The panel</b></td><td>Top bar (orientation, quiet pill, status pill, gear menu), canvas toolbar (model, refresh slider, legibility), Panel setup (model, mount and refresh again), Quiet hours dialog</td><td>One status button, “Now on the panel”, and one Settings sheet</td></tr>
+    <tr><td><b>The rotation</b></td><td>Pills below the canvas (move one step per press), the page menu's [when] tags, the interval menu, Full strip dialog</td><td>The page strip under the canvas <em>is</em> the rotation: drag to reorder</td></tr>
+    <tr><td><b>A page</b></td><td>Top bar (select, preset, blank, ••• menu), below the canvas (tier, condition, hold), rotation pills</td><td>Click a tile; with nothing selected the inspector shows the page</td></tr>
+    <tr><td><b>An element</b></td><td>Canvas, inspector at the top of the rail, palette in the middle, entities at the bottom</td><td>Canvas, inspector, and one Insert button that finds both element types and entities</td></tr>
+   </tbody>
+  </table></div>
+
+ <div class="read">
+  <h3>Five everyday tasks</h3>
+  <p class="muted">My reading of the daily path. Tell me yours in your own words and I'll recount. Actions are clicks, drags and fields.</p>
+ </div>
+  <div class="tbl-wrap"><table>
+   <thead><tr><th>Task</th><th class="n">Today</th><th class="n">A</th><th class="n">B</th><th class="n">C</th></tr></thead>
+   <tbody>
+    <tr><td>1. New page from a preset, showing my sensor, on the panel</td><td class="n">8 + 2 typed ids</td><td class="n best">5</td><td class="n best">5</td><td class="n best">5</td></tr>
+    <tr><td>2. Change something that sits under a card</td><td class="n">3 + one per layer</td><td class="n best">1–2</td><td class="n best">1–2</td><td class="n best">1–2</td></tr>
+    <tr><td>3. Add a sensor value to a page</td><td class="n">5</td><td class="n best">3</td><td class="n best">3</td><td class="n best">3</td></tr>
+    <tr><td>4. Make page B match page A's layout</td><td class="n">8 per element, 2 tabs</td><td class="n best">4</td><td class="n best">4</td><td class="n">5</td></tr>
+    <tr><td>5. Show a page only while the dryer runs, right after the cat page</td><td class="n">6 + one per step</td><td class="n best">4</td><td class="n best">4</td><td class="n">5</td></tr>
+    <tr><td>Canvas width at 1280 px, Home Assistant sidebar open (panel is 792)</td><td class="n">612</td><td class="n">396</td><td class="n best">656</td><td class="n best">656</td></tr>
+   </tbody>
+  </table></div>
+
+ <div class="read">
+  <h3>Your three frustrations</h3>
+  <div class="grid2">
+   <div class="callout"><strong>A. Overlapping items.</strong> Every click goes to the topmost box. Fix: pick from what's under the pointer, click again without moving to go one deeper, with the whole stack outlined and a “2 of 3” label so you can see you're picking something else. Plus a visible layer list and a “Select” menu on right-click. Try it under <a href="#fixes">Fixes</a>.</div>
+   <div class="callout"><strong>B. A click nudges.</strong> A drag starts only after 4 px of movement (8 on touch). A plain click never moves anything or adds an undo step.</div>
+   <div class="callout"><strong>C. Copying between pages.</strong> Copy and paste keeps position and size, works across pages, reloads and windows. “Copy to page…” and “Match layout of…” for the whole job. Saving gets a version check: changes from another window merge by page, and only a page changed in both asks you which to keep.</div>
+  </div>
+
+  <h3>Also proposed</h3>
+  <ul class="plain">
+   <li><b>Now on the panel</b>: up to date or waiting (with the reason), how many pages are rotating and how often, which conditional pages are hidden right now and why (“Dryer is idle”), quiet hours, Sleep now, Clear ghosting. It won't claim which page is on screen, because the add-on can't know that.</li>
+   <li><b>Rotation as a list you drag.</b> A page can sit in it twice, as today; pages left out of it are kept to one side.</li>
+   <li><b>First-run states</b>: no pages yet (presets right on the canvas), no panel yet (Now on the panel says so and opens setup).</li>
+   <li><b>The panel's device settings</b> (Sleep, ghost clearing, refresh interval) in Settings. The add-on would find these entities the same way it finds the refresh interval now, by registry id.</li>
+   <li><b>One sheet system</b> for presets, settings, icons and naming. The seven browser prompts go; rename happens in place.</li>
+   <li><b>Saving you can see</b>: a dot on “Send to panel” when something isn't sent, a warning before closing with unsent work, and a draft kept in the browser.</li>
+  </ul>
+
+  <h3>What doesn't earn its place</h3>
+  <ul class="plain">
+   <li>Model picker and refresh slider above the canvas: they duplicate Panel setup. Move to Settings.</li>
+   <li>The “1-bit monochrome” and resolution badges, and the fake “ELECROW…” logo on the frame. Keep the dark frame itself.</li>
+   <li>The tip paragraph under the canvas: replaced by a keyboard shortcuts sheet (<kbd>?</kbd>) and controls that explain themselves.</li>
+   <li>The eight entity filter chips: search covers it, with “The add-on's own” as one scope.</li>
+   <li>Font scale presets (five buttons next to a slider): a slider that clicks at those values.</li>
+   <li>“Save page as preset”: it has been silently losing your presets (see below). Either fix it, or drop it in favour of Duplicate page and copy and paste.</li>
+  </ul>
+
+  <h3>Bugs found while reading</h3>
+  <ul class="plain">
+   <li><b>Saved presets disappear</b> on the next save: the editor writes <code>title</code>, the server keeps only presets with <code>name</code>.</li>
+   <li>Every preset arrives unbound, though each was written to take your sensor.</li>
+   <li>Opening Full strip saves all your unsent changes, as do five other actions.</li>
+   <li>The entity list never refreshes after a save (it reads a field that doesn't exist).</li>
+   <li>The editor's own fonts 404 under Home Assistant, so the font menu can't show them.</li>
+   <li>The light/dark menu item loses its label and becomes a bare emoji.</li>
+  </ul>
+  <p class="muted">The full inventory, 77 items marked constant, occasional or rare, is in <code>docs/editor-redesign/inventory.md</code> on the <code>editor-redesign</code> branch. It's the regression checklist.</p>
+
+  <h3>Decisions for you</h3>
+  <ol class="steps">
+   <li><b>Direction:</b> A, B or C. I recommend B: the canvas keeps the width inside Home Assistant, the strip under it is the rotation, and on a phone it becomes nearly C.</li>
+   <li><b>Picking overlapped items:</b> topmost first and click again for deeper (your idea), or smallest first and click again for bigger (my pick: it fixes “a card blocks what's inside” in one click). Both outline the stack the same way.</li>
+   <li><b>Copying between pages:</b> copy, paste and “Copy to page…” only, or also “Match layout of…”, or a live shared layout (bigger: needs the renderer to follow a link).</li>
+   <li><b>Saving:</b> keep one “Send to panel” with an unsent dot and a browser draft (my pick, because anything saved reaches the panel at its next fetch), or save automatically as you go.</li>
+   <li><b>Two smaller ones:</b> AGENTS.md says controls are at least 36 px; your rule says 44 pt targets. I'd use 44 on touch and 36 with a mouse, with hit areas padded to 44. And with Insert taking over the palette and entity list, the right rail becomes inspector only; AGENTS.md's “ordered by frequency” decision would be rewritten to match.</li>
+  </ol>
+ </div>
+</section>
+
+<section id="a" role="tabpanel" aria-labelledby="tab-a" hidden>
+ <div class="dir-head">
+  <div><h2>A · Navigator</h2><p>Pages and layers in a sidebar, the canvas in the middle, the inspector on the right. Everything is always in view, like Keynote's navigator with Figma's layer list.</p></div>
+  <div class="seg" role="group" aria-label="Window size"><button aria-pressed="true" data-size="desktop" data-for="a">Desktop</button><button aria-pressed="false" data-size="phone" data-for="a">Phone</button></div>
+ </div>
+ <div class="mockhost" id="host-a" data-variant="a"></div>
+ <p class="hint-row">Try: click the panel's right half twice, right-click for “Select”, drag a page in the sidebar, <kbd>⌘C</kbd> then click another page and <kbd>⌘V</kbd>.</p>
+ <h3>Core tasks</h3>
+ <div class="tasks">
+  <div class="task"><h4>1. Preset page, on the panel</h4><ol class="steps"><li>+ above the page list</li><li>Pick a preset</li><li>Pick your sensor</li><li>Add page</li><li>Send to panel</li></ol><div class="count"><b>5 actions</b>, 2 places · today 8 and 5</div></div>
+  <div class="task"><h4>2. Something under a card</h4><ol class="steps"><li>Click it: the smallest thing under the pointer wins</li><li>Or click again, or pick it in Layers</li></ol><div class="count"><b>1–2 actions</b>, 1 place</div></div>
+  <div class="task"><h4>3. Add a sensor value</h4><ol class="steps"><li>Insert</li><li>Type “battery”, pick it</li><li>Adjust in the inspector</li></ol><div class="count"><b>3 actions</b>, 2 places</div></div>
+  <div class="task"><h4>4. Match page B to page A</h4><ol class="steps"><li><kbd>⌘A</kbd>, <kbd>⌘C</kbd></li><li>Click page B in the sidebar</li><li><kbd>⌘V</kbd>: same place, same size</li></ol><div class="count"><b>4 actions</b>, 1 place</div></div>
+  <div class="task"><h4>5. Dryer page after the cat</h4><ol class="steps"><li>Click Dryer in the list</li><li>Shows: Only when → Dryer is active</li><li>Drag it below Cat</li></ol><div class="count"><b>4 actions</b>, 2 places</div></div>
+ </div>
+ <h3>Trade-offs</h3>
+ <ul class="plain read">
+  <li>Layers are always visible, which answers “is depth even working?” at a glance.</li>
+  <li>Three panes cost the canvas: at 1280 px with Home Assistant's sidebar open, the panel draws at half size (396 of 792 px), so small text is hard to judge.</li>
+  <li>On a phone the sidebar becomes a drawer and the inspector a sheet.</li>
+ </ul>
+</section>
+
+<section id="b" role="tabpanel" aria-labelledby="tab-b" hidden>
+ <div class="dir-head">
+  <div><h2>B · Canvas and page strip <span class="pill">Recommended</span></h2><p>The canvas gets the width. Your pages sit in a strip under it in rotation order, so the strip is the rotation. One inspector shows what's selected, or the page when nothing is, like Keynote.</p></div>
+  <div class="seg" role="group" aria-label="Window size"><button aria-pressed="true" data-size="desktop" data-for="b">Desktop</button><button aria-pressed="false" data-size="phone" data-for="b">Phone</button></div>
+ </div>
+ <div class="mockhost" id="host-b" data-variant="b"></div>
+ <p class="hint-row">Try: click empty canvas to see the page in the inspector, drag a tile in the strip, Layers above the canvas, Now on the panel, Settings, + for a preset page.</p>
+ <h3>Core tasks</h3>
+ <div class="tasks">
+  <div class="task"><h4>1. Preset page, on the panel</h4><ol class="steps"><li>+ at the end of the strip</li><li>Pick a preset</li><li>Pick your sensor</li><li>Add page</li><li>Send to panel</li></ol><div class="count"><b>5 actions</b>, 2 places · today 8 and 5</div></div>
+  <div class="task"><h4>2. Something under a card</h4><ol class="steps"><li>Click it: the smallest thing under the pointer wins</li><li>Or click again; Layers shows the order</li></ol><div class="count"><b>1–2 actions</b>, 1 place</div></div>
+  <div class="task"><h4>3. Add a sensor value</h4><ol class="steps"><li>Insert</li><li>Type “battery”, pick it</li><li>Adjust in the inspector</li></ol><div class="count"><b>3 actions</b>, 2 places</div></div>
+  <div class="task"><h4>4. Match page B to page A</h4><ol class="steps"><li><kbd>⌘A</kbd>, <kbd>⌘C</kbd></li><li>Click page B in the strip</li><li><kbd>⌘V</kbd>: same place, same size</li></ol><div class="count"><b>4 actions</b>, 1 place</div></div>
+  <div class="task"><h4>5. Dryer page after the cat</h4><ol class="steps"><li>Click the Dryer tile</li><li>Shows: Only when → Dryer is active</li><li>Drag the tile after Cat</li></ol><div class="count"><b>4 actions</b>, 2 places, next to each other</div></div>
+ </div>
+ <h3>Trade-offs</h3>
+ <ul class="plain read">
+  <li>Biggest canvas of the three: 656 of 792 px at 1280 with Home Assistant's sidebar open, full size with it closed.</li>
+  <li>The layer list is one click away instead of always on screen. Its open state is remembered.</li>
+  <li>The strip shows about six pages before it scrolls; the rotation rarely has more.</li>
+  <li>On a phone: canvas, strip, and the inspector as a sheet you pull up. Close to C.</li>
+ </ul>
+</section>
+
+<section id="c" role="tabpanel" aria-labelledby="tab-c" hidden>
+ <div class="dir-head">
+  <div><h2>C · Home and editor</h2><p>Two levels, like an iPhone app: a home screen with what's on the panel and the rotation as a list of big previews, and a focused editor for one page.</p></div>
+  <div class="seg" role="group" aria-label="Window size"><button aria-pressed="true" data-size="desktop" data-for="c">Desktop</button><button aria-pressed="false" data-size="phone" data-for="c">Phone</button></div>
+ </div>
+ <div class="mockhost" id="host-c" data-variant="c"></div>
+ <p class="hint-row">Try: drag a page in the list, open one, use the Layers tab in the inspector, come back with ‹ Pages.</p>
+ <h3>Core tasks</h3>
+ <div class="tasks">
+  <div class="task"><h4>1. Preset page, on the panel</h4><ol class="steps"><li>+ on the home screen</li><li>Pick a preset</li><li>Pick your sensor</li><li>Add page (opens it)</li><li>Send to panel</li></ol><div class="count"><b>5 actions</b>, 3 places</div></div>
+  <div class="task"><h4>2. Something under a card</h4><ol class="steps"><li>Click it, or click again</li><li>Or the Layers tab</li></ol><div class="count"><b>1–2 actions</b>, 1 place</div></div>
+  <div class="task"><h4>3. Add a sensor value</h4><ol class="steps"><li>Insert</li><li>Type “battery”, pick it</li><li>Adjust in the inspector</li></ol><div class="count"><b>3 actions</b>, 2 places</div></div>
+  <div class="task"><h4>4. Match page B to page A</h4><ol class="steps"><li><kbd>⌘A</kbd>, <kbd>⌘C</kbd></li><li>‹ Pages</li><li>Open page B</li><li><kbd>⌘V</kbd></li></ol><div class="count"><b>5 actions</b>, 2 places</div></div>
+  <div class="task"><h4>5. Dryer page after the cat</h4><ol class="steps"><li>Open Dryer</li><li>Shows: Only when → Dryer is active</li><li>‹ Pages, drag it below Cat</li></ol><div class="count"><b>5 actions</b>, 2 places</div></div>
+ </div>
+ <h3>Trade-offs</h3>
+ <ul class="plain read">
+  <li>The calmest home screen, and the best fit for the Home Assistant phone app.</li>
+  <li>Every page switch is a trip back home, and you lose sight of the other pages while editing.</li>
+ </ul>
+</section>
+
+<section id="fixes" role="tabpanel" aria-labelledby="tab-fixes" hidden>
+ <div class="lab">
+  <div class="labcard">
+   <h3>A · Picking what's underneath</h3>
+   <p class="muted read">This page has two cards drawn on top of what's inside them, and a roomy “solar today” text box over the sparkline: today you can't click the sparkline at all. Switch the rule and click around. Click again without moving to go to the next item; the stack under the pointer is outlined in dashes and the label says where you are.</p>
+   <div class="seg" role="group" aria-label="Picking rule" id="pickmode">
+    <button aria-pressed="false" data-mode="top">Topmost first</button>
+    <button aria-pressed="true" data-mode="smallest">Smallest first</button>
+    <button aria-pressed="false" data-mode="today">Today</button>
+   </div>
+   <div class="labhost" id="host-lab-a"></div>
+   <div class="log" id="log-a" aria-live="polite">Click the sparkline on the right.</div>
+  </div>
+
+  <div class="labcard">
+   <h3>B · A click is not a drag</h3>
+   <p class="muted read">Click the big number a dozen times, the way you'd click to select it. On the left, today's behaviour, simulating the 1–2 px a hand moves during an ordinary click: it moves and adds an undo step. On the right, a drag starts only after 4 px.</p>
+   <div class="duo">
+    <div><div class="cap">Today</div><div class="labhost short" id="host-lab-b1"></div><div class="counter" id="cnt-b1"></div></div>
+    <div><div class="cap">New</div><div class="labhost short" id="host-lab-b2"></div><div class="counter" id="cnt-b2"></div></div>
+   </div>
+  </div>
+
+  <div class="labcard">
+   <h3>C · Two windows, one set of pages</h3>
+   <p class="muted read">Two editor windows on the same pages, like your two tabs. Change something in each and send from both. Different pages merge without asking. If both changed the same page, the second window asks which to keep, and the other version stays one undo away. Copy and paste also works between these windows: <kbd>⌘C</kbd> in one, <kbd>⌘V</kbd> in the other.</p>
+   <div class="duo">
+    <div><div class="cap">Window 1</div><div class="labhost" id="host-lab-c1"></div></div>
+    <div><div class="cap">Window 2</div><div class="labhost" id="host-lab-c2"></div></div>
+   </div>
+   <p class="hint-row">On the server: <code>GET /api/layouts</code> returns an <code>ETag</code>; <code>PUT</code> with <code>If-Match</code> gets 409 and the current spec when someone saved in between. A <code>PUT</code> without <code>If-Match</code> still works, so nothing else breaks.</p>
+  </div>
+ </div>
+</section>
+
+</main>
+<script src="mockups.js"></script>
