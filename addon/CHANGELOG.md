@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.9.2
+Security and privacy. The panel's firmware and frame files are unchanged.
+
+- **The editor answers only Home Assistant.** It now refuses any connection that
+  doesn't come through Home Assistant's Ingress (its login). Before, any other
+  app on Home Assistant's internal network could open it without logging in, and
+  read the panel's API key and OTA password from Panel setup.
+- **The LAN port no longer gives away your setup.** Removed `/api/layouts`, which
+  exposed every entity, template and custom location with no token check even
+  when a token was set, along with `/manifest.json` and `/api/manifest`.
+  `/status` is now a plain health check. Frames no longer carry page names or
+  the quiet-hours flag in headers. Nothing on the network used any of this.
+- **LAN actions need a token.** `POST /api/action/refresh` and `/api/action/page`
+  are off unless `frame_token` is set, and they no longer answer GET, so a link
+  preview can't trigger them. In Home Assistant, use the panel's actions or the
+  Refresh panel button.
+- **No built-in home location.** The fallback coordinates and timezone were a
+  real place. Location now comes only from Home Assistant. Without one, the
+  flight widget shows nothing and the log says where to set it.
+- Retired sensors are withdrawn only while Home Assistant still has them, so
+  restarts no longer log five "withdrew" lines.
+
 ## 0.9.1
 - **No missing pages after a restart.** While the add-on is stopped, its
   entities read "unavailable". The first render now waits (up to 20 s) until

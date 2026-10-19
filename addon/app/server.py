@@ -687,8 +687,11 @@ async def curve_series(session, entity, hours=24, buckets=24):
 
 
 _aircraft_cache = {}
-_home_location_cache = {"at": 0.0, "lat": 45.794, "lon": 21.222}
-_ha_config_cache = {"at": 0.0, "tz": "Europe/Bucharest"}
+# No built-in fallback location or timezone: a default would be someone's real
+# home, and wrong for everyone else. Home Assistant's own settings are the source.
+_home_location_cache = {"at": 0.0, "lat": None, "lon": None}
+_ha_config_cache = {"at": 0.0, "tz": None}
+_warned_no_location = False
 _weather_cache = {}
 _calendar_cache = {}
 _racing_cache = {}
@@ -718,7 +721,7 @@ def _bearing_cardinal(lat1, lon1, lat2, lon2):
     return _bearing_calc(lat1, lon1, lat2, lon2)[1]
 
 
-async def get_home_timezone(session, default="Europe/Bucharest"):
+async def get_home_timezone(session, default="UTC"):
     now = time.time()
     if now - _ha_config_cache["at"] < 3600 and _ha_config_cache.get("tz"):
         return _ha_config_cache["tz"]
@@ -781,6 +784,13 @@ async def fetch_overhead_aircraft(session, radius_km=35.0, lat=None, lon=None):
             lat, lon = await get_home_coordinates(session)
     else:
         lat, lon = await get_home_coordinates(session)
+    if lat is None or lon is None:
+        global _warned_no_location
+        if not _warned_no_location:
+            _warned_no_location = True
+            print("flights: Home Assistant has no home location. Set it under Settings → System → General, "
+                  "or give the flight widget its own coordinates", flush=True)
+        return []
 
     radius_km = max(5.0, min(250.0, float(radius_km or 35.0)))
     cache_key = (round(lat, 3), round(lon, 3), int(radius_km))
@@ -2725,6 +2735,46 @@ async def render_loop():
         await asyncio.sleep(REFRESH)
 
 
+# The Supervisor's Ingress proxy. Under Home Assistant it is the only client
+# the editor should ever see: anything else is another app on the internal
+# network reaching the editor without a login.
+INGRESS_GATEWAY = "172.30.32.2"
+UNDER_SUPERVISOR = bool(os.environ.get("SUPERVISOR_TOKEN"))
+_rejected_peers: set[str] = set()
+
+
+def editor_peer_allowed(peer: str, under_supervisor: bool | None = None) -> bool:
+    peer = (peer or "").removeprefix("::ffff:")
+    if UNDER_SUPERVISOR if under_supervisor is None else under_supervisor:
+        return peer == INGRESS_GATEWAY
+    return peer in ("127.0.0.1", "::1")          # running locally for development
+
+
+@web.middleware
+async def ingress_only(request, handler):
+    """The editor is behind Home Assistant's login; refuse anyone who isn't."""
+    peer = request.remote or ""
+    if not editor_peer_allowed(peer):
+        if peer not in _rejected_peers:
+            _rejected_peers.add(peer)
+            print(f"editor: refused a connection from {peer} (not Home Assistant's Ingress)", flush=True)
+        raise web.HTTPForbidden(text="Open the editor from the Home Assistant sidebar.")
+    return await handler(request)
+
+
+def _require_frame_token(request):
+    """LAN endpoints that make the add-on or the panel do something.
+
+    They are off unless a frame_token is set: without one, anything on the
+    network could make the panel redraw or step pages.
+    """
+    if not FRAME_TOKEN:
+        raise web.HTTPForbidden(text=(
+            "This endpoint is off. Set frame_token in the add-on's options to use it, "
+            "or use the panel's actions and the Refresh panel button in Home Assistant."))
+    _check_frame_auth(request)
+
+
 def _check_frame_auth(request):
     if not FRAME_TOKEN:
         return
@@ -2738,27 +2788,14 @@ def _check_frame_auth(request):
 
 
 def _frame_headers(f=None, etag=None, page_count=1):
-    spec = load_layouts()
-    quiet_on = bool(f and getattr(f, "quiet_active", False))
-    rot_sec = "0" if quiet_on else str(spec.get("rotate_seconds", 30))
-    panel_cfg = load_panel_setup()
-    m_int = re.search(r"\d+", str(panel_cfg.get("refresh_interval", "5")))
-    panel_int = int(m_int.group(0)) if m_int else 5
-    last_mod = (getattr(f, "last_modified", "") if f is not None else "") or formatdate(timeval=None, localtime=False, usegmt=True)
+    """Caching headers for frame responses.
 
-    h = {
-        "Cache-Control": "no-cache",
-        "Last-Modified": last_mod,
-        "X-Next-Refresh-Seconds": str(panel_int * 60),
-        "X-Rotate-Seconds": rot_sec,
-        "X-Quiet-Hours": "1" if quiet_on else "0",
-        "X-Page-Count": str(page_count),
-    }
-    if f is not None:
-        h["X-Cat-Count"] = str(f.cat_count)
-        h["X-Cat-Offsets"] = ",".join(map(str, f.cat_offsets))
-        h["X-Cat-Sizes"] = ",".join(map(str, f.cat_sizes))
-        h["X-Cat-Names"] = ",".join(f.cat_names)
+    0.8.x also sent page names, category layout and the quiet-hours flag as
+    X- headers. Nothing read them, and on an untokened LAN port they said more
+    than a frame should (quiet hours can mean nobody is home).
+    """
+    last_mod = (getattr(f, "last_modified", "") if f is not None else "") or formatdate(timeval=None, localtime=False, usegmt=True)
+    h = {"Cache-Control": "no-cache", "Last-Modified": last_mod}
     if etag:
         h["ETag"] = etag
     return h
@@ -2839,7 +2876,6 @@ async def editor_strip_epf(request):
 
 
 async def api_manifest(request):
-    _check_frame_auth(request)
     f = FRAMES
     return web.json_response({
         "page_count": len(f.names),
@@ -2856,20 +2892,15 @@ async def api_manifest(request):
 
 
 async def public_status(request):
+    """Health check on the LAN port. Deliberately says nothing about the pages
+    or why quiet hours are on: the reason can reveal whether anyone is home."""
     _check_frame_auth(request)
     f = FRAMES
     return web.json_response({
         "ok": f.error is None and bool(f.strip),
         "page_count": len(f.names),
-        "cat_count": f.cat_count,
-        "cat_offsets": f.cat_offsets,
-        "cat_sizes": f.cat_sizes,
-        "cat_names": f.cat_names,
-        "cat_ids": getattr(f, "cat_ids", []),
-        "sub_ids": getattr(f, "sub_ids", []),
-        "quiet_active": f.quiet_active,
-        "quiet_reason": f.quiet_reason,
         "rendered_at": f.rendered_at,
+        "version": ADDON_VERSION,
     })
 
 
@@ -3119,8 +3150,8 @@ async def api_push(request):
 
 
 async def api_action_refresh(request):
-    """External action endpoint (for HA automations, webhooks, or scripts) to trigger re-render & panel redraw."""
-    _check_frame_auth(request)
+    """LAN endpoint (scripts, webhooks) to re-render and make the panel redraw. Needs frame_token."""
+    _require_frame_token(request)
     try:
         await refresh_frames(SHARED_SESSION)
         ha_pushed = await push_panel_update("action endpoint")
@@ -3130,8 +3161,8 @@ async def api_action_refresh(request):
 
 
 async def api_action_page(request):
-    """External action endpoint to advance or set the display page."""
-    _check_frame_auth(request)
+    """LAN endpoint to step the panel's page. Needs frame_token."""
+    _require_frame_token(request)
     try:
         body = await request.json() if request.can_read_body else {}
     except Exception:
@@ -4424,7 +4455,8 @@ async def editor_index(request):
     return web.FileResponse(index, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
 
 
-async def start(app_runners):
+def make_apps():
+    """The LAN frame server and the Ingress-only editor."""
     panel = web.Application()
     panel.add_routes([
         web.get("/frame.png", frame_png),
@@ -4433,17 +4465,17 @@ async def start(app_runners):
         web.get("/frames.epf", frames_epf),
         web.get("/epf_client.h", api_epf_client_h),
         web.get("/status", public_status),
-        web.get("/manifest.json", api_manifest),
-        web.get("/api/manifest", api_manifest),
         web.get("/fonts/{name}", panel_font),
-        web.get("/api/action/refresh", api_action_refresh),
         web.post("/api/action/refresh", api_action_refresh),
-        web.get("/api/action/page", api_action_page),
         web.post("/api/action/page", api_action_page),
-        web.get("/api/layouts", api_layouts_get),
+        # Removed from the LAN port in 0.9.2: /api/layouts (exposed every
+        # entity, template and custom location, with no token check at all),
+        # /manifest.json and /api/manifest (page names, presence-based quiet
+        # reason), and GET on the actions (a link preview could trigger them).
+        # Nothing on the network used them; the editor keeps its own copies.
     ])
 
-    editor = web.Application(client_max_size=1024 * 1024)
+    editor = web.Application(client_max_size=1024 * 1024, middlewares=[ingress_only])
     editor.add_routes([
         web.get("/", editor_index),
         web.get("/api/status", status),
@@ -4459,10 +4491,6 @@ async def start(app_runners):
         web.get("/api/aircraft", api_aircraft),
         web.post("/api/preview", api_preview),
         web.post("/api/push", api_push),
-        web.get("/api/action/refresh", api_action_refresh),
-        web.post("/api/action/refresh", api_action_refresh),
-        web.get("/api/action/page", api_action_page),
-        web.post("/api/action/page", api_action_page),
         web.get("/api/sources", api_sources_get),
         web.put("/api/sources", api_sources_put),
         web.post("/api/sources/test", api_sources_test),
@@ -4475,7 +4503,11 @@ async def start(app_runners):
     ])
     if WEB_DIR.exists():
         editor.router.add_static("/static/", WEB_DIR)
+    return panel, editor
 
+
+async def start(app_runners):
+    panel, editor = make_apps()
     for app, port in ((panel, FRAME_PORT), (editor, INGRESS_PORT)):
         runner = web.AppRunner(app)
         await runner.setup()

@@ -27,8 +27,8 @@ the add-on itself lives in `addon/`.
 
 | Endpoint | Purpose |
 |---|---|
-| HA Sidebar (`:8080` via Ingress) | Drag-and-drop visual editor and JSON API, behind Home Assistant authentication |
-| `<homeassistant>:8099` | Frame server (`/frames.png`, `/frame.png`, `/status`) for the ESP32 panel on the LAN (can be remapped in HA Add-on network settings if port `8099` is already in use on the host, or protected via `frame_token`) |
+| HA Sidebar (`:8080` via Ingress) | Drag-and-drop visual editor and JSON API. Answers only Home Assistant's Ingress proxy (`172.30.32.2`); any other app on the internal network gets 403 |
+| `<homeassistant>:8099` | Frame server for the panel on the LAN: `/frames.epf`, `/frame.epf`, the PNG fallbacks, and a minimal `/status`. `POST /api/action/refresh|page` exist only when `frame_token` is set. Remappable in the add-on's network settings |
 | ESPHome node (`crowpanel-epaper`) | Exposes `refresh_now`, `show_page`, `page_step`, and `hold_toggle` actions over the encrypted ESPHome native API |
 
 Never expose port `8099` or the panel's endpoints to the public internet.
@@ -135,6 +135,12 @@ When touching display code, `it.image()` at a negative offset is a trap: see
   it, and show the truth in the editor. Don't report success you didn't get.
 
 ## Security & data hygiene
+
+- **The LAN port serves frames and nothing else that matters.** No layouts,
+  no page names, no quiet-hours reason (it can reveal whether anyone is home).
+  Anything that makes the add-on or panel *do* something needs `frame_token`.
+- **No built-in location or timezone.** Home Assistant's settings are the
+  source; a default would be someone's real home.
 
 - The add-on gets a supervisor token automatically (`homeassistant_api: true`).
   All entity IDs and source slugs interpolated into Home Assistant API paths

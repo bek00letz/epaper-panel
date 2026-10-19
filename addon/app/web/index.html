@@ -3575,7 +3575,7 @@ function props() {
         <input type="checkbox" data-k="show_teams"${el.show_teams !== false ? " checked" : ""}>
       </div>
       <div class="row"><label>time zone</label>
-        <input type="text" data-k="timezone" placeholder="e.g. Europe/Bucharest (default: HA)" value="${esc(el.timezone || '')}">
+        <input type="text" data-k="timezone" placeholder="e.g. Europe/London (default: Home Assistant)" value="${esc(el.timezone || '')}">
       </div>
       <div class="row"><label>card border</label>
         <input type="checkbox" data-k="show_border"${el.show_border !== false ? " checked" : ""}>
@@ -3613,7 +3613,7 @@ function props() {
         <code style="font-size:11px;color:var(--accent);background:var(--accent-soft);padding:3px 7px;border-radius:5px;user-select:all">${esc(nativeSensor)}</code>
       </div>
       <div class="row"><label>time zone</label>
-        <input type="text" data-k="timezone" placeholder="e.g. Europe/Bucharest (default: HA)" value="${esc(el.timezone || '')}">
+        <input type="text" data-k="timezone" placeholder="e.g. Europe/London (default: Home Assistant)" value="${esc(el.timezone || '')}">
       </div>
       <div class="row"><label>show team stats</label>
         <input type="checkbox" data-k="show_stats"${el.show_stats !== false ? " checked" : ""}>

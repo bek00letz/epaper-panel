@@ -208,11 +208,15 @@ class TestEntityPublisher(unittest.TestCase):
         self.assertEqual(t.messages["epaper_panel/epaper_solar_month/state"], "336.0")
 
     def test_withdraws_retired_and_stale_but_never_right_after_start(self):
-        pub, t = self.make(FakeHass(registry=[]))
+        pub, t = self.make(FakeHass(registry=[
+            {"entity_id": "sensor.epaper_category_count", "platform": "mqtt",
+             "unique_id": "epaper_studio_epaper_category_count"}]))
+        pub.retire("sensor.epaper_category_count")
+        pub.retire("sensor.epaper_category_names")                   # already gone from HA
         run(pub._on_connect())
+        self.assertNotIn("homeassistant/sensor/epaper_panel/epaper_category_names/config", t.messages)
         pub.set("sensor.epaper_flights_overhead", "1", {})
         run(pub.sync())
-        pub.retire("sensor.epaper_category_count")
         self.now[0] += 120
         run(pub.sync())
         self.assertEqual(t.messages["homeassistant/sensor/epaper_panel/epaper_category_count/config"], "")

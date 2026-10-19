@@ -73,6 +73,7 @@ class EntityPublisher:
         self._sent_state: dict[str, tuple] = {}       # object_id -> (state, attrs json)
         self._registered: dict[str, str] = {}         # our unique_id -> entity_id, from the registry
         self._all_registered: set[str] = set()        # every registered entity_id
+        self._registry_ok = False
         self._ready = False
         self._ready_event = asyncio.Event()
         self._lock = asyncio.Lock()
@@ -150,6 +151,12 @@ class EntityPublisher:
         await self.transport.publish(AVAILABILITY, "online")
         await self._load_registry()
         await self._migrate_once()
+        if self._registry_ok:
+            # A retired value Home Assistant no longer has needs no withdrawing.
+            for obj, seen in list(self.last_seen.items()):
+                if seen == 0.0 and f"{UID_PREFIX}{obj}" not in self._registered \
+                        and f"sensor.{obj}" not in self._all_registered:
+                    self.last_seen.pop(obj)
         await self._announce_button()
         self._ready = True
         self.problem = ""
@@ -247,11 +254,13 @@ class EntityPublisher:
     async def _load_registry(self):
         self._registered = {}
         self._all_registered = set()
+        self._registry_ok = False
         try:
             entries = await self.hass.ws({"type": "config/entity_registry/list"})
         except HassError as exc:
             print(f"mqtt: couldn't read the entity registry ({exc}); skipping clean-up", flush=True)
             return
+        self._registry_ok = True
         for e in entries or []:
             self._all_registered.add(e.get("entity_id"))
             if e.get("platform") == "mqtt" and str(e.get("unique_id", "")).startswith(UID_PREFIX):
