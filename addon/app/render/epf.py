@@ -38,7 +38,8 @@ FLAG_ORIENTATION_180 = 0x0008
 FLAG_GEOMETRY = 0x0010          # the reserved header bytes carry an OverlayGeometry
 
 # Category flags (EpfCategory.flags)
-CAT_FLAG_SLEEP = 0x0001         # the quiet-hours sleep screen
+CAT_FLAG_SLEEP = 0x0001         # the sleep screen (always category 0 when present)
+CAT_FLAG_SLEEP_AUTO = 0x0002    # quiet hours: the panel should be asleep now
 
 # Panels whose frame buffer stores each row right-to-left (the CrowPanel
 # driver's mirror_x). Pages are flipped before packing so a straight memcpy

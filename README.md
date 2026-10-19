@@ -59,7 +59,8 @@ Click **`🌙 Quiet`** in the top toolbar (or **Settings → Night / Quiet Hours
 - **On / Off Toggle (`enabled`):** Enable or disable Quiet Hours at any time with one click.
 - **Daily Quiet Window (`start` – `end`):** Set your overnight quiet schedule in `HH:MM` (e.g. `23:30` to `07:00`). Supports both overnight spans (`23:30`–`07:00`) and daytime spans (`09:00`–`17:00`).
 - **Optional Away / Presence Entity (`presence_entity`):** Optionally bind a Home Assistant entity such as `zone.home`, `person.*`, `group.family`, or `input_boolean.sleep_mode`. When its state is `0`, `not_home`, `away`, or `off`, Quiet Hours activate automatically even outside the scheduled clock window.
-- **Sleep screen (`sleep_screen`, on by default):** While quiet hours last, the panel shows large closed eyes and when it wakes ("back at 07:00", or "back when someone’s home" when nobody's home), so you can tell from across the room. Your pages are one turn of the dial away, and after two untouched minutes the panel goes back to sleep. A locked page stays on screen instead, and turning the switch off keeps your pages up all night.
+- **Sleep screen (`sleep_screen`, on by default):** While quiet hours last, the panel sleeps: large closed eyes and when it wakes ("back at 07:00", or "back when someone’s home" when nobody's home), so you can tell from across the room. Any press wakes it, and after two untouched minutes it goes back to sleep. Morning wakes it. A locked page stays on screen instead, and turning the switch off keeps your pages up all night.
+- **Sleep any time:** hold the dial centre for a second, or use the panel's **Sleep** switch in Home Assistant (handy in automations). It sleeps until something wakes it: "press any button to wake".
 - **Allow Interrupt Alerts (`allow_alerts`):** When enabled (default), high-priority **Interrupt (`alert`)** pages will still wake and push to the panel during Quiet Hours.
 - **How It Works Under the Hood:**
   1. When Quiet Hours begin, the server pushes one last update whose frame file is marked quiet, then stops pushing until Quiet Hours end. The wake-up at the end is retried until the panel confirms it.
@@ -145,7 +146,7 @@ The CrowPanel features five discrete physical inputs: a 3-way rocker dial (rotat
 | **Top Button** | Physical Top | `GPIO 1` | `GPIO 2` | **Short Press (<750ms):** Toggle **Category Lock** (`cat_pinned`).<br>**Long Hold (≥750ms):** Toggle **Panel Lock** (`pinned`). |
 | **Rocker Turn Forward** | Right / Clockwise | `GPIO 6` | `GPIO 4` | **In Category Mode:** Advance to next category.<br>**In Sub-Item Mode:** Advance to next sub-item within current category. |
 | **Rocker Turn Backward** | Left / Counter-Clockwise | `GPIO 4` | `GPIO 6` | **In Category Mode:** Return to previous category.<br>**In Sub-Item Mode:** Return to previous sub-item within current category. |
-| **Rocker Center Push** | Push Inward | `GPIO 5` | `GPIO 5` | **Press:** Switch between **categories** and the current category's **items**. A press within 0.4 s of turning the dial is ignored, because the dial tilts as it turns. |
+| **Rocker Center Push** | Push Inward | `GPIO 5` | `GPIO 5` | **Press:** Switch between **categories** and the current category's **items**. A press within 0.4 s of turning the dial is ignored, because the dial tilts as it turns.<br>**Hold (≥1 s):** Put the panel to sleep, or wake it. While it's asleep, any press only wakes it. |
 | **Bottom Button** | Physical Bottom | `GPIO 2` | `GPIO 1` | **Short Press (<750ms):** Jump to **Page 1 (Category 1)**.<br>**Long Hold (≥750ms):** Download new frames now and clear ghosting in the same redraw (one flash). |
 
 ### ESPHome Native Actions (IKEA BILRESA / Zigbee / Matter Remotes)

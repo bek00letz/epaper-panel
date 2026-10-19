@@ -35,23 +35,32 @@ class TestSleepScreen(unittest.IsolatedAsyncioTestCase):
             await server.refresh_frames(None)
         return epf.decode_epf(server.FRAMES.epf_strip)
 
-    async def test_quiet_hours_start_with_the_sleep_screen(self):
+    async def test_quiet_hours_mark_the_sleep_screen_auto(self):
         s = await self.render(True)
-        self.assertTrue(s.categories[0].flags & epf.CAT_FLAG_SLEEP)
-        self.assertEqual(s.categories[0].pill_width, 0, "no footer pill on the sleep screen")
-        self.assertEqual(server.FRAMES.names[0], server.SLEEP_PAGE)
+        first = s.categories[0]
+        self.assertTrue(first.flags & epf.CAT_FLAG_SLEEP and first.flags & epf.CAT_FLAG_SLEEP_AUTO)
+        self.assertEqual(first.pill_width, 0, "no footer pill on the sleep screen")
         self.assertTrue(all(not (c.flags & epf.CAT_FLAG_SLEEP) for c in s.categories[1:]))
         self.assertTrue(s.header.flags & epf.FLAG_QUIET_HOURS)
 
-    async def test_switched_off_or_daytime_means_no_sleep_screen(self):
+    async def test_the_sleep_screen_is_always_there_for_the_dial_centre(self):
+        night_id = (await self.render(True)).pages[0].sub_id
         for kwargs in ({"sleep_screen": False}, {"sleep_screen": True, "quiet": False}):
             s = await self.render(**kwargs)
-            self.assertFalse(any(c.flags & epf.CAT_FLAG_SLEEP for c in s.categories), kwargs)
-            self.assertNotIn(server.SLEEP_PAGE, server.FRAMES.names)
+            self.assertTrue(s.categories[0].flags & epf.CAT_FLAG_SLEEP, kwargs)
+            self.assertFalse(s.categories[0].flags & epf.CAT_FLAG_SLEEP_AUTO, f"{kwargs}: not asleep by itself")
+        self.assertNotEqual(s.pages[0].sub_id, night_id, "different text, different identity: the panel redraws it")
+
+    async def test_the_editor_doesnt_list_it_as_a_page(self):
+        await self.render(True)
+        from aiohttp.test_utils import make_mocked_request
+        body = (await server.status(make_mocked_request("GET", "/api/status"))).text
+        self.assertNotIn(server.SLEEP_PAGE, json.loads(body)["pages"])
 
     def test_wake_text(self):
         self.assertEqual(sleep.wake_text("schedule (23:00–07:00)", "07:00"), "back at 07:00")
         self.assertEqual(sleep.wake_text("away (person.alex: not_home)", "07:00"), "back when someone’s home")
+        self.assertEqual(sleep.MANUAL_TEXT, "press any button to wake")
 
     def test_a_user_page_cannot_be_named_like_the_sleep_screen(self):
         self.assertIsNone(server.PAGE_RE.match(server.SLEEP_PAGE))

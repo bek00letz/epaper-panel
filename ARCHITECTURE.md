@@ -144,14 +144,22 @@ their own caches still stop them hitting a service more often than it allows.
 The editor's preview (and its aircraft list) wait for fresh data, because
 there a person asked.
 
-## The sleep screen
+## Sleeping
 
-During quiet hours (`sleep_screen` on), `build_frames` puts a sleep page
-first (`render/sleep.py`: closed eyes and when it wakes). It has no footer
-pill and carries `CAT_FLAG_SLEEP` in its category record. The firmware jumps
-to it when quiet hours start (one full refresh), and goes back to it after
-120 s untouched. A page or category lock wins over both. Older firmware just
-sees one more page in the rotation.
+The frame file always starts with a sleep page (`render/sleep.py`, flagged
+`CAT_FLAG_SLEEP`, no pill), so the panel can fall asleep instantly and offline.
+The dial never pages onto it, and Home Assistant's `show_page`/`show_category`
+numbers count only your pages.
+
+Asleep is one state in `PanelController`: the sleep page is shown, with no
+rotation, no timed downloads and no redraw unless the sleep page itself
+changes. It's entered by holding the dial centre, the panel's **Sleep**
+switch, or quiet hours (`CAT_FLAG_SLEEP_AUTO`, sent while they last if
+"Sleep screen" is on). Any input first only wakes the panel, back to the page
+it was on, and fetches fresh frames. During quiet hours it goes back to sleep
+after 120 s untouched, and morning wakes it; a manual sleep lasts until
+someone wakes it. A page or category lock wins over quiet hours, and an alert
+wins over everything.
 
 ## Reaching the panel
 

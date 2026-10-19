@@ -11,6 +11,11 @@ part works with older firmware too.
   untouched minutes the panel goes back to sleep. A locked page stays on
   screen all night instead. Turn it off under Quiet Hours ("Sleep screen")
   to keep your pages up overnight.
+- **Sleep any time.** Hold the dial centre for a second to put the panel to
+  sleep ("press any button to wake"), or use the panel's new **Sleep** switch
+  in Home Assistant, for example in an automation. While it's asleep, the first
+  press only wakes it, back to the page you were on. The dial never lands on
+  the sleep screen, and `show_page` numbers are unchanged.
 - **Rendering never waits on outside services.** Flights, sports, racing,
   weather and calendars are now fetched in the background, and pages are
   drawn from what's already there. A slow or broken ESPN, Flightradar24 or

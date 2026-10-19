@@ -37,8 +37,9 @@ constexpr uint32_t FLAG_FORCE_FULL = 0x0004;
 constexpr uint32_t FLAG_ORIENTATION_180 = 0x0008;
 constexpr uint32_t FLAG_GEOMETRY = 0x0010;
 
-constexpr uint16_t CAT_FLAG_SLEEP = 0x0001;  // category 0 is the quiet-hours sleep screen
-constexpr int SLEEP_RETURN_SEC = 120;        // back to the sleep screen after this long untouched
+constexpr uint16_t CAT_FLAG_SLEEP = 0x0001;       // category 0 is the sleep screen
+constexpr uint16_t CAT_FLAG_SLEEP_AUTO = 0x0002;  // ...and quiet hours want the panel asleep
+constexpr int SLEEP_RETURN_SEC = 120;             // quiet hours: back to sleep after this long untouched
 
 enum class FetchResult : uint8_t {
   OK,
@@ -331,6 +332,9 @@ enum class NavAction : uint8_t {
   GOTO_PAGE,        // param: page index
   GOTO_CAT_SUB,     // param: category, param2: item
   CLEAR_GHOSTING,   // full refresh of what's on screen now
+  SLEEP,            // show the sleep screen, stop rotating and redrawing
+  WAKE,
+  SLEEP_TOGGLE,     // the dial centre held
 };
 
 inline const char *nav_name(NavAction a) {
@@ -347,6 +351,9 @@ inline const char *nav_name(NavAction a) {
     case NavAction::GOTO_PAGE: return "go to page";
     case NavAction::GOTO_CAT_SUB: return "go to category";
     case NavAction::CLEAR_GHOSTING: return "clear ghosting";
+    case NavAction::SLEEP: return "sleep";
+    case NavAction::WAKE: return "wake";
+    case NavAction::SLEEP_TOGGLE: return "sleep toggle";
   }
   return "?";
 }
@@ -363,6 +370,18 @@ class PanelController {
 
   void dispatch(NavAction action, int param = 0, int param2 = 0) {
     ESP_LOGI(TAG, "Input: %s (%d, %d)", nav_name(action), param, param2);
+    if (action == NavAction::SLEEP || (action == NavAction::SLEEP_TOGGLE && !sleeping_)) {
+      enter_sleep_(true);
+      return;
+    }
+    if (action == NavAction::WAKE || action == NavAction::SLEEP_TOGGLE) {
+      if (sleeping_) wake_(true);
+      return;
+    }
+    if (sleeping_ && action != NavAction::CLEAR_GHOSTING) {
+      wake_(true);                          // the first press only wakes the panel
+      return;
+    }
     switch (action) {
       case NavAction::NEXT: page_step_(param > 0 ? param : 1); break;
       case NavAction::PREV: page_step_(-(param > 0 ? param : 1)); break;
@@ -376,6 +395,7 @@ class PanelController {
       case NavAction::GOTO_PAGE: show_page_(param); break;
       case NavAction::GOTO_CAT_SUB: show_category_(param, param2); break;
       case NavAction::CLEAR_GHOSTING: redraw_forced_ = true; pending_redraw_ = true; break;
+      default: break;
     }
   }
 
@@ -417,15 +437,14 @@ class PanelController {
       go_(cat_idx_, sub_idx_);
       ESP_LOGI(TAG, "Nav (sub): cat=%d/%d sub=%d/%d (page=%d/%d)", cat_idx_ + 1, cats, sub_idx_ + 1, sz, page_ + 1, page_count_);
     } else {
-      enter_category_((((cat_idx_ + delta) % cats) + cats) % cats);
+      enter_category_(step_category_(cat_idx_, delta));
       ESP_LOGI(TAG, "Nav (cat): cat=%d/%d sub=%d/%d (page=%d/%d)", cat_idx_ + 1, cats, sub_idx_ + 1, size_(cat_idx_), page_ + 1, page_count_);
     }
   }
 
   void category_step_(int delta) {
     touch_();
-    int cats = cats_();
-    enter_category_((((cat_idx_ + delta) % cats) + cats) % cats);
+    enter_category_(step_category_(cat_idx_, delta));
   }
 
   void sub_step_(int delta) {
@@ -472,12 +491,14 @@ class PanelController {
   void reset_home_() {
     touch_();
     sub_mode_ = false;
-    cat_idx_ = sub_idx_ = page_ = 0;
-    update_ids_();
+    sub_idx_ = 0;
+    cat_idx_ = first_cat_();
+    go_(cat_idx_, 0);
   }
 
   void show_page_(int index) {
     touch_();
+    if (has_sleep_) index += 1;             // Home Assistant counts your pages, not the sleep screen
     if (index < 0 || index >= page_count_) return;
     for (int c = (int) offsets_.size() - 1; c >= 0; c--) {
       if (index >= offsets_[c]) {
@@ -492,6 +513,7 @@ class PanelController {
 
   void show_category_(int category, int sub) {
     touch_();
+    if (has_sleep_) category += 1;
     if (category < 0 || category >= cats_()) return;
     int sz = size_(category);
     cat_idx_ = category;
@@ -507,12 +529,11 @@ class PanelController {
   }
 
   bool check_auto_rotate() {
-    // Quiet hours: someone browsed the pages, then left. Go back to sleep.
-    if (quiet_ && has_sleep_ && page_ != 0 && !pinned_ && !cat_pinned_ && user_cool_sec_ >= SLEEP_RETURN_SEC) {
-      go_to_sleep_();
-      ESP_LOGI(TAG, "Untouched for %d s during quiet hours: back to the sleep screen", SLEEP_RETURN_SEC);
-      pending_redraw_ = true;
-      redraw_automatic_ = true;
+    if (sleeping_) return false;
+    // Quiet hours: someone woke the panel, then left. Back to sleep.
+    if (quiet_ && auto_sleep_ && !pinned_ && !cat_pinned_ && user_cool_sec_ >= SLEEP_RETURN_SEC) {
+      ESP_LOGI(TAG, "Untouched for %d s during quiet hours: back to sleep", SLEEP_RETURN_SEC);
+      enter_sleep_(false);
       return true;
     }
     if (quiet_ || pinned_ || user_cool_sec_ < 15) return false;
@@ -525,7 +546,7 @@ class PanelController {
       remember_sub_(cat_idx_, sz);
       go_(cat_idx_, sub_idx_);
     } else {
-      int c = (cat_idx_ + 1) % cats_();
+      int c = step_category_(cat_idx_, 1);
       int csz = size_(c);
       if ((int) sub_pos_.size() <= c) sub_pos_.resize(cats_(), 0);
       int s = csz > 1 ? sub_pos_[c] % csz : 0;
@@ -565,6 +586,7 @@ class PanelController {
     }
     for (const auto &p : s.pages) sub_ids_.push_back(p.sub_id);
     has_sleep_ = !s.categories.empty() && (s.categories[0].flags & CAT_FLAG_SLEEP);
+    auto_sleep_ = has_sleep_ && (s.categories[0].flags & CAT_FLAG_SLEEP_AUTO);
 
     sub_pos_.assign(cat_ids_.size(), 0);
     for (size_t i = 0; i < cat_ids_.size(); i++)
@@ -572,8 +594,9 @@ class PanelController {
         if (old_ids[j] == cat_ids_[i]) { sub_pos_[i] = old_pos[j]; break; }
 
     if (s.header.flags & FLAG_ALERT_INTERRUPT) {
-      // The alert owns the screen. Locks are kept and come back with the
-      // rotation when the alert is over.
+      // The alert owns the screen, even over sleep. Locks are kept and come
+      // back with the rotation when the alert is over.
+      sleeping_ = false;
       cat_idx_ = sub_idx_ = page_ = 0;
       sub_mode_ = false;
       alert_ = true;
@@ -597,23 +620,35 @@ class PanelController {
         pinned_cat_id_ = 0;
       }
       if (!(cur_sub_id_ && find_page_(cur_sub_id_)) && !(cur_cat_id_ && find_cat_(cur_cat_id_))) {
-        if (cat_idx_ < 0 || cat_idx_ >= cats_()) cat_idx_ = 0;
+        if (cat_idx_ < 0 || cat_idx_ >= cats_() || (has_sleep_ && cat_idx_ == 0)) cat_idx_ = first_cat_();
         int sz = size_(cat_idx_);
         if (sz <= 1) { sub_idx_ = 0; sub_mode_ = false; }
         else if (sub_idx_ < 0 || sub_idx_ >= sz) sub_idx_ = sub_pos_[cat_idx_] % sz;
         go_(cat_idx_, sub_idx_);
       }
     }
-    if (has_sleep_ && quiet_ && !was_quiet && !pinned_ && !cat_pinned_) {
-      go_to_sleep_();
-      ESP_LOGI(TAG, "Quiet hours: showing the sleep screen");
-      return;
-    }
     update_ids_();
+
+    uint32_t sleep_id = has_sleep_ && !sub_ids_.empty() ? sub_ids_[0] : 0;
+    if (!has_sleep_ && sleeping_) {
+      sleeping_ = false;                    // no sleep screen in this file: show the pages
+    } else if (auto_sleep_ && quiet_ && !was_quiet && !pinned_ && !cat_pinned_) {
+      ESP_LOGI(TAG, "Quiet hours: going to sleep");
+      enter_sleep_(false);
+    } else if (sleeping_ && !sleep_manual_ && was_quiet && !quiet_) {
+      ESP_LOGI(TAG, "Quiet hours are over: waking up");
+      wake_(false);
+    } else if (sleeping_ && sleep_id == sleep_sub_id_) {
+      // Still asleep and the sleep screen hasn't changed: nothing to redraw.
+      pending_redraw_ = redraw_automatic_ = false;
+      redraw_forced_ = false;
+    }
+    sleep_sub_id_ = sleep_id;
   }
 
   OverlayState overlay_state() const {
     OverlayState o;
+    if (sleeping_) return o;                // nothing drawn over the sleep screen
     int sz = size_(cat_idx_);
     o.cat_pill_w = cat_idx_ < (int) pill_w_.size() ? pill_w_[cat_idx_] : 0;
     o.has_sub = sz > 1;
@@ -623,7 +658,16 @@ class PanelController {
     return o;
   }
 
-  int page() const { return page_; }
+  int page() const { return sleeping_ ? 0 : page_; }
+  bool sleeping() const { return sleeping_; }
+  // Asleep or in quiet hours: the panel doesn't fetch on its own timer.
+  bool resting() const { return quiet_ || sleeping_; }
+  // True once after waking from a sleep that skipped downloads.
+  bool take_wake_fetch() {
+    bool w = wake_fetch_;
+    wake_fetch_ = false;
+    return w;
+  }
   int cat_idx() const { return cat_idx_; }
   int sub_idx() const { return sub_idx_; }
   int page_count() const { return page_count_; }
@@ -656,10 +700,40 @@ class PanelController {
     page_ = (p >= 0 && p < page_count_) ? p : 0;
     update_ids_();
   }
-  void go_to_sleep_() {
-    cat_idx_ = sub_idx_ = page_ = 0;
+  int first_cat_() const { return (has_sleep_ && cats_() > 1) ? 1 : 0; }
+  // Step through categories, never landing on the sleep screen.
+  int step_category_(int from, int delta) const {
+    int cats = cats_(), c = from, n = delta < 0 ? -delta : delta, dir = delta < 0 ? -1 : 1;
+    for (int i = 0; i < n; i++) {
+      c = ((c + dir) % cats + cats) % cats;
+      if (has_sleep_ && c == 0 && cats > 1) c = ((c + dir) % cats + cats) % cats;
+    }
+    return c;
+  }
+  void enter_sleep_(bool manual) {
+    if (!has_sleep_) {
+      ESP_LOGW(TAG, "No sleep screen yet (update the add-on); staying awake");
+      return;
+    }
+    if (!sleeping_) wake_sub_id_ = cur_sub_id_;
+    sleeping_ = true;
+    sleep_manual_ = manual;
     sub_mode_ = false;
+    pending_redraw_ = true;
+    redraw_forced_ = true;                  // one clean full refresh onto the sleep screen
+  }
+  void wake_(bool by_person) {
+    sleeping_ = false;
+    wake_fetch_ = true;
+    if (!(wake_sub_id_ && find_page_(wake_sub_id_)) || (has_sleep_ && cat_idx_ == 0)) {
+      cat_idx_ = first_cat_();
+      sub_idx_ = 0;
+      go_(cat_idx_, 0);
+    }
     update_ids_();
+    if (by_person) touch_();
+    else { pending_redraw_ = true; redraw_automatic_ = true; }
+    ESP_LOGI(TAG, "Awake");
   }
   void enter_category_(int c) {
     cat_idx_ = c;
@@ -705,7 +779,9 @@ class PanelController {
   }
 
   int page_{0}, cat_idx_{0}, sub_idx_{0}, page_count_{1};
-  bool sub_mode_{false}, pinned_{false}, cat_pinned_{false}, quiet_{false}, alert_{false}, has_sleep_{false};
+  bool sub_mode_{false}, pinned_{false}, cat_pinned_{false}, quiet_{false}, alert_{false};
+  bool has_sleep_{false}, auto_sleep_{false}, sleeping_{false}, sleep_manual_{false}, wake_fetch_{false};
+  uint32_t wake_sub_id_{0}, sleep_sub_id_{0};
   uint32_t pinned_cat_id_{0}, pinned_sub_id_{0}, cur_cat_id_{0}, cur_sub_id_{0};
   int rotate_sec_{30}, idle_sec_{0}, user_cool_sec_{999}, fetch_idle_sec_{0};
   bool pending_redraw_{false}, pending_refetch_{false};

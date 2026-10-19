@@ -130,6 +130,20 @@ switch:
     restore_mode: ALWAYS_ON
     internal: true
 
+  # Asleep: the sleep screen, no rotation, no timed downloads. Also set by
+  # holding the dial centre, and by quiet hours.
+  - platform: template
+    name: "Sleep"
+    id: sleep_switch
+    icon: "mdi:sleep"
+    lambda: 'return epf::PanelController::instance().sleeping();'
+    turn_on_action:
+      - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::SLEEP);'
+      - script.execute: redraw
+    turn_off_action:
+      - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::WAKE);'
+      - script.execute: redraw
+
 @DISPLAY_BLOCK@
     lambda: |-
       auto &panel = epf::PanelController::instance();
@@ -167,9 +181,10 @@ binary_sensor:
           epf::PanelController::instance().dispatch(epf::NavAction::PREV);
       - script.execute: redraw
 
-  # Dial centre: press to switch between categories and their items. The dial
-  # tilts as it turns and can press the centre by accident, so a click within
-  # 0.4 s of a turn is ignored.
+  # Dial centre: a press switches between categories and their items; holding
+  # it for a second puts the panel to sleep (or wakes it). The dial tilts as
+  # it turns and can press the centre by accident, so a click within 0.4 s of
+  # a turn is ignored.
   - platform: gpio
     id: key_ok
     internal: true
@@ -177,7 +192,7 @@ binary_sensor:
     filters: [delayed_on: 30ms, delayed_off: 30ms]
     on_click:
       - min_length: 30ms
-        max_length: 5000ms
+        max_length: 700ms
         then:
           - if:
               condition:
@@ -187,6 +202,11 @@ binary_sensor:
                 - script.execute: redraw
               else:
                 - logger.log: "Ignored a centre click right after turning the dial"
+      - min_length: 1000ms
+        max_length: 6000ms
+        then:
+          - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::SLEEP_TOGGLE);'
+          - script.execute: redraw
 
   # Top button: click locks the category, hold locks the page.
   - platform: gpio
@@ -339,8 +359,9 @@ interval:
       - lambda: |-
           epf::FetchResult result;
           auto &client = epf::EpfClient::instance();
-          if (!client.poll(result)) return;
           auto &panel = epf::PanelController::instance();
+          if (panel.take_wake_fetch()) id(refetch).execute();   // just woke: get fresh frames
+          if (!client.poll(result)) return;
           if (result == epf::FetchResult::OK) {
             panel.on_stream_loaded(client.stream());
             id(redraw).execute();
@@ -365,9 +386,9 @@ interval:
           }
           if (panel.check_auto_rotate()) id(redraw).execute();
           else if (panel.idle_clear_due()) id(redraw).execute();
-          // The panel's own timer. During quiet hours it stays asleep until
-          // the add-on wakes it (the add-on retries until that's delivered).
-          if (!panel.quiet_hours_active()) {
+          // The panel's own timer. Asleep or in quiet hours, it waits for
+          // the add-on or a press instead (the add-on retries until delivered).
+          if (!panel.resting()) {
             int every = std::max(30, (int) (id(panel_refresh_interval).state * 60.0f));
             if (panel.fetch_idle_sec() >= every) {
               panel.reset_fetch_idle();

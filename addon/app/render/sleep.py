@@ -11,6 +11,9 @@ import math
 from . import theme as T
 
 
+MANUAL_TEXT = "press any button to wake"
+
+
 def wake_text(reason: str, end: str) -> str:
     if str(reason).startswith("away"):
         return "back when someone’s home"

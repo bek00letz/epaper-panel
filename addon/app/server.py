@@ -2567,21 +2567,24 @@ async def build_frames(session):
                 battery_pct=None, series=series.get(cat_name), orientation=orient, display=display)
             imgs.append(T.orient_for_panel(T.to_1bit(img), orient, display=display))
 
-    # Quiet hours: the sleep screen goes first, so the panel can show it and
-    # the dial still reaches every page. No footer pill on it (width 0).
+    # The sleep screen always goes first, so the panel can fall asleep
+    # instantly (dial centre held, or its Sleep switch) without asking us.
+    # The panel never pages onto it. During quiet hours with the sleep screen
+    # on, it's also marked "auto": the panel goes to sleep by itself.
     cat_flags = [0] * len(cat_offsets)
     qh = spec.get("quiet_hours") or {}
-    if quiet_active and not alert and qh.get("sleep_screen", True):
-        sleep_img = await asyncio.to_thread(
-            sleep.render_sleep_page, sleep.wake_text(quiet_reason, qh.get("end") or "07:00"),
-            orient, display)
+    if not alert:
+        auto = quiet_active and qh.get("sleep_screen", True)
+        text = (sleep.wake_text(quiet_reason, qh.get("end") or "07:00") if quiet_active
+                else sleep.MANUAL_TEXT)
+        sleep_img = await asyncio.to_thread(sleep.render_sleep_page, text, orient, display)
         imgs.insert(0, T.orient_for_panel(T.to_1bit(sleep_img), orient, display=display))
         cat_offsets = [0] + [o + 1 for o in cat_offsets]
         cat_sizes = [1] + cat_sizes
         cat_names = [SLEEP_PAGE] + cat_names
         cat_pill_widths = [0] + cat_pill_widths
-        cat_sub_keys = [[SLEEP_PAGE]] + cat_sub_keys
-        cat_flags = [epf.CAT_FLAG_SLEEP] + cat_flags
+        cat_sub_keys = [[f"{SLEEP_PAGE}:{text}"]] + cat_sub_keys     # new text, new identity: the panel redraws it
+        cat_flags = [epf.CAT_FLAG_SLEEP | (epf.CAT_FLAG_SLEEP_AUTO if auto else 0)] + cat_flags
         live = [SLEEP_PAGE] + list(live)
 
     slice_pngs = [_png(im) for im in imgs]
@@ -2685,7 +2688,8 @@ async def refresh_frames(session):
     print(f"rendered {names} ({len(strip)}B strip, {nxt.cat_count} cats, offsets: {cat_offsets}, sizes: {cat_sizes}, rot: {rot_sec}s, quiet: {quiet_active} [{quiet_reason}])", flush=True)
     await publish_entity(session, "sensor.epaper_panel_last_render", nxt.rendered_at,
                          {"friendly_name": "E-Paper · Last render", "icon": "mdi:clock-check-outline",
-                          "pages_count": len(nxt.names), "active_pages": nxt.names,
+                          "pages_count": len([n for n in nxt.names if n != SLEEP_PAGE]),
+                          "active_pages": [n for n in nxt.names if n != SLEEP_PAGE],
                           "device_class": "timestamp"})
     await publish_category_sensors(session, nxt)
     await sync_entities()
@@ -2976,7 +2980,7 @@ async def status(request):
     m_int = re.search(r"\d+", str(panel_cfg.get("refresh_interval", "5")))
     panel_int = (await LINK.refresh_interval()) or (int(m_int.group(0)) if m_int else 5)
     return web.json_response({
-        "pages": f.names,
+        "pages": [n for n in f.names if n != SLEEP_PAGE],
         "rendered_at": f.rendered_at,
         "strip_bytes": len(f.strip),
         "cat_count": f.cat_count,
