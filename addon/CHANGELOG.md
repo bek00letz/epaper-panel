@@ -1,5 +1,49 @@
 # Changelog
 
+## 0.10.0
+A new editor. Add-on only; no firmware change. The previous editor is still
+there for now: add `?classic=1` to the editor's address.
+
+- **One place for each thing.** The canvas gets the width. Your pages sit in a
+  strip under it, in rotation order: the strip *is* the rotation, so you drag
+  a page to move it. Its head says what's on the panel. With nothing
+  selected, the inspector shows the page: when it shows, how often, and its
+  name, edited in place.
+- **Overlapping items.** A click picks the smallest thing under the pointer,
+  so a card no longer blocks what's inside it. Click again without moving to
+  reach the next one; the stack is outlined and labelled "2 of 3". Layers
+  (front at the top, drag to reorder) and a right-click list of everything
+  under the pointer reach the rest.
+- **A click no longer nudges.** Moving starts after 4 px, and a plain click
+  adds nothing to undo.
+- **Copy, paste, and paste and match between pages.** Pasting keeps the same
+  place and size, across pages, reloads and windows. Paste and match gives
+  the elements already on a page the place, size and text style of what you
+  copied, so two pages can share one layout.
+- **Saved as you go, sent when you say.** Changes are kept in the add-on as
+  you work; Send to panel puts them on the panel. A dot shows what isn't sent
+  yet. If another window sent first, the two merge; you're only asked when
+  both changed the same page.
+- **Dynamic units.** A value can step up through its unit (950 W, then
+  1.23 kW) or convert (m/s to km/h, °C to °F), and a label can follow it
+  ("kW used"), with no templates.
+- **Insert** finds element types and sensors in one search; drag a sensor
+  onto the canvas to place it. **Presets** ask for your sensor.
+- **Now on the panel**: up to date or not, what's rotating, which pages are
+  hidden right now and why, quiet hours, Sleep now, Clear ghosting.
+- **Settings in one place**: the panel (model, mounting, how often it checks,
+  ghost clearing, sleep), installing it, quiet hours, data sources, and the
+  editor itself. Sleep and ghost clearing need firmware 0.9.5 or later.
+- Plain words, sentence case, real dark mode, the system font (no more font
+  downloads, so it works offline), keyboard shortcuts (press ?), VoiceOver
+  labels, and a phone layout for the Home Assistant app.
+- **Fixed:** presets saved from the editor disappeared on the next save.
+  Opening the full strip no longer saves your changes. The rotation's
+  "Manual (buttons only)" choice is gone: it was always saved as 30 s.
+- **API:** `GET /api/layouts` has an `ETag`; `PUT` with `If-Match` answers
+  409 with the current pages when someone saved in between. Without
+  `If-Match` it works as before. New: `/api/draft`, `/api/panel-device`.
+
 ## 0.9.7
 **Reinstall the panel's firmware to get the last two items.** Save Panel
 setup, then Install, as before.

@@ -115,18 +115,45 @@ YAML comes only from `addon/app/firmware/panel.yaml`. After changing it, run
 
 ## Editor design decisions
 
+The editor is `addon/app/web/`: `index.html`, `editor.css` and plain ES
+modules in `app/` (no build step, nothing from the internet, the system font).
+The 0.9 editor stays at `?classic=1` (`web/classic.html`) until the new one has
+proven itself; ask the user before removing it. `docs/editor-redesign/` holds
+the inventory every change is checked against.
+
+- **Four things, one place each.** The panel (status at the head of the page
+  strip, Settings for the rest), the rotation (the page strip *is* the
+  rotation: drag to reorder, a page can sit in it twice), a page (the
+  inspector when nothing is selected), an element (canvas and inspector).
+  Don't give any of them a second home.
 - **The canvas is the task**, so the chrome is deliberately quiet and the panel
   sits in a dark frame that reads as the device. Do not add colour or weight
-  that competes with it.
-- **The right rail is ordered by how often each panel is touched**: properties
-  constantly, palette per element, entities only while hunting one. Do not
-  reorder it alphabetically or by "importance".
-- **No confirmation dialogs.** Deleting a page shows an undo toast instead.
-  There is a 60-deep undo stack; use it rather than asking "are you sure?".
-- **Controls are >=36px tall** (Fitts). Do not shrink them to fit more in.
-- **The legibility chip lives in the Appearance group**, next to the size field
-  it describes. It is the one opinionated thing in the editor and the reason
-  the tool is specific to this panel rather than a generic canvas.
+  that competes with it. The canvas shows only the add-on's own render
+  (`/api/preview`); everything else on it is an outline.
+- **The inspector is ordered by how often things are touched**: what it shows,
+  how it looks, arrange, then "More". Rare settings go under More, not away.
+- **Picking: smallest thing under the pointer first.** Clicking again without
+  moving goes to the next one, with the stack outlined and an "n of m" label.
+  The layer list (front at the top) and the right-click "Under the pointer"
+  list reach everything else.
+- **A drag starts after 4 px (8 on touch).** A click never moves anything and
+  never records an undo step.
+- **Edits save as you go, to the draft (`/api/draft`), never to the panel.**
+  Only Send to panel writes `/api/layouts` (with `If-Match`) and pushes. A
+  409 merges by page; only a page changed in both places asks the user.
+- **No confirmation dialogs.** Deleting shows an undo toast instead. There is
+  a 60-deep undo stack; use it rather than asking "are you sure?".
+- **One floating system** (`app/ui.js`): popover, menu, sheet, toast. No
+  `prompt()`, `alert()` or `confirm()`; names are edited in place.
+- **Hit targets are 44 pt.** Controls are 32 px with a padded hit area under a
+  mouse and 44 px on touch. Don't shrink them to fit more in.
+- **The legibility note sits under the size field** it describes. It is the
+  one opinionated thing in the editor and the reason the tool is specific to
+  this panel rather than a generic canvas.
+- **Text goes in as text.** Build nodes with `h()`; only the icon constants
+  in `util.js` use `innerHTML`. The editor shares an origin with Home Assistant.
+- **Dynamic units live in the renderer** (`render/units.py`), so the canvas and
+  the panel agree. The editor's copy of the tables only draws the example.
 
 ## Inputs
 

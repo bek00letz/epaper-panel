@@ -161,3 +161,21 @@ How often: **C** constant (every session), **O** occasional (some sessions),
   places (canvas toolbar and Panel setup).
 - Presets are built with `makeElements("")`, so every new page from a preset
   arrives unbound, though each preset was written to take an entity.
+
+## Checked against 0.10.0
+
+Every item above is reachable in the new editor. Where things went:
+
+| Items | Now |
+|---|---|
+| 1–4, 29–37 | Page strip (pick, drag to reorder, right-click menu, + for a new page) and the page inspector (name, when it shows, condition, hold, rotation, duplicate, save as preset, delete) |
+| 5, 7, 16 | Toolbar (undo, redo) and the canvas bar (guides, layers, fit or actual size) |
+| 6, 8–10, 12–15, 69–71 | Settings (panel, install or update, quiet hours, data sources, editor) and Now on the panel at the head of the strip |
+| 11 | Send to panel; edits save to a draft as you go |
+| 17–28 | Canvas and keyboard, plus copy, cut, paste, paste and match, select all, layer order shortcuts, any-corner resize |
+| 38–67 | Inspector; 39–40 moved into Insert (types and sensors in one search, drag a sensor onto the canvas) |
+| 68, 72, 73 | New page sheet, See every page (from Now on the panel), icon picker sheet |
+
+Deliberate changes: the resolution and "1-bit" badges and the frame's
+maker logo are gone; the rotation's "Manual (buttons only)" choice is gone
+(the server always saved it as 30 s); the seven browser prompts are gone.
