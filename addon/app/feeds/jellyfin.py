@@ -24,6 +24,101 @@ def human_ago(dt, now=None):
     return dt.strftime("%-d %b").lower()
 
 
+# The parts `detail` is made of, each on its own so a page can show one
+# without the rest. Every item carries the same keys, so a page that steps
+# through the items finds each part on each item (subitems.item_value).
+PARTS = ("kind", "what_is_new", "episode_name", "episode_number", "new_episodes",
+         "added", "added_ago", "year", "runtime", "about")
+EMPTY = {k: "" for k in PARTS} | {"new_episodes": 0}
+UP_NEXT_ROWS = 5
+UP_NEXT_TITLE = 30        # characters; a row then fits the panel's width at 26 px
+
+
+def episode_number(it):
+    """S02E04, or E04 without a season, or "" when Jellyfin has no numbers."""
+    ep, season, end = it.get("IndexNumber"), it.get("ParentIndexNumber"), it.get("IndexNumberEnd")
+    if not isinstance(ep, int):
+        return ""
+    text = f"S{season:02d}E{ep:02d}" if isinstance(season, int) else f"E{ep:02d}"
+    if isinstance(end, int) and end > ep:
+        text += f"–E{end:02d}"
+    return text
+
+
+def runtime(it):
+    """45 min, or 1 h 52 min; "" when Jellyfin doesn't know."""
+    ticks = it.get("RunTimeTicks")
+    if not isinstance(ticks, (int, float)) or ticks <= 0:
+        return ""
+    mins = max(1, round(ticks / 600_000_000))      # 10 million ticks a second
+    h, m = divmod(mins, 60)
+    if not h:
+        return f"{m} min"
+    return f"{h} h {m} min" if m else f"{h} h"
+
+
+def shorten(text, limit):
+    """Cut at a word boundary with an ellipsis, so a row stays one line."""
+    if len(text) <= limit:
+        return text
+    cut = text[:limit].rsplit(" ", 1)[0] if " " in text[:limit] else text[:limit]
+    return cut.rstrip(" ,·:-–") + "…"
+
+
+def up_next(items):
+    """The first few items, one line each, for a text box that wraps."""
+    rows = []
+    for d in items[:UP_NEXT_ROWS]:
+        short = d["episode_number"] or (f"{d['new_episodes']} new" if d["kind"] == "series" else d["kind"])
+        rows.append(f"{shorten(d['title'], UP_NEXT_TITLE)} · {short} · {d['added_ago']}")
+    return "\n".join(rows)
+
+
+def describe(it, now=None):
+    """One item from /Items/Latest as what a page shows, or None without a date."""
+    raw = it.get("DateCreated")
+    if not raw:
+        return None
+    try:
+        added = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if added.tzinfo is None:
+        added = added.replace(tzinfo=timezone.utc)
+    kind = it.get("Type")
+    episode, number, new = "", "", 0
+    year = it.get("ProductionYear") if isinstance(it.get("ProductionYear"), int) else ""
+    length = runtime(it)
+    if kind == "Episode":
+        title, detail = (it.get("SeriesName") or it.get("Name")), it.get("Name")
+        episode, number, new = it.get("Name") or "", episode_number(it), 1
+        kind = "episode"
+    elif kind == "Series":
+        n = it.get("ChildCount") or 0
+        title = it.get("Name")
+        detail = f"{n} new episodes" if n != 1 else "1 new episode"
+        new, kind = n, "series"
+        length = ""                        # the series' typical episode, not what's new
+    else:
+        title, detail = it.get("Name"), "film"
+        kind = "film"
+    ago = human_ago(added, now)
+    # The line under the name on a card: which episode, how many, or the film's year and length.
+    if kind == "episode":
+        about = " · ".join(x for x in (number, episode) if x)
+    elif kind == "series":
+        about = detail
+    else:
+        about = " · ".join(str(x) for x in (year, length) if x)
+    return {"id": str(it.get("Id") or it.get("id") or title or "?"), "title": title or "?",
+            "detail": f"{detail} · {ago}",
+            "kind": kind, "what_is_new": detail or "", "episode_name": episode,
+            "episode_number": number, "new_episodes": new,
+            "added": added.astimezone(timezone.utc).replace(microsecond=0).isoformat(),
+            "added_ago": ago, "year": year, "runtime": length, "about": about,
+            "_added": added}
+
+
 async def _get(session, base, key, path, **params):
     url = f"{base}{path}?" + urllib.parse.urlencode(params)
     timeout = aiohttp.ClientTimeout(total=15)
@@ -60,34 +155,19 @@ async def fetch(src, ctx):
         async with aiohttp.ClientSession() as s:
             items = await _fetch_items(s, src, base, key)
 
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
-    out = []
-    for it in items:
-        raw = it.get("DateCreated")
-        if not raw:
-            continue
-        try:
-            added = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-        except ValueError:
-            continue
-        if added < cutoff:
-            continue
-        kind = it.get("Type")
-        if kind == "Episode":
-            title, detail = (it.get("SeriesName") or it.get("Name")), it.get("Name")
-        elif kind == "Series":
-            n = it.get("ChildCount") or 0
-            title = it.get("Name")
-            detail = f"{n} new episodes" if n != 1 else "1 new episode"
-        else:
-            title, detail = it.get("Name"), "film"
-        out.append({"id": str(it.get("Id") or it.get("id") or title or "?"), "title": title or "?", "detail": f"{detail} · {human_ago(added)}"})
+    now = datetime.now(timezone.utc)
+    cutoff = now - timedelta(days=days)
+    out = [d for d in (describe(it, now) for it in items) if d and d["_added"] >= cutoff]
+    for d in out:
+        del d["_added"]
 
     name = src["name"]
     top = out[0] if out else None
     return [
         (f"sensor.epaper_{name}", top["title"] if top else "nothing new",
          {"detail": top["detail"] if top else "", "count": len(out),
+          **{k: (top[k] if top else EMPTY[k]) for k in PARTS},
+          "up_next": up_next(out),
           "titles": [i["title"] for i in out],
           "items": out[:10],
           "friendly_name": src.get("friendly_name") or "Next to watch",

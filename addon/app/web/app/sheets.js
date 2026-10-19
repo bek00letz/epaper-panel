@@ -16,6 +16,12 @@ const thumbImg = (app, key, page) => {
 };
 
 /* ---------- a new page ---------- */
+// Which sensors a preset can show. Most ask for a kind of entity; the
+// Jellyfin ones want a Jellyfin source's own sensor (the server marks them).
+const fits = (p, e) => (p.asks === "jellyfin" ? e.feed === "jellyfin" : e.entity_id.startsWith(p.asks + "."));
+const candidates = (app, p) => app.ents.filter((e) => fits(p, e));
+const guess = (app, p) => (p.asks === "jellyfin" ? (candidates(app, p)[0] || {}).entity_id || "" : "");
+
 export function openPresets(app) {
   const close = sheet("New page", (node, close) => {
     const body = h("div", { class: "sheet-body" });
@@ -28,8 +34,11 @@ export function openPresets(app) {
         app.doc.spec.custom_presets.splice(k, 1); app.doc.commit(); close();
         toast(`Deleted the preset ${cp.title || cp.name}.`, { label: "Undo", run: () => app.doc.undo() });
       } }, icon("close", "sm")))));
-    PRESETS.forEach((p) => grid.append(card("preset:" + p.id, { elements: p.makeElements("") }, p.title, p.desc, () => {
-      if (p.asks) step2(app, node, close, p); else { close(); addFromPreset(app, p, ""); }
+    PRESETS.forEach((p) => grid.append(card("preset:" + p.id, { elements: p.makeElements(guess(app, p)) }, p.title, p.desc, () => {
+      // One Jellyfin source is the answer already; don't ask.
+      const only = p.asks === "jellyfin" && candidates(app, p).length === 1;
+      if (only) { close(); addFromPreset(app, p, guess(app, p)); }
+      else if (p.asks) step2(app, node, close, p); else { close(); addFromPreset(app, p, ""); }
     })));
     if ((app.doc.spec.custom_presets || []).length) body.append(h("p", { class: "fnote", text: "Yours first, then the built-in ones." }));
     body.append(grid);
@@ -49,11 +58,12 @@ function step2(app, node, close, p) {
   const drawPreview = () => preview.replaceChildren(thumbImg(app, "preset:" + p.id + ":" + chosen, { elements: p.makeElements(chosen) }));
   const draw = () => {
     const s = q.value.toLowerCase();
-    const found = app.ents.filter((e) => (s ? (e.entity_id.includes(s) || (e.name || "").toLowerCase().includes(s)) : e.entity_id.startsWith(p.asks + ".")));
+    const found = app.ents.filter((e) => (s ? (e.entity_id.includes(s) || (e.name || "").toLowerCase().includes(s)) : fits(p, e)));
     list.replaceChildren(...found.slice(0, 80).map((e) => h("button", { class: "opt" + (chosen === e.entity_id ? " active" : ""), role: "option", "aria-selected": String(chosen === e.entity_id),
       onclick: () => { chosen = e.entity_id; add.disabled = false; draw(); drawPreview(); } },
       h("span", { class: "otext" }, h("span", { class: "o1", text: e.name || e.entity_id }), h("span", { class: "o2", text: e.entity_id })), h("span", { class: "ov", text: `${e.state}${e.unit ? " " + e.unit : ""}` }))));
-    if (!found.length) list.append(h("p", { class: "empty-note", text: s ? "Nothing matches. Try part of the name." : "No sensors of this kind. Search for one, or skip." }));
+    if (!found.length) list.append(h("p", { class: "empty-note", text: s ? "Nothing matches. Try part of the name."
+      : p.asks === "jellyfin" ? "No Jellyfin source yet. Add one in Settings, under Data sources, or skip." : "No sensors of this kind. Search for one, or skip." }));
   };
   q.addEventListener("input", draw);
   const body = h("div", { class: "sheet-body split" },
@@ -68,6 +78,7 @@ function addFromPreset(app, p, ent) {
   const els = p.makeElements(ent);
   const page = { tier: p.tier || "rotate", elements: els };
   if (p.show_if) page.show_if = p.show_if;
+  if (p.showIf) page.show_if = p.showIf(ent);
   if (page.tier === "when") syncDynamicGridShowIf(page);
   app.addPage(p.id, page);
 }

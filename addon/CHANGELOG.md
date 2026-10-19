@@ -6,6 +6,30 @@ Add-on only; no firmware change.
 - **A name and a face.** The add-on is now called e-Paper Panel, "e-Paper"
   in the sidebar, and has its own icon and logo: the panel in its frame,
   showing a reading. The editor's tab icon matches.
+- **Three Jellyfin screens in New page.** "New to watch" is the page you
+  know. "Episode card" shows one new thing at a time: its name, which
+  episode (or a film's year and length), and when it arrived. "Up next" puts
+  everything new on one screen, a line each. With one Jellyfin source they
+  use it straight away; with several, you pick.
+- **Jellyfin's details on their own.** A Jellyfin source still has `detail`
+  ("2 new episodes · yesterday"), unchanged, and now also each part of it:
+  `episode_name`, `episode_number` (S02E04), `new_episodes` (a number),
+  `what_is_new` (the episode name, "2 new episodes" or "film"), `kind`
+  (episode, series or film), `added_ago` ("yesterday") and `added` (the date
+  and time it arrived). Also new: `year`, `runtime` ("1 h 52 min"), `about`
+  (the episode card's second line) and `up_next` (the first five, a line
+  each). Pick them under "One of its details".
+- **Pages that step through what's new** now show each item's own value for
+  any of these, not the first item's on every step. Replacements you set on
+  `detail` now apply on every step too, not just the first.
+- **A page that shows only a whole-list detail** (`up_next`, `count`,
+  `titles`) is one screen, instead of the same screen once per new item.
+- **A new README**, with screenshots: what it's good for, where it can sit,
+  and that it's meant for every CrowPanel.
+- **Fixed:** with the page strip down the side, the panel's status and New
+  page sat on top of each other. The status line no longer gets cut off,
+  Duplicate has its own icon, and the history of a sparkline or bar chart
+  can't be set past the week the add-on actually reads.
 
 ## 0.10.0
 A new editor. Add-on only; no firmware change. The previous editor is still

@@ -430,7 +430,10 @@ async def build_frames(session):
                         or (bool(top_title) and cur_val == top_title)
                     )
 
-                    if is_detail:
+                    own = subitems.item_value(el, feed_entity, item_data)
+                    if own is not None:
+                        cloned_vals[el_idx] = own
+                    elif is_detail:
                         cloned_vals[el_idx] = item_data.get("detail", "")
                         if "value" in el_c and "{{" in str(el_c["value"]):
                             el_c["value"] = ""

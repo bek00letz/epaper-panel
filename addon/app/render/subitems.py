@@ -19,9 +19,13 @@ from __future__ import annotations
 
 from typing import Any
 try:
-    from . import stripmeta
+    from . import binding, stripmeta
 except (ImportError, ValueError):
-    from render import stripmeta
+    from render import binding, stripmeta
+
+# A feed's attributes that speak for all of its items at once. A page that
+# shows only these is one screen, not one per item.
+WHOLE_FEED = ("up_next", "count", "titles", "items")
 
 
 def derive_item_key(item: Any, fallback_index: int) -> str:
@@ -44,6 +48,23 @@ def derive_item_key(item: Any, fallback_index: int) -> str:
     elif isinstance(item, str) and item.strip():
         return item.strip()[:60]
     return str(fallback_index)
+
+
+def item_value(el: dict, feed_entity: str | None, item: Any) -> str | None:
+    """What an attribute binding shows on the slice for one feed item.
+
+    A feed's items carry the same parts as its sensor's attributes (Jellyfin's
+    `episode_name`, `added_ago`, ...), so on each slice the binding reads that
+    item's own value, with the element's replacements applied. Returns None
+    when the element doesn't bind to one of the item's parts.
+    """
+    if not feed_entity or not isinstance(item, dict) or el.get("show") != "attribute":
+        return None
+    if str(el.get("entity", "")).strip() != feed_entity:
+        return None
+    if el.get("attribute") not in item:
+        return None
+    return binding.local_value(el, {feed_entity: {"attributes": item}})
 
 
 def inspect_category_subitems(
@@ -90,6 +111,8 @@ def inspect_category_subitems(
             if not isinstance(el, dict):
                 continue
             ent = str(el.get("entity", ""))
+            if el.get("show") == "attribute" and el.get("attribute") in WHOLE_FEED:
+                continue
             if ent.startswith("sensor.epaper_") and not ent.endswith("_count") and not ent.startswith("sensor.epaper_category_") and not ent.startswith("sensor.epaper_panel_"):
                 f_items = feed_items_cache.get(ent)
                 if f_items and isinstance(f_items, list) and len(f_items) > 1:

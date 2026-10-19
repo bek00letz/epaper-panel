@@ -467,8 +467,14 @@ export const PRESET_ICONS = {
   flight_tracker: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3c-1-.5-3 0-4.5 1.5L13 8 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>`,
   flight_radar: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a10 10 0 1 0 10 10"/><path d="m12 12 5-5"/><circle cx="12" cy="12" r="2"/></svg>`,
   sports_racing: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" y1="22" x2="4" y2="15"/></svg>`,
+  watch: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 22h8M12 18v4"/><path d="m10 8 5 3-5 3z"/></svg>`,
+  episode: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 22h8M12 18v4"/><path d="m10 8 5 3-5 3z"/></svg>`,
+  up_next: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="14" rx="2"/><path d="M8 22h8M12 18v4"/><path d="m10 8 5 3-5 3z"/></svg>`,
   sports_match: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24M14.83 9.17l4.24-4.24M14.83 14.83l4.24 4.24M9.17 14.83l-4.24 4.24"/></svg>`
 };
+
+// The sensor a Jellyfin source makes; "watch" is the name it's seeded with.
+const watchEnt = (ent) => ent || "sensor.epaper_watch";
 
 export const PRESETS = [
   {
@@ -563,6 +569,45 @@ export const PRESETS = [
         auto_window: true,
         show_border: true
       }
+    ]
+  },
+  {
+    id: "watch",
+    title: "New to watch",
+    desc: "The newest thing you haven't watched, and how much is new. Steps through each one. Only shows while there's something new.",
+    asks: "jellyfin",
+    tier: "when",
+    showIf: (ent) => `{{ states('${watchEnt(ent)}_count') | int(0) > 0 }}`,
+    makeElements: (ent) => [
+      { type: "text", value: "new to watch", size: 26, bold: false, x: 40, y: 28, w: 300, h: 36, align: "left" },
+      { type: "text", entity: watchEnt(ent), show: "attribute", attribute: "detail", size: 26, bold: false, x: 452, y: 28, w: 300, h: 36, align: "right" },
+      { type: "text", entity: watchEnt(ent), x: 40, y: 74, w: 712, h: 150, align: "left" }
+    ]
+  },
+  {
+    id: "episode",
+    title: "Episode card",
+    desc: "One new thing at a time: its name, which episode (or a film's year and length), and when it arrived.",
+    asks: "jellyfin",
+    tier: "when",
+    showIf: (ent) => `{{ states('${watchEnt(ent)}_count') | int(0) > 0 }}`,
+    makeElements: (ent) => [
+      { type: "text", entity: watchEnt(ent), x: 40, y: 22, w: 712, h: 96, align: "left" },
+      { type: "text", entity: watchEnt(ent), show: "attribute", attribute: "about", size: 34, bold: false, x: 40, y: 128, w: 712, h: 46, align: "left" },
+      { type: "text", entity: watchEnt(ent), show: "attribute", attribute: "added_ago", prefix: "added ", size: 26, bold: false, x: 40, y: 188, w: 420, h: 36, align: "left" }
+    ]
+  },
+  {
+    id: "up_next",
+    title: "Up next",
+    desc: "Everything new on one screen: each name, its episode or count, and when it arrived.",
+    asks: "jellyfin",
+    tier: "when",
+    showIf: (ent) => `{{ states('${watchEnt(ent)}_count') | int(0) > 0 }}`,
+    makeElements: (ent) => [
+      { type: "text", value: "up next", size: 26, bold: false, x: 40, y: 18, w: 300, h: 34, align: "left" },
+      { type: "text", entity: watchEnt(ent), show: "attribute", attribute: "count", suffix: " new", size: 26, bold: false, x: 452, y: 18, w: 300, h: 34, align: "right" },
+      { type: "text", entity: watchEnt(ent), show: "attribute", attribute: "up_next", wrap: true, size: 26, bold: false, x: 40, y: 68, w: 712, h: 160, align: "left" }
     ]
   },
   {
