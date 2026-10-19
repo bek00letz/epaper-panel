@@ -1,39 +1,36 @@
 """The quiet-hours sleep screen in the frame file."""
 import json
-import os
-import sys
 import unittest
-from pathlib import Path
 from unittest import mock
 
-os.environ.setdefault("DATA_DIR", "/tmp/epaper-data")
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "addon" / "app"))
-
-import server  # noqa: E402
-from render import epf, sleep  # noqa: E402
+import support
+import config
+import frames
+import layouts_store
+import runtime
+import web
+from render import epf, sleep
 
 
 class TestSleepScreen(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        server.DATA_DIR = Path(os.environ["DATA_DIR"])
-        server.LAYOUTS_PATH = server.DATA_DIR / "layouts.json"
-        server.PANEL_SETUP_PATH = server.DATA_DIR / "panel_setup.json"
-        server.DATA_DIR.mkdir(parents=True, exist_ok=True)
-        self._saved = server.LAYOUTS_PATH.read_text() if server.LAYOUTS_PATH.exists() else None
+        support.use_test_data_dir()
+        path = config.layouts_path()
+        self._saved = path.read_text() if path.exists() else None
 
     async def asyncTearDown(self):
         if self._saved is None:
-            server.LAYOUTS_PATH.unlink(missing_ok=True)
+            config.layouts_path().unlink(missing_ok=True)
         else:
-            server.LAYOUTS_PATH.write_text(self._saved)
+            config.layouts_path().write_text(self._saved)
 
     async def render(self, sleep_screen, quiet=True, reason="schedule (23:00–07:00)"):
-        spec = json.loads(server.DEFAULTS_PATH.read_text())
+        spec = json.loads(config.DEFAULTS_PATH.read_text())
         spec["quiet_hours"] = {"enabled": True, "start": "23:00", "end": "07:00", "sleep_screen": sleep_screen}
-        server.save_layouts(server.sanitize_layouts(spec))
-        with mock.patch.object(server, "evaluate_quiet_hours", mock.AsyncMock(return_value=(quiet, reason))):
-            await server.refresh_frames(None)
-        return epf.decode_epf(server.FRAMES.epf_strip)
+        layouts_store.save_layouts(layouts_store.sanitize_layouts(spec))
+        with mock.patch.object(frames, "evaluate_quiet_hours", mock.AsyncMock(return_value=(quiet, reason))):
+            await frames.refresh_frames(None)
+        return epf.decode_epf(runtime.FRAMES.epf_strip)
 
     async def test_quiet_hours_mark_the_sleep_screen_auto(self):
         s = await self.render(True)
@@ -54,8 +51,8 @@ class TestSleepScreen(unittest.IsolatedAsyncioTestCase):
     async def test_the_editor_doesnt_list_it_as_a_page(self):
         await self.render(True)
         from aiohttp.test_utils import make_mocked_request
-        body = (await server.status(make_mocked_request("GET", "/api/status"))).text
-        self.assertNotIn(server.SLEEP_PAGE, json.loads(body)["pages"])
+        body = (await web.status(make_mocked_request("GET", "/api/status"))).text
+        self.assertNotIn(config.SLEEP_PAGE, json.loads(body)["pages"])
 
     def test_wake_text(self):
         self.assertEqual(sleep.wake_text("schedule (23:00–07:00)", "07:00"), "back at 07:00")
@@ -63,7 +60,7 @@ class TestSleepScreen(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sleep.MANUAL_TEXT, "press any button to wake")
 
     def test_a_user_page_cannot_be_named_like_the_sleep_screen(self):
-        self.assertIsNone(server.PAGE_RE.match(server.SLEEP_PAGE))
+        self.assertIsNone(config.PAGE_RE.match(config.SLEEP_PAGE))
 
 
 if __name__ == "__main__":

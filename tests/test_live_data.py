@@ -86,12 +86,13 @@ class TestLiveData(unittest.IsolatedAsyncioTestCase):
 
 
 class TestServerRendersWithoutWaiting(unittest.IsolatedAsyncioTestCase):
-    async def test_flight_reads_go_through_the_store(self):
-        import server
-        self.assertTrue(hasattr(server.fetch_overhead_aircraft, "direct"))
-        for name in ("fetch_weather_forecast", "fetch_calendar_events", "fetch_racing_data",
-                     "compute_sports_active_window", "compute_racing_active_window", "fetch_sports_match"):
-            self.assertTrue(hasattr(getattr(server, name), "direct"), name)
+    async def test_every_outside_fetcher_goes_through_the_store(self):
+        from sources import flights, ha_services, racing, sports
+        for mod, name in ((flights, "fetch_overhead_aircraft"), (ha_services, "fetch_weather_forecast"),
+                          (ha_services, "fetch_calendar_events"), (racing, "fetch_racing_data"),
+                          (racing, "compute_racing_active_window"), (sports, "compute_sports_active_window"),
+                          (sports, "fetch_sports_match")):
+            self.assertTrue(hasattr(getattr(mod, name), "direct"), name)
 
 
 if __name__ == "__main__":

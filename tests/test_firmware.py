@@ -17,13 +17,13 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-os.environ.setdefault("DATA_DIR", "/tmp/epaper-data")
-sys.path.insert(0, str(ROOT / "addon" / "app"))
+sys.path.insert(0, str(ROOT / "tests"))
 
+import support  # noqa: E402,F401
 from PIL import Image  # noqa: E402
 
 import firmware_gen  # noqa: E402
-import server  # noqa: E402
+from frames import panel_geometry  # noqa: E402
 from render import epf, theme as T  # noqa: E402
 
 DISPLAY = "crowpanel_579"
@@ -75,7 +75,7 @@ class TestGeometry(unittest.TestCase):
     def test_server_mapping_matches_its_own_pipeline(self):
         for q, deg in enumerate((0, 90, 180, 270)):
             cw, ch = T.canvas_dims(deg, display=DISPLAY)
-            geo = server.panel_geometry(T.footer_geometry(clock=CLOCK, orientation=deg, display=DISPLAY), deg, DISPLAY)
+            geo = panel_geometry(T.footer_geometry(clock=CLOCK, orientation=deg, display=DISPLAY), deg, DISPLAY)
             pts = [(0, 0), (cw - 1, 0), (0, ch - 1), (cw - 1, ch - 1), (cw // 3, ch // 5)]
             self.assertEqual([epf.to_physical(geo, x, y) for x, y in pts], physical_of(pts, deg), deg)
 
@@ -89,7 +89,7 @@ class TestGeometry(unittest.TestCase):
 
     def test_geometry_roundtrips_through_the_file(self):
         img, fg = footer_page(90)
-        geo = server.panel_geometry(fg, 90, DISPLAY)
+        geo = panel_geometry(fg, 90, DISPLAY)
         data = epf.encode_epf([pipeline(img, 90)], [1], [0], [1], [fg["cat_w"]], [7], display_model=DISPLAY,
                               geometry=geo)
         self.assertEqual(epf.decode_epf(data).geometry, geo)
@@ -102,7 +102,7 @@ class TestFirmwareCore(unittest.TestCase):
             tmp = Path(tmp)
             for q, deg in enumerate((0, 90, 180, 270)):
                 img, fg = footer_page(deg)
-                geo = server.panel_geometry(fg, deg, DISPLAY)
+                geo = panel_geometry(fg, deg, DISPLAY)
                 (tmp / f"orient{q}.epf").write_bytes(epf.encode_epf(
                     [pipeline(img, deg)], [11], [0], [1], [fg["cat_w"]], [21], display_model=DISPLAY,
                     orientation_180=(deg == 180), geometry=geo))

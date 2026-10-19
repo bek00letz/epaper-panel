@@ -1,7 +1,8 @@
 """Unit tests for the .epf binary frame protocol."""
 import unittest
 from PIL import Image, ImageDraw
-from addon.app.render import epf
+import support  # noqa: F401
+from render import epf
 
 
 class TestEpfProtocol(unittest.TestCase):

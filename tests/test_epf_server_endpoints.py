@@ -1,32 +1,25 @@
-"""Integration tests for .epf binary endpoints in server.py without network sockets."""
-import os
-import tempfile
-from pathlib import Path
-
-# Ensure DATA_DIR is a writable local directory before server setup
-if "DATA_DIR" not in os.environ:
-    os.environ["DATA_DIR"] = "/tmp/epaper-data"
-
+"""The .epf endpoints, without network sockets."""
 import unittest
+
 from aiohttp import web
 from aiohttp.test_utils import make_mocked_request
-from addon.app import server
-from addon.app.render import epf
 
-server.DATA_DIR = Path(os.environ["DATA_DIR"])
-server.LAYOUTS_PATH = server.DATA_DIR / "layouts.json"
-server.PANEL_SETUP_PATH = server.DATA_DIR / "panel_setup.json"
-server.DATA_DIR.mkdir(parents=True, exist_ok=True)
+import support
+import frames
+import web as webapp
+from render import epf
+
+support.use_test_data_dir()
 
 
 class TestEpfServerEndpoints(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         # Trigger an in-memory frame refresh
-        await server.refresh_frames(None)
+        await frames.refresh_frames(None)
 
     async def test_frames_epf_endpoint_and_etag(self):
         req = make_mocked_request("GET", "/frames.epf")
-        resp = await server.frames_epf(req)
+        resp = await webapp.frames_epf(req)
 
         self.assertEqual(resp.status, 200)
         self.assertEqual(resp.headers.get("Content-Type"), "application/octet-stream")
@@ -47,11 +40,11 @@ class TestEpfServerEndpoints(unittest.IsolatedAsyncioTestCase):
         # Test Conditional GET (304 Not Modified)
         req_304 = make_mocked_request("GET", "/frames.epf", headers={"If-None-Match": etag})
         with self.assertRaises(web.HTTPNotModified):
-            await server.frames_epf(req_304)
+            await webapp.frames_epf(req_304)
 
     async def test_single_frame_epf_endpoint(self):
         req = make_mocked_request("GET", "/frame.epf?page=0")
-        resp = await server.frame_epf(req)
+        resp = await webapp.frame_epf(req)
 
         self.assertEqual(resp.status, 200)
         self.assertEqual(resp.headers.get("Content-Type"), "application/octet-stream")
@@ -64,7 +57,7 @@ class TestEpfServerEndpoints(unittest.IsolatedAsyncioTestCase):
         etag = resp.headers.get("ETag")
         req_304 = make_mocked_request("GET", "/frame.epf?page=0", headers={"If-None-Match": etag})
         with self.assertRaises(web.HTTPNotModified):
-            await server.frame_epf(req_304)
+            await webapp.frame_epf(req_304)
 
 
 if __name__ == "__main__":
