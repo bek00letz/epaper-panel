@@ -1,0 +1,162 @@
+// The page strip under the canvas. It is the rotation: tiles in the order the
+// panel shows them, a page twice if it's in twice, dragged to reorder. Pages
+// left out of the rotation and alert pages follow, set apart. At its head,
+// the panel's status, which opens "Now on the panel".
+
+import { h, icon, api, pageTitle } from "./util.js";
+import { describe, parseShowIf, evaluate } from "./conditions.js";
+
+/* Thumbnails come from the same renderer as everything else, one at a time,
+   cached by what the page contains. */
+const thumbCache = new Map();
+let queue = [], running = false;
+export function thumbnail(app, name, img, override) {
+  const page = override || app.doc.spec.pages[name];
+  if (!page) return;
+  const key = JSON.stringify([page, app.doc.spec.orientation, app.doc.spec.display, name]);
+  const hit = thumbCache.get(key);
+  if (hit) { img.src = hit; img.classList.add("ready"); return; }
+  queue = queue.filter((q) => q.img.isConnected && q.img !== img);
+  queue.push({ key, page, name, img });
+  pump(app);
+}
+async function pump(app) {
+  if (running) return;
+  running = true;
+  while (queue.length) {
+    const job = queue.shift();
+    if (!job.img.isConnected) continue;
+    try {
+      const r = await api("api/preview", { method: "POST", raw: true, body: { page: job.page, label: job.name.replace(/^preset:/, ""), orientation: Number(app.doc.spec.orientation || 0), distance: 0, display: app.doc.spec.display } });
+      const url = URL.createObjectURL(await r.blob());
+      thumbCache.set(job.key, url);
+      if (thumbCache.size > 80) { const [k, u] = thumbCache.entries().next().value; URL.revokeObjectURL(u); thumbCache.delete(k); }
+      document.querySelectorAll(`img[data-thumb="${CSS.escape(job.name)}"]`).forEach((im) => { im.src = url; im.classList.add("ready"); });
+    } catch (_) { /* the tile keeps its blank paper */ }
+  }
+  running = false;
+}
+
+export function statusSummary(app) {
+  const s = app.status || {}, doc = app.doc;
+  const liveCount = (s.pages || []).length;
+  let tone = "ok", line1 = "Up to date";
+  if (doc.saving === "error") { tone = "bad"; line1 = "Changes not saved"; }
+  else if (app.sending) { tone = "wait"; line1 = "Sending…"; }
+  else if (doc.dirty) { tone = "wait"; line1 = "Not sent yet"; }
+  else if (s.error) { tone = "bad"; line1 = "Page didn't render"; }
+  else if (s.panel_link?.pending_refresh) { tone = "wait"; line1 = "Panel not updated yet"; }
+  if (s.active_alert) line1 = doc.dirty ? line1 : "Alert showing";
+  if (app.device?.sleep && !doc.dirty) line1 = "Asleep";
+  const line2 = !s.pages ? "Checking the panel…" : liveCount ? `${liveCount} page${liveCount === 1 ? "" : "s"} rotating · ${app.doc.live.rotate_seconds || 30} s` : "No pages rotating";
+  return { tone, line1, line2 };
+}
+
+export function renderStrip(app) {
+  const doc = app.doc, spec = doc.spec;
+  const strip = h("div", { class: "strip" });
+  const { tone, line1, line2 } = statusSummary(app);
+  const head = h("button", { class: "stathead", "aria-label": `Now on the panel: ${line1}. ${line2}`, "aria-haspopup": "dialog" },
+    h("span", { class: "l1" }, h("span", { class: "led " + tone }), h("span", { text: line1 })), h("span", { class: "l2", text: line2 }));
+  head.addEventListener("click", () => app.openStatus(head));
+  strip.append(head);
+
+  const list = h("div", { class: "tiles", role: "listbox", "aria-label": "Rotation. Drag to reorder; Alt with an arrow key moves the focused page", "aria-orientation": "horizontal" });
+  const seen = new Set();
+  const slots = spec.rotation.map((n, i) => {
+    const again = seen.has(n); seen.add(n);
+    return tile(app, n, { again, slot: i });
+  }).filter(Boolean);
+  slots.forEach((t) => list.append(t));
+  reorderable(list, slots, (from, to) => {
+    const r = spec.rotation; const [x] = r.splice(from, 1); r.splice(to > from ? to - 1 : to, 0, x);
+    doc.commit();
+    app.say(`Moved ${pageTitle(x)} to place ${Math.min(to > from ? to : to + 1, r.length)} of ${r.length}.`);
+    requestAnimationFrame(() => { const t = app.el.strip.querySelectorAll(".tiles .tile")[to > from ? to - 1 : to]; if (t) t.focus(); });
+  }, (i) => doc.openPage(spec.rotation[i]));
+  list.append(h("button", { class: "addtile", "aria-label": "New page", title: "New page", onclick: () => app.openPresets() }, icon("plus")));
+
+  const out = Object.keys(spec.pages).filter((n) => !spec.rotation.includes(n) && spec.pages[n].tier !== "alert");
+  const alerts = Object.keys(spec.pages).filter((n) => spec.pages[n].tier === "alert");
+  if (out.length) {
+    list.append(h("span", { class: "groupsep", role: "presentation" }), h("span", { class: "grouplab", text: "Not in rotation" }));
+    out.forEach((n) => { const t = tile(app, n, { out: true }); t.addEventListener("click", () => doc.openPage(n)); list.append(t); });
+  }
+  if (alerts.length) {
+    list.append(h("span", { class: "groupsep", role: "presentation" }), h("span", { class: "grouplab", text: "Alerts" }));
+    alerts.forEach((n) => { const t = tile(app, n, {}); t.addEventListener("click", () => doc.openPage(n)); list.append(t); });
+  }
+  strip.append(list);
+  return strip;
+}
+
+function tile(app, n, { again, out }) {
+  const doc = app.doc, p = doc.spec.pages[n];
+  if (!p) return null;
+  const live = (app.status?.pages || []).includes(n);
+  let sub = "Shows always", badge = null, dim = !!again || !!out;
+  if (p.tier === "when") {
+    const parsed = parseShowIf(p.show_if);
+    const holds = evaluate(parsed, app.entMap);
+    const showing = holds === null ? live : holds;
+    sub = showing ? "Showing now" : "Hidden now";
+    badge = h("span", { class: "badge when", text: "when" });
+    if (!showing) dim = true;
+  }
+  if (p.tier === "alert") { sub = `Alert · holds ${p.hold_minutes || 10} min`; badge = h("span", { class: "badge alert", text: "alert" }); }
+  if (again) sub = "Again";
+  if (out) sub = "Not in rotation";
+  const img = h("img", { class: "thumb", alt: "", "data-thumb": n, draggable: "false" });
+  const t = h("button", { class: "tile" + (dim ? " dim" : ""), role: "option", "aria-selected": String(n === doc.cur && !again), "aria-current": n === doc.cur && !again ? "page" : null,
+    "aria-label": `${pageTitle(n)}. ${sub}${p.tier === "when" ? ". " + describe(p.show_if, app.entMap).text : ""}` },
+    h("span", { class: "thumbwrap", style: { aspectRatio: `${app.geometry().W} / ${app.geometry().H}` } }, img),
+    h("span", { class: "tname" }, h("span", { class: "tn", text: pageTitle(n) }), badge), h("span", { class: "tsub", text: sub }));
+  t.addEventListener("contextmenu", (e) => { e.preventDefault(); app.openPageMenu(e, n); });
+  requestAnimationFrame(() => thumbnail(app, n, img));
+  return t;
+}
+
+/* Drag to reorder with an insertion mark; a plain click opens. Alt+arrows move. */
+function reorderable(list, items, onMove, onOpen) {
+  items.forEach((it, idx) => {
+    it.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      const start = { x: e.clientX, y: e.clientY }, thr = e.pointerType === "touch" ? 10 : 4;
+      let drag = false, target = idx, mark = null;
+      const rects = items.map((x) => x.getBoundingClientRect());
+      try { it.setPointerCapture(e.pointerId); } catch (_) {}
+      const move = (ev) => {
+        const dx = ev.clientX - start.x;
+        if (!drag && Math.hypot(dx, ev.clientY - start.y) < thr) return;
+        if (!drag) { drag = true; it.classList.add("lifted"); mark = h("div", { class: "insert-mark", "aria-hidden": "true" }); list.append(mark); }
+        it.style.transform = `translateX(${dx}px)`;
+        target = rects.filter((r) => r.left + r.width / 2 < ev.clientX).length;
+        const lr = list.getBoundingClientRect();
+        const r = rects[Math.min(target, rects.length - 1)];
+        const x = target < rects.length ? r.left - 6 : r.right + 4;
+        Object.assign(mark.style, { left: (x - lr.left + list.scrollLeft) + "px", top: (r.top - lr.top) + "px", height: (r.height * 0.6) + "px" });
+        // Scroll the strip when dragging near its edges.
+        if (ev.clientX > lr.right - 30) list.scrollLeft += 12; else if (ev.clientX < lr.left + 30) list.scrollLeft -= 12;
+      };
+      const up = () => {
+        it.removeEventListener("pointermove", move); it.removeEventListener("pointerup", up); it.removeEventListener("pointercancel", up);
+        if (mark) mark.remove();
+        it.style.transform = ""; it.classList.remove("lifted");
+        if (!drag) { onOpen(idx); return; }
+        if (target !== idx && target !== idx + 1) onMove(idx, target);
+      };
+      it.addEventListener("pointermove", move); it.addEventListener("pointerup", up); it.addEventListener("pointercancel", up);
+    });
+    it.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(idx); }
+      else if (e.altKey && e.key === "ArrowLeft" && idx > 0) { e.preventDefault(); onMove(idx, idx - 1); }
+      else if (e.altKey && e.key === "ArrowRight" && idx < items.length - 1) { e.preventDefault(); onMove(idx, idx + 2); }
+      else if (!e.altKey && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
+        e.preventDefault();
+        const all = [...list.querySelectorAll(".tile, .addtile")];
+        const n = all[all.indexOf(it) + (e.key === "ArrowRight" ? 1 : -1)];
+        if (n) n.focus();
+      }
+    });
+  });
+}

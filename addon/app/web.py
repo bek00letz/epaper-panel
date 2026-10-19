@@ -791,4 +791,10 @@ def make_apps():
     ])
     if WEB_DIR.exists():
         editor.router.add_static("/static/", WEB_DIR)
+
+    async def no_stale_editor(request, response):
+        # The editor's files change with every release; never run yesterday's.
+        if request.path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-cache"
+    editor.on_response_prepare.append(no_stale_editor)
     return panel, editor
