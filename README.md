@@ -1,6 +1,6 @@
 > Vibecoded! While I strive to keep things safe and limit vulnerabilities, you should be aware and use at your own risk.
 
-# E-paper panel
+# e-Paper Panel
 
 A Home Assistant add-on that renders your entities and live feeds onto an Elecrow CrowPanel e-paper display, with a drag-and-drop visual studio for designing every screen down to the pixel.
 
@@ -216,8 +216,8 @@ Or for separating the number value and the unit label across two elements:
 
 1. **Settings → Add-ons → Add-on Store → ⋮ → Repositories**, add
    `https://github.com/bek00letz/epaper-panel`
-2. Install **E-paper panel** and start it.
-3. Open **E-paper** in the sidebar and click **Panel setup** to generate a
+2. Install **e-Paper Panel** and start it.
+3. Open **e-Paper** in the sidebar and click **Panel setup** to generate a
    ready-to-flash ESPHome YAML (your Home Assistant address, Wi-Fi, an
    auto-generated encryption key that also protects firmware updates, and the
    frame token), written straight into Home Assistant's ESPHome folder.

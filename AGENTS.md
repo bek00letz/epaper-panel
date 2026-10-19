@@ -12,7 +12,7 @@ copied by hand.
 git push                      # from here
 ```
 
-Then in Home Assistant: **Settings → Add-ons → E-paper panel → Rebuild**
+Then in Home Assistant: **Settings → Add-ons → e-Paper Panel → Rebuild**
 (or Reload the repository first if `config.yaml` changed).
 
 **Every release that ships is tagged `v<version>` and the tag pushed.** The
