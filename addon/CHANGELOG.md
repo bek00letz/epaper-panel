@@ -1,5 +1,36 @@
 # Changelog
 
+## 0.9.0
+Add-on only. The panel's firmware is unchanged, and so is everything it downloads.
+
+- **Each sensor exists once.** 0.8.x wrote every value twice, so Home Assistant
+  had `sensor.epaper_*` and `sensor.epaper_*_2`. Values now become entities only
+  through MQTT discovery, with a broker login the Supervisor provides
+  automatically. On first start, the add-on removes the old copies and gives
+  each entity back its original ID. Entity IDs your pages and automations use
+  don't change. It only touches IDs Home Assistant suffixed itself.
+- **Real entities.** They sit under one "E-Paper Studio" device, can be renamed,
+  survive restarts and show as unavailable while the add-on is stopped. The
+  **Refresh panel** button works now; before, nothing listened to it.
+- **Pages read the add-on's own values directly**, so data sources and widgets
+  render with or without a broker.
+- **The add-on finds the panel instead of guessing names.** It looks up the
+  panel's actions in Home Assistant and its entities by registry ID, so renaming
+  them doesn't break anything. The refresh interval slider now reaches the
+  panel; before, it targeted an entity that didn't exist.
+- **A refresh is never silently lost.** If the panel is offline, the update
+  waits and is retried until Home Assistant confirms it, including the wake-up
+  when quiet hours end. The editor says so instead of reporting success.
+- **No more flickering flight page.** A live widget page stays 5 minutes after
+  its condition last held, so planes at the edge of the radius don't reshape the
+  rotation every minute.
+- **One refresh timer.** The panel's own interval decides how often it checks.
+  The add-on pushes only when something changed.
+- **Fixed:** the last-render timestamp now carries a timezone. Home Assistant
+  had logged an error for it every minute.
+- **Retired:** the `sensor.epaper_category_*` sensors, firmware plumbing that
+  nothing reads anymore. They're kept only if a page uses one.
+
 ## 0.8.37
 - **Dynamic Framebuffer Orientation Auto-Detection:**
   - **Direct Framebuffer Geometry Detection:** `draw_overlays` now analyzes the physical framebuffer layout in real time. Because the footer hairline rule physically spans row 31 in 180° orientation and row 240 in 0° orientation, the engine auto-detects the exact orientation directly from memory.

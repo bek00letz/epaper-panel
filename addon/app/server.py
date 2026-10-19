@@ -34,7 +34,11 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).parent))
 import feeds  # noqa: E402
-from render import epf, layout, stripmeta, subitems, theme as T  # noqa: E402
+import mqtt_bridge  # noqa: E402
+from hass import Hass  # noqa: E402
+from panel_link import PanelLink  # noqa: E402
+from render import binding, epf, layout, stripmeta, subitems, theme as T  # noqa: E402
+from render.linger import Linger  # noqa: E402
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
 WEB_DIR = Path(__file__).parent / "web"
@@ -55,12 +59,39 @@ PANEL_SETUP_PATH = DATA_DIR / "panel_setup.json"
 DEFAULTS_PATH = Path(__file__).parent / "default_layouts.json"
 FIXTURE_PATH = Path(__file__).parent / "render" / "fixture.json"
 
+ADDON_VERSION = (os.environ.get("ADDON_VERSION") or "dev").strip()
+
+# 0.8.x wrote values straight into Home Assistant's state machine as well as
+# over MQTT, which made every sensor exist twice. MQTT discovery is now the one
+# way entities are created (mqtt_bridge). Kept, switched off, until 0.9 has
+# proven itself; delete afterwards.
+PUBLISH_VIA_STATES_API = False
+
+# 0.8.x pushed a refresh to the panel on a timer, on top of the panel's own
+# timer doing the same. The panel's own interval is the one source of truth now;
+# the add-on pushes only when there is something new. Switched off, not deleted.
+PROACTIVE_TIMED_PUSH = False
+
+# Firmware-plumbing sensors from before the frame file carried its own
+# directory. Nothing reads them; they are withdrawn unless a page uses one.
+RETIRED_SENSORS = (
+    "sensor.epaper_category_count",
+    "sensor.epaper_category_offsets",
+    "sensor.epaper_category_sizes",
+    "sensor.epaper_category_pill_widths",
+    "sensor.epaper_category_names",
+)
+
 ENTITY_RE = re.compile(r"^[a-z0-9_]+\.[a-z0-9_]+$")
 PAGE_RE = re.compile(r"^[a-zA-Z0-9_-]{1,64}$")
 
 _entity_cache = {"at": 0.0, "items": []}
 _fixture_cache = None
 SHARED_SESSION: aiohttp.ClientSession | None = None
+HASS = Hass(HA_BASE, HA_TOKEN, lambda: SHARED_SESSION)
+LINK = PanelLink(HASS, lambda: ESPHOME_DEVICE)
+PUBLISHER: "mqtt_bridge.EntityPublisher | None" = None
+WIDGET_LINGER = Linger()
 
 
 def valid_entity_id(eid: str) -> bool:
@@ -423,7 +454,12 @@ async def ha_template(session, tpl) -> str | None:
 
 
 async def publish_entity(session, entity_id, state, attrs=None, register_mqtt=True):
-    """Push a computed value into Home Assistant as a real entity and record it for the Studio picker."""
+    """Record one of the add-on's computed values.
+
+    The record is what pages read (binding.local_value) and what the editor's
+    picker lists. It is mirrored into Home Assistant as an MQTT entity when a
+    broker exists.
+    """
     if not valid_entity_id(entity_id):
         return
     clean_id = entity_id.strip()
@@ -439,7 +475,9 @@ async def publish_entity(session, entity_id, state, attrs=None, register_mqtt=Tr
             "attributes": merged_attrs,
             "register_mqtt": register_mqtt,
         }
-    if not HA_TOKEN:
+        if PUBLISHER is not None and register_mqtt:
+            PUBLISHER.set(clean_id, str(state)[:255], merged_attrs)
+    if not PUBLISH_VIA_STATES_API or not HA_TOKEN:
         return
     safe_eid = urllib.parse.quote(clean_id, safe=".")
     try:
@@ -569,16 +607,19 @@ async def evaluate_quiet_hours(session, spec: dict) -> tuple[bool, str]:
     return active, reason
 
 
-async def call_ha_service(session, domain, service, data=None):
+async def call_ha_service(session, domain, service, data=None) -> bool:
+    """Call a Home Assistant action. Returns whether Home Assistant accepted it."""
     if not HA_TOKEN:
-        return
+        return False
     safe_domain = re.sub(r"[^a-z0-9_]+", "", str(domain).lower())
     safe_service = re.sub(r"[^a-z0-9_]+", "", str(service).lower())
     try:
         await ha_json(session, f"/services/{safe_domain}/{safe_service}",
                       method="POST", json=data or {})
+        return True
     except Exception as exc:
         print(f"service {safe_domain}.{safe_service} failed: {exc!r}", flush=True)
+        return False
 
 
 def _png(img) -> bytes:
@@ -1836,17 +1877,36 @@ async def enrich_page_values(session, page, vals):
                 vals[i] = match_data
 
 
+def split_page_values(page):
+    """A page's values the add-on already holds, and templates for the rest.
+
+    Bindings to the add-on's own sensors are answered from its own record, so
+    they work without a broker and never wait on Home Assistant.
+    """
+    local, templates = {}, {}
+    els = page.get("elements", [])
+    for i, tpl in layout.collect_templates(page).items():
+        if isinstance(i, int) and i < len(els):
+            val = binding.local_value(els[i], _epaper_published_entities)
+            if val is not None:
+                local[i] = val
+                continue
+        templates[i] = tpl
+    return local, templates
+
+
 async def gather_values(session, spec, names):
     """Resolve every template on every named page in one request."""
     batch, index = {}, []
+    out = {n: {} for n in names}
     for name in names:
-        page = spec["pages"][name]
-        for i, tpl in layout.collect_templates(page).items():
+        local, templates = split_page_values(spec["pages"][name])
+        out[name].update(local)
+        for i, tpl in templates.items():
             key = f"{name}:{i}"
             batch[key] = tpl
             index.append((name, i, key))
     resolved = await resolve_templates(session, batch)
-    out = {n: {} for n in names}
     for name, i, key in index:
         out[name][i] = resolved.get(key, "")
     for name in names:
@@ -1934,10 +1994,14 @@ async def eligible_pages(session, spec):
     widget_results: dict[str, bool] = {}
     for n, w_el in widget_gates.items():
         try:
-            widget_results[n] = await _evaluate_widget_gate(session, w_el, home_tz)
+            is_on = await _evaluate_widget_gate(session, w_el, home_tz)
         except Exception as exc:
             print(f"widget gate eval error for {n}: {exc!r}", flush=True)
-            widget_results[n] = False
+            is_on = False
+        # Live widgets flicker (a plane at the edge of the radius); once a page
+        # has appeared it stays a few minutes, so the rotation keeps its shape.
+        widget_results[n] = WIDGET_LINGER.keep(n, is_on)
+    WIDGET_LINGER.forget_except(widget_gates)
 
     live = []
     for name in rotation:
@@ -1955,7 +2019,10 @@ async def eligible_pages(session, spec):
 
 
 async def publish_category_sensors(session, cur_f):
+    """Retired: see RETIRED_SENSORS. Still published for a page that binds to one."""
     if not cur_f or not cur_f.rendered_at:
+        return
+    if not retired_sensors_in_use(load_layouts()):
         return
     try:
         await publish_entity(session, "sensor.epaper_category_count", cur_f.cat_count,
@@ -2173,25 +2240,31 @@ async def publish_computed(session):
     except Exception as exc:
         print(f"publish racing window sensor failed: {exc!r}", flush=True)
 
-    # 4. Publish E-Paper panel system status sensors & MQTT discovery
+    await sync_entities()
+
+
+def retired_sensors_in_use(spec: dict) -> set[str]:
+    text = json.dumps(spec.get("pages") or {})
+    return {eid for eid in RETIRED_SENSORS if eid in text}
+
+
+async def sync_entities():
+    """Mirror the add-on's values into Home Assistant (no-op without a broker)."""
+    if PUBLISHER is None:
+        return
     try:
-        cur_f = globals().get("FRAMES")
-        if cur_f and cur_f.rendered_at:
-            await publish_entity(session, "sensor.epaper_panel_last_render", cur_f.rendered_at,
-                                 {"friendly_name": "E-Paper · Last Render", "icon": "mdi:clock-check-outline",
-                                  "pages_count": len(cur_f.names), "active_pages": cur_f.names,
-                                  "device_class": "timestamp"})
-            await publish_category_sensors(session, cur_f)
-            await publish_mqtt_discovery(session, cur_f)
-    except Exception:
-        pass
+        await PUBLISHER.sync()
+    except Exception as exc:
+        print(f"mqtt sync failed: {exc!r}", flush=True)
 
 
 _mqtt_discovered_ids: set[str] = set()
 
 
 async def publish_mqtt_discovery(session, frames):
-    """Publish Home Assistant MQTT Auto-Discovery with unique_id & device info for all active sensor.epaper_* entities."""
+    """Retired in 0.9: replaced by mqtt_bridge, which talks to the broker directly,
+    publishes only changes and keeps entities unavailable while the add-on is down.
+    No longer called; kept until 0.9 has proven itself, then delete."""
     if not HA_TOKEN:
         return
     try:
@@ -2371,6 +2444,9 @@ async def build_frames(session):
         for el in elements:
             ent = str(el.get("entity", ""))
             if ent.startswith("sensor.epaper_") and not ent.endswith("_count") and not ent.startswith("sensor.epaper_category_") and not ent.startswith("sensor.epaper_panel_"):
+                own_items = ((_epaper_published_entities.get(ent) or {}).get("attributes") or {}).get("items")
+                if ent not in _feed_items_cache and own_items:
+                    _feed_items_cache[ent] = own_items
                 if ent not in _feed_items_cache:
                     try:
                         st_data = await ha_json(session, f"/states/{ent}")
@@ -2531,7 +2607,7 @@ async def refresh_frames(session):
         nxt.last_modified = old_f.last_modified
     else:
         nxt.last_modified = formatdate(timeval=None, localtime=False, usegmt=True)
-    nxt.rendered_at = datetime.now().isoformat(timespec="seconds")
+    nxt.rendered_at = datetime.now().astimezone().isoformat(timespec="seconds")
     nxt.cat_offsets = cat_offsets
     nxt.cat_sizes = cat_sizes
     nxt.cat_names = cat_names
@@ -2544,11 +2620,18 @@ async def refresh_frames(session):
     nxt.rotate_seconds = rot_sec
     globals()["FRAMES"] = nxt
     print(f"rendered {names} ({len(strip)}B strip, {nxt.cat_count} cats, offsets: {cat_offsets}, sizes: {cat_sizes}, rot: {rot_sec}s, quiet: {quiet_active} [{quiet_reason}])", flush=True)
+    await publish_entity(session, "sensor.epaper_panel_last_render", nxt.rendered_at,
+                         {"friendly_name": "E-Paper · Last render", "icon": "mdi:clock-check-outline",
+                          "pages_count": len(nxt.names), "active_pages": nxt.names,
+                          "device_class": "timestamp"})
     await publish_category_sensors(session, nxt)
+    await sync_entities()
     if quiet_changed:
+        # Delivered with retries: the panel stops fetching on its own during
+        # quiet hours, so missing the wake-up would leave it asleep.
         print(f"Quiet Hours state transitioned to {quiet_active} ({quiet_reason}) -- syncing panel state", flush=True)
         globals()["LAST_PANEL_PUSH_TIME"] = time.time()
-        await push_panel_update(advance_page=False)
+        await push_panel_update("quiet hours " + ("started" if quiet_active else "ended"))
     elif struct_changed or rot_changed:
         spec = load_layouts()
         allow_alerts = bool((spec.get("quiet_hours") or {}).get("allow_alerts", True))
@@ -2557,60 +2640,52 @@ async def refresh_frames(session):
         else:
             print("Category structure or rotation interval changed -- pushing immediate refresh to panel", flush=True)
             globals()["LAST_PANEL_PUSH_TIME"] = time.time()
-            await push_panel_update(advance_page=False)
+            await push_panel_update("pages changed")
     return nxt
 
 
 LAST_PANEL_PUSH_TIME = time.time()
 
 
-async def push_panel_update(advance_page=False):
-    """Trigger the physical panel to fetch latest frames (without clobbering locks or sub_mode)."""
+async def push_panel_update(reason="update"):
+    """Ask the panel to fetch new frames now.
+
+    Returns whether it was delivered. If not, PanelLink keeps it pending and
+    keeps retrying (panel_link_loop), so a refresh is never silently lost.
+    """
     if not HA_TOKEN:
         return False
-    candidates = list(dict.fromkeys([
-        ESPHOME_DEVICE,
-        "crowpanel_epaper",
-        "e_paper_panel",
-        "epaper_panel"
-    ]))
-    ok = False
-    for dev in candidates:
-        try:
-            if advance_page:
-                try:
-                    await call_ha_service(SHARED_SESSION, "esphome", f"{dev}_page_step", {"delta": 1})
-                    ok = True
-                    break
-                except Exception:
-                    pass
-            await call_ha_service(SHARED_SESSION, "esphome", f"{dev}_refresh_now")
-            ok = True
-            break
-        except Exception:
-            continue
-    return ok
+    LINK.request_refresh(reason)
+    return await LINK.deliver()
 
 
 async def step_panel_page(delta=1):
-    """Trigger the physical panel to advance or step backwards."""
+    """Step the physical panel's page. Returns whether Home Assistant delivered it."""
     if not HA_TOKEN:
         return False
-    candidates = list(dict.fromkeys([
-        ESPHOME_DEVICE,
-        "crowpanel_epaper",
-        "e_paper_panel",
-        "epaper_panel"
-    ]))
-    ok = False
-    for dev in candidates:
-        try:
-            await call_ha_service(SHARED_SESSION, "esphome", f"{dev}_page_step", {"delta": int(delta)})
-            ok = True
-            break
-        except Exception:
-            continue
+    ok, err = await LINK.step(int(delta))
+    if not ok:
+        print(f"panel: page step not delivered: {err}", flush=True)
     return ok
+
+
+async def panel_link_loop():
+    """Deliver pending refreshes (with backoff) independently of the render cadence."""
+    while True:
+        try:
+            await LINK.deliver()
+        except Exception as exc:
+            print(f"panel link loop error: {exc!r}", flush=True)
+        await asyncio.sleep(5)
+
+
+async def on_refresh_button():
+    """The "Refresh panel" button in Home Assistant."""
+    try:
+        await refresh_frames(SHARED_SESSION)
+    except Exception as exc:
+        print(f"render for refresh button failed: {exc!r}", flush=True)
+    await push_panel_update("refresh button")
 
 
 async def render_loop():
@@ -2628,8 +2703,8 @@ async def render_loop():
                 LAST_PANEL_PUSH_TIME = time.time()
                 if not FRAMES.quiet_active or allow_alerts:
                     # Immediately push when an alert seizes or releases the screen.
-                    await push_panel_update(advance_page=False)
-            else:
+                    await push_panel_update("alert " + (cur_alert or "released"))
+            elif PROACTIVE_TIMED_PUSH:
                 panel_cfg = load_panel_setup()
                 m_int = re.search(r"\d+", str(panel_cfg.get("refresh_interval", "5")))
                 panel_min = int(m_int.group(0)) if m_int else 5
@@ -2641,7 +2716,7 @@ async def render_loop():
                         print(f"Quiet Hours active ({FRAMES.quiet_reason}) -- suppressing background panel refresh push", flush=True)
                     else:
                         print(f"proactive refresh push to panel ({panel_min} min interval)", flush=True)
-                        await push_panel_update(advance_page=False)
+                        await push_panel_update("timed")
         except Exception as exc:
             print(f"render loop error: {exc!r}", flush=True)
             FRAMES.error = repr(exc)
@@ -2810,7 +2885,7 @@ async def status(request):
     spec = load_layouts()
     panel_cfg = load_panel_setup()
     m_int = re.search(r"\d+", str(panel_cfg.get("refresh_interval", "5")))
-    panel_int = int(m_int.group(0)) if m_int else 5
+    panel_int = (await LINK.refresh_interval()) or (int(m_int.group(0)) if m_int else 5)
     return web.json_response({
         "pages": f.names,
         "rendered_at": f.rendered_at,
@@ -2831,6 +2906,10 @@ async def status(request):
         "frame_port": FRAME_PORT,
         "display": spec.get("display", T.DEFAULT_DISPLAY),
         "orientation": int(spec.get("orientation") or 0),
+        "panel_link": LINK.status(),
+        "ha_entities": PUBLISHER.status() if PUBLISHER is not None else
+                       {"mode": "off", "problem": "not started", "entities": 0},
+        "version": ADDON_VERSION,
     })
 
 
@@ -2861,32 +2940,17 @@ async def api_panel_refresh(request):
     except Exception:
         pass
 
-    # Immediately push to the physical panel so the user sees live feedback right away
-    ha_updated = await push_panel_update(advance_page=False)
-
-    # Also attempt setting number entity in HA if device has been flashed with dynamic number entity
-    candidates = list(dict.fromkeys([
-        re.sub(r"[^a-z0-9_]+", "_", cfg.get("device_name", ESPHOME_DEVICE).lower()).strip("_"),
-        "crowpanel_epaper",
-        "e_paper_panel",
-        "epaper_panel"
-    ]))
-    for slug in candidates:
-        entity_id = f"number.{slug}_refresh_interval"
-        try:
-            await call_ha_service(SHARED_SESSION, "number", "set_value", {
-                "entity_id": entity_id,
-                "value": minutes
-            })
-            ha_updated = True
-            break
-        except Exception:
-            pass
+    # The panel's own interval entity is what it actually uses; set it there.
+    ha_updated, err = await LINK.set_refresh_interval(minutes)
+    if not ha_updated:
+        print(f"panel: couldn't set refresh interval: {err}", flush=True)
+    await push_panel_update("refresh interval changed")
 
     return web.json_response({
         "saved": True,
         "interval": minutes,
-        "ha_updated": ha_updated
+        "ha_updated": ha_updated,
+        "error": err or None,
     })
 
 
@@ -3004,8 +3068,9 @@ async def api_preview(request):
     if orient not in (0, 90, 180, 270):
         orient = 0
     display = body.get("display") or load_layouts().get("display", T.DEFAULT_DISPLAY)
-    tpls = layout.collect_templates(page)
-    vals = await resolve_templates(SHARED_SESSION, tpls) if tpls else {}
+    vals, tpls = split_page_values(page)
+    if tpls:
+        vals.update(await resolve_templates(SHARED_SESSION, tpls))
     await enrich_page_values(SHARED_SESSION, page, vals)
     series = {}
     for i, el in enumerate(page.get("elements", [])):
@@ -3046,8 +3111,9 @@ async def api_push(request):
         await refresh_frames(SHARED_SESSION)
     except Exception as exc:
         print(f"pre-push render failed: {exc!r}", flush=True)
-    await call_ha_service(SHARED_SESSION, "esphome", f"{ESPHOME_DEVICE}_refresh_now")
-    return web.json_response({"pushed": True})
+    delivered = await push_panel_update("pushed from the editor")
+    return web.json_response({"pushed": delivered, "pending": LINK.pending is not None,
+                              "error": None if delivered else LINK.last_error})
 
 
 async def api_action_refresh(request):
@@ -3055,7 +3121,7 @@ async def api_action_refresh(request):
     _check_frame_auth(request)
     try:
         await refresh_frames(SHARED_SESSION)
-        ha_pushed = await push_panel_update(advance_page=False)
+        ha_pushed = await push_panel_update("action endpoint")
         return web.json_response({"success": True, "action": "refresh", "ha_pushed": ha_pushed, "timestamp": datetime.now().isoformat()})
     except Exception as exc:
         return web.json_response({"success": False, "error": str(exc)}, status=500)
@@ -4168,28 +4234,12 @@ ota_password: {_yaml_str(ota_pw)}
 
 
 async def _detect_panel_connection(device_slug: str) -> dict:
-    """Check whether Home Assistant sees the ESPHome panel entities."""
-    slug = re.sub(r"[^a-z0-9_]+", "_", device_slug.lower()).strip("_")
-    ip_val, rssi_val = None, None
+    """Whether Home Assistant sees the panel, found by its registry IDs (see PanelLink)."""
     if not HA_TOKEN:
         panel_fix = load_fixture().get("panel") or {}
-        return {"connected": False, "ip": None, "rssi": panel_fix.get("rssi")}
-    try:
-        states = await ha_json(SHARED_SESSION, "/states")
-        for s in states:
-            if not isinstance(s, dict):
-                continue
-            eid = s.get("entity_id", "")
-            st = s.get("state")
-            if st in (None, "unknown", "unavailable", ""):
-                continue
-            if eid in (f"sensor.{slug}_panel_ip", "sensor.panel_ip", f"text_sensor.{slug}_panel_ip"):
-                ip_val = st
-            elif eid in (f"sensor.{slug}_panel_wi_fi", "sensor.panel_wi_fi"):
-                rssi_val = st
-    except Exception:
-        pass
-    return {"connected": bool(ip_val or rssi_val), "ip": ip_val, "rssi": rssi_val}
+        return {"connected": False, "ip": None, "rssi": panel_fix.get("rssi"), "node": None,
+                "problem": "running without Home Assistant"}
+    return await LINK.connection()
 
 
 async def _detect_external_port(session: aiohttp.ClientSession | None = None) -> int:
@@ -4432,6 +4482,24 @@ async def start(app_runners):
         print(f"listening on :{port}", flush=True)
 
 
+def start_entity_publisher():
+    """Create the MQTT publisher when the Supervisor offers a broker."""
+    global PUBLISHER
+    host = (os.environ.get("MQTT_HOST") or "").strip()
+    transport = None
+    if host and HA_TOKEN:
+        transport = mqtt_bridge.MqttTransport(
+            host, int(os.environ.get("MQTT_PORT") or 1883),
+            os.environ.get("MQTT_USERNAME") or "", os.environ.get("MQTT_PASSWORD") or "")
+    PUBLISHER = mqtt_bridge.EntityPublisher(transport, HASS, DATA_DIR, ADDON_VERSION,
+                                            on_button=on_refresh_button)
+    in_use = retired_sensors_in_use(load_layouts())
+    for eid in RETIRED_SENSORS:
+        if eid not in in_use:
+            PUBLISHER.retire(eid)
+    print("mqtt: " + (f"broker at {host}" if transport else "no broker; values stay inside the add-on"), flush=True)
+
+
 async def main():
     global SHARED_SESSION, ESPHOME_DEVICE
     DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -4445,10 +4513,16 @@ async def main():
     runners = []
     async with aiohttp.ClientSession() as session:
         SHARED_SESSION = session
+        start_entity_publisher()
         await start(runners)
+        background = [asyncio.create_task(panel_link_loop())]
+        if PUBLISHER is not None:
+            background.append(asyncio.create_task(PUBLISHER.run()))
         try:
             await render_loop()
         finally:
+            for t in background:
+                t.cancel()
             for r in runners:
                 await r.cleanup()
 

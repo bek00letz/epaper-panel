@@ -15,6 +15,10 @@ git push                      # from here
 Then in Home Assistant: **Settings → Add-ons → E-paper panel → Rebuild**
 (or Reload the repository first if `config.yaml` changed).
 
+**Pushing to `main` also changes the panel's firmware on its next build:** the
+firmware pulls `components/epf` from `main` (`refresh: 0s`). Treat any change
+under `components/` as a firmware change.
+
 The add-on repository is https://github.com/bek00letz/epaper-panel, added in
 HA as a custom add-on repository. `repository.yaml` at the root makes it one;
 the add-on itself lives in `addon/`.
@@ -119,6 +123,16 @@ wiki's pin table is unverified and its page is headed "5.19-inch".
 
 When touching display code, `it.image()` at a negative offset is a trap: see
 [ARCHITECTURE.md](ARCHITECTURE.md#measured-numbers).
+
+## Talking to Home Assistant and the panel
+
+- **Never guess an entity ID or an action name** from a device name. Find the
+  panel through `panel_link.PanelLink` (service list, registry unique_ids).
+- **Never write entities with `POST /api/states`.** The add-on's values go
+  through `mqtt_bridge` (or stay internal without a broker). Writing both is
+  what made every sensor exist twice in 0.8.x.
+- **A call that can fail must say so.** Return whether Home Assistant accepted
+  it, and show the truth in the editor. Don't report success you didn't get.
 
 ## Security & data hygiene
 

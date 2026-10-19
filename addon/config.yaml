@@ -1,5 +1,5 @@
 name: E-paper panel
-version: "0.8.37"
+version: "0.9.0"
 slug: epaper_panel
 description: 'Render Home Assistant onto Elecrow CrowPanel E-Paper displays (primary: 5.79" DIS08792E; also 4.2", 2.9", 7.5", 10.2"), with an intuitive visual editor'
 url: https://github.com/bek00letz/epaper-panel
@@ -27,6 +27,11 @@ ports_description:
 
 # Supervisor injects a token for the API and websocket -- nothing to create.
 homeassistant_api: true
+
+# The add-on's values become Home Assistant entities over MQTT discovery when
+# a broker is installed. Optional: everything else works without one.
+services:
+  - mqtt:want
 
 # Everything else -- pages, data sources -- is configured in the editor,
 # which is a better form than this one and keeps the add-on options empty

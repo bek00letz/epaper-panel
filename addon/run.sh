@@ -11,6 +11,19 @@ export REFRESH_SECONDS="$(bashio::config 'refresh_seconds')"
 export HA_BASE="http://supervisor/core"
 export HA_TOKEN="${SUPERVISOR_TOKEN}"
 export DATA_DIR="/data"
+export ADDON_VERSION="$(bashio::addon.version)"
+
+# The broker the Supervisor offers (the Mosquitto app), for the add-on's
+# Home Assistant entities. Without one the panel works the same; the values
+# are just not mirrored into Home Assistant.
+if bashio::services.available "mqtt"; then
+  export MQTT_HOST="$(bashio::services 'mqtt' 'host')"
+  export MQTT_PORT="$(bashio::services 'mqtt' 'port')"
+  export MQTT_USERNAME="$(bashio::services 'mqtt' 'username')"
+  export MQTT_PASSWORD="$(bashio::services 'mqtt' 'password')"
+else
+  bashio::log.info "No MQTT broker: values stay inside the add-on"
+fi
 
 bashio::log.info "Starting e-paper panel service"
 exec python3 -u /opt/epaper/server.py

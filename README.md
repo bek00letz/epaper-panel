@@ -228,9 +228,15 @@ frame URLs).
 
 ## Data sources (optional)
 
-Some things Home Assistant cannot answer directly. Sources fetch them and publish them
-back as `sensor.epaper_<name>` entities, which pages then bind to like anything
-else:
+Some things Home Assistant cannot answer directly. Sources fetch them as
+`sensor.epaper_<name>` values, which pages bind to like any entity. Pages read
+them straight from the add-on, so they work with or without an MQTT broker.
+
+With the Mosquitto broker app installed, the add-on also turns these values
+into real Home Assistant entities under an **E-Paper Studio** device, over MQTT
+discovery. You can rename them, give them an area and use them in automations.
+They show as unavailable while the add-on is stopped, and the device has a
+**Refresh panel** button.
 
 - **Jellyfin** — what is new *and* unwatched (`/Items/Latest?IsPlayed=false&GroupItems=true`). HA's own Jellyfin integration reports who is watching; it knows nothing about your library.
 - **Any JSON API** — a URL, headers, and a dot-path into the JSON response.

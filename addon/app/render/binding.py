@@ -13,6 +13,7 @@ An element may instead describe what it wants:
 A raw `value` template still wins when present, so nothing already built
 breaks and power users keep the full language.
 """
+import json
 
 TIME_FORMATS = {
     "time":     "%H:%M",
@@ -90,3 +91,41 @@ def template_for(el):
             core = f"({core}) | replace('{_quote(str(find))}', '{_quote(str(repl))}')"
 
     return "{{ " + core + " }}"
+
+
+LOCAL_SHOWS = ("state", "attribute")
+
+
+def local_value(el, registry):
+    """Resolve a binding to one of the add-on's own entities without Home Assistant.
+
+    The add-on computed these values itself, so asking Home Assistant for them
+    back would only add a round trip and a dependency on the entity existing
+    there. Returns None when the element is not such a binding, so the caller
+    falls back to a template.
+    """
+    raw = el.get("value")
+    if isinstance(raw, str) and raw.strip():
+        return None
+    ent = (el.get("entity") or "").strip()
+    info = registry.get(ent) if ent else None
+    if info is None:
+        return None
+    show = el.get("show") or "state"
+    if show not in LOCAL_SHOWS:
+        return None
+    if show == "attribute":
+        val = (info.get("attributes") or {}).get(el.get("attribute", ""))
+    else:
+        val = info.get("state")
+    if val is None:
+        text = ""
+    elif isinstance(val, (list, dict)):
+        text = json.dumps(val, ensure_ascii=False)
+    else:
+        text = str(val)
+    repl_map = el.get("replace")
+    if isinstance(repl_map, dict):
+        for find, repl in repl_map.items():
+            text = text.replace(str(find), str(repl))
+    return text

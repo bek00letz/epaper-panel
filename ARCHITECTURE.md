@@ -46,7 +46,7 @@ The add-on runs two HTTP listeners inside the same event loop:
 
 Every 60 seconds (and immediately on layout save or panel push), `server.py` runs `refresh_frames()`:
 
-- Polls configured `feeds/` (`jellyfin`, `rest`, `statistics`) and publishes their results back to Home Assistant as `sensor.epaper_<name>` entities.
+- Polls configured `feeds/` (`jellyfin`, `rest`, `statistics`) and records their results as `sensor.epaper_<name>` values (see [The add-on's own values](#the-add-ons-own-values)).
 - Evaluates `alert` and `when` page conditions (`show_if`), per-element `show_if` visibility, and `quiet_hours` schedule/presence state, then builds the in-memory PNG buffers:
   - `frames.png` — every active rotation slice stacked vertically (`792 × 272·N`). The panel holds it in PSRAM and blits a 272 px slice, so paging with the hardware buttons or an IKEA BILRESA scroll remote needs no network round trip. When an `alert` (interrupt) page triggers, `frames.png` shrinks to a 1-page strip containing only that alert for `hold_minutes` and calls `esphome.<device>_show_page`, decoding in ~1 s and preventing the panel's timer from rotating away during the hold window.
   - `frame.png` (and `/frame.png?page=N`) — single-page PNG slice for the current slot or any specific slice index `N`, driving dashboard previews and single-page wake flows.
@@ -76,7 +76,51 @@ To eliminate both races atomically and keep manual scrolling and locks responsiv
 - **Self-Contained Widget Active Windows & On-Demand `sensor.epaper_*` Publishing:**
   - Composite widgets (`sports_match`, `sports_racing`, `flight_tracker`) store their active-window parameters (`pre_buffer_hours`, `post_buffer_hours`, `window_mode`, `team`, `auto_window`) directly on the element in `layouts.json`.
   - During `eligible_pages()`, `_evaluate_widget_gate()` evaluates `compute_sports_active_window()`, `compute_racing_active_window()`, or `fetch_overhead_flights()` directly in Python so `tier: "when"` pages work immediately without requiring users to create or configure Home Assistant helper sensors.
-  - `publish_computed()` only polls and publishes `sensor.epaper_*` entities (`sensor.epaper_sports_<league>`, `sensor.epaper_racing_<series>`, `sensor.epaper_flights_overhead`, `sensor.epaper_closest_aircraft`, `sensor.epaper_quiet_hours`, `sensor.epaper_panel_last_render`) for widgets actually present in `layouts.json`, and registers them via MQTT Auto-Discovery with a `unique_id` and `E-Paper Studio` device block when an MQTT broker is available.
+  - `publish_computed()` only polls and publishes `sensor.epaper_*` entities (`sensor.epaper_sports_<league>`, `sensor.epaper_racing_<series>`, `sensor.epaper_flights_overhead`, `sensor.epaper_closest_aircraft`, `sensor.epaper_quiet_hours`, `sensor.epaper_panel_last_render`) for widgets actually present in `layouts.json`.
+
+## The add-on's own values
+
+Values the add-on computes (feeds, sports, racing, flights, quiet hours, last
+render) live in one record inside the add-on, `_epaper_published_entities`.
+
+- **Pages read that record directly** (`binding.local_value`) for `state` and
+  `attribute` bindings. They don't round-trip through Home Assistant, so they
+  work without a broker and never race the publish. Raw Jinja that names a
+  `sensor.epaper_*` entity still goes through Home Assistant.
+- **Home Assistant gets them over MQTT discovery only** (`mqtt_bridge.py`). The
+  Supervisor hands over the broker login (`services: mqtt:want`). Each value
+  is a sensor with a `unique_id` under an "E-Paper Studio" device, has
+  availability through the add-on's last will, and is published only when it
+  changes. Values unused for an hour are withdrawn, never in the first hour
+  after a start.
+- 0.8.x also wrote every value straight into the state machine
+  (`POST /api/states`), so each sensor existed twice and the MQTT copy became
+  `_2`. That path is switched off (`PUBLISH_VIA_STATES_API`). A one-time step
+  removes the directly written states and restores each entity's intended ID.
+  It only touches IDs Home Assistant suffixed itself (`<id>_<n>`).
+
+## Reaching the panel
+
+`panel_link.py` is the only code that talks to the panel, through Home
+Assistant. It never guesses names:
+
+- **Actions**: an ESPHome node offering `refresh_now`, `page_step` and
+  `show_page` is a panel. The device name from Panel setup picks one if there
+  are several; with exactly one, it is used.
+- **Entities** (refresh interval, IP, Wi-Fi) are found by registry
+  `unique_id`, which ESPHome builds from the firmware's entity names
+  (`<MAC>/0/number/Refresh interval`). It survives any rename of the entity ID.
+- **A refresh is delivered or kept pending.** New content, alerts and the
+  quiet-hours wake-up call `request_refresh()`. `panel_link_loop` retries
+  with a backoff (5 s, 15 s, 30 s, then every 60 s) until Home Assistant
+  confirms it. This matters most when quiet hours end, because the panel
+  doesn't fetch on its own until it's woken.
+- **The panel's own refresh interval is the one source of truth** for how
+  often it fetches. The add-on only pushes when there is something new
+  (`PROACTIVE_TIMED_PUSH` is off).
+- **Live widget pages linger** (`render/linger.py`). Once a widget page has
+  appeared, it stays 5 minutes after its condition last held, so a plane at
+  the edge of the radius doesn't reshape the rotation every minute.
 
 ## Measured numbers
 

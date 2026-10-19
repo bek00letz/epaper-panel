@@ -1394,6 +1394,7 @@ aside {
       <button id="setupclose">Close</button>
     </div>
     <div id="setupconn" class="chip" style="margin:0">Checking panel connection…</div>
+    <div id="setupentities" class="chip" style="margin:0;display:none"></div>
     <div style="overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding-right:2px;max-height:60vh">
       <div class="card"><div class="body">
         <div class="row">
@@ -1629,9 +1630,9 @@ async function setPanelRefresh(minutes, source = "slider") {
       body: JSON.stringify({ interval: m })
     }).then(r => r.json());
     if (res.ha_updated) {
-      msg(`Panel refresh set to ${m} min (applied live to Home Assistant entity)`);
+      msg(`The panel now checks for updates every ${m} min.`);
     } else {
-      msg(`Panel refresh set to ${m} min (saved to panel config)`);
+      msg(`Saved, but the panel didn't get it: ${res.error || "it isn't reachable right now"}.`);
     }
   } catch (err) {
     msg(`Failed to update refresh rate: ${err.message || err}`);
@@ -2077,6 +2078,14 @@ async function refreshStatus() {
       const o = Number(spec.orientation || 0);
       const otag = o ? ` · ${o}°` : "";
       txt.textContent = `${n} page${n === 1 ? "" : "s"} live${otag} · ${kb} KB`;
+      const link = liveStatus.panel_link || {};
+      if (link.pending_refresh) {
+        dot.className = "status-dot warn";
+        txt.textContent += " · panel update waiting";
+        txt.title = link.last_error ? `The panel hasn't confirmed yet: ${link.last_error}` : "";
+      } else {
+        txt.title = "";
+      }
     }
     if (liveStatus.panel_interval && !isDraggingRefresh) {
       updateRefreshUI(liveStatus.panel_interval);
@@ -4312,10 +4321,17 @@ function applySetupResponse(r) {
   if (p.connected) {
     conn.className = "chip good";
     conn.innerHTML = `<b>Panel connected in Home Assistant</b>${p.ip ? ` · IP <code>${esc(p.ip)}</code>` : ""}${p.rssi ? ` · Wi-Fi ${esc(p.rssi)} dBm` : ""}`;
+  } else if (p.node) {
+    conn.className = "chip";
+    conn.innerHTML = `<b>Panel found, but offline.</b> It will pick up changes when it reconnects.`;
   } else {
     conn.className = "chip";
-    conn.innerHTML = `<b>Ready to set up:</b> generate your ESPHome YAML below, flash it in ESPHome Dashboard, and adopt the device in Home Assistant.`;
+    conn.innerHTML = `<b>No panel yet.</b> Generate the ESPHome YAML below, install it from the ESPHome Device Builder, then add the device in Home Assistant.`;
   }
+  const ents = (liveStatus && liveStatus.ha_entities) || {};
+  const entChip = $("setupentities");
+  entChip.style.display = ents.problem ? "block" : "none";
+  entChip.textContent = ents.problem || "";
   if (r.esphome_synced) {
     msg("✓ Auto-synced to ESPHome Dashboard (/config/esphome/) — ready to install!");
   }
@@ -4706,9 +4722,10 @@ async function loadIcons(q) {
 $("push").onclick = async () => {
   try {
     await saveLayouts();
-    await api("api/push", { method: "POST" });
+    const res = await api("api/push", { method: "POST" }).then(r => r.json());
     await refreshStatus();
-    msg("Saved and pushed — the panel is fetching and redrawing now.");
+    if (res.pushed) msg("Saved. The panel is updating now.");
+    else msg(`Saved. The panel will update as soon as it can be reached (${res.error || "offline"}).`);
   } catch (e) { msg("Push failed: " + e.message); }
 };
 
