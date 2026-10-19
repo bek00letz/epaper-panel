@@ -1,5 +1,6 @@
 """The two HTTP faces: frames on the LAN port, the editor and its API behind Ingress."""
 
+import health
 import asyncio
 import hashlib
 import json
@@ -225,6 +226,9 @@ async def status(request):
         "orientation": int(spec.get("orientation") or 0),
         "panel_link": runtime.LINK.status(),
         "live_data": runtime.LIVE.status(),
+        # Every outside service and data source: last success, and the problem
+        # if it is failing (also a problem sensor in Home Assistant).
+        "services": health.status(),
         "ha_entities": runtime.PUBLISHER.status() if runtime.PUBLISHER is not None else
                        {"mode": "off", "problem": "not started", "entities": 0},
         "version": ADDON_VERSION,
@@ -313,7 +317,7 @@ async def api_layouts_put(request):
     try:
         await refresh_frames(runtime.SESSION)
     except Exception as exc:
-        print(f"immediate render after save failed: {exc!r}", flush=True)
+        print(f"immediate render after save failed: {health.describe(exc)}", flush=True)
     return web.json_response({
         "saved": True,
         "display": clean.get("display", T.DEFAULT_DISPLAY),
@@ -399,7 +403,7 @@ async def api_entities(request):
             try:
                 states = await ha_json(runtime.SESSION, "/states")
             except Exception as exc:
-                return web.json_response({"error": repr(exc)}, status=502)
+                return web.json_response({"error": health.describe(exc)}, status=502)
             runtime.ENTITY_CACHE.update(at=time.time(), items=states)
         for s in (runtime.ENTITY_CACHE["items"] or []):
             if isinstance(s, dict) and "entity_id" in s:
@@ -527,7 +531,7 @@ async def api_push(request):
     try:
         await refresh_frames(runtime.SESSION)
     except Exception as exc:
-        print(f"pre-push render failed: {exc!r}", flush=True)
+        print(f"pre-push render failed: {health.describe(exc)}", flush=True)
     delivered = await push_panel_update("pushed from the editor")
     return web.json_response({"pushed": delivered, "pending": runtime.LINK.pending is not None,
                               "error": None if delivered else runtime.LINK.last_error})
@@ -580,9 +584,11 @@ async def api_sources_test(request):
         raise web.HTTPBadRequest(text="expected a source object")
     unmasked = feeds.unmask_secrets([src], load_sources())
     ctx = {"ha_base": HA_BASE, "ha_token": HA_TOKEN, "session": runtime.SESSION}
-    rows = await feeds.run_all(unmasked, ctx)
+    errors: list[str] = []
+    rows = await feeds.run_all(unmasked, ctx, errors)
     return web.json_response({"published": [{"entity_id": e, "state": str(v)[:120],
-                                             "attributes": a} for e, v, a in rows]})
+                                             "attributes": a} for e, v, a in rows],
+                              "error": errors[0] if errors else None})
 
 
 async def api_panel_setup_get(request):

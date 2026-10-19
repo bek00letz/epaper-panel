@@ -1,5 +1,6 @@
 """Formula 1 and Formula E sessions and race windows."""
 
+import health
 import json
 import time
 from datetime import datetime, timedelta, timezone
@@ -181,7 +182,7 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_na
             _racing_cache[cache_key] = {"at": now, "data": fe_event, "is_live": is_live}
             return fe_event
         except Exception as exc:
-            print(f"fetch_formula_e_data error: {exc!r}", flush=True)
+            print(f"fetch_formula_e_data error: {health.describe(exc)}", flush=True)
             return _racing_cache.get(cache_key, {}).get("data") or fe_event
 
     # 3. Check in-memory cache for F1 / other series
@@ -267,9 +268,21 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_na
         _racing_cache[cache_key] = {"at": now, "data": event_data, "is_live": is_live}
         return event_data
     except Exception as exc:
-        print(f"fetch_racing_data error: {exc!r}", flush=True)
+        print(f"fetch_racing_data error: {health.describe(exc)}", flush=True)
         return _racing_cache.get(cache_key, {}).get("data") or event_data
 _racing_window_cache: dict[str, dict] = {}
+
+
+def series_slug(series) -> tuple[str, str]:
+    """A racing series as (slug, title): the slug names its sensor, sensor.epaper_racing_<slug>."""
+    raw_s = str(series or "f1").strip().lower()
+    if raw_s in ("fe", "formula_e", "formula-e", "formulae"):
+        return "fe", "Formula E"
+    if raw_s in ("nascar", "nascar-premier"):
+        return "nascar", "NASCAR"
+    if raw_s in ("indycar", "irl"):
+        return "indycar", "IndyCar"
+    return "f1", "Formula 1"
 
 
 @runtime.live(60)
@@ -277,19 +290,7 @@ async def compute_racing_active_window(session, series="f1", pre_buffer_hours=2.
     """Compute whether a Motorsport series (F1, Formula E, NASCAR, IndyCar) is in an active session/race-weekend window."""
     if not tz_name:
         tz_name = await get_home_timezone(session)
-    raw_s = str(series or "f1").strip().lower()
-    if raw_s in ("fe", "formula_e", "formula-e", "formulae"):
-        slug = "fe"
-        series_title = "Formula E"
-    elif raw_s in ("nascar", "nascar-premier"):
-        slug = "nascar"
-        series_title = "NASCAR"
-    elif raw_s in ("indycar", "irl"):
-        slug = "indycar"
-        series_title = "IndyCar"
-    else:
-        slug = "f1"
-        series_title = "Formula 1"
+    slug, series_title = series_slug(series)
 
     w_mode = "weekend" if str(window_mode).strip().lower() == "weekend" else "session"
     cache_key = f"{slug}:{pre_buffer_hours}:{post_buffer_hours}:{w_mode}:{tz_name}"

@@ -21,6 +21,7 @@ already have carry over with their settings.
 """
 from __future__ import annotations
 
+import health
 import asyncio
 import json
 import re
@@ -38,10 +39,15 @@ BIRTH_TOPIC = f"{DISCOVERY_PREFIX}/status"
 UID_PREFIX = "epaper_studio_"
 BUTTON_UID = "epaper_panel_refresh_button"
 
-# An entity not refreshed for this long is gone (its widget or source was
-# removed) and is withdrawn from Home Assistant. Never sooner after a start,
-# so a restart cannot withdraw anything.
+# An entity not refreshed for this long, and no longer wanted by anything in
+# the configuration (see keep()), is gone and is withdrawn from Home
+# Assistant. Never sooner after a start, so a restart cannot withdraw anything.
+# A configured source that is failing is still wanted: failing is not gone.
 STALE_AFTER = 3600.0
+
+# The add-on's problem sensors (one per outside service, see health.py) are
+# binary sensors; everything else is a sensor.
+PROBLEM_PREFIX = "epaper_problem_"
 
 # Attributes that are entity metadata, not data.
 META_ATTRS = ("friendly_name", "icon", "unit_of_measurement", "device_class", "source")
@@ -49,6 +55,10 @@ META_ATTRS = ("friendly_name", "icon", "unit_of_measurement", "device_class", "s
 
 def object_id(entity_id: str) -> str:
     return entity_id.split(".", 1)[1]
+
+
+def component_of(obj: str) -> str:
+    return "binary_sensor" if obj.startswith(PROBLEM_PREFIX) else "sensor"
 
 
 def entity_name(attrs: dict, obj: str) -> str:
@@ -77,6 +87,7 @@ class EntityPublisher:
         self._ready = False
         self._ready_event = asyncio.Event()
         self._lock = asyncio.Lock()
+        self._kept: set[str] = set()                  # object_ids the configuration still wants
         self.last_seen: dict[str, float] = self._load(self._state_path)
         self.problem = "" if transport is not None else (
             "No MQTT broker, so these values aren't in Home Assistant. "
@@ -91,8 +102,24 @@ class EntityPublisher:
 
     def set(self, entity_id: str, state, attrs: dict | None) -> None:
         obj = object_id(entity_id)
-        self.desired[obj] = {"state": "" if state is None else str(state)[:255], "attrs": dict(attrs or {})}
+        # "None" is how an MQTT sensor is told its value is unknown.
+        self.desired[obj] = {"state": "None" if state is None else str(state)[:255], "attrs": dict(attrs or {})}
         self.last_seen[obj] = self._clock()
+
+    def set_problem(self, slug: str, name: str, on: bool, attrs: dict) -> None:
+        """A service's problem sensor: on while it has been failing (health.py)."""
+        obj = f"{PROBLEM_PREFIX}{slug}"
+        self.desired[obj] = {"state": "ON" if on else "OFF",
+                             "attrs": {"friendly_name": name, "device_class": "problem", **attrs}}
+        self.last_seen[obj] = self._clock()
+
+    def keep(self, entity_ids) -> None:
+        """Entities the configuration still produces, answering or not: never withdrawn."""
+        self._kept = {object_id(e) if "." in e else e for e in entity_ids}
+        now = self._clock()
+        for obj in self._kept:
+            if obj in self.last_seen and self.last_seen[obj] != 0.0:
+                self.last_seen[obj] = now
 
     def retire(self, entity_id: str) -> None:
         """Withdraw an entity now (used for values the add-on no longer offers)."""
@@ -115,7 +142,7 @@ class EntityPublisher:
                 await self._send_state(obj, want)
             if now - self._started >= STALE_AFTER:
                 for obj, seen in list(self.last_seen.items()):
-                    if now - seen >= STALE_AFTER:
+                    if now - seen >= STALE_AFTER and (seen == 0.0 or obj not in self._kept):
                         await self._withdraw(obj)
             else:
                 for obj, seen in list(self.last_seen.items()):
@@ -177,10 +204,11 @@ class EntityPublisher:
 
     # ------------------------------------------------------------------ entities
     def _config(self, obj: str, attrs: dict) -> dict:
+        component = component_of(obj)
         cfg = {
             "name": entity_name(attrs, obj),
             "unique_id": f"{UID_PREFIX}{obj}",
-            "default_entity_id": f"sensor.{obj}",
+            "default_entity_id": f"{component}.{obj}",
             "state_topic": f"{BASE}/{obj}/state",
             "json_attributes_topic": f"{BASE}/{obj}/attributes",
             "availability_topic": AVAILABILITY,
@@ -191,6 +219,8 @@ class EntityPublisher:
                          ("unit_of_measurement", "unit_of_measurement")):
             if attrs.get(src):
                 cfg[dst] = attrs[src]
+        if component == "binary_sensor":
+            cfg["entity_category"] = "diagnostic"
         return cfg
 
     def _device(self) -> dict:
@@ -203,12 +233,13 @@ class EntityPublisher:
         if self._sent_config.get(obj) == payload:
             return
         await self._clear_unregistered_state(obj)
-        if await self.transport.publish(f"{DISCOVERY_PREFIX}/sensor/{NODE}/{obj}/config", payload):
+        component = component_of(obj)
+        if await self.transport.publish(f"{DISCOVERY_PREFIX}/{component}/{NODE}/{obj}/config", payload):
             self._sent_config[obj] = payload
             self._sent_state.pop(obj, None)
             # From here on Home Assistant owns this ID: never clear its state again.
-            self._registered.setdefault(f"{UID_PREFIX}{obj}", f"sensor.{obj}")
-            self._all_registered.add(f"sensor.{obj}")
+            self._registered.setdefault(f"{UID_PREFIX}{obj}", f"{component}.{obj}")
+            self._all_registered.add(f"{component}.{obj}")
 
     async def _send_state(self, obj: str, want: dict):
         attrs = {k: v for k, v in want["attrs"].items() if k not in META_ATTRS}
@@ -222,10 +253,11 @@ class EntityPublisher:
             self._sent_state[obj] = key
 
     async def _withdraw(self, obj: str):
-        for topic in (f"{DISCOVERY_PREFIX}/sensor/{NODE}/{obj}/config",
+        component = component_of(obj)
+        for topic in (f"{DISCOVERY_PREFIX}/{component}/{NODE}/{obj}/config",
                       f"{BASE}/{obj}/state", f"{BASE}/{obj}/attributes"):
             await self.transport.publish(topic, "")
-        eid = f"sensor.{obj}"
+        eid = f"{component}.{obj}"
         if eid not in self._all_registered:                # a leftover directly written state
             try:
                 await self.hass.rest("DELETE", f"/states/{eid}")
@@ -235,7 +267,7 @@ class EntityPublisher:
         self.last_seen.pop(obj, None)
         self._sent_config.pop(obj, None)
         self._sent_state.pop(obj, None)
-        print(f"mqtt: withdrew sensor.{obj}", flush=True)
+        print(f"mqtt: withdrew {eid}", flush=True)
 
     async def _announce_button(self, force: bool = False):
         cfg = {
@@ -273,7 +305,7 @@ class EntityPublisher:
         `sensor.<id>_2`. Only an unregistered state is removed, never an entity
         something else owns.
         """
-        eid = f"sensor.{obj}"
+        eid = f"{component_of(obj)}.{obj}"
         if f"{UID_PREFIX}{obj}" in self._registered or eid in self._all_registered:
             return
         try:
@@ -367,11 +399,11 @@ class MqttTransport:
                         try:
                             await on_message(str(msg.topic), msg.payload)
                         except Exception as exc:
-                            print(f"mqtt: message handler failed: {exc!r}", flush=True)
+                            print(f"mqtt: message handler failed: {health.describe(exc)}", flush=True)
             except aiomqtt.MqttError as exc:
                 print(f"mqtt: connection lost ({exc}); retrying in {int(delay)}s", flush=True)
             except Exception as exc:
-                print(f"mqtt: unexpected error ({exc!r}); retrying in {int(delay)}s", flush=True)
+                print(f"mqtt: unexpected error ({health.describe(exc)}); retrying in {int(delay)}s", flush=True)
             finally:
                 self.connected = False
                 self._client = None
@@ -385,7 +417,7 @@ class MqttTransport:
             await self._client.publish(topic, payload, qos=1, retain=retain)
             return True
         except Exception as exc:
-            print(f"mqtt: publish to {topic} failed: {exc!r}", flush=True)
+            print(f"mqtt: publish to {topic} failed: {health.describe(exc)}", flush=True)
             return False
 
     async def subscribe(self, topic: str) -> None:

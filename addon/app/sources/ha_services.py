@@ -1,5 +1,6 @@
 """Weather forecasts and calendar events, through Home Assistant's actions."""
 
+import health
 import json
 import time
 import urllib.parse
@@ -75,7 +76,7 @@ async def fetch_weather_forecast(session, entity_id, fallback=None):
         _weather_cache[eid] = {"at": now, "data": base_data}
         return base_data
     except Exception as exc:
-        print(f"fetch_weather_forecast error for {eid}: {exc!r}", flush=True)
+        print(f"fetch_weather_forecast error for {eid}: {health.describe(exc)}", flush=True)
         return base_data
 
 
@@ -127,5 +128,5 @@ async def fetch_calendar_events(session, entity_id, days=31, fallback=None):
         _calendar_cache[raw_eid] = {"at": now, "data": all_events}
         return all_events
     except Exception as exc:
-        print(f"fetch_calendar_events error for {raw_eid}: {exc!r}", flush=True)
+        print(f"fetch_calendar_events error for {raw_eid}: {health.describe(exc)}", flush=True)
         return fallback

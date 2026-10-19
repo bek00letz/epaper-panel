@@ -9,6 +9,9 @@ from sources.geo import _bearing_calc, _haversine_km, get_home_coordinates
 
 
 _aircraft_cache = {}
+# How old a list may be and still be shown when both services are down. A
+# plane crosses a 35 km circle in a few minutes; an older list is fiction.
+MAX_AGE = 300.0
 _warned_no_location = False
 
 
@@ -41,7 +44,7 @@ def place_of(el: dict) -> tuple[float | None, float | None, float, str]:
     return lat, lon, radius, str(el.get("location_name") or "").strip()
 
 
-@runtime.live(30)
+@runtime.live(30, stale_after=MAX_AGE)
 async def fetch_overhead_aircraft(session, radius_km=35.0, lat=None, lon=None):
     global _warned_no_location
     if lat is not None and lon is not None:
@@ -135,7 +138,7 @@ async def fetch_overhead_aircraft(session, radius_km=35.0, lat=None, lon=None):
                 _aircraft_cache[cache_key] = {"at": now, "items": aircraft}
                 return aircraft
     except Exception as exc:
-        print(f"FR24 fetch error: {exc!r}", flush=True)
+        pass                                              # health.py has recorded it
 
     # 2. Fallback: OpenSky Network
     opensky_url = (
@@ -178,7 +181,8 @@ async def fetch_overhead_aircraft(session, radius_km=35.0, lat=None, lon=None):
                 _aircraft_cache[cache_key] = {"at": now, "items": aircraft}
                 return aircraft
     except Exception as exc:
-        print(f"OpenSky fallback error: {exc!r}", flush=True)
+        pass
 
-    cached = _aircraft_cache.get(cache_key)
-    return (cached.get("items") if cached else []) or []
+    # Both are down. live_data keeps the last good list for MAX_AGE, then the
+    # widget says it has no data rather than showing planes long gone.
+    raise LookupError("no aircraft service answered")

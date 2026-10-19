@@ -14,18 +14,29 @@ PERIOD_START = {
 }
 
 
+TIMEOUT = 15.0
+
+
 async def _query_ws(s, url, token, stat, period, start):
-    async with s.ws_connect(url, timeout=10) as ws:
-        await ws.receive_json()
+    # Every read has a time limit: a websocket that is accepted and then says
+    # nothing must not hold anything up.
+    async with s.ws_connect(url, timeout=aiohttp.ClientWSTimeout(ws_close=TIMEOUT), heartbeat=TIMEOUT) as ws:
+        await ws.receive_json(timeout=TIMEOUT)
         await ws.send_json({"type": "auth", "access_token": token})
-        if (await ws.receive_json()).get("type") != "auth_ok":
-            return []
+        if (await ws.receive_json(timeout=TIMEOUT)).get("type") != "auth_ok":
+            raise PermissionError("Home Assistant refused the add-on's token")
         await ws.send_json({
             "id": 1, "type": "recorder/statistics_during_period",
             "start_time": start.isoformat(), "statistic_ids": [stat],
             "period": period, "types": ["change"],
         })
-        return ((await ws.receive_json()).get("result") or {}).get(stat) or []
+        while True:
+            msg = await ws.receive_json(timeout=TIMEOUT)
+            if msg.get("id") != 1:
+                continue
+            if not msg.get("success", False):
+                raise LookupError((msg.get("error") or {}).get("message") or "statistics query failed")
+            return (msg.get("result") or {}).get(stat) or []
 
 
 async def fetch(src, ctx):

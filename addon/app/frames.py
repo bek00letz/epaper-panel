@@ -1,5 +1,6 @@
 """Building the frames: which pages are live, their values, alerts, quiet hours, rendering, packing."""
 
+import health
 import asyncio
 import hashlib
 import io
@@ -239,7 +240,7 @@ async def eligible_pages(session, spec):
         try:
             is_on = await _evaluate_widget_gate(session, w_el, home_tz)
         except Exception as exc:
-            print(f"widget gate eval error for {n}: {exc!r}", flush=True)
+            print(f"widget gate eval error for {n}: {health.describe(exc)}", flush=True)
             is_on = False
         # Live widgets flicker (a plane at the edge of the radius); once a page
         # has appeared it stays a few minutes, so the rotation keeps its shape.

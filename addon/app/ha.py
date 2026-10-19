@@ -1,5 +1,6 @@
 """Home Assistant REST helpers: states, templates, actions, history."""
 
+import health
 import re
 import urllib.parse
 from datetime import datetime, timedelta, timezone
@@ -80,7 +81,7 @@ async def call_ha_service(session, domain, service, data=None) -> bool:
                       method="POST", json=data or {})
         return True
     except Exception as exc:
-        print(f"service {safe_domain}.{safe_service} failed: {exc!r}", flush=True)
+        print(f"service {safe_domain}.{safe_service} failed: {health.describe(exc)}", flush=True)
         return False
 
 

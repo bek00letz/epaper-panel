@@ -84,20 +84,51 @@ def unmask_secrets(incoming, existing):
     return out
 
 
-async def run_all(sources, ctx):
-    """Fetch every configured source. One failure never stops the rest."""
+# How often each kind of source is fetched in the background, in seconds. A
+# source can ask for its own `interval` (at least 30 s).
+INTERVALS = {"jellyfin": 120, "rest": 60, "statistics": 300}
+
+
+def interval_of(src: dict) -> float:
+    try:
+        return max(30.0, float(src.get("interval")))
+    except (TypeError, ValueError):
+        return float(INTERVALS.get(src.get("type"), 120))
+
+
+def source_entities(src: dict) -> set[str]:
+    """The entity IDs a configured source publishes, whether or not it is answering."""
+    slug = clean_slug(src.get("name"))
+    if not slug or src.get("type") not in REGISTRY:
+        return set()
+    ids = {f"sensor.epaper_{slug}"}
+    if src.get("type") == "jellyfin":
+        ids.add(f"sensor.epaper_{slug}_count")
+    return ids
+
+
+async def run_one(src, ctx):
+    """Fetch one source. Raises when it fails, so the caller can keep the last good value."""
+    kind = src.get("type")
+    slug = clean_slug(src.get("name"))
+    if kind not in REGISTRY or not slug:
+        return []
+    mod = importlib.import_module(f".{kind}", __package__)
+    return await mod.fetch({**src, "name": slug}, ctx) or []
+
+
+async def run_all(sources, ctx, errors=None):
+    """Fetch every configured source now (the editor's Test). One failure never stops the rest."""
+    import health
     out = []
     for src in sources:
         if not isinstance(src, dict):
             continue
-        kind = src.get("type")
-        slug = clean_slug(src.get("name"))
-        if kind not in REGISTRY or not slug:
-            continue
-        normalized = {**src, "name": slug}
         try:
-            mod = importlib.import_module(f".{kind}", __package__)
-            out.extend(await mod.fetch(normalized, ctx) or [])
+            out.extend(await run_one(src, ctx))
         except Exception as exc:
-            print(f"source {slug} ({kind}) failed: {exc!r}", flush=True)
+            text = health.describe(exc)
+            print(f"source {clean_slug(src.get('name'))} ({src.get('type')}) failed: {text}", flush=True)
+            if errors is not None:
+                errors.append(text)
     return out

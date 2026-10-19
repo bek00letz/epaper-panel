@@ -1,6 +1,7 @@
 """Panel setup: its saved settings and the ESPHome YAML it writes."""
 
 import base64
+import health
 import json
 import os
 import re
@@ -189,5 +190,5 @@ async def _detect_external_port(session: aiohttp.ClientSession | None = None) ->
                     if p:
                         return int(p)
     except Exception as exc:
-        print(f"could not query supervisor for external port: {exc!r}", flush=True)
+        print(f"could not query supervisor for external port: {health.describe(exc)}", flush=True)
     return FRAME_PORT

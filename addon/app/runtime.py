@@ -25,7 +25,7 @@ PUBLISHER: "mqtt_bridge.EntityPublisher | None" = None
 WIDGET_LINGER = Linger()
 # Outside data is fetched in the background; renders only read it (live_data).
 LIVE = live_data.LiveData()
-live = lambda interval: LIVE.decorate(interval, lambda: SESSION)  # noqa: E731
+live = lambda interval, stale_after=None: LIVE.decorate(interval, lambda: SESSION, stale_after)  # noqa: E731
 
 PUBLISHED: dict[str, dict] = {}
 

@@ -5,26 +5,30 @@ import re
 import urllib.parse
 
 import feeds
+import health
 import runtime
 from config import HA_BASE, HA_TOKEN, PUBLISH_VIA_STATES_API, RETIRED_SENSORS, valid_entity_id
 from ha import call_ha_service, ha_json
 from layouts_store import load_layouts, load_sources
 from sources.flights import fetch_overhead_aircraft, place_of
 from sources.geo import get_home_timezone
-from sources.racing import compute_racing_active_window, fetch_racing_data
-from sources.sports import compute_sports_active_window
+from sources.racing import compute_racing_active_window, fetch_racing_data, series_slug
+from sources.sports import compute_sports_active_window, league_slug
 
 
-async def publish_entity(session, entity_id, state, attrs=None, register_mqtt=True):
+async def publish_entity(session, entity_id, state, attrs=None, register_mqtt=True, keep_attrs=False):
     """Record one of the add-on's computed values.
 
     The record is what pages read (binding.local_value) and what the editor's
     picker lists. It is mirrored into Home Assistant as an MQTT entity when a
-    broker exists.
+    broker exists. A state of None is "unknown": blank on a page, unknown in
+    Home Assistant. keep_attrs keeps the attributes it had.
     """
     if not valid_entity_id(entity_id):
         return
     clean_id = entity_id.strip()
+    if keep_attrs and attrs is None:
+        attrs = dict((runtime.PUBLISHED.get(clean_id) or {}).get("attributes") or {})
     merged_attrs = dict(attrs or {})
     if clean_id.startswith("sensor.epaper_"):
         merged_attrs.setdefault("source", "epaper_studio")
@@ -33,12 +37,12 @@ async def publish_entity(session, entity_id, state, attrs=None, register_mqtt=Tr
             merged_attrs["friendly_name"] = f"E-Paper · {fn}"
         runtime.PUBLISHED[clean_id] = {
             "entity_id": clean_id,
-            "state": str(state)[:255],
+            "state": "" if state is None else str(state)[:255],
             "attributes": merged_attrs,
             "register_mqtt": register_mqtt,
         }
         if runtime.PUBLISHER is not None and register_mqtt:
-            runtime.PUBLISHER.set(clean_id, str(state)[:255], merged_attrs)
+            runtime.PUBLISHER.set(clean_id, None if state is None else str(state)[:255], merged_attrs)
     if not PUBLISH_VIA_STATES_API or not HA_TOKEN:
         return
     safe_eid = urllib.parse.quote(clean_id, safe=".")
@@ -46,7 +50,7 @@ async def publish_entity(session, entity_id, state, attrs=None, register_mqtt=Tr
         await ha_json(session, f"/states/{safe_eid}", method="POST",
                       json={"state": str(state)[:255], "attributes": merged_attrs})
     except Exception as exc:
-        print(f"publish {clean_id} failed: {exc!r}", flush=True)
+        print(f"publish {clean_id} failed: {health.describe(exc)}", flush=True)
 
 
 async def publish_category_sensors(session, cur_f):
@@ -68,13 +72,16 @@ async def publish_category_sensors(session, cur_f):
         await publish_entity(session, "sensor.epaper_category_names", ",".join(cur_f.cat_names),
                              {"friendly_name": "E-Paper Category Names", "icon": "mdi:tag-multiple-outline"})
     except Exception as exc:
-        print(f"publish category sensors error: {exc!r}", flush=True)
+        print(f"publish category sensors error: {health.describe(exc)}", flush=True)
 
 
 async def publish_flights(session, lat, lon, radius, label, suffix=""):
     aircraft = await fetch_overhead_aircraft(session, radius_km=radius, lat=lat, lon=lon)
     if aircraft is None:
-        raise LookupError("no flight data yet")
+        # No list, or only one too old to trust: unknown, not a stale count.
+        await publish_entity(session, f"sensor.epaper_flights_overhead{suffix}", None, None, keep_attrs=True)
+        await publish_entity(session, f"sensor.epaper_closest_aircraft{suffix}", None, None, keep_attrs=True)
+        return
     where = label or "Home"
     attrs = {
         "unit_of_measurement": "aircraft",
@@ -93,6 +100,9 @@ async def publish_flights(session, lat, lon, radius, label, suffix=""):
         attrs["closest_route"] = f"{a['origin']} → {a['destination']}" if a.get("origin") and a.get("destination") else ""
         attrs["closest_model"] = a.get("model", "")
     await publish_entity(session, f"sensor.epaper_flights_overhead{suffix}", len(aircraft), attrs)
+    if not aircraft:
+        # Nothing overhead: no closest aircraft either (it used to keep the last one).
+        await publish_entity(session, f"sensor.epaper_closest_aircraft{suffix}", None, None, keep_attrs=True)
     if aircraft:
         a = aircraft[0]
         alt_m, spd_ms = float(a.get("altitude_m") or 0.0), float(a.get("velocity_ms") or 0.0)
@@ -105,15 +115,48 @@ async def publish_flights(session, lat, lon, radius, label, suffix=""):
             "model": a.get("model", ""), "location_name": where, "icon": "mdi:airplane"})
 
 
-async def publish_computed(session):
-    """Run configured data sources and publish on-demand sensors for active E-Paper Studio widgets."""
-    srcs = load_sources()
-    if srcs:
-        ctx = {"ha_base": HA_BASE, "ha_token": HA_TOKEN, "session": session}
-        for entity_id, state, attrs in await feeds.run_all(srcs, ctx):
+def _source_key(src: dict) -> tuple:
+    return ("source", json.dumps(src, sort_keys=True, default=str))
+
+
+async def publish_sources(session):
+    """Your data sources, fetched in the background (live_data): a render only
+    reads their latest values and never waits on a slow or dead server.
+
+    A source that fails keeps its last good value and its entity; health
+    records the failure, which shows in the editor and as a problem sensor.
+    """
+    srcs = [s for s in load_sources() if isinstance(s, dict)]
+    ctx = {"ha_base": HA_BASE, "ha_token": HA_TOKEN, "session": session}
+    for src in srcs:
+        slug = feeds.clean_slug(src.get("name"))
+        if src.get("type") not in feeds.REGISTRY or not slug:
+            continue
+        name = f"Source “{slug}”"
+
+        async def fetch(src=src, name=name):
+            try:
+                rows = await feeds.run_one(src, {**ctx, "session": runtime.SESSION or session})
+            except Exception as exc:
+                health.fail(name, exc, kind="source")
+                raise
+            health.ok(name, kind="source")
+            return rows
+
+        rows = await runtime.LIVE.read(_source_key(src), fetch, feeds.interval_of(src))
+        for entity_id, state, attrs in rows or []:
             if attrs and "items" in attrs:
                 runtime.FEED_ITEMS[entity_id] = attrs["items"]
             await publish_entity(session, entity_id, state, attrs)
+    return set().union(*(feeds.source_entities(s) for s in srcs)) if srcs else set()
+
+
+async def publish_computed(session):
+    """Run configured data sources and publish on-demand sensors for active E-Paper Studio widgets."""
+    # Everything the configuration produces, answering or not: a value whose
+    # service is down keeps its entity (mqtt_bridge withdraws only the rest).
+    wanted = await publish_sources(session)
+    wanted |= {"sensor.epaper_quiet_hours", "sensor.epaper_panel_last_render"}
 
     cur_spec = load_layouts()
     spec_text = json.dumps(cur_spec)
@@ -146,12 +189,11 @@ async def publish_computed(session):
     for i, (lat, lon, radius, label) in enumerate(places):
         suffix = "" if i == 0 else "_" + (re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")
                                            or f"{lat:.2f}_{lon:.2f}".replace("-", "m").replace(".", "_"))
+        wanted |= {f"sensor.epaper_flights_overhead{suffix}", f"sensor.epaper_closest_aircraft{suffix}"}
         try:
             await publish_flights(session, lat, lon, radius, label, suffix)
-        except LookupError:
-            pass                                          # no flight data yet; don't publish a false zero
         except Exception as exc:
-            print(f"publish aircraft sensor failed: {exc!r}", flush=True)
+            print(f"publish aircraft sensor failed: {health.describe(exc)}", flush=True)
 
     # 2. On-demand Sports Matchday Window sensors (only for leagues actually present in pages)
     try:
@@ -169,6 +211,7 @@ async def publish_computed(session):
             except (ValueError, TypeError):
                 post_b = 2.0
             leagues_to_publish.append((lg, pre_b, post_b, el_tz, team))
+            wanted.add(f"sensor.epaper_sports_{league_slug(lg)[1]}")
 
         seen_leagues = set()
         for lg, pre_b, post_b, s_tz, team in leagues_to_publish:
@@ -215,7 +258,7 @@ async def publish_computed(session):
                 }
             )
     except Exception as exc:
-        print(f"publish sports matchday sensor failed: {exc!r}", flush=True)
+        print(f"publish sports matchday sensor failed: {health.describe(exc)}", flush=True)
 
     # 3. On-demand Motorsport Session/Race Window sensors (only for series actually present in pages)
     try:
@@ -233,6 +276,7 @@ async def publish_computed(session):
             except (ValueError, TypeError):
                 post_b = 2.0
             series_to_publish.append((ser, pre_b, post_b, w_mode, el_tz))
+            wanted.add(f"sensor.epaper_racing_{series_slug(ser)[0]}")
 
         seen_series = set()
         for ser, pre_b, post_b, w_mode, r_tz in series_to_publish:
@@ -269,9 +313,38 @@ async def publish_computed(session):
                 }
             )
     except Exception as exc:
-        print(f"publish racing window sensor failed: {exc!r}", flush=True)
+        print(f"publish racing window sensor failed: {health.describe(exc)}", flush=True)
 
+    wanted |= retired_sensors_in_use(cur_spec)
+    wanted |= publish_health()
+    if runtime.PUBLISHER is not None:
+        runtime.PUBLISHER.keep(wanted)
     await sync_entities()
+
+
+def publish_health() -> set[str]:
+    """One problem sensor per outside service in Home Assistant, so a service
+    that stops answering is never silent (health.py). Returns their IDs."""
+    ids = set()
+    if runtime.PUBLISHER is None:
+        return ids
+    for e in health.status():
+        slug = feeds.clean_slug(e["name"])
+        if not slug:
+            continue
+        runtime.PUBLISHER.set_problem(slug, e["name"], e["problem"], {
+            "kind": e["kind"], "error": e["error"] or "",
+            "last_success": _iso(e["ok_at"]), "failing_since": _iso(e["failing_since"]),
+            "icon": "mdi:cloud-alert" if e["problem"] else "mdi:cloud-check-outline"})
+        ids.add(f"binary_sensor.epaper_problem_{slug}")
+    return ids
+
+
+def _iso(ts):
+    if ts is None:
+        return None
+    from datetime import datetime
+    return datetime.fromtimestamp(ts).astimezone().isoformat(timespec="seconds")
 
 
 def retired_sensors_in_use(spec: dict) -> set[str]:
@@ -286,7 +359,7 @@ async def sync_entities():
     try:
         await runtime.PUBLISHER.sync()
     except Exception as exc:
-        print(f"mqtt sync failed: {exc!r}", flush=True)
+        print(f"mqtt sync failed: {health.describe(exc)}", flush=True)
 
 
 async def publish_mqtt_discovery(session, frames):

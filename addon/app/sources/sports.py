@@ -1,5 +1,6 @@
 """Football and other ESPN leagues: matches and matchday windows."""
 
+import health
 import json
 import time
 from datetime import datetime, timedelta, timezone
@@ -142,16 +143,21 @@ def _parse_espn_event(ev, league_title="MATCH", tz_name=None):
 _sports_window_cache: dict[str, dict] = {}
 
 
-@runtime.live(60)
-async def compute_sports_active_window(session, entity_or_league="soccer/eng.1", pre_buffer_hours=2.0, post_buffer_hours=2.0, tz_name=None, team=None):
-    if not tz_name:
-        tz_name = await get_home_timezone(session)
+def league_slug(entity_or_league) -> tuple[str, str]:
+    """A league as (ESPN path, slug): the slug names its sensor, sensor.epaper_sports_<slug>."""
     raw_input = str(entity_or_league or "soccer/eng.1").strip()
     slug_in = raw_input.lower().replace("-", "_").replace(" ", "_")
     endpoint_path = LEAGUE_MAP.get(slug_in, raw_input)
     if "/" not in endpoint_path:
         endpoint_path = f"soccer/{endpoint_path}"
-    slug = LEAGUE_SLUGS.get(endpoint_path, LEAGUE_SLUGS.get(slug_in, slug_in.replace("/", "_")))
+    return endpoint_path, LEAGUE_SLUGS.get(endpoint_path, LEAGUE_SLUGS.get(slug_in, slug_in.replace("/", "_")))
+
+
+@runtime.live(60)
+async def compute_sports_active_window(session, entity_or_league="soccer/eng.1", pre_buffer_hours=2.0, post_buffer_hours=2.0, tz_name=None, team=None):
+    if not tz_name:
+        tz_name = await get_home_timezone(session)
+    endpoint_path, slug = league_slug(entity_or_league)
     team_q = str(team or "").strip().lower()
 
     cache_key = f"{endpoint_path}:{pre_buffer_hours}:{post_buffer_hours}:{tz_name}:{team_q}"
@@ -181,7 +187,7 @@ async def compute_sports_active_window(session, entity_or_league="soccer/eng.1",
                 events = data.get("events") or []
                 league_title = (data.get("leagues") or [{}])[0].get("name") or "MATCH"
     except Exception as exc:
-        print(f"compute_sports_active_window error: {exc!r}", flush=True)
+        print(f"compute_sports_active_window error: {health.describe(exc)}", flush=True)
 
     yesterday_events = []
     if not events or now_utc.hour < 12:
@@ -390,5 +396,5 @@ async def fetch_sports_match(session, entity_or_league="soccer/eng.1", team=None
         _sports_match_cache[cache_key] = {"at": now, "data": parsed_matches, "is_live": is_any_live}
         return parsed_matches
     except Exception as exc:
-        print(f"fetch_sports_match error: {exc!r}", flush=True)
+        print(f"fetch_sports_match error: {health.describe(exc)}", flush=True)
         return cached["data"] if cached else None

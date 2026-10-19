@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import itertools
 
+import health
+
 import aiohttp
 
 
@@ -50,7 +52,7 @@ class Hass:
         except HassError:
             raise
         except Exception as exc:
-            raise HassError(f"{type(exc).__name__}: {exc}") from exc
+            raise HassError(health.describe(exc)) from exc
 
     async def ws(self, payload: dict, timeout: float = 10):
         """Run one websocket command and return its `result`; raises HassError on failure."""
@@ -77,4 +79,4 @@ class Hass:
         except HassError:
             raise
         except Exception as exc:
-            raise HassError(f"{type(exc).__name__}: {exc}") from exc
+            raise HassError(health.describe(exc)) from exc

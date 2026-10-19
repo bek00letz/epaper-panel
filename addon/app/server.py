@@ -11,6 +11,7 @@ add-on's values), sources/ (outside data, through live_data), panel_link and
 panel_ops (reaching the panel), panel_setup (its ESPHome YAML), web (HTTP),
 config and state (settings and what the running add-on holds).
 """
+import health
 import sys
 from pathlib import Path
 
@@ -41,7 +42,7 @@ async def on_refresh_button():
     try:
         await refresh_frames(runtime.SESSION)
     except Exception as exc:
-        print(f"render for refresh button failed: {exc!r}", flush=True)
+        print(f"render for refresh button failed: {health.describe(exc)}", flush=True)
     await push_panel_update("refresh button")
 
 
@@ -76,8 +77,8 @@ async def render_loop():
                         print(f"proactive refresh push to panel ({panel_min} min interval)", flush=True)
                         await push_panel_update("timed")
         except Exception as exc:
-            print(f"render loop error: {exc!r}", flush=True)
-            runtime.FRAMES.error = repr(exc)
+            print(f"render loop error: {health.describe(exc)}", flush=True)
+            runtime.FRAMES.error = health.describe(exc)
         # Render again on the cadence, or as soon as outside data arrives for
         # the first time (a newly added widget, or just after a start).
         if await runtime.LIVE.wait_for_news(REFRESH):
@@ -121,7 +122,7 @@ async def main():
         except Exception:
             pass
     runners = []
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(trace_configs=[health.trace_config()]) as session:
         runtime.SESSION = session
         start_entity_publisher()
         await start(runners)

@@ -1,5 +1,6 @@
 """Asking the panel to refresh or step, through PanelLink."""
 
+import health
 import asyncio
 
 import runtime
@@ -34,5 +35,5 @@ async def panel_link_loop():
         try:
             await runtime.LINK.deliver()
         except Exception as exc:
-            print(f"panel link loop error: {exc!r}", flush=True)
+            print(f"panel link loop error: {health.describe(exc)}", flush=True)
         await asyncio.sleep(5)

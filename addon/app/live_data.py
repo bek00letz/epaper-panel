@@ -10,7 +10,9 @@ would show up as a stalled panel. Instead:
     render loop is woken so it appears within seconds;
   * later reads return the latest value at once, and a background loop keeps
     it fresh on its own cadence;
-  * a failed fetch keeps the last good value;
+  * a failed fetch keeps the last good value, unless the value has a
+    `stale_after` age and is older than that (an aircraft list from an hour
+    ago is worse than none);
   * a value nobody has read for a while is dropped.
 
 The editor's preview can ask to wait for a value it has never had
@@ -54,6 +56,8 @@ class _Entry:
     inflight: asyncio.Task | None = None
     error: str | None = None
     name: str = ""
+    ok_at: float = float("-inf")
+    stale_after: float | None = None
 
 
 @dataclass
@@ -63,19 +67,21 @@ class LiveData:
     _news: asyncio.Event | None = None
 
     # ------------------------------------------------------------------ reading
-    async def read(self, key, factory, interval: float):
+    async def read(self, key, factory, interval: float, stale_after: float | None = None):
         now = self.clock()
         e = self._entries.get(key)
         if e is None:
             e = self._entries[key] = _Entry(factory=factory, interval=interval, name=str(key[0]))
-        e.factory, e.interval, e.last_read = factory, interval, now
+        e.factory, e.interval, e.last_read, e.stale_after = factory, interval, now, stale_after
         if not e.has_value and _wait_for_fresh.get():
             await self._fetch(e)
         elif now - e.attempted_at >= e.interval:
             self._schedule(e)
-        return e.value if e.has_value else None
+        if not e.has_value or (e.stale_after is not None and now - e.ok_at > e.stale_after):
+            return None
+        return e.value
 
-    def decorate(self, interval: float, session_getter):
+    def decorate(self, interval: float, session_getter, stale_after: float | None = None):
         """Make an `async def f(session, ...)` read from this store.
 
         Its `fallback=` argument (if any) is what callers get while there is no
@@ -92,7 +98,7 @@ class LiveData:
                 async def fetch():
                     return await fn(session_getter() or session, *args, **kwargs)
 
-                value = await self.read(key, fetch, interval)
+                value = await self.read(key, fetch, interval, stale_after)
                 return fallback if value is None else value
 
             reader.direct = fn          # the network call itself, for tests
@@ -152,11 +158,12 @@ class LiveData:
         try:
             value = await asyncio.wait_for(e.factory(), FETCH_TIMEOUT)
             first = not e.has_value
-            e.value, e.has_value, e.error = value, True, None
+            e.value, e.has_value, e.error, e.ok_at = value, True, None, self.clock()
             if first:
                 self._event().set()
         except Exception as exc:
-            msg = f"{type(exc).__name__}: {exc}"[:200]
+            import health
+            msg = health.describe(exc)
             if e.error != msg:
                 print(f"live data: {e.name} failed ({msg}); keeping the last value", flush=True)
             e.error = msg
