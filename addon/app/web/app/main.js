@@ -39,6 +39,8 @@ class App {
     this.doc.on("merged", (n) => toast(n ? "Merged with changes from another window." : "Merged with changes from another window. Nothing clashed."));
     this.doc.on("load", () => { this.canvas.layout(); this.refresh(); this.canvas.preview(true); });
     this.applyTheme();
+    this.el.app.dataset.strip = prefs.get("strip_pos", "top");
+    matchMedia("(min-width: 901px)").addEventListener("change", () => this.renderStrip());
     matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => this.applyTheme());
     this.wireKeys();
     addEventListener("beforeunload", (e) => { if (this.doc.saving !== "saved") { this.doc.flush(); e.preventDefault(); e.returnValue = ""; } });
@@ -66,6 +68,14 @@ class App {
   }
 
   geometry() { return geometry(this.doc.spec); }
+  /* Where the page strip sits: above the canvas (default), below it, or down
+     the side. Down the side turns back into a row on narrow windows. */
+  applyStripPos() {
+    const pos = prefs.get("strip_pos", "top");
+    this.el.app.dataset.strip = ["top", "bottom", "side"].includes(pos) ? pos : "top";
+    this.renderStrip();
+  }
+  stripVertical() { return this.el.app.dataset.strip === "side" && matchMedia("(min-width: 901px)").matches; }
   say(text) { this.el.live.textContent = ""; requestAnimationFrame(() => { this.el.live.textContent = text; }); }
   toast(t, a) { toast(t, a); }
   notice(t) { toast(t); }
@@ -191,12 +201,15 @@ class App {
 
   renderStrip() {
     const old = this.el.strip.querySelector(".tiles");
-    const scroll = old ? old.scrollLeft : 0;
+    const scroll = old ? [old.scrollLeft, old.scrollTop] : [0, 0];
     const focusedTile = document.activeElement?.closest?.(".tile");
     const fi = focusedTile ? [...this.el.strip.querySelectorAll(".tile")].indexOf(focusedTile) : -1;
     this.el.strip.replaceChildren(renderStrip(this));
     const n = this.el.strip.querySelector(".tiles");
-    if (n) n.scrollLeft = scroll;
+    // In a row, status and New page together are exactly one page preview tall.
+    const front = this.el.strip.querySelector(".stripfront"), first = this.el.strip.querySelector(".tile");
+    if (front) front.style.height = !this.stripVertical() && first ? first.offsetHeight + "px" : "";
+    if (n) { n.scrollLeft = scroll[0]; n.scrollTop = scroll[1]; }
     if (fi >= 0) { const t = this.el.strip.querySelectorAll(".tile")[fi]; if (t) t.focus({ preventScroll: true }); }
     if (n && !this.didScroll) { const c = n.querySelector('[aria-current="page"]'); if (c) { c.scrollIntoView({ inline: "nearest", block: "nearest" }); this.didScroll = true; } }
   }

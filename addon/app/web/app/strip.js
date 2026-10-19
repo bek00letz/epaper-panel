@@ -59,9 +59,12 @@ export function renderStrip(app) {
   const head = h("button", { class: "stathead", "aria-label": `Now on the panel: ${line1}. ${line2}`, "aria-haspopup": "dialog" },
     h("span", { class: "l1" }, h("span", { class: "led " + tone }), h("span", { text: line1 })), h("span", { class: "l2", text: line2 }));
   head.addEventListener("click", () => app.openStatus(head));
-  strip.append(head);
+  // Status and New page share the front of the strip, so neither scrolls away.
+  strip.append(h("div", { class: "stripfront" }, head,
+    h("button", { class: "newpage", title: "A new page, from a preset or blank", onclick: () => app.openPresets() }, icon("plus", "sm"), h("span", { text: "New page" }))));
 
-  const list = h("div", { class: "tiles", role: "listbox", "aria-label": "Rotation. Drag to reorder; Alt with an arrow key moves the focused page", "aria-orientation": "horizontal" });
+  const vertical = app.stripVertical();
+  const list = h("div", { class: "tiles", role: "listbox", "aria-label": `Rotation. Drag to reorder; Alt with an arrow key moves the focused page`, "aria-orientation": vertical ? "vertical" : "horizontal" });
   const seen = new Set();
   const slots = spec.rotation.map((n, i) => {
     const again = seen.has(n); seen.add(n);
@@ -74,7 +77,6 @@ export function renderStrip(app) {
     app.say(`Moved ${pageTitle(x)} to place ${Math.min(to > from ? to : to + 1, r.length)} of ${r.length}.`);
     requestAnimationFrame(() => { const t = app.el.strip.querySelectorAll(".tiles .tile")[to > from ? to - 1 : to]; if (t) t.focus(); });
   }, (i) => doc.openPage(spec.rotation[i]));
-  list.append(h("button", { class: "addtile", title: "A new page, from a preset or blank", onclick: () => app.openPresets() }, icon("plus"), h("span", { text: "New page" })));
 
   const out = Object.keys(spec.pages).filter((n) => !spec.rotation.includes(n) && spec.pages[n].tier !== "alert");
   const alerts = Object.keys(spec.pages).filter((n) => spec.pages[n].tier === "alert");
@@ -116,27 +118,33 @@ function tile(app, n, { again, out }) {
   return t;
 }
 
-/* Drag to reorder with an insertion mark; a plain click opens. Alt+arrows move. */
+/* Drag to reorder with an insertion mark; a plain click opens. Alt+arrows move.
+   Works across or down, whichever way the strip runs. */
 function reorderable(list, items, onMove, onOpen) {
+  const down = () => getComputedStyle(list).flexDirection === "column";
   items.forEach((it, idx) => {
     it.addEventListener("pointerdown", (e) => {
       if (e.button !== 0) return;
       const start = { x: e.clientX, y: e.clientY }, thr = e.pointerType === "touch" ? 10 : 4;
+      const v = down();
       let drag = false, target = idx, mark = null;
       const rects = items.map((x) => x.getBoundingClientRect());
       try { it.setPointerCapture(e.pointerId); } catch (_) {}
       const move = (ev) => {
-        const dx = ev.clientX - start.x;
-        if (!drag && Math.hypot(dx, ev.clientY - start.y) < thr) return;
-        if (!drag) { drag = true; it.classList.add("lifted"); mark = h("div", { class: "insert-mark", "aria-hidden": "true" }); list.append(mark); }
-        it.style.transform = `translateX(${dx}px)`;
-        target = rects.filter((r) => r.left + r.width / 2 < ev.clientX).length;
+        const dx = ev.clientX - start.x, dy = ev.clientY - start.y;
+        if (!drag && Math.hypot(dx, dy) < thr) return;
+        if (!drag) { drag = true; it.classList.add("lifted"); mark = h("div", { class: "insert-mark" + (v ? " h" : ""), "aria-hidden": "true" }); list.append(mark); }
+        it.style.transform = v ? `translateY(${dy}px)` : `translateX(${dx}px)`;
+        const pos = v ? ev.clientY : ev.clientX;
+        target = rects.filter((r) => (v ? r.top + r.height / 2 : r.left + r.width / 2) < pos).length;
         const lr = list.getBoundingClientRect();
         const r = rects[Math.min(target, rects.length - 1)];
-        const x = target < rects.length ? r.left - 6 : r.right + 4;
-        Object.assign(mark.style, { left: (x - lr.left + list.scrollLeft) + "px", top: (r.top - lr.top) + "px", height: (r.height * 0.6) + "px" });
-        // Scroll the strip when dragging near its edges.
-        if (ev.clientX > lr.right - 30) list.scrollLeft += 12; else if (ev.clientX < lr.left + 30) list.scrollLeft -= 12;
+        const before = target < rects.length;
+        if (v) Object.assign(mark.style, { top: ((before ? r.top - 5 : r.bottom + 3) - lr.top + list.scrollTop) + "px" });
+        else Object.assign(mark.style, { left: ((before ? r.left - 6 : r.right + 4) - lr.left + list.scrollLeft) + "px", top: (r.top - lr.top) + "px", height: (r.height * 0.6) + "px" });
+        // Scroll the strip when dragging near its ends.
+        if (v) { if (ev.clientY > lr.bottom - 30) list.scrollTop += 12; else if (ev.clientY < lr.top + 30) list.scrollTop -= 12; }
+        else if (ev.clientX > lr.right - 30) list.scrollLeft += 12; else if (ev.clientX < lr.left + 30) list.scrollLeft -= 12;
       };
       const up = () => {
         it.removeEventListener("pointermove", move); it.removeEventListener("pointerup", up); it.removeEventListener("pointercancel", up);
@@ -148,13 +156,15 @@ function reorderable(list, items, onMove, onOpen) {
       it.addEventListener("pointermove", move); it.addEventListener("pointerup", up); it.addEventListener("pointercancel", up);
     });
     it.addEventListener("keydown", (e) => {
+      const v = down();
+      const back = v ? "ArrowUp" : "ArrowLeft", fwd = v ? "ArrowDown" : "ArrowRight";
       if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(idx); }
-      else if (e.altKey && e.key === "ArrowLeft" && idx > 0) { e.preventDefault(); onMove(idx, idx - 1); }
-      else if (e.altKey && e.key === "ArrowRight" && idx < items.length - 1) { e.preventDefault(); onMove(idx, idx + 2); }
-      else if (!e.altKey && (e.key === "ArrowRight" || e.key === "ArrowLeft")) {
+      else if (e.altKey && e.key === back && idx > 0) { e.preventDefault(); onMove(idx, idx - 1); }
+      else if (e.altKey && e.key === fwd && idx < items.length - 1) { e.preventDefault(); onMove(idx, idx + 2); }
+      else if (!e.altKey && (e.key === fwd || e.key === back)) {
         e.preventDefault();
-        const all = [...list.querySelectorAll(".tile, .addtile")];
-        const n = all[all.indexOf(it) + (e.key === "ArrowRight" ? 1 : -1)];
+        const all = [...list.querySelectorAll(".tile")];
+        const n = all[all.indexOf(it) + (e.key === fwd ? 1 : -1)];
         if (n) n.focus();
       }
     });

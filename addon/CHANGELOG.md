@@ -27,6 +27,10 @@ there for now: add `?classic=1` to the editor's address.
 - **Dynamic units.** A value can step up through its unit (950 W, then
   1.23 kW) or convert (m/s to km/h, °C to °F), and a label can follow it
   ("kW used"), with no templates.
+- **Put the page strip where you like it**: above the canvas, below it, or
+  down the side (Settings, Editor). Down the side turns back into a row on
+  phones and narrow windows. The panel's status and New page share the
+  front of the strip, so New page never scrolls away.
 - **Text can wrap** onto more lines instead of running out of its box; the
   note that says it's cut off offers to wrap it.
 - **Insert** finds element types and sensors in one search; drag a sensor

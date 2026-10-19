@@ -123,7 +123,8 @@ the inventory every change is checked against.
 
 - **Four things, one place each.** The panel (status at the head of the page
   strip, Settings for the rest), the rotation (the page strip, above the
-  canvas so the window reads from general to specific, *is* the rotation: drag to reorder, a page can sit in it twice), a page (the
+  canvas by default so the window reads from general to specific (below or
+  down the side is a setting), *is* the rotation: drag to reorder, a page can sit in it twice), a page (the
   inspector when nothing is selected), an element (canvas and inspector).
   Don't give any of them a second home.
 - **The canvas is the task**, so the chrome is deliberately quiet and the panel

@@ -214,12 +214,18 @@ kbd { font: 12px var(--font); background: var(--surface); border-radius: 5px; pa
 /* ---------- the page strip ---------- */
 .stripwrap { display: flex; align-items: stretch; gap: 0; padding: 12px max(16px, env(safe-area-inset-right)) 6px max(16px, env(safe-area-inset-left)); min-width: 0; border-bottom: 0.5px solid var(--sep); }
 .strip { display: flex; align-items: flex-start; gap: 12px; min-width: 0; flex: 1; }
-.stathead { flex: none; width: 148px; text-align: left; border: 0; background: var(--surface); border-radius: var(--r-card); padding: 10px 12px; cursor: pointer;
-  box-shadow: 0 0 0 0.5px var(--sep); transition: transform var(--t) var(--spring), background-color var(--t-fast); margin-top: 2px; }
+.stripfront { flex: none; width: 132px; display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
+.newpage { flex: 1 1 0; min-height: 0; display: flex; align-items: center; justify-content: center; gap: 5px; border: 1.5px dashed var(--fg-3); border-radius: var(--r-card);
+  background: none; color: var(--fg-2); font-size: 12.5px; font-weight: 500; cursor: pointer; transition: color var(--t-fast), border-color var(--t-fast), transform var(--t) var(--spring); }
+.newpage:hover { color: var(--accent); border-color: var(--accent); }
+.newpage:active { transform: scale(0.97); }
+.stathead { flex: 1 1 0; min-height: 0; text-align: left; border: 0; background: var(--surface); border-radius: var(--r-card); padding: 4px 10px; cursor: pointer;
+  display: flex; flex-direction: column; justify-content: center; line-height: 1.25;
+  box-shadow: 0 0 0 0.5px var(--sep); transition: transform var(--t) var(--spring), background-color var(--t-fast); }
 .stathead:hover { background: var(--surface-2); }
 .stathead:active { transform: scale(0.97); }
-.stathead .l1 { display: flex; align-items: center; gap: 7px; font-weight: 600; font-size: 13px; }
-.stathead .l2 { display: block; font-size: 11.5px; color: var(--fg-2); margin-top: 2px; font-variant-numeric: tabular-nums; }
+.stathead .l1 { display: flex; align-items: center; gap: 7px; font-weight: 600; font-size: 12.5px; white-space: nowrap; }
+.stathead .l2 { display: block; font-size: 11px; color: var(--fg-2); margin-top: 1px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .led { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex: none; display: inline-block; }
 .led.wait { background: var(--orange); } .led.bad { background: var(--red); }
 .tiles { display: flex; align-items: flex-start; gap: 10px; overflow-x: auto; padding: 2px 4px 6px; position: relative; min-width: 0; flex: 1; scroll-padding: 8px; scrollbar-width: thin; }
@@ -237,10 +243,6 @@ kbd { font: 12px var(--font); background: var(--surface); border-radius: 5px; pa
 .tile.dim .thumbwrap { opacity: 0.5; }
 .tile.lifted { z-index: 3; transition: none; }
 .tile.lifted .thumbwrap { box-shadow: 0 0 0 2.5px var(--accent), 0 12px 28px rgba(0, 0, 0, 0.28); transform: scale(1.04); }
-.addtile { flex: none; width: 96px; height: 46px; display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 12.5px; font-weight: 500; border-radius: 9px; border: 1.5px dashed var(--fg-3); background: none; color: var(--fg-2); cursor: pointer;
-  transition: color var(--t-fast), border-color var(--t-fast), transform var(--t) var(--spring); }
-.addtile:hover { color: var(--accent); border-color: var(--accent); }
-.addtile:active { transform: scale(0.95); }
 .groupsep { flex: none; width: 0.5px; align-self: stretch; background: var(--sep); margin: 0 2px; }
 .grouplab { flex: none; writing-mode: vertical-rl; transform: rotate(180deg); font-size: 11px; color: var(--fg-2); align-self: center; white-space: nowrap; }
 .insert-mark { position: absolute; width: 3px; background: var(--accent); border-radius: 2px; pointer-events: none; z-index: 4; }
@@ -481,7 +483,7 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
   .canvasarea { padding: 12px; place-items: start center; }
   .device { padding: 7px; border-radius: 12px; width: 100%; }
   .layers { position: absolute; inset: auto 8px 8px 8px; width: auto; height: 55%; margin: 0; z-index: 6; box-shadow: var(--shadow-pop); }
-  .stathead { width: 120px; padding: 8px 10px; }
+  .stripfront { width: 108px; }
   .tile { width: 108px; }
   .inspector { position: fixed; left: 0; right: 0; bottom: 0; height: 72dvh; z-index: 20; border-left: 0; border-radius: var(--r-sheet) var(--r-sheet) 0 0;
     box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.16), 0 0 0 0.5px var(--sep); transform: translateY(calc(100% - 76px - env(safe-area-inset-bottom))); transition: transform var(--t) var(--spring); }
@@ -505,3 +507,20 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
 .unitsbox { display: flex; flex-direction: column; gap: 8px; }
 .opt.newpage { border-top: 0.5px solid var(--sep); border-radius: 0 0 var(--r-ctl) var(--r-ctl); margin-top: 4px; color: var(--accent); }
 .opt .o2.plain { font-family: var(--font); }
+
+/* ---------- where the page strip sits (Settings › Editor) ---------- */
+#app[data-strip="bottom"] .stripwrap { order: 3; border-bottom: 0; border-top: 0.5px solid var(--sep); padding-top: 10px; padding-bottom: max(10px, env(safe-area-inset-bottom)); }
+#app[data-strip="bottom"] .canvasbar { order: 1; }
+#app[data-strip="bottom"] .canvaswrap { order: 2; }
+@media (min-width: 901px) {
+  #app[data-strip="side"] .stage { display: grid; grid-template-columns: 184px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+  #app[data-strip="side"] .stripwrap { grid-column: 1; grid-row: 1 / 3; border-bottom: 0; border-right: 0.5px solid var(--sep); padding: 12px 12px 0 max(14px, env(safe-area-inset-left)); min-height: 0; }
+  #app[data-strip="side"] .canvasbar { grid-column: 2; grid-row: 1; }
+  #app[data-strip="side"] .canvaswrap { grid-column: 2; grid-row: 2; }
+  #app[data-strip="side"] .strip { flex-direction: column; gap: 10px; min-height: 0; }
+  #app[data-strip="side"] .stripfront { width: 100%; padding: 0; }
+  #app[data-strip="side"] .tiles { flex-direction: column; align-items: stretch; overflow-x: hidden; overflow-y: auto; padding: 2px 3px 16px; margin: 0 -3px; }
+  #app[data-strip="side"] .tile { width: 100%; }
+  #app[data-strip="side"] .groupsep { width: auto; height: 0.5px; align-self: stretch; margin: 4px 0 0; }
+  #app[data-strip="side"] .grouplab { writing-mode: horizontal-tb; transform: none; align-self: flex-start; padding: 0 2px; }
+}
