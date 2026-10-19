@@ -1,5 +1,40 @@
 # Changelog
 
+## 0.9.3
+**New panel firmware.** Install it from the ESPHome Device Builder once the
+add-on is updated. The previous firmware is in `esphome/rollback/` if you need
+to go back.
+
+- **Highlights and padlocks land exactly on the pills, in every orientation.**
+  The panel no longer guesses which way up it is from what's on screen.
+  0.8.37 looked for black pixels on two rows, so a page with a line or chart
+  there flipped the highlight to the wrong side. The add-on now sends the pill
+  positions and the exact rotation in the frame file. They're the same numbers
+  it draws the footer with, so the two can't disagree. Portrait mounting gets a
+  correct highlight for the first time.
+- **The buttons never wait for the network.** Downloads run in the background;
+  a slow or unreachable Home Assistant can no longer freeze the dial or trip the
+  watchdog.
+- **A bad download never reaches the screen.** Every frame file is checked
+  before it's used: checksum, that it's for this panel's size, and that every
+  offset stays inside the file. Before, a file for a different panel model
+  could write past the end of display memory.
+- **Locks survive alerts.** An alert takes over the screen as before, but
+  your category or page lock comes back when it's over.
+- **Firmware matches the add-on.** The firmware builds its component from this
+  release's tag instead of whatever is on `main`, and the display driver is
+  pinned to a tested commit.
+- **One firmware source.** The YAML now comes from one template, and the
+  repository's copy is checked against it. Removed: the PNG fallback (broken
+  since 0.8.35), 21 mirrored globals, and the stray copies of `epf_client.h`
+  and its download button.
+- **Fixed:** saving Panel setup without retyping the Wi-Fi password wrote the
+  masked `••••••••` into the ESPHome file. The previous file is now kept as
+  `<name>.yaml.previous`.
+- **Fixed:** in portrait, the pill widths sent to the panel were measured for
+  landscape.
+- **Docs:** `show_page` takes `index`, not `page`.
+
 ## 0.9.2
 Security and privacy. The panel's firmware and frame files are unchanged.
 

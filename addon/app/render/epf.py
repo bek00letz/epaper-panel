@@ -25,6 +25,7 @@ MODEL_MAP = {
     "crowpanel_420": 0x0420,
     "crowpanel_290": 0x0290,
     "crowpanel_750": 0x0750,
+    "crowpanel_102": 0x1020,
 }
 
 MODEL_REV_MAP = {v: k for k, v in MODEL_MAP.items()}
@@ -34,6 +35,62 @@ FLAG_ALERT_INTERRUPT = 0x0001
 FLAG_QUIET_HOURS = 0x0002
 FLAG_FORCE_FULL = 0x0004
 FLAG_ORIENTATION_180 = 0x0008
+FLAG_GEOMETRY = 0x0010          # the reserved header bytes carry an OverlayGeometry
+
+# Panels whose frame buffer stores each row right-to-left (the CrowPanel
+# driver's mirror_x). Pages are flipped before packing so a straight memcpy
+# into the buffer shows them the right way round.
+MIRRORED_MODELS = ("crowpanel_579", "crowpanel_420")
+
+HEADER_FMT = ">4sHHHHHHHHIQIII"          # 44 bytes, then 20 reserved
+GEOMETRY_FMT = ">HHBBHHHHH4x"             # 20 bytes in the reserved area
+
+
+@dataclass(frozen=True)
+class OverlayGeometry:
+    """How the panel finds the footer pills it highlights.
+
+    Everything in logical (pre-rotation) pixels, plus the transform from
+    logical to physical buffer coordinates. The server drew the footer, so it
+    is the only side that knows where things are; the firmware just applies it.
+    """
+    logical_w: int
+    logical_h: int
+    quarter_turns: int       # orientation setting / 90: 0, 1 (90°), 2 (180°), 3 (270°)
+    mirror_x: bool
+    pill_y0: int
+    pill_y1: int
+    cat_x0: int
+    sub_x0: int
+    sub_x1: int
+
+    def pack(self) -> bytes:
+        return struct.pack(GEOMETRY_FMT, self.logical_w, self.logical_h, self.quarter_turns & 3,
+                           1 if self.mirror_x else 0, self.pill_y0, self.pill_y1,
+                           self.cat_x0, self.sub_x0, self.sub_x1)
+
+    @classmethod
+    def unpack(cls, raw: bytes) -> "OverlayGeometry":
+        lw, lh, q, tf, y0, y1, cx0, sx0, sx1 = struct.unpack(GEOMETRY_FMT, raw)
+        return cls(lw, lh, q & 3, bool(tf & 1), y0, y1, cx0, sx0, sx1)
+
+
+def to_physical(geo: OverlayGeometry, x: int, y: int) -> tuple[int, int]:
+    """Logical pixel -> physical buffer pixel, matching theme.orient_for_panel
+    followed by the mirror flip in encode_epf. The firmware implements the same."""
+    lw, lh = geo.logical_w, geo.logical_h
+    q = geo.quarter_turns & 3
+    if q == 0:
+        px, py, pw = x, y, lw
+    elif q == 1:                     # 90°: PIL ROTATE_270 (a clockwise quarter turn)
+        px, py, pw = lh - 1 - y, x, lh
+    elif q == 2:                     # 180°
+        px, py, pw = lw - 1 - x, lh - 1 - y, lw
+    else:                            # 270°: PIL ROTATE_90 (counter-clockwise)
+        px, py, pw = y, lw - 1 - x, lh
+    if geo.mirror_x:
+        px = pw - 1 - px
+    return px, py
 
 
 @dataclass(frozen=True)
@@ -74,6 +131,7 @@ class EpfHeader:
 @dataclass(frozen=True)
 class EpfStream:
     header: EpfHeader
+    geometry: OverlayGeometry | None
     categories: tuple[EpfCategory, ...]
     pages: tuple[EpfPage, ...]
     pixel_data: bytes
@@ -104,6 +162,7 @@ def encode_epf(
     force_full_waveform: bool = False,
     orientation_180: bool = False,
     content_hash: int = 0,
+    geometry: OverlayGeometry | None = None,
 ) -> bytes:
     """Encode layout pages and identity directories into an aligned .epf binary buffer."""
     num_pages = len(pages)
@@ -118,7 +177,9 @@ def encode_epf(
     stride = (width + 7) // 8
     bytes_per_page = stride * height
     payload_size = bytes_per_page * num_pages
-    model_id = MODEL_MAP.get(display_model, 0x0579)
+    if display_model not in MODEL_MAP:
+        raise ValueError(f"unknown display model {display_model!r}")
+    model_id = MODEL_MAP[display_model]
 
     flags = 0
     if alert_interrupt:
@@ -129,6 +190,8 @@ def encode_epf(
         flags |= FLAG_FORCE_FULL
     if orientation_180:
         flags |= FLAG_ORIENTATION_180
+    if geometry is not None:
+        flags |= FLAG_GEOMETRY
 
     dir_offset = HEADER_SIZE
     cat_dir_size = num_cats * CAT_RECORD_SIZE
@@ -136,10 +199,9 @@ def encode_epf(
     data_offset = dir_offset + cat_dir_size + page_dir_size
 
     # 1. Pack Header (64 bytes)
-    # Format: 4s (magic:4) + 8*H (16) + I (flags:4) + Q (hash:8) + 3*I (sizes:12) + 20s (res:20) = 64 bytes
-    header_fmt = ">4sHHHHHHHHIQIII20s"
+    # 4s magic + 8*H + I flags + Q hash + 3*I sizes = 44 bytes, then 20 bytes of geometry.
     header_bytes = struct.pack(
-        header_fmt,
+        HEADER_FMT,
         MAGIC,
         VERSION,
         model_id,
@@ -154,8 +216,7 @@ def encode_epf(
         payload_size,
         dir_offset,
         data_offset,
-        b"\x00" * 20,
-    )
+    ) + (geometry.pack() if geometry is not None else b"\x00" * 20)
     assert len(header_bytes) == HEADER_SIZE, f"Header size mismatch: {len(header_bytes)}"
 
     # 2. Pack Category Directory
@@ -203,7 +264,7 @@ def encode_epf(
         # CrowPanel hardware scanline orientation for direct DisplayBuffer memcpy:
         # CrowPanel 5.79" (and other mirror_x displays) stores rows in FLIP_LEFT_RIGHT
         # so that a direct std::memcpy into the display buffer matches draw_pixel_at.
-        if display_model in ("crowpanel_579", "crowpanel_420"):
+        if display_model in MIRRORED_MODELS:
             packed_img = img_1bit.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
         else:
             packed_img = img_1bit
@@ -233,7 +294,7 @@ def decode_epf(data: bytes) -> EpfStream:
         raise ValueError(f"CRC-32 checksum mismatch: got 0x{computed_crc:08X}, expected 0x{expected_crc:08X}")
 
     # Unpack Header
-    header_fields = struct.unpack(">4sHHHHHHHHIQIII20s", data[:HEADER_SIZE])
+    header_fields = struct.unpack(HEADER_FMT, data[:44])
     magic = header_fields[0]
     if magic != MAGIC:
         raise ValueError(f"Invalid magic: {magic!r}, expected {MAGIC!r}")
@@ -290,8 +351,10 @@ def decode_epf(data: bytes) -> EpfStream:
         pos += PAGE_RECORD_SIZE
 
     pixel_data = body[header.data_offset :]
+    geometry = OverlayGeometry.unpack(data[44:HEADER_SIZE]) if header.flags & FLAG_GEOMETRY else None
     return EpfStream(
         header=header,
+        geometry=geometry,
         categories=tuple(categories),
         pages=tuple(pages),
         pixel_data=pixel_data,
@@ -319,9 +382,8 @@ def extract_page_epf(stream: EpfStream | bytes, page_index: int) -> bytes:
     page_dir_size = 1 * PAGE_RECORD_SIZE
     data_offset = dir_offset + cat_dir_size + page_dir_size
 
-    header_fmt = ">4sHHHHHHHHIQIII20s"
     header_bytes = struct.pack(
-        header_fmt,
+        HEADER_FMT,
         MAGIC,
         VERSION,
         stream.header.model_id,
@@ -336,8 +398,7 @@ def extract_page_epf(stream: EpfStream | bytes, page_index: int) -> bytes:
         bytes_per_page,
         dir_offset,
         data_offset,
-        b"\x00" * 20,
-    )
+    ) + (stream.geometry.pack() if stream.geometry is not None else b"\x00" * 20)
 
     cat_bytes = struct.pack(
         ">IHHHHI",
@@ -369,7 +430,7 @@ def extract_page_image(stream: EpfStream | bytes, page_index: int) -> Image.Imag
         stream = decode_epf(stream)
     raw = stream.page_slice(page_index)
     im = Image.frombytes("1", (stream.header.width, stream.header.height), raw)
-    if stream.header.model_id in (0x0579, 0x0420):
+    if stream.header.model_id in tuple(MODEL_MAP[m] for m in MIRRORED_MODELS):
         im = im.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
     return im
 

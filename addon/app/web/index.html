@@ -1467,7 +1467,6 @@ aside {
           <strong style="font-size:13px;flex:1">Generated <code>crowpanel-epaper.yaml</code></strong>
           <button id="copyyaml" class="sm primary">Copy YAML</button>
           <button id="dlyaml" class="sm">Download .yaml</button>
-          <button id="dleh" class="sm">Download epf_client.h</button>
         </div>
         <textarea id="yamlout" class="codebox" readonly></textarea>
       </div>
@@ -4521,14 +4520,6 @@ $("dlyaml").onclick = async (e) => {
   a.download = ($("cfg_dev").value.trim() || "crowpanel-epaper") + ".yaml";
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-};
-
-$("dleh").onclick = (e) => {
-  e.preventDefault();
-  const a = document.createElement("a");
-  a.href = "api/epf_client.h";
-  a.download = "epf_client.h";
-  a.click();
 };
 
 /* Data Sources */

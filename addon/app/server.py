@@ -34,6 +34,7 @@ from PIL import Image
 
 sys.path.insert(0, str(Path(__file__).parent))
 import feeds  # noqa: E402
+import firmware_gen  # noqa: E402
 import mqtt_bridge  # noqa: E402
 from hass import Hass  # noqa: E402
 from panel_link import PanelLink  # noqa: E402
@@ -2423,9 +2424,12 @@ async def build_frames(session):
         png = _png(one)
         cat_ids = [stripmeta.identity("empty")]
         sub_ids = [stripmeta.identity("empty:0")]
+        # No pills on the empty page: width 0 tells the panel to draw no highlight.
+        fg = T.footer_geometry(clock=datetime.now().strftime("%H:%M"), orientation=orient, display=display)
         epf_data = epf.encode_epf(
-            pages=[one], cat_ids=cat_ids, cat_offsets=[0], cat_sizes=[1], cat_pill_widths=[110], sub_ids=sub_ids,
-            display_model=display, width=dw, height=dh, rotate_sec=rot_sec, quiet_hours=quiet_active, alert_interrupt=False
+            pages=[one], cat_ids=cat_ids, cat_offsets=[0], cat_sizes=[1], cat_pill_widths=[0], sub_ids=sub_ids,
+            display_model=display, width=dw, height=dh, rotate_sec=rot_sec, quiet_hours=quiet_active,
+            alert_interrupt=False, orientation_180=(orient == 180), geometry=panel_geometry(fg, orient, display),
         )
         return png, png, [png], [], [0], [1], ["empty"], [110], quiet_active, quiet_reason, rot_sec, cat_ids, sub_ids, epf_data, epf_data
 
@@ -2444,6 +2448,8 @@ async def build_frames(session):
     cat_names = []
     cat_pill_widths = []
     cat_sub_keys = []
+    clock = datetime.now().strftime("%H:%M")       # one clock for the whole strip
+    geo = None
 
     for cat_i, cat_name in enumerate(live):
         page_def = spec["pages"][cat_name]
@@ -2473,19 +2479,16 @@ async def build_frames(session):
 
         cat_display_name = cat_name.replace("_", " ").upper()
         cat_label = f"{cat_i + 1}/{len(live)}  {cat_display_name}"
-        cat_f = T.font(13, bold=True)
-        cat_w = T.text_width(cat_label, cat_f) + 20
-        margin = disp["margin"] if dw >= 400 else min(disp["margin"], 16)
-        cat_x0 = 96 if dw >= 400 else (margin + T.text_width("00:00", T.font(18)) + 12)
-        sub_w = 48
-        sub_x1 = dw - margin
-        sub_x0 = sub_x1 - sub_w
-        max_cat_w = max(40, (sub_x0 - cat_x0 - 8) if sub_count > 1 else (sub_x1 - cat_x0 - 8))
-        cat_w = min(cat_w, max_cat_w)
+        # The same numbers the footer is drawn with, so the panel's highlight
+        # lands exactly on the pill in every orientation.
+        fg = T.footer_geometry(clock=clock, cat_label=cat_label, has_sub=sub_count > 1,
+                               orientation=orient, display=display)
+        if geo is None:
+            geo = panel_geometry(fg, orient, display)
         cat_offsets.append(len(imgs))
         cat_sizes.append(sub_count)
         cat_names.append(cat_name)
-        cat_pill_widths.append(cat_w)
+        cat_pill_widths.append(fg["cat_w"])
 
         # Render each sub-item for this category
         for s_idx in range(sub_count):
@@ -2535,7 +2538,7 @@ async def build_frames(session):
 
             img = await asyncio.to_thread(
                 layout.render_page, cloned_page, cloned_vals,
-                clock=datetime.now().strftime("%H:%M"),
+                clock=clock,
                 label=cat_display_name,
                 cat_label=cat_label,
                 sub_label=sub_label,
@@ -2581,10 +2584,20 @@ async def build_frames(session):
         alert_interrupt=bool(alert),
         orientation_180=(orient == 180),
         content_hash=int.from_bytes(slices_digest[:8], "big"),
+        geometry=geo,
     )
     epf_single = epf.extract_page_epf(epf_data, 0)
 
     return _png(strip), slice_pngs[0], slice_pngs, live, cat_offsets, cat_sizes, cat_names, cat_pill_widths, quiet_active, quiet_reason, rot_sec, cat_ids, sub_ids, epf_data, epf_single
+
+
+def panel_geometry(fg: dict, orient: int, display: str) -> epf.OverlayGeometry:
+    cw, ch = fg["canvas"]
+    return epf.OverlayGeometry(
+        logical_w=cw, logical_h=ch, quarter_turns=(int(orient) // 90) % 4,
+        mirror_x=T.get_display(display)["id"] in epf.MIRRORED_MODELS,
+        pill_y0=fg["pill_y0"], pill_y1=fg["pill_y1"], cat_x0=fg["cat_x0"],
+        sub_x0=fg["sub_x0"], sub_x1=fg["sub_x1"])
 
 
 async def refresh_frames(session):
@@ -3306,10 +3319,7 @@ def generate_esphome_yaml(cfg: dict) -> tuple[str, str]:
 
     base_url = f"{scheme}://{host_only}:{port}"
     token_q = f"?token={urllib.parse.quote(FRAME_TOKEN)}" if FRAME_TOKEN else ""
-    frames_url = f"{base_url}/frames.png{token_q}"
-    frame_url = f"{base_url}/frame.png{token_q}"
     frames_epf_url = f"{base_url}/frames.epf{token_q}"
-    frame_epf_url = f"{base_url}/frame.epf{token_q}"
 
     use_secrets = bool(cfg.get("use_secrets"))
     ssid = (cfg.get("wifi_ssid") or "").strip()
@@ -3319,28 +3329,10 @@ def generate_esphome_yaml(cfg: dict) -> tuple[str, str]:
     raw_interval = cfg.get("refresh_interval") or "5min"
     m_int = re.search(r"\d+", str(raw_interval))
     initial_min = max(1, min(60, int(m_int.group(0)))) if m_int else 5
-    interval = f"{initial_min}min"
     try:
         orient = int(cfg.get("orientation") if "orientation" in cfg else load_layouts().get("orientation", 0))
     except (TypeError, ValueError):
         orient = 0
-
-    if orient in (180, 270):
-        next_pin, prev_pin = 6, 4
-        top_btn_pin = 1
-        bot_btn_pin = 2
-    else:
-        next_pin, prev_pin = 4, 6
-        top_btn_pin = 2
-        bot_btn_pin = 1
-
-    disp_margin = disp["margin"] if dw >= 400 else min(disp["margin"], 16)
-    cat_vx0 = 96 if dw >= 400 else (disp_margin + 55)
-    sub_w = 48
-    sub_vx1 = dw - disp_margin
-    sub_vx0 = sub_vx1 - sub_w
-    pill_vy0 = dh - 28
-    pill_vy1 = dh - 4
 
     known_secrets = _inspect_existing_secrets()
     if use_secrets and "api_encryption_key" in known_secrets:
@@ -3363,899 +3355,10 @@ def generate_esphome_yaml(cfg: dict) -> tuple[str, str]:
     else:
         wifi_pw_line = _yaml_str(pw)
 
-    extra_ext = f"\n  - source: {disp['esphome_component']}" if disp["esphome_component"].startswith("github://") else ""
-    ext_comp_block = f"""external_components:
-  - source: github://bek00letz/epaper-panel@main
-    refresh: 0s
-    components: [epf]{extra_ext}
-
-epf:
-"""
-    if disp["esphome_component"].startswith("github://"):
-        display_platform_block = f"""display:
-  - platform: crowpanel_epaper
-    id: epd
-    model: "{disp["esphome_model"]}"
-    clk_pin: 12
-    mosi_pin: 11
-    cs_pin: 45
-    dc_pin: 46
-    reset_pin: 47
-    busy_pin: 48
-    invert_colors: true
-    full_update_every: 10
-    update_interval: never
-    auto_clear_enabled: false"""
-    else:
-        display_platform_block = f"""display:
-  - platform: waveshare_epaper
-    id: epd
-    model: "{disp["esphome_model"]}"
-    cs_pin: 45
-    dc_pin: 46
-    busy_pin: 48
-    reset_pin: 47
-    reset_duration: 2ms
-    update_interval: never
-    auto_clear_enabled: false"""
-
-    yaml_text = f"""# {disp["name"]} ({disp["sku"]}, {dw}x{dh}) e-paper panel — generated by the E-paper add-on wizard.
-# Paste into ESPHome Dashboard (New Device -> Edit -> Install).
-
-substitutions:
-  name: {dev_name}
-  frames_url: {_yaml_str(frames_url)}
-  frame_url:  {_yaml_str(frame_url)}
-  frames_epf_url: {_yaml_str(frames_epf_url)}
-  frame_epf_url:  {_yaml_str(frame_epf_url)}
-  page_h: "{dh}"
-
-esphome:
-  name: ${{name}}
-  friendly_name: E-paper panel
-  on_boot:
-    priority: -100
-    then:
-      - script.execute: refetch
-
-esp32:
-  board: esp32-s3-devkitc-1
-  framework:
-    type: esp-idf
-
-psram:
-  mode: octal
-  speed: 80MHz
-
-{ext_comp_block}globals:
-  - id: have_frames
-    type: bool
-    restore_value: false
-    initial_value: 'false'
-  - id: have_single
-    type: bool
-    restore_value: false
-    initial_value: 'false'
-  - id: page
-    type: int
-    restore_value: false
-    initial_value: '0'
-  - id: page_count
-    type: int
-    restore_value: false
-    initial_value: '1'
-  - id: pinned
-    type: bool
-    restore_value: false
-    initial_value: 'false'
-  - id: cat_idx
-    type: int
-    restore_value: false
-    initial_value: '0'
-  - id: sub_idx
-    type: int
-    restore_value: false
-    initial_value: '0'
-  - id: cat_pinned
-    type: bool
-    restore_value: false
-    initial_value: 'false'
-  - id: cat_count
-    type: int
-    restore_value: false
-    initial_value: '1'
-  - id: cat_offsets
-    type: std::vector<int>
-    restore_value: false
-  - id: cat_sizes
-    type: std::vector<int>
-    restore_value: false
-  - id: cat_pill_widths
-    type: std::vector<int>
-    restore_value: false
-  - id: cat_sub_pos
-    type: std::vector<int>
-    restore_value: false
-  - id: cat_ids
-    type: std::vector<uint32_t>
-    restore_value: false
-  - id: sub_ids
-    type: std::vector<uint32_t>
-    restore_value: false
-  - id: pinned_cat_id
-    type: uint32_t
-    restore_value: false
-    initial_value: '0'
-  - id: pinned_sub_id
-    type: uint32_t
-    restore_value: false
-    initial_value: '0'
-  - id: cur_cat_id
-    type: uint32_t
-    restore_value: false
-    initial_value: '0'
-  - id: cur_sub_id
-    type: uint32_t
-    restore_value: false
-    initial_value: '0'
-  - id: sub_mode
-    type: bool
-    restore_value: false
-    initial_value: 'false'
-  - id: idle_sec
-    type: int
-    restore_value: false
-    initial_value: '0'
-  - id: rotate_sec
-    type: int
-    restore_value: false
-    initial_value: '30'
-  - id: fetch_idle_sec
-    type: int
-    restore_value: false
-    initial_value: '0'
-  - id: user_cool_sec
-    type: int
-    restore_value: false
-    initial_value: '999'
-  - id: pending_refetch
-    type: bool
-    restore_value: false
-    initial_value: 'false'
-  - id: pending_redraw
-    type: bool
-    restore_value: false
-    initial_value: 'false'
-  - id: last_strip_hash
-    type: int
-    restore_value: false
-    initial_value: '-1'
-  - id: last_drawn_page
-    type: int
-    restore_value: false
-    initial_value: '-1'
-  - id: last_ok_press_ms
-    type: uint32_t
-    restore_value: false
-    initial_value: '0'
-  - id: downloading_frames
-    type: bool
-    restore_value: false
-    initial_value: 'false'
-  - id: quiet_hours_active
-    type: bool
-    restore_value: false
-    initial_value: 'false'
-
-font:
-  - file: "gfonts://Lato@700"
-    id: diag_big
-    size: 56
-  - file: "gfonts://Lato@400"
-    id: diag_small
-    size: 26
-
-logger:
-
-api:
-  encryption:
-    key: {api_key_line}
-  actions:
-    - action: refresh_now
-      then:
-        - script.execute: request_refetch
-    - action: show_page
-      variables:
-        index: int
-      then:
-        - lambda: |-
-            epf::PanelController::instance().show_page(index);
-            SYNC_PANEL_GLOBALS();
-        - script.execute: redraw
-    - action: show_category
-      variables:
-        category: int
-        sub: int
-      then:
-        - lambda: |-
-            epf::PanelController::instance().show_category(category, sub);
-            SYNC_PANEL_GLOBALS();
-        - script.execute: redraw
-    - action: page_step
-      variables:
-        delta: int
-      then:
-        - lambda: |-
-            epf::PanelController::instance().page_step(delta);
-            SYNC_PANEL_GLOBALS();
-        - script.execute: redraw
-    - action: mode_toggle
-      then:
-        - lambda: |-
-            epf::PanelController::instance().mode_toggle();
-            SYNC_PANEL_GLOBALS();
-        - script.execute: redraw
-    - action: category_step
-      variables:
-        delta: int
-      then:
-        - lambda: |-
-            epf::PanelController::instance().category_step(delta);
-            SYNC_PANEL_GLOBALS();
-        - script.execute: redraw
-    - action: sub_step
-      variables:
-        delta: int
-      then:
-        - lambda: |-
-            epf::PanelController::instance().sub_step(delta);
-            SYNC_PANEL_GLOBALS();
-        - script.execute: redraw
-    - action: hold_toggle
-      then:
-        - lambda: |-
-            epf::PanelController::instance().hold_toggle();
-            SYNC_PANEL_GLOBALS();
-        - script.execute: redraw
-    - action: category_pin_toggle
-      then:
-        - lambda: |-
-            epf::PanelController::instance().category_pin_toggle();
-            SYNC_PANEL_GLOBALS();
-        - script.execute: redraw
-    - action: lock_toggle
-      then:
-        - lambda: |-
-            epf::PanelController::instance().lock_toggle();
-            SYNC_PANEL_GLOBALS();
-        - script.execute: redraw
-
-ota:
-  - platform: esphome
-    password: {ota_pw_line}
-
-wifi:
-  ssid: {wifi_ssid_line}
-  password: {wifi_pw_line}
-  fast_connect: true
-
-switch:
-  - platform: gpio
-    pin: 7
-    id: epd_power
-    restore_mode: ALWAYS_ON
-    internal: true
-
-{display_platform_block}
-    lambda: |-
-      if (id(downloading_frames)) {{
-        return;
-      }}
-      if (epf::EpfClient::instance().has_stream()) {{
-        int cur_page = epf::PanelController::instance().page();
-        // 1. Direct scanline blit into display buffer: ~80 microseconds!
-        epf::EpfClient::instance().blit_to_display(id(epd), cur_page);
-
-        // 2. Fast direct overlays (active pill inversion & solid padlock badge): <50 microseconds!
-        epf::PanelController::instance().draw_overlays(id(epd), {dw}, {dh});
-      }} else if (id(have_frames)) {{
-        // Fallback for legacy PNG strip
-        const int off = ${{page_h}} * id(page);
-        for (int y = 0; y < ${{page_h}}; y++) {{
-          for (int x = 0; x < {dw}; x++) {{
-            it.draw_pixel_at(x, y, id(frames).get_pixel(x, y + off));
-          }}
-        }}
-        epf::PanelController::instance().draw_overlays(id(epd), {dw}, {dh});
-      }} else if (id(have_single)) {{
-        it.image(0, 0, id(frame));
-      }} else {{
-        it.print(40, 40, id(diag_big), "panel alive");
-        it.printf(40, 130, id(diag_small), "ip: %s", id(wifi_ip).state.c_str());
-        it.printf(40, 170, id(diag_small), "waiting for %s", "frames.epf");
-      }}
-
-http_request:
-  verify_ssl: false
-  timeout: 15s
-  buffer_size_rx: 4096
-
-online_image:
-  - id: frames
-    url: ${{frames_url}}
-    format: png
-    type: BINARY
-    buffer_size: 4096
-    on_download_finished:
-      - lambda: |-
-          id(downloading_frames) = false;
-          int h = id(frames).get_height();
-          id(page_count) = (h >= ${{page_h}}) ? h / ${{page_h}} : 1;
-          id(have_frames) = true;
-          int new_strip_hash = -1;
-
-          std::vector<uint32_t> old_cat_ids = id(cat_ids);
-          std::vector<int> old_cat_sub_pos = id(cat_sub_pos);
-          bool v2_valid = false;
-          bool alert_interrupt = false;
-          std::vector<uint32_t> new_cat_ids;
-          std::vector<uint32_t> new_sub_ids;
-
-          int meta_y = id(page_count) * ${{page_h}};
-          if (h > meta_y) {{
-            int total_bytes = (h - meta_y) * {dw} / 8;
-            auto read_byte = [&](int byte_idx) -> int {{
-              if (byte_idx < 0 || byte_idx >= total_bytes) return -1;
-              int start_px = byte_idx * 8;
-              int py = meta_y + (start_px / {dw});
-              int col_offset = start_px % {dw};
-              if (py >= h) return -1;
-              int val = 0;
-              for (int b = 0; b < 8; b++) {{
-                if (id(frames).get_pixel(col_offset + b, py).red < 128) {{
-                  val |= (1 << (7 - b));
-                }}
-              }}
-              return val;
-            }};
-
-            int magic = read_byte(0);
-            int version = read_byte(1);
-            if (magic == 0xA5) {{
-              int num_cats = read_byte(2);
-              if (num_cats > 0 && num_cats <= 30) {{
-                id(cat_offsets).clear();
-                id(cat_sizes).clear();
-                id(cat_pill_widths).clear();
-                id(cat_count) = num_cats;
-
-                for (int i = 0; i < num_cats; i++) {{
-                  int off = read_byte(3 + i * 3);
-                  int sz = read_byte(3 + i * 3 + 1);
-                  int pw = read_byte(3 + i * 3 + 2);
-                  id(cat_offsets).push_back(off);
-                  id(cat_sizes).push_back(sz);
-                  id(cat_pill_widths).push_back(pw > 0 ? pw : 110);
-                }}
-                int base_idx = 3 + num_cats * 3;
-                int qh_flag = read_byte(base_idx);
-                id(quiet_hours_active) = (qh_flag == 0xA5);
-                int r_hi = read_byte(base_idx + 1);
-                int r_lo = read_byte(base_idx + 2);
-                int r_sec = (r_hi << 8) | r_lo;
-                if (r_sec >= 5 && r_sec <= 3600) {{
-                  id(rotate_sec) = r_sec;
-                }}
-                int h_b0 = read_byte(base_idx + 3);
-                int h_b1 = read_byte(base_idx + 4);
-                new_strip_hash = (h_b0 << 8) | h_b1;
-
-                if (version >= 2) {{
-                  int ext = base_idx + 5;
-                  int flags = read_byte(ext);
-                  int p_hi = read_byte(ext + 1);
-                  int p_lo = read_byte(ext + 2);
-                  int meta_pages = (p_hi << 8) | p_lo;
-                  if (meta_pages == id(page_count)) {{
-                    uint8_t running_crc = 0;
-                    int expected_len = ext + 3 + (num_cats + meta_pages) * 4;
-                    bool read_ok = true;
-                    for (int b = 0; b < expected_len; b++) {{
-                      int bv = read_byte(b);
-                      if (bv < 0) {{ read_ok = false; break; }}
-                      uint8_t byte_val = (uint8_t)bv;
-                      running_crc ^= byte_val;
-                      for (int k = 0; k < 8; k++) {{
-                        running_crc = (running_crc & 0x80) ? ((running_crc << 1) ^ 0x07) : (running_crc << 1);
-                      }}
-                    }}
-                    int crc_byte = read_byte(expected_len);
-                    if (read_ok && crc_byte == (int)running_crc) {{
-                      alert_interrupt = (flags & 0x01) != 0;
-                      int pos = ext + 3;
-                      for (int i = 0; i < num_cats; i++) {{
-                        uint32_t cid = ((uint32_t)read_byte(pos) << 24) |
-                                       ((uint32_t)read_byte(pos + 1) << 16) |
-                                       ((uint32_t)read_byte(pos + 2) << 8) |
-                                       ((uint32_t)read_byte(pos + 3));
-                        new_cat_ids.push_back(cid);
-                        pos += 4;
-                      }}
-                      for (int i = 0; i < meta_pages; i++) {{
-                        uint32_t sid = ((uint32_t)read_byte(pos) << 24) |
-                                       ((uint32_t)read_byte(pos + 1) << 16) |
-                                       ((uint32_t)read_byte(pos + 2) << 8) |
-                                       ((uint32_t)read_byte(pos + 3));
-                        new_sub_ids.push_back(sid);
-                        pos += 4;
-                      }}
-                      v2_valid = true;
-                      id(cat_ids) = new_cat_ids;
-                      id(sub_ids) = new_sub_ids;
-                    }}
-                  }}
-                }}
-              }}
-            }}
-          }}
-
-          if (id(cat_offsets).empty() || id(cat_count) <= 0) {{
-            id(cat_offsets).clear();
-            id(cat_sizes).clear();
-            id(cat_pill_widths).clear();
-            id(cat_ids).clear();
-            id(sub_ids).clear();
-            id(cat_count) = id(page_count);
-            for (int i = 0; i < id(page_count); i++) {{
-              id(cat_offsets).push_back(i);
-              id(cat_sizes).push_back(1);
-              id(cat_pill_widths).push_back(110);
-            }}
-          }}
-
-          std::vector<int> new_cat_sub_pos(id(cat_count), 0);
-          for (int i = 0; i < id(cat_count); i++) {{
-            if (v2_valid && i < (int)new_cat_ids.size()) {{
-              uint32_t cid = new_cat_ids[i];
-              for (size_t j = 0; j < old_cat_ids.size(); j++) {{
-                if (old_cat_ids[j] == cid && j < old_cat_sub_pos.size()) {{
-                  new_cat_sub_pos[i] = old_cat_sub_pos[j];
-                  break;
-                }}
-              }}
-            }} else if (i < (int)old_cat_sub_pos.size()) {{
-              new_cat_sub_pos[i] = old_cat_sub_pos[i];
-            }}
-          }}
-          id(cat_sub_pos) = new_cat_sub_pos;
-
-          bool resolved = false;
-          if (v2_valid && alert_interrupt) {{
-            id(cat_idx) = 0;
-            id(sub_idx) = 0;
-            id(page) = 0;
-            id(sub_mode) = false;
-            id(pinned) = false;
-            id(cat_pinned) = false;
-            id(pinned_cat_id) = 0;
-            id(pinned_sub_id) = 0;
-            resolved = true;
-          }}
-
-          if (!resolved && id(pinned)) {{
-            if (v2_valid && id(pinned_sub_id) != 0) {{
-              int found_page = -1;
-              for (size_t p = 0; p < id(sub_ids).size(); p++) {{
-                if (id(sub_ids)[p] == id(pinned_sub_id)) {{
-                  found_page = (int)p;
-                  break;
-                }}
-              }}
-              if (found_page >= 0 && found_page < id(page_count)) {{
-                int found_cat = 0;
-                int found_sub = 0;
-                for (int c = 0; c < id(cat_count); c++) {{
-                  int off = (c < (int)id(cat_offsets).size()) ? id(cat_offsets)[c] : c;
-                  int sz = (c < (int)id(cat_sizes).size()) ? id(cat_sizes)[c] : 1;
-                  if (found_page >= off && found_page < off + sz) {{
-                    found_cat = c;
-                    found_sub = found_page - off;
-                    break;
-                  }}
-                }}
-                id(cat_idx) = found_cat;
-                id(sub_idx) = found_sub;
-                id(page) = found_page;
-                id(sub_mode) = (id(cat_sizes)[found_cat] > 1);
-                resolved = true;
-              }} else {{
-                id(pinned) = false;
-                id(pinned_sub_id) = 0;
-              }}
-            }}
-          }}
-
-          if (!resolved && id(cat_pinned)) {{
-            if (v2_valid && id(pinned_cat_id) != 0) {{
-              int found_cat = -1;
-              for (size_t c = 0; c < id(cat_ids).size(); c++) {{
-                if (id(cat_ids)[c] == id(pinned_cat_id)) {{
-                  found_cat = (int)c;
-                  break;
-                }}
-              }}
-              if (found_cat >= 0 && found_cat < id(cat_count)) {{
-                id(cat_idx) = found_cat;
-                int sz = (found_cat < (int)id(cat_sizes).size()) ? id(cat_sizes)[found_cat] : 1;
-                if (sz <= 1) {{
-                  id(sub_idx) = 0;
-                  id(sub_mode) = false;
-                }} else if (id(sub_idx) < 0 || id(sub_idx) >= sz) {{
-                  id(sub_idx) = id(cat_sub_pos)[found_cat] % sz;
-                }}
-                int off = (found_cat < (int)id(cat_offsets).size()) ? id(cat_offsets)[found_cat] : found_cat;
-                id(page) = off + id(sub_idx);
-                resolved = true;
-              }} else {{
-                id(cat_pinned) = false;
-                id(pinned_cat_id) = 0;
-              }}
-            }}
-          }}
-
-          if (!resolved && v2_valid) {{
-            if (id(cur_sub_id) != 0) {{
-              int found_page = -1;
-              for (size_t p = 0; p < id(sub_ids).size(); p++) {{
-                if (id(sub_ids)[p] == id(cur_sub_id)) {{
-                  found_page = (int)p;
-                  break;
-                }}
-              }}
-              if (found_page >= 0 && found_page < id(page_count)) {{
-                int found_cat = 0;
-                int found_sub = 0;
-                for (int c = 0; c < id(cat_count); c++) {{
-                  int off = (c < (int)id(cat_offsets).size()) ? id(cat_offsets)[c] : c;
-                  int sz = (c < (int)id(cat_sizes).size()) ? id(cat_sizes)[c] : 1;
-                  if (found_page >= off && found_page < off + sz) {{
-                    found_cat = c;
-                    found_sub = found_page - off;
-                    break;
-                  }}
-                }}
-                id(cat_idx) = found_cat;
-                id(sub_idx) = found_sub;
-                id(page) = found_page;
-                resolved = true;
-              }}
-            }}
-            if (!resolved && id(cur_cat_id) != 0) {{
-              int found_cat = -1;
-              for (size_t c = 0; c < id(cat_ids).size(); c++) {{
-                if (id(cat_ids)[c] == id(cur_cat_id)) {{
-                  found_cat = (int)c;
-                  break;
-                }}
-              }}
-              if (found_cat >= 0 && found_cat < id(cat_count)) {{
-                id(cat_idx) = found_cat;
-                int sz = (found_cat < (int)id(cat_sizes).size()) ? id(cat_sizes)[found_cat] : 1;
-                if (sz <= 1) {{
-                  id(sub_idx) = 0;
-                  id(sub_mode) = false;
-                }} else if (id(sub_idx) < 0 || id(sub_idx) >= sz) {{
-                  id(sub_idx) = id(cat_sub_pos)[found_cat] % sz;
-                }}
-                int off = (found_cat < (int)id(cat_offsets).size()) ? id(cat_offsets)[found_cat] : found_cat;
-                id(page) = off + id(sub_idx);
-                resolved = true;
-              }}
-            }}
-          }}
-
-          if (!resolved) {{
-            if (id(cat_idx) < 0 || id(cat_idx) >= id(cat_count)) id(cat_idx) = 0;
-            int c_idx = id(cat_idx);
-            int sz = (c_idx < (int)id(cat_sizes).size() && id(cat_sizes)[c_idx] > 0) ? id(cat_sizes)[c_idx] : 1;
-            if (sz <= 1) {{
-              id(sub_idx) = 0;
-              id(sub_mode) = false;
-            }} else if (id(sub_idx) < 0 || id(sub_idx) >= sz) {{
-              id(sub_idx) = id(cat_sub_pos)[c_idx] % sz;
-            }}
-            int off = (c_idx < (int)id(cat_offsets).size()) ? id(cat_offsets)[c_idx] : c_idx;
-            int p = off + id(sub_idx);
-            id(page) = (p >= 0 && p < id(page_count)) ? p : 0;
-          }}
-
-          id(cur_cat_id) = (id(cat_idx) < (int)id(cat_ids).size()) ? id(cat_ids)[id(cat_idx)] : 0;
-          id(cur_sub_id) = (id(page) < (int)id(sub_ids).size()) ? id(sub_ids)[id(page)] : 0;
-
-          if (new_strip_hash != -1 && new_strip_hash == id(last_strip_hash) && !id(pending_redraw) && id(page) == id(last_drawn_page)) {{
-            ESP_LOGI("panel", "Strip unchanged (HTTP 304) -- skipping physical e-paper refresh");
-          }} else {{
-            id(last_strip_hash) = new_strip_hash;
-            id(pending_redraw) = true;
-          }}
-      - if:
-          condition:
-            lambda: 'return id(pending_redraw);'
-          then:
-            - script.execute: redraw
-    on_error:
-      - lambda: 'id(downloading_frames) = false;'
-      - if:
-          condition:
-            lambda: 'return id(have_frames);'
-          then:
-            - logger.log: "frames.png fetch failed - keeping cached strip in PSRAM"
-            - if:
-                condition:
-                  lambda: 'return id(pending_redraw);'
-                then:
-                  - script.execute: redraw
-          else:
-            - logger.log: "frames.png missing - falling back to single frame"
-            - component.update: frame
-
-  - id: frame
-    url: ${{frame_url}}
-    format: png
-    type: BINARY
-    buffer_size: 4096
-    on_download_finished:
-      - lambda: 'id(have_single) = true;'
-      - component.update: epd
-    on_error:
-      - logger.log: "frame.png failed too - retrying in 20s"
-      - component.update: epd
-      - delay: 20s
-      - script.execute: refetch
-
-binary_sensor:
-  - platform: gpio
-    id: key_next
-    internal: true
-    pin: {{number: {next_pin}, mode: {{input: true, pullup: true}}, inverted: true}}
-    filters: [delayed_on: 25ms, delayed_off: 25ms]
-    on_press:
-      - logger.log: "KEY next (dial forward)"
-      - lambda: |-
-          epf::PanelController::instance().page_step(1);
-          SYNC_PANEL_GLOBALS();
-      - script.execute: redraw
-
-  - platform: gpio
-    id: key_prev
-    internal: true
-    pin: {{number: {prev_pin}, mode: {{input: true, pullup: true}}, inverted: true}}
-    filters: [delayed_on: 25ms, delayed_off: 25ms]
-    on_press:
-      - logger.log: "KEY prev (dial backward)"
-      - lambda: |-
-          epf::PanelController::instance().page_step(-1);
-          SYNC_PANEL_GLOBALS();
-      - script.execute: redraw
-
-  - platform: gpio
-    id: key_ok
-    internal: true
-    pin: {{number: 5, mode: {{input: true, pullup: true}}, inverted: true}}
-    filters: [delayed_on: 30ms, delayed_off: 30ms]
-    on_click:
-      - min_length: 1000ms
-        max_length: 5000ms
-        then:
-          - logger.log: "KEY ok: long hold (toggle category vs sub-item mode)"
-          - lambda: |-
-              epf::PanelController::instance().mode_toggle();
-              SYNC_PANEL_GLOBALS();
-          - script.execute: redraw
-
-  - platform: gpio
-    id: key_top
-    internal: true
-    pin: {{number: {top_btn_pin}, mode: {{input: true, pullup: true}}, inverted: true}}
-    filters: [delayed_on: 25ms, delayed_off: 25ms]
-    on_click:
-      - min_length: 30ms
-        max_length: 750ms
-        then:
-          - logger.log: "KEY top: short click (toggle category lock)"
-          - lambda: |-
-              epf::PanelController::instance().category_pin_toggle();
-              SYNC_PANEL_GLOBALS();
-          - script.execute: redraw
-      - min_length: 750ms
-        max_length: 6000ms
-        then:
-          - logger.log: "KEY top: long hold (toggle panel lock)"
-          - lambda: |-
-              epf::PanelController::instance().hold_toggle();
-              SYNC_PANEL_GLOBALS();
-          - script.execute: redraw
-
-  - platform: gpio
-    id: key_bottom
-    internal: true
-    pin: {{number: {bot_btn_pin}, mode: {{input: true, pullup: true}}, inverted: true}}
-    filters: [delayed_on: 25ms, delayed_off: 25ms]
-    on_click:
-      - min_length: 30ms
-        max_length: 750ms
-        then:
-          - logger.log: "KEY bottom: short click (reset to first page)"
-          - lambda: |-
-              epf::PanelController::instance().reset_home();
-              SYNC_PANEL_GLOBALS();
-          - script.execute: redraw
-      - min_length: 750ms
-        max_length: 6000ms
-        then:
-          - logger.log: "KEY bottom: long hold (force refetch)"
-          - lambda: |-
-              id(idle_sec) = 0;
-              id(fetch_idle_sec) = 0;
-              id(pending_refetch) = false;
-              id(pending_redraw) = true;
-          - script.execute: refetch
-
-sensor:
-  - platform: wifi_signal
-    id: wifi_rssi
-    name: Panel Wi-Fi
-    update_interval: 60s
-
-text_sensor:
-  - platform: wifi_info
-    ip_address:
-      id: wifi_ip
-      name: Panel IP
-
-script:
-  - id: redraw
-    mode: restart
-    then:
-      - delay: 80ms
-      - if:
-          condition:
-            lambda: 'return !id(downloading_frames);'
-          then:
-            - lambda: |-
-                id(pending_redraw) = false;
-                epf::PanelController::instance().clear_pending_redraw();
-                id(last_drawn_page) = id(page);
-                epf::PanelController::instance().record_partial_update();
-            - component.update: epd
-
-  - id: request_refetch
-    mode: restart
-    then:
-      - if:
-          condition:
-            lambda: |-
-              if (id(downloading_frames)) {{
-                id(pending_refetch) = true;
-                return false;
-              }}
-              if (epf::PanelController::instance().should_defer_refetch()) {{
-                id(pending_refetch) = true;
-                ESP_LOGI("panel", "Manual scroll active (cooldown %ds/15s) -- deferring background refetch",
-                         epf::PanelController::instance().user_cool_sec());
-                return false;
-              }}
-              return true;
-          then:
-            - script.execute: refetch
-
-  - id: refetch
-    mode: single
-    then:
-      - wait_until:
-          condition:
-            wifi.connected:
-          timeout: 30s
-      - lambda: |-
-          id(downloading_frames) = true;
-          id(pending_refetch) = false;
-          id(fetch_idle_sec) = 0;
-          epf::PanelController::instance().reset_fetch_idle();
-          epf::PanelController::instance().set_pending_refetch(false);
-
-          std::string target_url = "${{frames_epf_url}}";
-
-          epf::FetchResult res = epf::EpfClient::instance().fetch(target_url);
-          id(downloading_frames) = false;
-
-          if (res == epf::FetchResult::NOT_MODIFIED) {{
-            ESP_LOGI("panel", "HTTP 304 Not Modified -- 0 bytes downloaded, skipping refresh");
-          }} else if (res == epf::FetchResult::OK) {{
-            id(have_frames) = true;
-            epf::PanelController::instance().on_stream_loaded(
-              epf::EpfClient::instance().header(),
-              epf::EpfClient::instance().categories(),
-              epf::EpfClient::instance().pages()
-            );
-            SYNC_PANEL_GLOBALS();
-            if (epf::EpfClient::instance().is_alert_interrupt() || epf::EpfClient::instance().is_force_full_waveform()) {{
-              id(epd).force_full_update();
-              epf::PanelController::instance().record_full_update();
-            }}
-            id(pending_redraw) = true;
-            epf::PanelController::instance().set_pending_redraw();
-          }} else {{
-            ESP_LOGW("panel", "EPF fetch failed (code %d) -- falling back to legacy frames.png", (int)res);
-            id(downloading_frames) = true;
-          }}
-      - if:
-          condition:
-            lambda: 'return id(downloading_frames);'
-          then:
-            - component.update: frames
-          else:
-            - if:
-                condition:
-                  lambda: 'return id(pending_redraw);'
-                then:
-                  - script.execute: redraw
-
-number:
-  - platform: template
-    name: "Refresh interval"
-    id: panel_refresh_interval
-    icon: "mdi:timer-outline"
-    optimistic: true
-    min_value: 1
-    max_value: 60
-    step: 1
-    initial_value: {initial_min}
-    restore_value: true
-    unit_of_measurement: "min"
-    mode: box
-
-interval:
-  - interval: 5s
-    then:
-      - lambda: |-
-          epf::PanelController::instance().tick_seconds(5);
-          id(idle_sec) = epf::PanelController::instance().idle_sec();
-          id(fetch_idle_sec) = epf::PanelController::instance().fetch_idle_sec();
-          id(user_cool_sec) = epf::PanelController::instance().user_cool_sec();
-      # 1. If a background refetch was deferred while user was scrolling, run once cooldown elapses
-      - if:
-          condition:
-            lambda: |-
-              return id(pending_refetch) && !epf::PanelController::instance().should_defer_refetch() && !id(downloading_frames);
-          then:
-            - logger.log: "Manual scroll cooldown complete (15s) -- running deferred background refetch"
-            - script.execute: refetch
-
-      # 3. Local PSRAM Page Rotation
-      - if:
-          condition:
-            lambda: |-
-              if (id(downloading_frames)) return false;
-              bool rotated = epf::PanelController::instance().check_auto_rotate();
-              if (rotated) {{
-                SYNC_PANEL_GLOBALS();
-                return true;
-              }}
-              return false;
-          then:
-            - script.execute: redraw
-      # 3. Periodic Background Network Data Fetch
-      - if:
-          condition:
-            lambda: |-
-              if (epf::PanelController::instance().quiet_hours_active() || id(downloading_frames)) return false;
-              int fetch_target = (int)(id(panel_refresh_interval).state * 60.0);
-              if (fetch_target < 30) fetch_target = 30;
-              return (epf::PanelController::instance().fetch_idle_sec() >= fetch_target);
-          then:
-            - lambda: 'id(fetch_idle_sec) = 0;'
-            - script.execute: request_refetch
-"""
+    yaml_text = firmware_gen.render(
+        disp=disp, version=ADDON_VERSION, device_name=dev_name, frames_url=_yaml_str(frames_epf_url),
+        api_key=api_key_line, ota_password=ota_pw_line, wifi_ssid=wifi_ssid_line, wifi_password=wifi_pw_line,
+        interval_min=initial_min, orientation=orient)
 
     secrets_text = f"""# Put these in your ESPHome secrets.yaml if using !secret references:
 wifi_ssid: {_yaml_str(ssid or "your-wifi-ssid")}
@@ -4359,19 +3462,29 @@ async def api_panel_setup_post(request):
     masked_cfg = dict(saved)
     if masked_cfg.get("wifi_password"):
         masked_cfg["wifi_password"] = feeds.SECRET_MASK
-    yaml_cfg = masked_cfg if body.get("wifi_password") == feeds.SECRET_MASK else saved
-    yaml_text, secrets_text = generate_esphome_yaml(yaml_cfg)
+    # The file the panel is built from gets the real values; only the copy
+    # shown in the browser is masked. (0.9.2 and earlier wrote the mask into
+    # the file when the Wi-Fi password was left untouched.)
+    disk_yaml, _ = generate_esphome_yaml(saved)
+    yaml_text, secrets_text = generate_esphome_yaml(masked_cfg)
     esphome_dir = Path("/config/esphome")
     esphome_synced = False
     if esphome_dir.exists() and esphome_dir.is_dir():
         try:
             device_slug = re.sub(r"[^a-z0-9_]+", "_", saved.get("device_name", "crowpanel-epaper").lower()).strip("_") or "crowpanel_epaper"
             target_yaml = esphome_dir / f"{device_slug}.yaml"
-            target_yaml.write_text(yaml_text, encoding="utf-8")
+            previous = target_yaml.read_text(encoding="utf-8") if target_yaml.exists() else None
+            if previous != disk_yaml:
+                if previous is not None:
+                    # A way back: ESPHome ignores this name, a rename restores it.
+                    target_yaml.with_suffix(".yaml.previous").write_text(previous, encoding="utf-8")
+                tmp = target_yaml.with_suffix(".yaml.tmp")
+                tmp.write_text(disk_yaml, encoding="utf-8")
+                tmp.replace(target_yaml)
             esphome_synced = True
-            print(f"Auto-synced ESPHome config to {target_yaml}", flush=True)
+            print(f"Synced ESPHome config to {target_yaml}", flush=True)
         except Exception as e:
-            print(f"Could not auto-sync to /config/esphome: {e}", flush=True)
+            print(f"Could not sync to /config/esphome: {e}", flush=True)
     conn = await _detect_panel_connection(saved["device_name"])
     return web.json_response({
         "saved": True,
@@ -4436,18 +3549,6 @@ async def api_displays(request):
     })
 
 
-async def api_epf_client_h(request):
-    """Serve epf_client.h companion header for ESPHome compilation."""
-    f = Path(__file__).parent / "epf_client.h"
-    if not f.exists():
-        raise web.HTTPNotFound()
-    return web.FileResponse(f, headers={
-        "Content-Type": "text/x-c",
-        "Content-Disposition": 'attachment; filename="epf_client.h"',
-        "Cache-Control": "no-cache",
-    })
-
-
 async def editor_index(request):
     index = WEB_DIR / "index.html"
     if not index.exists():
@@ -4463,7 +3564,6 @@ def make_apps():
         web.get("/frames.png", frames_png),
         web.get("/frame.epf", frame_epf),
         web.get("/frames.epf", frames_epf),
-        web.get("/epf_client.h", api_epf_client_h),
         web.get("/status", public_status),
         web.get("/fonts/{name}", panel_font),
         web.post("/api/action/refresh", api_action_refresh),
@@ -4483,7 +3583,6 @@ def make_apps():
         web.get("/api/displays", api_displays),
         web.get("/api/strip.png", editor_strip_png),
         web.get("/api/strip.epf", editor_strip_epf),
-        web.get("/api/epf_client.h", api_epf_client_h),
         web.get("/api/layouts", api_layouts_get),
         web.put("/api/layouts", api_layouts_put),
         web.get("/api/entities", api_entities),

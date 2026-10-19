@@ -284,11 +284,41 @@ def screen(img, box):
             px[x, y] = WHITE
 
 
-def footer(draw, *, clock, label="", cat_label="", sub_label="", battery_pct=None, orientation=0, display=None):
+def footer_geometry(*, clock, cat_label="", has_sub=False, battery_pct=None, orientation=0, display=None):
+    """Where the footer pills sit, in logical (pre-rotation) pixels.
+
+    The one source for this geometry: footer() draws with it, build_frames sends
+    it to the panel in the frame file, and the panel draws its highlight and
+    padlocks on top using exactly these numbers.
+    """
     cw, ch = canvas_dims(orientation, display=display)
     disp = get_display(display)
     margin = disp["margin"] if cw >= 400 else min(disp["margin"], 16)
     footer_size = 14 if ch < 200 else (18 if ch < 400 else FOOTER_SIZE)
+    f = font(footer_size, bold=False)
+    cat_f = font(13, bold=True)
+    pill_y0, pill_y1 = ch - 28, ch - 4
+    cat_x0 = 96 if cw >= 400 else (margin + text_width(clock, f) + 12)
+    bat_w = text_width(f"{battery_pct} %", f) + 12 if (battery_pct is not None and battery_pct > 0) else 0
+    sub_w = 48
+    sub_x1 = cw - margin - bat_w
+    sub_x0 = sub_x1 - sub_w
+    cat_w = text_width(cat_label, cat_f) + 20 if cat_label else 0
+    max_cat_w = max(40, (sub_x0 - cat_x0 - 8) if has_sub else (sub_x1 - cat_x0 - 8))
+    cat_w = min(cat_w, max_cat_w)
+    return {
+        "canvas": (cw, ch), "margin": margin, "footer_size": footer_size,
+        "pill_y0": pill_y0, "pill_y1": pill_y1,
+        "cat_x0": cat_x0, "cat_x1": cat_x0 + cat_w, "cat_w": cat_w,
+        "sub_x0": sub_x0, "sub_x1": sub_x1,
+    }
+
+
+def footer(draw, *, clock, label="", cat_label="", sub_label="", battery_pct=None, orientation=0, display=None):
+    g = footer_geometry(clock=clock, cat_label=cat_label, has_sub=bool(sub_label),
+                        battery_pct=battery_pct, orientation=orientation, display=display)
+    cw, ch = g["canvas"]
+    margin, footer_size = g["margin"], g["footer_size"]
     rule_y = ch - int(footer_size * 1.8)
     base_y = ch - int(footer_size * 0.7)
     f = font(footer_size, bold=False)
@@ -297,19 +327,9 @@ def footer(draw, *, clock, label="", cat_label="", sub_label="", battery_pct=Non
 
     if cat_label:
         cat_f = font(13, bold=True)
-        pill_y0 = ch - 28
-        pill_y1 = ch - 4
-        cat_x0 = 96 if cw >= 400 else (margin + text_width(clock, f) + 12)
-        cat_w = text_width(cat_label, cat_f) + 20
-
-        bat_w = text_width(f"{battery_pct} %", f) + 12 if (battery_pct is not None and battery_pct > 0) else 0
-        sub_w = 48
-        sub_x1 = cw - margin - bat_w
-        sub_x0 = sub_x1 - sub_w
-
-        max_cat_w = max(40, (sub_x0 - cat_x0 - 8) if sub_label else (sub_x1 - cat_x0 - 8))
-        cat_w = min(cat_w, max_cat_w)
-        cat_x1 = cat_x0 + cat_w
+        pill_y0, pill_y1 = g["pill_y0"], g["pill_y1"]
+        cat_x0, cat_x1 = g["cat_x0"], g["cat_x1"]
+        sub_x0, sub_x1 = g["sub_x0"], g["sub_x1"]
 
         draw.rounded_rectangle([cat_x0, pill_y0, cat_x1, pill_y1], radius=4, outline=BLACK, width=1)
         draw.text(((cat_x0 + cat_x1) // 2, (pill_y0 + pill_y1) // 2), cat_label, font=cat_f, fill=BLACK, anchor="mm")

@@ -66,13 +66,6 @@ class TestEpfServerEndpoints(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(web.HTTPNotModified):
             await server.frame_epf(req_304)
 
-    async def test_api_epf_client_h_endpoint(self):
-        req = make_mocked_request("GET", "/api/epf_client.h")
-        resp = await server.api_epf_client_h(req)
-        self.assertEqual(resp.status, 200)
-        self.assertEqual(resp.headers.get("Content-Type"), "text/x-c")
-        self.assertIn("attachment", resp.headers.get("Content-Disposition", ""))
-
 
 if __name__ == "__main__":
     unittest.main()

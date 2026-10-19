@@ -15,9 +15,10 @@ git push                      # from here
 Then in Home Assistant: **Settings → Add-ons → E-paper panel → Rebuild**
 (or Reload the repository first if `config.yaml` changed).
 
-**Pushing to `main` also changes the panel's firmware on its next build:** the
-firmware pulls `components/epf` from `main` (`refresh: 0s`). Treat any change
-under `components/` as a firmware change.
+**Every release that ships is tagged `v<version>` and the tag pushed.** The
+panel's firmware builds `components/epf` from the tag matching the add-on
+version (`firmware_gen.component_ref`). Without the tag, the panel can't be
+built. Treat any change under `components/` as a firmware change.
 
 The add-on repository is https://github.com/bek00letz/epaper-panel, added in
 HA as a custom add-on repository. `repository.yaml` at the root makes it one;
@@ -72,30 +73,35 @@ Then open `http://127.0.0.1:8080/` for the editor and
 tail, a stray dash on the dryer icon, a missing ear — were invisible in code and
 obvious in the image. Render it and open it.
 
-For firmware, copy `esphome/secrets.example.yaml` to `esphome/secrets.yaml` and
-run `esphome config esphome/crowpanel-epaper.yaml` to validate the schema.
+For firmware: `tests/test_firmware.py` compiles `components/epf/epf_core.h`
+on the host and checks it against the server's real frame files. The ESPHome
+YAML comes only from `addon/app/firmware/panel.yaml`. After changing it, run
+`python tests/test_firmware.py --write-reference` to refresh
+`esphome/crowpanel-epaper.yaml`. To check it builds, compile a copy with the
+`epf` source switched to `type: local` (`.esphome-venv/bin/esphome compile`).
 
 ## Firmware gotchas
 
 - The panel needs the external component; stock `waveshare_epaper` has no model
   for it. `invert_colors: true` is required.
 - **`GPIO7` is the display's power rail.** Nothing renders until it is high.
-- `online_image` actions are `component.update: <id>`, not `online_image.update`.
+- The panel draws overlays from the geometry in the frame file. **Never
+  hard-code footer positions in firmware**; change `theme.footer_geometry()`.
+- ESPHome leaves ESP-IDF's HTTP client out unless a component asks for it;
+  `components/epf/__init__.py` does (`include_builtin_idf_component`).
 - This is an **esp-idf** build: no Arduino APIs. Use the `wifi_info` text sensor
   for the IP, not `WiFi.localIP()`.
 - `psram: mode: octal` assumes an N8R8 board. Unconfirmed; if it will not boot,
   comment it out and read the boot log.
 - **Trust Elecrow's demo source over their wiki** for pin numbers.
 - **`on_boot` fires before wifi is associated.** A fetch there races the
-  network and loses, and with `have_frames` reset by the reboot the panel then
-  shows the diagnostic screen until the next interval. `refetch` waits on
-  `wifi.connected` first; keep it that way.
-- **Changing a global that the display lambda reads does nothing on its own.**
-  Follow it with `script.execute: redraw`, or the change only appears at the
-  next unrelated refresh. This is what made the hold indicator look stuck.
-- **Image fetch cost is per-pixel, not per-byte or per-codec.** Changing format
-  or buffer sizes moves it ~10%. Reducing pixel count is the only big lever
-  without writing a custom component. Measurements in ARCHITECTURE.md.
+  network and loses. `refetch` waits on `wifi.connected` first; keep it that way.
+- **Changing navigation state does nothing on screen on its own.** Follow it
+  with `script.execute: redraw`, or the change only appears at the next
+  unrelated refresh. This is what made the hold indicator look stuck.
+- **Only the main loop touches the front buffer and the display.** The
+  download task writes the back buffer; `EpfClient::poll()` swaps them on the
+  main loop. Keep it that way, or a page can be drawn mid-swap.
 - **Strokes under ~4 px are invisible on this panel** (145 dpi, so 3 px is
   0.5 mm). Icons drawn in the lambda need chunky geometry.
 

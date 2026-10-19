@@ -61,7 +61,7 @@ Click **`🌙 Quiet`** in the top toolbar (or **Settings → Night / Quiet Hours
 - **Optional Away / Presence Entity (`presence_entity`):** Optionally bind a Home Assistant entity such as `zone.home`, `person.*`, `group.family`, or `input_boolean.sleep_mode`. When its state is `0`, `not_home`, `away`, or `off`, Quiet Hours activate automatically even outside the scheduled clock window.
 - **Allow Interrupt Alerts (`allow_alerts`):** When enabled (default), high-priority **Interrupt (`alert`)** pages will still wake and push to the panel during Quiet Hours.
 - **How It Works Under the Hood:**
-  1. When Quiet Hours begin, the server pushes one final sync frame to the panel with a quiet-mode flag (`0xA5`) encoded in the self-describing metadata row of `frames.png`, then suppresses background `refresh_now` pushes until Quiet Hours end.
+  1. When Quiet Hours begin, the server pushes one last update whose frame file is marked quiet, then stops pushing until Quiet Hours end. The wake-up at the end is retried until the panel confirms it.
   2. The ESP32 pauses its 10-second auto-rotation timer so the display performs **zero physical refreshes** while holding the current page cleanly on screen.
   3. Because the ESP32 stays connected to Wi-Fi in light-sleep, **physical buttons and IKEA BILRESA scroll remotes remain 100% responsive** if you manually flip pages at night.
   4. Publishes `sensor.epaper_quiet_hours` (`active` / `inactive`) to Home Assistant with schedule and trigger reason attributes.
@@ -115,7 +115,7 @@ The firmware is ESPHome and the reference configuration lives in [`esphome/crowp
 
 Whether you mount the panel normally, **upside-down (`180°`)** to route the USB-C cable cleanly, or **vertically in portrait (`90°` / `270°`)**, the editor toolbar and **Panel setup** wizard let you configure mounting orientation:
 - The canvas adapts to your model's logical aspect ratio (e.g. **792×272** landscape or **272×792** portrait on the 5.79") with a one-click **Reflow** helper to restack existing elements.
-- The server pre-rotates each page into the panel's native framebuffer before serving `/frames.png`, so changing orientation in the editor works immediately on **Save / Push to panel** without reflashing ESPHome.
+- The server pre-rotates each page into the panel's native framebuffer and tells the panel where the footer pills ended up, so changing orientation in the editor works on **Save / Push to panel**. Reflashing is only needed for the button swap below.
 - When generating new ESPHome firmware for `180°` or `270°` mounts, the wizard also swaps the `Next` and `Prev` button pins (`GPIO 4` and `GPIO 6`) so the physical buttons match the board's orientation.
 
 ---
@@ -133,7 +133,7 @@ Category 4 (Scores)      ──>  [Game 1: Bulls v Bucks] ─> [Game 2: Knicks v
 
 - **Sequential Sub-Item Rotation Memory (`cat_sub_pos`):** Every category remembers which sub-item it showed last (`cat_sub_pos[c]`). On pass 1 through a multi-item category (e.g. Watch, Airspace Radar, Sports), the panel shows sub-item `1/N`, on pass 2 it shows `2/N`, on pass 3 it shows `3/N`, and so on. Background 1-minute data refreshes preserve `cat_sub_pos` and `sub_idx` so sub-item rotation never resets to page 1.
 - **Manual Scroll Protection & 15s Debounce (`user_cool_sec` & `request_refetch`):** Every physical button press and remote scroll action starts a 15-second interaction cooldown (`user_cool_sec`). If a background 1-minute update (`refresh_now`) triggers while you are manually scrolling, the network download is automatically paused (`pending_refetch = true`) so scrolling never freezes, and resumes 15 seconds after you stop scrolling.
-- **Atomic Self-Describing Strip Metadata:** Every `/frames.png` image embeds a binary metadata header (`0xA5` magic byte, category count, `(offset, size, pill_width)` per category, `quiet_hours_active`, 2-byte `rotate_seconds`, and a 2-byte content hash) on the metadata row of the strip. The ESP32 parses this header atomically inside `on_download_finished` and guards all display blits with `downloading_frames`.
+- **One checked frame file:** The panel downloads `/frames.epf` in the background, checks it completely (checksum, panel size, every offset), and only then swaps it in. A bad or partial download never reaches the screen, and the buttons never wait for the network.
 
 ### Physical Controls & Button Mapping
 
@@ -156,8 +156,8 @@ The firmware exposes encrypted ESPHome native API actions so external scroll rem
 | `esphome.<device>_page_step` | `delta: 1` or `-1` | Context-aware step: steps categories when in Category mode, or sub-items when in Sub-Item mode. |
 | `esphome.<device>_mode_toggle` | *(none)* | Switches between Category Navigation Mode and Sub-Item Navigation Mode (if the current category has multiple sub-pages) and redraws the active focus pill. |
 | `esphome.<device>_lock_toggle` | *(none)* | Context-aware lock: toggles **Category Lock** in Category mode, or **Panel Lock** in Sub-Item mode. |
-| `esphome.<device>_show_page` | `page: N` | Jumps directly to slice index `N` and recalculates `cat_idx` and `sub_idx` automatically. |
-| `esphome.<device>_refresh_now` | *(none)* | Triggers an immediate HTTP fetch of `/frames.png` from the add-on. |
+| `esphome.<device>_show_page` | `index: N` | Jumps directly to page `N` (counting from 0) and works out its category automatically. |
+| `esphome.<device>_refresh_now` | *(none)* | Downloads new frames from the add-on now (or once scrolling stops). |
 
 ---
 
@@ -244,8 +244,10 @@ They show as unavailable while the add-on is stopped, and the device has a
 
 ## How it works
 
-Home Assistant renders; the panel draws. The panel fetches a tall PNG of every
-active slice (`/frames.png`), holds it in PSRAM, and pages locally — so a button press or remote scroll redraws in about 800 ms with no network round trip. Individual page slices can also be fetched directly via `/frame.png?page=N`.
+Home Assistant renders; the panel draws. The panel downloads every page of the
+rotation in one frame file (`/frames.epf`), keeps it in PSRAM and copies one page
+at a time into the display, so a button press or remote scroll redraws without
+any network round trip.
 
 [ARCHITECTURE.md](ARCHITECTURE.md) has the hardware measurements behind the design
 decisions, including the self-describing strip metadata protocol, why the fetch cost is per-pixel rather than per-byte, and what that means for battery vs mains operation.

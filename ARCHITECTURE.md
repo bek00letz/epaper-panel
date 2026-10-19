@@ -28,55 +28,79 @@ walk-past layer: a timestamp so you can tell a live panel from a frozen one.
 ## Data flow
 
 ```
-   ┌── panel (ESPHome) ────┐        ┌── E-paper Add-on (server.py) ──────────┐
-   │ timer / button / push │        │ :8098 Ingress UI & API                 │
-   │                       │        │ :8099 LAN Frame Server                 │
-   │   GET /frames.png ◄───┼────────┤   in-memory FRAMES (ETag / 304)        │
-   │   blit slice          │        │     ▲                                  │
-   │                       │        │     │ frame_loop (60s) / save / push   │
-   │   POST show_page  ◄───┼────────┤     ├ feeds/ (Jellyfin, REST, WS stats)│
-   └───────────────────────┘        │     ├ HA REST /api/template            │
-                                    │     └ HA REST /api/history/period      │
-                                    └────────────────────────────────────────┘
+   ┌── panel (ESPHome) ─────────┐       ┌── add-on (server.py) ─────────────────────┐
+   │ dial / buttons / HA action │       │ :8080 editor + API, Ingress only          │
+   │                            │       │ :8099 frames for the LAN                  │
+   │ download task:             │       │                                           │
+   │   GET /frames.epf  ◄───────┼───────┤   in-memory FRAMES (ETag / 304)           │
+   │   check, then swap         │       │     ▲ render loop (60 s) / save / push    │
+   │ main loop:                 │       │     ├ feeds/, widgets (sports, flights…)  │
+   │   copy page + overlays     │       │     ├ HA /api/template, history, ws       │
+   │                            │       │     └ mqtt_bridge → HA entities           │
+   │   refresh_now  ◄───────────┼───────┤   panel_link → esphome.<node>_refresh_now │
+   └────────────────────────────┘       └───────────────────────────────────────────┘
 ```
 
-The add-on runs two HTTP listeners inside the same event loop:
-- **Port `8098` (Ingress-only):** serves the drag-and-drop layout editor and REST API (`X-Ingress-Path` aware), protected by Home Assistant's authentication.
-- **Port `8099` (LAN frame server):** exposes `/frames.png`, `/frame.png`, and `/status` to the ESP32 panel on the local network (with `ETag` / `304 Not Modified` support and optional `frame_token` authentication).
+The add-on runs two HTTP listeners in one event loop:
+- **Port `8080` (Ingress only):** the editor and its API. It refuses any client
+  other than Home Assistant's Ingress proxy (`172.30.32.2`).
+- **Port `8099` (LAN):** `/frames.epf` and `/frame.epf` for the panel, the PNG
+  versions for the editor and older clients, and a minimal `/status`. ETag /
+  `304 Not Modified`, optional `frame_token`.
 
-Every 60 seconds (and immediately on layout save or panel push), `server.py` runs `refresh_frames()`:
+Every 60 seconds, and right away on a save or push, `refresh_frames()`:
 
-- Polls configured `feeds/` (`jellyfin`, `rest`, `statistics`) and records their results as `sensor.epaper_<name>` values (see [The add-on's own values](#the-add-ons-own-values)).
-- Evaluates `alert` and `when` page conditions (`show_if`), per-element `show_if` visibility, and `quiet_hours` schedule/presence state, then builds the in-memory PNG buffers:
-  - `frames.png` — every active rotation slice stacked vertically (`792 × 272·N`). The panel holds it in PSRAM and blits a 272 px slice, so paging with the hardware buttons or an IKEA BILRESA scroll remote needs no network round trip. When an `alert` (interrupt) page triggers, `frames.png` shrinks to a 1-page strip containing only that alert for `hold_minutes` and calls `esphome.<device>_show_page`, decoding in ~1 s and preventing the panel's timer from rotating away during the hold window.
-  - `frame.png` (and `/frame.png?page=N`) — single-page PNG slice for the current slot or any specific slice index `N`, driving dashboard previews and single-page wake flows.
+- Runs the data sources and widgets and records their values (see
+  [The add-on's own values](#the-add-ons-own-values)).
+- Evaluates `alert` and `when` conditions, per-element `show_if` and quiet hours.
+- Renders every live page, rotates it for the mounting orientation, and packs
+  the lot into one **frame file** (`render/epf.py`).
 
-### Self-Describing Strip Metadata & In-Flight Download Guard
+### The frame file (EPF v3)
 
-Two subtle hardware/firmware race conditions originally caused intermittent black screens or remote navigation glitches:
-1. **Torn In-Flight Downloads:** ESPHome's `online_image` clears/reallocates its target PSRAM buffer as soon as an HTTP download starts (`GET /frames.png`), taking ~5–6 s to decode a multi-page strip. If the 10-second rotation interval or a remote action fired mid-download, the display lambda blitted an uninitialized/zeroed PSRAM buffer (`COLOR_ON` with `invert_colors: true` = solid black screen).
-2. **Asynchronous Sensor Desync:** `sensor.epaper_categories` (`ha_cat_offsets`, `ha_cat_sizes`, `ha_cat_pill_widths`) arrived over the ESPHome native API out of lockstep with the HTTP strip download, so a remote `page_step` could compute a slice offset beyond the strip height (`y_offset >= strip.height`).
+A 64-byte header, a category directory, a page directory, the pages as raw
+1-bit rows exactly as the panel's buffer stores them, and a CRC-32. The panel
+copies a page straight into its display buffer: no decoding.
 
-To eliminate both races atomically and keep manual scrolling and locks responsive:
-- **Self-Describing Metadata Rows (`meta_y`):** `server.py` encodes a binary header starting at row `meta_y = dh * total_slices` (`x = 0 ..`, 1 bit per pixel, MSB first, black = 1, wrapping row-major across rows if needed):
-  - `Byte 0`: `0xA5` magic marker (`10100101`)
-  - `Byte 1`: `0x02` format version (version 2)
-  - `Byte 2`: `cat_count` (`N`, up to 30)
-  - `Bytes 3 .. 3 + 3·N - 1`: `(offset, size, pill_width)` tuple for each category (v1 backward-compatible prefix)
-  - `Byte 3 + 3·N`: `0xA5` when **Night / Quiet Hours** (`quiet_hours_active`) is active, or `0x00` when inactive
-  - `Bytes 3 + 3·N + 1 .. + 2`: `rotate_seconds` (`(rot_sec >> 8) & 0xFF`, `rot_sec & 0xFF`) so local PSRAM rotation interval syncs without reflashing
-  - `Bytes 3 + 3·N + 3 .. + 4`: 16-bit content hash (`etag_b0`, `etag_b1`) so `HTTP 304 Not Modified` responses skip redundant physical e-paper refreshes
-  - `Byte 3 + 3·N + 5`: `flags` (bit 0: `FLAG_INTERRUPT` indicating an emergency Home Assistant alert owns the screen)
-  - `Bytes 3 + 3·N + 6 .. + 7`: `page_count` (`P`, 16-bit big-endian)
-  - `N × 4 Bytes`: 32-bit Blake2s stable identities for each category (`cat_ids`)
-  - `P × 4 Bytes`: 32-bit Blake2s stable identities for each slice (`sub_ids`, derived from ESPN event IDs, flight callsigns, Jellyfin items, or layout keys)
-  - Final Byte: CRC-8 checksum (polynomial `0x07`, init `0x00`) covering all preceding bytes
-- **Identity-Based Locking & Navigation Resolution:** Firmware tracks `pinned_cat_id`, `pinned_sub_id`, `cur_cat_id`, and `cur_sub_id` rather than numeric indices (`cat_idx`, `sub_idx`). When background downloads arrive (`on_download_finished`), even if new categories are inserted or removed, the panel searches `sub_ids` for the locked slice or `cat_ids` for the locked category, remapping `page`, `cat_idx`, and `sub_idx` losslessly. Sub-item rotation memory (`cat_sub_pos`) is remapped across category identity vectors so category insertions never scramble per-category cyclic rotation. If a locked event finishes and departs the rotation, the lock releases cleanly with diagnostic logging.
-- **Atomic Parse, `downloading_frames` Guard & 15s Manual Scroll Debounce (`user_cool_sec`):** `esphome/crowpanel-epaper.yaml` sets `id(downloading_frames) = true` before `component.update: frames` and clears it inside `on_download_finished`. Any manual button or remote action resets `user_cool_sec = 0`. Incoming background `refresh_now` actions route through `request_refetch`, which defers downloads (`pending_refetch = true`) whenever `user_cool_sec < 15` and executes them 15 seconds after manual scrolling stops.
-- **Self-Contained Widget Active Windows & On-Demand `sensor.epaper_*` Publishing:**
-  - Composite widgets (`sports_match`, `sports_racing`, `flight_tracker`) store their active-window parameters (`pre_buffer_hours`, `post_buffer_hours`, `window_mode`, `team`, `auto_window`) directly on the element in `layouts.json`.
-  - During `eligible_pages()`, `_evaluate_widget_gate()` evaluates `compute_sports_active_window()`, `compute_racing_active_window()`, or `fetch_overhead_flights()` directly in Python so `tier: "when"` pages work immediately without requiring users to create or configure Home Assistant helper sensors.
-  - `publish_computed()` only polls and publishes `sensor.epaper_*` entities (`sensor.epaper_sports_<league>`, `sensor.epaper_racing_<series>`, `sensor.epaper_flights_overhead`, `sensor.epaper_closest_aircraft`, `sensor.epaper_quiet_hours`, `sensor.epaper_panel_last_render`) for widgets actually present in `layouts.json`.
+- **Identity, not position.** Every category and page has a stable 32-bit ID
+  (ESPN event, flight callsign, Jellyfin item, page name). The panel keeps
+  its place and its locks by ID when pages come and go, and an alert never
+  moves a lock.
+- **The server owns the geometry.** The header's reserved bytes carry the
+  footer pill positions in logical pixels, plus the rotate-and-mirror
+  transform to the physical buffer (`FLAG_GEOMETRY`). They come from
+  `theme.footer_geometry()`, the same function the footer is drawn with. The
+  firmware draws its highlight and padlocks through that transform and
+  hard-codes no layout. This is what ended the 0.8.33–0.8.37 overlay
+  back-and-forth: before, the footer's numbers lived in two places and
+  disagreed in portrait.
+- **Mirroring.** The 5.79" and 4.2" (SSD1683) drivers store each row
+  right-to-left, so pages are flipped before packing (`epf.MIRRORED_MODELS`),
+  and the header says so.
+
+### The firmware
+
+`components/epf/` is an ESPHome external component. `epf_core.h` holds all
+the logic (parsing, the pixel mapping, overlays and the navigation state
+machine) with no ESP-IDF in it, and is compiled and tested on the host by
+`tests/test_firmware.py` against frame files from the server's own encoder.
+`epf_client.h` adds the network and the display.
+
+- **Downloads never block.** A FreeRTOS task downloads into a back buffer
+  and checks everything: CRC, that the file is for this panel's size, and
+  that every offset and count stays inside the file. The main loop swaps it
+  in. The dial, the buttons and the Home Assistant connection never wait on
+  the network.
+- **While someone is scrolling** (15 s after the last press), new frames
+  wait, so the pages don't change under them.
+- **The YAML has one source**: `addon/app/firmware/panel.yaml`, filled in by
+  `firmware_gen.py`. Panel setup writes it into Home Assistant's ESPHome
+  folder (keeping the previous file as `.previous`).
+  `esphome/crowpanel-epaper.yaml` is the same output for a reference setup,
+  and a test keeps them identical. The component is pinned to the add-on's
+  release tag, so panel and add-on always agree on the format.
+- **A way back**: `esphome/rollback/` holds the YAML of the previous
+  firmware, pinned to its tag.
 
 ## The add-on's own values
 
