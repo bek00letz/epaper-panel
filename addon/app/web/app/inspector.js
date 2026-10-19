@@ -8,8 +8,7 @@ import { TYPES, BREAKABLE, isWidget, hasText, elName, normalizeLineParity } from
 import { OPS, parseShowIf, compileShowIf, evaluate, describe, syncWidgetShowIf, syncDynamicGridShowIf } from "./conditions.js";
 import { explodeWidget, getWidgetSensorId, suggestIconForEntity } from "./legacy.js";
 
-const SHOWS_TEXT_EXTRA = [["unit", "Its unit"]];
-const SHOWS = [["state", "Its value"], ["attribute", "One of its details"], ["last_changed", "When it last changed"], ["last_updated", "When it last updated"],
+const SHOWS = [["state", "Its value"], ["unit", "Its unit, following the value"], ["attribute", "One of its details"], ["last_changed", "When it last changed"], ["last_updated", "When it last updated"],
   ["days_until", "Days until it"], ["date_formatted", "Its date"], ["calendar_title", "The event's name"]];
 const FORMATS = [["relative", "2 hours ago"], ["date", "3 Mar"], ["day_date", "Thu, 24 Oct"], ["day_full", "Thursday, 24 Oct"], ["time", "14:05"], ["time_12", "2:05 PM"], ["datetime", "Date and time"]];
 const FONTS = [["lato", "Lato"], ["dejavu", "DejaVu Sans"], ["mono", "Roboto Mono"]];
@@ -70,7 +69,8 @@ function legibility(app, i, el) {
     out.push(h("div", { class: "note " + (good ? "good" : "warn"), role: "note" }, h("span", { class: "led" }),
       h("span", { text: `${m.size} px, ${m.mm} mm tall: ${verdict} from ${dist} m` })));
   }
-  if (m.overflow) out.push(h("div", { class: "note warn", role: "note" }, icon("warn", "sm"), h("span", { text: "Wider than its box, so it's cut off." }),
+  if (m.overflow) out.push(h("div", { class: "note warn", role: "note" }, icon("warn", "sm"), h("span", { text: el.wrap ? "Too long for its box, even wrapped." : "Wider than its box, so it's cut off." }),
+    !el.wrap && el.type === "text" ? linkButton("Wrap it", () => { el.wrap = true; app.doc.commit(); }, { class: "linkbtn inline" }) : null,
     el.size ? linkButton("Fit the box", () => { delete el.size; app.doc.commit(); }, { class: "linkbtn inline" }) : null));
   return out;
 }
@@ -97,6 +97,7 @@ function element(app, head, body, el, i) {
     body.append(section("Text",
       field("Size", number(el.size, (v) => set("size", v), { min: "8", max: "360", placeholder: "Fits the box" })),
       legibility(app, i, el),
+      toggleRow("Wrap onto more lines", !!el.wrap, (v) => set("wrap", v ? true : "")),
       field("Font", select(FONTS, el.font || "lato", (v) => set("font", v === "lato" ? "" : v))),
       h("div", { class: "field" }, h("span", { class: "lab", text: "Weight" }), seg([["bold", "Bold"], ["regular", "Regular"]], el.bold === false ? "regular" : "bold", (v) => set("bold", v === "regular" ? false : ""), "Weight")),
       h("div", { class: "field" }, h("span", { class: "lab", text: "Align" }), seg([["left", "Left", "alignl"], ["center", "Centre", "centerh"], ["right", "Right", "alignr"]], el.align || "left", (v) => set("align", v === "left" ? "" : v), "Alignment")),
@@ -181,14 +182,18 @@ function shows(app, el, set) {
       app.doc.commit();
     }));
     const show = el.show || "state";
-    s.append(field("Show", select(el.type === "text" ? [...SHOWS, ...SHOWS_TEXT_EXTRA] : SHOWS, show, (v) => {
-      if (v === "unit" && !el.units) { const u = app.entMap.get(el.entity)?.unit; if (u) el.units = { base: u, mode: "scale", decimals: 2 }; }
+    s.append(field("Show", select(SHOWS, show, (v) => {
+      if (v === "unit") { showUnit(app, el); return; }
       set("show", v === "state" ? "" : v);
     })));
     if (show === "attribute") {
       const b = h("button", { class: "entbtn", "aria-label": `Detail: ${el.attribute || "none"}. Change` },
         h("span", { class: "eb-text" }, h("span", { class: "e1", text: el.attribute || "Choose a detail" })), icon("chev", "sm"));
-      b.addEventListener("click", () => app.openAttributePicker(b, el.entity, (a) => set("attribute", a)));
+      b.addEventListener("click", () => app.openAttributePicker(b, el.entity, (a) => {
+        // Its unit is better shown as the unit that follows the value.
+        if (a === "unit_of_measurement" || a === "unit") { showUnit(app, el, true); return; }
+        set("attribute", a);
+      }));
       s.append(field("Detail", b));
     }
     if (["last_changed", "last_updated", "date_formatted"].includes(show)) {
@@ -211,6 +216,15 @@ function shows(app, el, set) {
     s.append(replacements(app, el));
   }
   return s;
+}
+
+/* Show the sensor's unit as the word it uses right now (950 W, then kW). */
+function showUnit(app, el, fromDetail) {
+  const u = app.entMap.get(el.entity)?.unit || el.units?.base || String(el.suffix || "").trim();
+  el.show = "unit"; el.type = "text"; delete el.attribute; delete el.decimals;
+  if (u && !el.units) el.units = { base: u, mode: "scale", decimals: 2 };
+  app.doc.commit();
+  if (fromDetail) toast("Showing its unit, which steps up with the value. Set that under Units.");
 }
 
 /* Dynamic units: filled in by the units step (see units.js). */

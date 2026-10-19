@@ -256,6 +256,44 @@ def fit_size(s, max_w, max_h, start, floor=24, bold=True, family="lato"):
     return best
 
 
+def wrap_lines(s, f, max_w):
+    """Greedy word wrap of s into lines no wider than max_w at font f.
+
+    A word longer than the line keeps its own line (and overflows), rather
+    than being cut mid-word. Line breaks already in s are kept.
+    """
+    out = []
+    for para in str(s).split("\n"):
+        words, line = para.split(), ""
+        if not words:
+            out.append("")
+            continue
+        for w in words:
+            trial = f"{line} {w}" if line else w
+            if line and text_width(trial, f) > max_w:
+                out.append(line)
+                line = w
+            else:
+                line = trial
+        out.append(line)
+    return out
+
+
+def fit_wrapped(s, max_w, max_h, start, floor=12, bold=True, family="lato"):
+    """Largest size at which s, wrapped onto lines, fits max_w x max_h."""
+    lo, hi, best = floor, max(floor, min(360, int(start))), floor
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        f = font(mid, bold, family=family, text=s)
+        asc, desc = f.getmetrics()
+        lines = wrap_lines(s, f, max_w)
+        if len(lines) * (asc + desc) <= max_h and all(text_width(l, f) <= max_w for l in lines):
+            best, lo = mid, mid + 1
+        else:
+            hi = mid - 1
+    return best
+
+
 def wrap_two(s):
     """Split s into two balanced lines on a word boundary. None if impossible."""
     words = s.split()

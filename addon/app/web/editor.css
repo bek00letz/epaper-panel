@@ -180,7 +180,6 @@ kbd { font: 12px var(--font); background: var(--surface); border-radius: 5px; pa
 .panel.show-guides .zones { display: block; }
 .zone { position: absolute; background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .zone.footer { left: 0; right: 0; border-top: 1px dashed color-mix(in srgb, var(--accent) 65%, transparent); }
-.zone.lock { top: 0; border-left: 1px dashed color-mix(in srgb, var(--accent) 65%, transparent); border-bottom: 1px dashed color-mix(in srgb, var(--accent) 65%, transparent); }
 .zone span { position: absolute; right: 4px; top: 3px; font: 600 10px var(--font); color: var(--accent); background: rgba(255, 255, 255, 0.92); padding: 0 5px; border-radius: 4px; }
 
 .firstrun, .fatal { position: absolute; inset: 0; margin: auto; width: min(420px, calc(100% - 32px)); height: fit-content; background: var(--surface); border-radius: var(--r-sheet);
@@ -213,7 +212,7 @@ kbd { font: 12px var(--font); background: var(--surface); border-radius: 5px; pa
 @media (pointer: coarse) { .lrow { min-height: 44px; } .lrow .grip { opacity: 1; } }
 
 /* ---------- the page strip ---------- */
-.stripwrap { display: flex; align-items: stretch; gap: 0; padding: 4px max(16px, env(safe-area-inset-right)) max(14px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left)); min-width: 0; }
+.stripwrap { display: flex; align-items: stretch; gap: 0; padding: 12px max(16px, env(safe-area-inset-right)) 6px max(16px, env(safe-area-inset-left)); min-width: 0; border-bottom: 0.5px solid var(--sep); }
 .strip { display: flex; align-items: flex-start; gap: 12px; min-width: 0; flex: 1; }
 .stathead { flex: none; width: 148px; text-align: left; border: 0; background: var(--surface); border-radius: var(--r-card); padding: 10px 12px; cursor: pointer;
   box-shadow: 0 0 0 0.5px var(--sep); transition: transform var(--t) var(--spring), background-color var(--t-fast); margin-top: 2px; }
@@ -238,7 +237,7 @@ kbd { font: 12px var(--font); background: var(--surface); border-radius: 5px; pa
 .tile.dim .thumbwrap { opacity: 0.5; }
 .tile.lifted { z-index: 3; transition: none; }
 .tile.lifted .thumbwrap { box-shadow: 0 0 0 2.5px var(--accent), 0 12px 28px rgba(0, 0, 0, 0.28); transform: scale(1.04); }
-.addtile { flex: none; width: 56px; height: 46px; display: grid; place-items: center; border-radius: 9px; border: 1.5px dashed var(--fg-3); background: none; color: var(--fg-2); cursor: pointer;
+.addtile { flex: none; width: 96px; height: 46px; display: flex; align-items: center; justify-content: center; gap: 4px; font-size: 12.5px; font-weight: 500; border-radius: 9px; border: 1.5px dashed var(--fg-3); background: none; color: var(--fg-2); cursor: pointer;
   transition: color var(--t-fast), border-color var(--t-fast), transform var(--t) var(--spring); }
 .addtile:hover { color: var(--accent); border-color: var(--accent); }
 .addtile:active { transform: scale(0.95); }
@@ -291,7 +290,8 @@ select.inp { appearance: none; -webkit-appearance: none; padding-right: 28px; cu
 .segc button { flex: 1; min-height: calc(var(--ctl) - 4px); border: 0; border-radius: var(--r-inner); background: none; cursor: pointer; font-size: 12.5px; font-weight: 500; min-width: 0;
   display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 0 6px; transition: background-color var(--t) var(--spring), box-shadow var(--t-fast); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .segc button[aria-checked="true"] { background: var(--raised); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14), 0 0 0 0.5px rgba(0, 0, 0, 0.04); font-weight: 600; }
-.segc.small button { min-height: 24px; font-size: 12px; }
+.segc.small { flex: none; }
+.segc.small button { flex: none; min-height: 24px; font-size: 12px; padding: 0 10px; overflow: visible; }
 @media (pointer: coarse) { .segc.small button { min-height: 36px; } }
 
 .entbtn, .iconbtn { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 4px 10px; border: 0; border-radius: var(--r-ctl); background: var(--fill); text-align: left; cursor: pointer; min-width: 0; transition: background-color var(--t-fast); }
@@ -503,3 +503,5 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
   #toast { bottom: calc(88px + env(safe-area-inset-bottom)); }
 }
 .unitsbox { display: flex; flex-direction: column; gap: 8px; }
+.opt.newpage { border-top: 0.5px solid var(--sep); border-radius: 0 0 var(--r-ctl) var(--r-ctl); margin-top: 4px; color: var(--accent); }
+.opt .o2.plain { font-family: var(--font); }

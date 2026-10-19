@@ -5,7 +5,7 @@ A new editor. Add-on only; no firmware change. The previous editor is still
 there for now: add `?classic=1` to the editor's address.
 
 - **One place for each thing.** The canvas gets the width. Your pages sit in a
-  strip under it, in rotation order: the strip *is* the rotation, so you drag
+  strip above it, in rotation order: the strip *is* the rotation, so you drag
   a page to move it. Its head says what's on the panel. With nothing
   selected, the inspector shows the page: when it shows, how often, and its
   name, edited in place.
@@ -27,6 +27,8 @@ there for now: add `?classic=1` to the editor's address.
 - **Dynamic units.** A value can step up through its unit (950 W, then
   1.23 kW) or convert (m/s to km/h, °C to °F), and a label can follow it
   ("kW used"), with no templates.
+- **Text can wrap** onto more lines instead of running out of its box; the
+  note that says it's cut off offers to wrap it.
 - **Insert** finds element types and sensors in one search; drag a sensor
   onto the canvas to place it. **Presets** ask for your sensor.
 - **Now on the panel**: up to date or not, what's rotating, which pages are

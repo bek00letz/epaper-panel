@@ -30,8 +30,7 @@ export class Canvas {
       "aria-roledescription": "canvas", "aria-describedby": "canvas-help" });
     this.ov = h("div", { class: "ov", "aria-hidden": "true" });
     this.zones = h("div", { class: "zones", "aria-hidden": "true" },
-      h("div", { class: "zone footer" }, h("span", { text: "Footer" })),
-      h("div", { class: "zone lock" }, h("span", { text: "Padlock" })));
+      h("div", { class: "zone footer" }, h("span", { text: "Footer: time, page and padlock" })));
     this.panel.append(this.zones, this.ov);
     this.device = h("div", { class: "device" }, this.panel);
     this.wire();
@@ -44,9 +43,8 @@ export class Canvas {
     this.device.style.setProperty("--ar", String(g.W / g.H));
     this.device.style.setProperty("--pw", g.W + "px");
     this.device.classList.toggle("portrait", g.portrait);
-    const f = this.zones.querySelector(".footer"), l = this.zones.querySelector(".lock");
+    const f = this.zones.querySelector(".footer");
     Object.assign(f.style, { top: (g.safeH / g.H * 100) + "%", height: (g.footer / g.H * 100) + "%" });
-    Object.assign(l.style, { left: ((g.W - 44) / g.W * 100) + "%", width: (44 / g.W * 100) + "%", height: (g.portrait ? 8.2 : 24) + "%" });
     this.panel.setAttribute("aria-label", `${pageTitle(this.doc.cur || "")} on the panel. Click an item to select it; click again to reach what's underneath.`);
   }
 
@@ -64,9 +62,10 @@ export class Canvas {
           distance: Number(this.app.prefs.get("view_dist", "3.0")), display: spec.display } });
         try { this.metrics = JSON.parse(r.headers.get("X-Metrics") || "[]"); } catch (_) { this.metrics = []; }
         const url = URL.createObjectURL(await r.blob());
-        // Swap only once the new image has decoded, so the canvas never blinks.
+        // Swap once the new image has decoded, so the canvas never blinks; a
+        // hidden tab may never decode, so don't wait more than a moment.
         const img = new Image(); img.src = url;
-        try { await img.decode(); } catch (_) {}
+        await Promise.race([img.decode().catch(() => {}), new Promise((res) => setTimeout(res, 250))]);
         this.panel.style.backgroundImage = `url(${url})`;
         if (this.prevUrl) URL.revokeObjectURL(this.prevUrl);
         this.prevUrl = url;

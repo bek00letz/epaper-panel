@@ -183,7 +183,7 @@ class App {
       h("div", { class: "crumb" }, h("b", { text: p ? pageTitle(doc.cur) : "No page" }),
         p ? h("span", { class: "muted", text: p.tier === "alert" ? "Alert page" : p.tier === "when" ? "Shows only sometimes" : "Shows always" }) : null),
       h("span", { class: "spacer" }),
-      h("button", { class: "btn small", "aria-pressed": String(prefs.get("guides") === "1"), title: "Footer and padlock guides", onclick: () => { prefs.set("guides", prefs.get("guides") === "1" ? "0" : "1"); this.refresh(); } }, icon("guides", "sm"), h("span", { class: "hide-narrow", text: "Guides" })),
+      h("button", { class: "btn small", "aria-pressed": String(prefs.get("guides") === "1"), title: "Show where the footer is, and every element's box", onclick: () => { prefs.set("guides", prefs.get("guides") === "1" ? "0" : "1"); this.refresh(); } }, icon("guides", "sm"), h("span", { class: "hide-narrow", text: "Guides" })),
       h("button", { class: "btn small", "aria-pressed": String(prefs.get("layers") === "1"), "aria-controls": "layers", title: "Layers, front first", onclick: () => this.showLayers() }, icon("layers", "sm"), h("span", { text: "Layers" })),
       h("div", { class: "segc small hide-narrow", role: "radiogroup", "aria-label": "Zoom" },
         ...[["fit", "Fit"], ["actual", "Actual size"]].map(([v, l]) => h("button", { role: "radio", "aria-checked": String(zoom === v), onclick: () => { prefs.set("zoom", v); this.renderBar(); } }, l))));

@@ -145,13 +145,23 @@ def _draw_text(img, d, el, text, metrics=None, distance_m=3.0, display=None):
 
     pad_x = 12 if has_bg else 0
     inner_w = max(8, w - pad_x * 2)
-    size = max(8, min(360, int(el["size"]))) if el.get("size") else T.fit_size(text, inner_w, h - (8 if has_bg else 0), 200, bold=bold, family=family)
+    inner_h = h - (8 if has_bg else 0)
+    wrap = el.get("wrap") in (True, "true", 1, "1")
+    if el.get("size"):
+        size = max(8, min(360, int(el["size"])))
+    elif wrap:
+        size = T.fit_wrapped(text, inner_w, inner_h, 200, bold=bold, family=family)
+    else:
+        size = T.fit_size(text, inner_w, inner_h, 200, bold=bold, family=family)
     f = T.font(size, bold=bold, family=family, text=text)
+    asc, desc = f.getmetrics()
+    lines = T.wrap_lines(text, f, inner_w) if wrap else [text]
     if metrics is not None:
         mm, verdict = legibility(size, distance_m=distance_m, display=display)
         t = text.strip()
-        metrics.append({"size": size, "mm": mm, "verdict": verdict,
-                        "overflow": T.text_width(text, f) > inner_w,
+        too_wide = any(T.text_width(l, f) > inner_w for l in lines)
+        metrics.append({"size": size, "mm": mm, "verdict": verdict, "lines": len(lines),
+                        "overflow": too_wide or (wrap and len(lines) * (asc + desc) > inner_h),
                         "collection": t.startswith(("[", "{")) and t.endswith(("]", "}"))})
 
     if has_bg:
@@ -166,6 +176,14 @@ def _draw_text(img, d, el, text, metrics=None, distance_m=3.0, display=None):
 
     fg = T.WHITE if invert else T.BLACK
     ax = _anchor_x(align, x + pad_x, inner_w)
+    if wrap:
+        # Lines stacked and centred as a block, each aligned like a single line.
+        lh = asc + desc
+        top = y + (h - lh * len(lines)) // 2
+        anchor = {"left": "la", "center": "ma", "right": "ra"}.get(align, "la")
+        for n, line in enumerate(lines):
+            d.text((ax, top + n * lh), line, font=f, fill=fg, anchor=anchor)
+        return
     anchor = {"left": "lm", "center": "mm", "right": "rm"}.get(align, "lm")
     d.text((ax, y + h // 2), text, font=f, fill=fg, anchor=anchor)
 

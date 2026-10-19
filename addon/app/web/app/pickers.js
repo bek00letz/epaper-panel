@@ -142,7 +142,8 @@ export function openInsert(app, anchor) {
     q.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); const b = body.querySelector(".opt, .typecell"); if (b) b.click(); } });
     listNav(q, body);
     pop.append(h("div", { class: "search" }, icon("search", "sm"), q), body,
-      h("p", { class: "fnote pad", text: "Pick one to add it to the middle of the page, or drag a sensor to where you want it." }));
+      h("p", { class: "fnote pad", text: "Pick one to add it to the middle of the page, or drag a sensor to where you want it." }),
+      h("button", { class: "opt newpage", onclick: () => { close(); app.openPresets(); } }, icon("plus", "sm"), h("span", { class: "otext" }, h("span", { class: "o1", text: "A whole new page…" }), h("span", { class: "o2 plain", text: "From a preset, or blank" }))));
     draw();
   }, { label: "Insert", align: "left", focus: "input" });
 }

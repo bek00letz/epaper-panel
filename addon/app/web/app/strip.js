@@ -74,7 +74,7 @@ export function renderStrip(app) {
     app.say(`Moved ${pageTitle(x)} to place ${Math.min(to > from ? to : to + 1, r.length)} of ${r.length}.`);
     requestAnimationFrame(() => { const t = app.el.strip.querySelectorAll(".tiles .tile")[to > from ? to - 1 : to]; if (t) t.focus(); });
   }, (i) => doc.openPage(spec.rotation[i]));
-  list.append(h("button", { class: "addtile", "aria-label": "New page", title: "New page", onclick: () => app.openPresets() }, icon("plus")));
+  list.append(h("button", { class: "addtile", title: "A new page, from a preset or blank", onclick: () => app.openPresets() }, icon("plus"), h("span", { text: "New page" })));
 
   const out = Object.keys(spec.pages).filter((n) => !spec.rotation.includes(n) && spec.pages[n].tier !== "alert");
   const alerts = Object.keys(spec.pages).filter((n) => spec.pages[n].tier === "alert");
