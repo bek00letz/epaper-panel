@@ -334,6 +334,9 @@ The sensor's `detail` ("2 new episodes · yesterday") is kept as it always
 was, and each part of it is also an attribute of its own (`jellyfin.PARTS`).
 Every item in `items` carries the same parts, so a page that steps through
 the items shows each one's own value (`subitems.item_value`).
+A page that binds only details about the whole list (`subitems.WHOLE_FEED`,
+such as `up_next`) stays one screen. The editor's three Jellyfin presets
+(`legacy.js`) find the source's sensor through `feed` in `/api/entities`.
 
 **A 30-day recency window.** Without it the rotation cycles a backlog forever
 (58 unwatched Heroes episodes, 32 of The Voice). Settable in the data source

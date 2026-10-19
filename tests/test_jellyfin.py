@@ -1,15 +1,19 @@
 """Jellyfin: `detail` stays as it was, and its parts are there on their own."""
+import json
+import shutil
+import subprocess
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest import mock
 
 from aiohttp.test_utils import TestClient, TestServer
 
-import support  # noqa: F401  (puts the add-on on the path)
+import support
+import frames
 import runtime
 import web
 from feeds import jellyfin
-from render import binding, subitems
+from render import binding, layout, subitems
 
 NOW = datetime(2026, 3, 10, 12, 0, tzinfo=timezone.utc)
 
@@ -19,10 +23,11 @@ def at(days_ago):
 
 
 EPISODE = {"Id": "e1", "Type": "Episode", "Name": "The Signal", "SeriesName": "Northern Lights",
-           "ParentIndexNumber": 2, "IndexNumber": 4, "DateCreated": at(1)}
+           "ParentIndexNumber": 2, "IndexNumber": 4, "RunTimeTicks": 27_000_000_000, "DateCreated": at(1)}
 SERIES = {"Id": "s1", "Type": "Series", "Name": "Harbour Town", "ChildCount": 2,
-          "DateCreated": at(3)}
-FILM = {"Id": "m1", "Type": "Movie", "Name": "Paper Moon", "DateCreated": at(0)}
+          "RunTimeTicks": 30_000_000_000, "ProductionYear": 2019, "DateCreated": at(3)}
+FILM = {"Id": "m1", "Type": "Movie", "Name": "Paper Moon", "ProductionYear": 1973,
+        "RunTimeTicks": 67_200_000_000, "DateCreated": at(0)}
 
 
 class TestParts(unittest.TestCase):
@@ -59,6 +64,28 @@ class TestParts(unittest.TestCase):
         self.assertEqual(jellyfin.episode_number({"ParentIndexNumber": 1, "IndexNumber": 1,
                                                   "IndexNumberEnd": 2}), "S01E01–E02")
         self.assertEqual(jellyfin.episode_number({"ParentIndexNumber": 1}), "")
+
+    def test_the_line_under_the_name(self):
+        self.assertEqual(jellyfin.describe(EPISODE, NOW)["about"], "S02E04 · The Signal")
+        self.assertEqual(jellyfin.describe(SERIES, NOW)["about"], "2 new episodes")
+        self.assertEqual(jellyfin.describe(FILM, NOW)["about"], "1973 · 1 h 52 min")
+        self.assertEqual(jellyfin.describe({**FILM, "ProductionYear": None, "RunTimeTicks": None}, NOW)["about"], "")
+
+    def test_running_time(self):
+        self.assertEqual(jellyfin.runtime({"RunTimeTicks": 27_000_000_000}), "45 min")
+        self.assertEqual(jellyfin.runtime({"RunTimeTicks": 72_000_000_000}), "2 h")
+        self.assertEqual(jellyfin.runtime({}), "")
+        self.assertEqual(jellyfin.describe(SERIES, NOW)["runtime"], "", "a series' episode length isn't what's new")
+
+    def test_up_next_is_one_short_line_each(self):
+        long = {**FILM, "Id": "m2", "Name": "A Very Long Film Title That Goes On For A While"}
+        items = [jellyfin.describe(i, NOW) for i in (EPISODE, SERIES, FILM, long, EPISODE, FILM)]
+        rows = jellyfin.up_next(items).split("\n")
+        self.assertEqual(len(rows), jellyfin.UP_NEXT_ROWS)
+        self.assertEqual(rows[:3], ["Northern Lights · S02E04 · yesterday",
+                                    "Harbour Town · 2 new · 3 days ago", "Paper Moon · film · today"])
+        self.assertEqual(rows[3], "A Very Long Film Title That… · film · today")
+        self.assertEqual(jellyfin.up_next([]), "")
 
     def test_no_date_is_left_out(self):
         self.assertIsNone(jellyfin.describe({**FILM, "DateCreated": None}, NOW))
@@ -124,6 +151,70 @@ class TestPagesShowTheParts(unittest.TestCase):
         self.assertIsNone(subitems.item_value(self.el("episode_name", value="{{ 1 }}"), self.ENT, item))
 
 
+class TestListPagesDontStep(unittest.TestCase):
+    ENT = "sensor.epaper_watch"
+
+    def page(self, attribute):
+        return {"elements": [{"type": "text", "entity": self.ENT, "show": "attribute", "attribute": attribute}]}
+
+    def test_whole_feed_details_are_one_screen(self):
+        items = [jellyfin.describe(i, NOW) for i in (EPISODE, SERIES, FILM)]
+        for attribute in ("up_next", "count"):
+            n, kind, *_ = subitems.inspect_category_subitems(self.page(attribute), {}, {self.ENT: items})
+            self.assertEqual((n, kind), (1, None), attribute)
+        n, kind, *_ = subitems.inspect_category_subitems(self.page("about"), {}, {self.ENT: items})
+        self.assertEqual((n, kind), (3, "feed"))
+
+
+@unittest.skipUnless(shutil.which("node"), "no node to read the editor's presets")
+class TestPresets(unittest.TestCase):
+    """The editor's Jellyfin presets, drawn by the real renderer with real-looking values."""
+    ENT = "sensor.epaper_films"
+
+    @classmethod
+    def setUpClass(cls):
+        script = (f"import {{ PRESETS }} from {json.dumps(str(support.APP / 'web/app/legacy.js'))};"
+                  f"console.log(JSON.stringify(PRESETS.filter((p) => p.asks === 'jellyfin')"
+                  f".map((p) => ({{ id: p.id, show_if: p.showIf({json.dumps(cls.ENT)}),"
+                  f" elements: p.makeElements({json.dumps(cls.ENT)}) }}))))")
+        out = subprocess.run(["node", "--input-type=module", "-e", script], capture_output=True, text=True, check=True)
+        cls.presets = {p["id"]: p for p in json.loads(out.stdout)}
+
+    def setUp(self):
+        long = {**FILM, "Id": "m2", "Name": "A Very Long Film Title That Goes On For A While"}
+        items = [jellyfin.describe(i, NOW) for i in (EPISODE, SERIES, FILM, long, EPISODE)]
+        for d in items:
+            d.pop("_added")
+        top = items[0]
+        runtime.PUBLISHED[self.ENT] = {"state": top["title"], "attributes": {
+            "detail": top["detail"], "count": len(items), **{k: top[k] for k in jellyfin.PARTS},
+            "up_next": jellyfin.up_next(items), "items": items}}
+
+    def tearDown(self):
+        runtime.PUBLISHED.pop(self.ENT, None)
+
+    def test_three_screens_on_the_chosen_sensor(self):
+        self.assertEqual(sorted(self.presets), ["episode", "up_next", "watch"])
+        for p in self.presets.values():
+            self.assertEqual(p["show_if"], "{{ states('sensor.epaper_films_count') | int(0) > 0 }}")
+            self.assertTrue(all(el.get("entity") in (None, self.ENT) for el in p["elements"]))
+
+    def test_everything_fits(self):
+        for pid, p in self.presets.items():
+            vals, templates = frames.split_page_values(p)
+            self.assertEqual(templates, {}, f"{pid} reads only the add-on's own values")
+            metrics = []
+            layout.render_page(p, vals, metrics=metrics)
+            self.assertTrue(metrics)
+            self.assertEqual([m for m in metrics if m.get("overflow")], [], pid)
+
+    def test_the_list_shows_every_row(self):
+        vals, _ = frames.split_page_values(self.presets["up_next"])
+        rows = [v for v in vals.values() if "\n" in v][0].split("\n")
+        self.assertEqual(len(rows), jellyfin.UP_NEXT_ROWS)
+        self.assertIn("Harbour Town · 2 new · 3 days ago", rows)
+
+
 class TestEditorListsTheParts(unittest.IsolatedAsyncioTestCase):
     ENT = "sensor.epaper_jellyfin_test"
 
@@ -138,6 +229,21 @@ class TestEditorListsTheParts(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.ed.close()
         runtime.PUBLISHED.pop(self.ENT, None)
+
+    async def test_jellyfin_sensors_are_marked(self):
+        data = support.use_test_data_dir()
+        f = data / "sources.json"
+        before = f.read_bytes() if f.exists() else None
+        try:
+            f.write_text(json.dumps([{"type": "jellyfin", "name": "jellyfin_test", "base": "", "key": ""}]))
+            r = await self.ed.get("/api/entities")
+            mine = [e for e in await r.json() if e["entity_id"] == self.ENT]
+            self.assertEqual(mine[0].get("feed"), "jellyfin")
+        finally:
+            if before is None:
+                f.unlink(missing_ok=True)
+            else:
+                f.write_bytes(before)
 
     async def test_names_with_samples(self):
         r = await self.ed.get("/api/attributes", params={"entity": self.ENT})

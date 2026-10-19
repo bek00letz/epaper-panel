@@ -23,6 +23,10 @@ try:
 except (ImportError, ValueError):
     from render import binding, stripmeta
 
+# A feed's attributes that speak for all of its items at once. A page that
+# shows only these is one screen, not one per item.
+WHOLE_FEED = ("up_next", "count", "titles", "items")
+
 
 def derive_item_key(item: Any, fallback_index: int) -> str:
     """Extract a stable, content-derived string key from any item dictionary or object."""
@@ -107,6 +111,8 @@ def inspect_category_subitems(
             if not isinstance(el, dict):
                 continue
             ent = str(el.get("entity", ""))
+            if el.get("show") == "attribute" and el.get("attribute") in WHOLE_FEED:
+                continue
             if ent.startswith("sensor.epaper_") and not ent.endswith("_count") and not ent.startswith("sensor.epaper_category_") and not ent.startswith("sensor.epaper_panel_"):
                 f_items = feed_items_cache.get(ent)
                 if f_items and isinstance(f_items, list) and len(f_items) > 1:

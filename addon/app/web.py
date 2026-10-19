@@ -424,6 +424,12 @@ async def api_entities(request):
             "is_epaper": True,
         }
 
+    # Which source made a sensor, so a preset can offer exactly those.
+    for src in load_sources():
+        made = by_id.get(f"sensor.epaper_{src.get('name')}")
+        if made is not None and src.get("type"):
+            made["feed"] = str(src["type"])
+
     items = sorted(by_id.values(), key=lambda e: (0 if e.get("is_epaper") else 1, e["entity_id"]))
     return web.json_response(items)
 
