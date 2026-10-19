@@ -1,4 +1,5 @@
 """The add-on's own values: recording them, and mirroring them into Home Assistant."""
+
 import json
 import urllib.parse
 

@@ -1,4 +1,5 @@
 """Pages and data sources on disk: loading, migrating and checking what the editor saves."""
+
 import json
 import os
 import re

@@ -1,4 +1,5 @@
 """Weather forecasts and calendar events, through Home Assistant's actions."""
+
 import json
 import time
 import urllib.parse
@@ -10,7 +11,6 @@ from ha import ha_json
 
 _weather_cache = {}
 _calendar_cache = {}
-
 
 
 @runtime.live(300)

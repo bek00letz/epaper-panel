@@ -1,8 +1,8 @@
 """Settings from the environment, paths and fixed rules. Read at call time (tests change them)."""
+
 import os
 import re
 from pathlib import Path
-
 
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
@@ -21,6 +21,11 @@ def layouts_path() -> Path:
 
 def panel_setup_path() -> Path:
     return DATA_DIR / "panel_setup.json"
+
+
+# Home Assistant's ESPHome folder, where Panel setup writes the panel's YAML.
+ESPHOME_DIR = Path(os.environ.get("ESPHOME_DIR", "/config/esphome"))
+
 DEFAULTS_PATH = Path(__file__).parent / "default_layouts.json"
 FIXTURE_PATH = Path(__file__).parent / "render" / "fixture.json"
 

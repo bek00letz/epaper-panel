@@ -1,4 +1,5 @@
 """Home's location and timezone, from Home Assistant, plus distance and bearing maths."""
+
 import math
 import time
 

@@ -1,4 +1,5 @@
 """The two HTTP faces: frames on the LAN port, the editor and its API behind Ingress."""
+
 import asyncio
 import hashlib
 import hmac
@@ -556,7 +557,7 @@ async def api_panel_setup_post(request):
     # the file when the Wi-Fi password was left untouched.)
     disk_yaml, _ = generate_esphome_yaml(saved)
     yaml_text, secrets_text = generate_esphome_yaml(masked_cfg)
-    esphome_dir = Path("/config/esphome")
+    esphome_dir = config.ESPHOME_DIR
     esphome_synced = False
     if esphome_dir.exists() and esphome_dir.is_dir():
         try:
@@ -573,7 +574,7 @@ async def api_panel_setup_post(request):
             esphome_synced = True
             print(f"Synced ESPHome config to {target_yaml}", flush=True)
         except Exception as e:
-            print(f"Could not sync to /config/esphome: {e}", flush=True)
+            print(f"Could not sync to {esphome_dir}: {e}", flush=True)
     conn = await _detect_panel_connection(saved["device_name"])
     return web.json_response({
         "saved": True,

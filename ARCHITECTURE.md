@@ -28,7 +28,7 @@ walk-past layer: a timestamp so you can tell a live panel from a frozen one.
 ## Data flow
 
 ```
-   ┌── panel (ESPHome) ─────────┐       ┌── add-on (server.py) ─────────────────────┐
+   ┌── panel (ESPHome) ─────────┐       ┌── add-on (addon/app) ─────────────────────┐
    │ dial / buttons / HA action │       │ :8080 editor + API, Ingress only          │
    │                            │       │ :8099 frames for the LAN                  │
    │ download task:             │       │                                           │
@@ -41,6 +41,21 @@ walk-past layer: a timestamp so you can tell a live panel from a frozen one.
    └────────────────────────────┘       └───────────────────────────────────────────┘
 ```
 
+Where things live in `addon/app/`:
+
+| Module | What it does |
+|---|---|
+| `server.py` | Entry point: starts the web apps and the background loops |
+| `config.py` / `runtime.py` | Settings from the environment; what the running add-on holds. Always read as `config.X` / `runtime.X`, so changes are seen everywhere |
+| `frames.py` | Which pages are live, their values, alerts, quiet hours, rendering, packing the frame file |
+| `entities.py` / `mqtt_bridge.py` | The add-on's own values, and mirroring them into Home Assistant |
+| `sources/` | Outside data (flights, sports, racing, weather, calendars), always through `live_data.py` |
+| `panel_link.py` / `panel_ops.py` | Finding the panel and asking it to refresh or step |
+| `panel_setup.py` / `firmware_gen.py` / `firmware/panel.yaml` | Panel setup, and the one source of the firmware YAML |
+| `web.py` | The LAN frame server and the Ingress-only editor API |
+| `layouts_store.py`, `ha.py`, `hass.py`, `fixture.py` | Pages on disk; Home Assistant calls; offline stand-in |
+| `render/` | Drawing: layout, theme, footer geometry, sleep screen, the EPF encoder |
+
 The add-on runs two HTTP listeners in one event loop:
 - **Port `8080` (Ingress only):** the editor and its API. It refuses any client
   other than Home Assistant's Ingress proxy (`172.30.32.2`).
@@ -48,7 +63,7 @@ The add-on runs two HTTP listeners in one event loop:
   versions for the editor and older clients, and a minimal `/status`. ETag /
   `304 Not Modified`, optional `frame_token`.
 
-Every 60 seconds, and right away on a save or push, `refresh_frames()`:
+Every 60 seconds, and right away on a save or push, `frames.refresh_frames()`:
 
 - Runs the data sources and widgets and records their values (see
   [The add-on's own values](#the-add-ons-own-values)).
@@ -114,7 +129,7 @@ machine) with no ESP-IDF in it, and is compiled and tested on the host by
 ## The add-on's own values
 
 Values the add-on computes (feeds, sports, racing, flights, quiet hours, last
-render) live in one record inside the add-on, `_epaper_published_entities`.
+render) live in one record inside the add-on, `runtime.PUBLISHED`.
 
 - **Pages read that record directly** (`binding.local_value`) for `state` and
   `attribute` bindings. They don't round-trip through Home Assistant, so they
@@ -139,7 +154,7 @@ the background; a render only reads what's already there and never waits on
 an outside service. The first read of something new returns at once, using the
 caller's fallback, and schedules the fetch. When it lands, the render loop
 wakes, so a new widget fills in within seconds. A failed fetch keeps the last
-good value. The seven fetchers are decorated `@_live(seconds)` in `server.py`;
+good value. The seven fetchers in `sources/` are decorated `@runtime.live(seconds)`;
 their own caches still stop them hitting a service more often than it allows.
 The editor's preview (and its aircraft list) wait for fresh data, because
 there a person asked.

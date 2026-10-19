@@ -1,4 +1,5 @@
 """Runtime state: what the running add-on holds: the current frames, the shared HTTP session, and the shared helpers."""
+
 import os
 import re
 import time

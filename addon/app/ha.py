@@ -1,4 +1,5 @@
 """Home Assistant REST helpers: states, templates, actions, history."""
+
 import re
 import urllib.parse
 from datetime import datetime, timedelta, timezone

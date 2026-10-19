@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.9.6
+Add-on only; no firmware change.
+
+- **Easier to work on.** The 3,700-line `server.py` is now a dozen focused
+  modules (frames, entities, outside-data sources, panel setup, web…), with
+  no change in behaviour. New tests cover alerts, quiet hours, saving layouts
+  and saving Panel setup.
+- **The editor follows your system's light or dark appearance** until you
+  pick one with the toggle, and it no longer flashes dark first on a light
+  system.
+- **Keyboard focus is visible** on every button, and the editor respects
+  **Reduce Motion**.
+- **Works in a private window.** The editor no longer fails to load when the
+  browser won't let it remember preferences.
+
 ## 0.9.5
 **New panel firmware** for the sleep screen (install as before). The add-on
 part works with older firmware too.

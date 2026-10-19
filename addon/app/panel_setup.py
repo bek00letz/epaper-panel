@@ -1,4 +1,5 @@
 """Panel setup: its saved settings and the ESPHome YAML it writes."""
+
 import base64
 import json
 import os
@@ -75,8 +76,8 @@ def _yaml_str(s: str) -> str:
 
 
 def _inspect_existing_secrets() -> set[str]:
-    """Scan /config/esphome/secrets.yaml for declared secret keys."""
-    for p in (Path("/config/esphome/secrets.yaml"), Path(__file__).parent / "secrets.yaml"):
+    """Secret names declared in the ESPHome folder's secrets.yaml."""
+    for p in (config.ESPHOME_DIR / "secrets.yaml", Path(__file__).parent / "secrets.yaml"):
         if p.exists() and p.is_file():
             found = set()
             try:

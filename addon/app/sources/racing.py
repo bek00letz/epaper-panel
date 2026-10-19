@@ -1,4 +1,5 @@
 """Formula 1 and Formula E sessions and race windows."""
+
 import json
 import time
 from datetime import datetime, timedelta, timezone

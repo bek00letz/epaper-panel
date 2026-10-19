@@ -1,4 +1,5 @@
 """Offline stand-in for Home Assistant (render/fixture.json), for running without a token."""
+
 import json
 import re
 from datetime import datetime, timedelta, timezone

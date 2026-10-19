@@ -106,6 +106,19 @@ input:focus, select:focus, textarea:focus {
   border-color: var(--border-focus);
   box-shadow: 0 0 0 3px var(--accent-subtle);
 }
+/* Keyboard focus is always visible; a mouse click doesn't draw it. */
+button:focus-visible, a:focus-visible, summary:focus-visible, [tabindex]:focus-visible, label:focus-within > input[type="checkbox"] {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
 select { cursor: pointer; padding-right: 28px; }
 
 button {
@@ -997,6 +1010,13 @@ aside {
 </style>
 </head>
 <body data-theme="dark">
+<script>
+  // Before anything paints: your choice if you made one, otherwise the system's.
+  try {
+    var t = localStorage.getItem("epaper_theme");
+    document.body.setAttribute("data-theme", t || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark"));
+  } catch (e) {}
+</script>
 
 <header>
   <!-- Brand & Identity -->
@@ -1529,8 +1549,13 @@ const DISPLAYS = {
 let spec = { display: "crowpanel_579", orientation: 0, rotation: [], pages: {} }, cur = null, sel = -1, ents = [], timer = null, prevBlobUrl = null;
 let hist = [], hpos = -1, metrics = [], liveStatus = { pages: [] };
 let activeDomainFilter = "";
-let advCoordsOpen = localStorage.getItem("epaper_adv_coords") === "true";
-let viewDist = localStorage.getItem("epaper_view_dist") || "3.0";
+// Remembered per browser; a private window (no storage) just uses the defaults.
+const prefs = {
+  get(k) { try { return localStorage.getItem(k); } catch (_) { return null; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch (_) {} },
+};
+let advCoordsOpen = prefs.get("epaper_adv_coords") === "true";
+let viewDist = prefs.get("epaper_view_dist") || "3.0";
 
 const $ = id => document.getElementById(id);
 const canvas = $("canvas"), bezel = $("bezel-wrapper");
@@ -1552,15 +1577,25 @@ const curMargin = () => {
 const api = (p, o) => fetch(p, o).then(r => r.ok ? r : Promise.reject(new Error(r.status + " " + r.statusText)));
 const esc = t => String(t ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
-/* Theme Toggle */
-let curTheme = localStorage.getItem("epaper_theme") || "dark";
-document.body.setAttribute("data-theme", curTheme);
-$("themetoggle").textContent = curTheme === "dark" ? "☀️" : "🌙";
-$("themetoggle").onclick = () => {
-  curTheme = curTheme === "dark" ? "light" : "dark";
+/* Theme: follows the system until you pick one with the toggle. */
+const storedTheme = (() => { try { return localStorage.getItem("epaper_theme"); } catch (_) { return null; } })();
+const lightQuery = window.matchMedia("(prefers-color-scheme: light)");
+let curTheme = storedTheme || (lightQuery.matches ? "light" : "dark");
+const applyTheme = () => {
   document.body.setAttribute("data-theme", curTheme);
   $("themetoggle").textContent = curTheme === "dark" ? "☀️" : "🌙";
-  localStorage.setItem("epaper_theme", curTheme);
+  $("themetoggle").setAttribute("aria-label", curTheme === "dark" ? "Switch to light appearance" : "Switch to dark appearance");
+};
+applyTheme();
+lightQuery.addEventListener("change", e => {
+  let chosen = null;
+  try { chosen = localStorage.getItem("epaper_theme"); } catch (_) {}
+  if (!chosen) { curTheme = e.matches ? "light" : "dark"; applyTheme(); }
+});
+$("themetoggle").onclick = () => {
+  curTheme = curTheme === "dark" ? "light" : "dark";
+  applyTheme();
+  try { localStorage.setItem("epaper_theme", curTheme); } catch (_) {}
 };
 
 /* Viewing Distance */
@@ -1568,7 +1603,7 @@ if ($("viewdist")) {
   $("viewdist").value = viewDist;
   $("viewdist").onchange = e => {
     viewDist = e.target.value;
-    localStorage.setItem("epaper_view_dist", viewDist);
+    prefs.set("epaper_view_dist", viewDist);
     preview();
   };
 }
@@ -3796,7 +3831,7 @@ function props() {
   if (advDet) {
     advDet.ontoggle = () => {
       advCoordsOpen = advDet.open;
-      localStorage.setItem("epaper_adv_coords", advCoordsOpen ? "true" : "false");
+      prefs.set("epaper_adv_coords", advCoordsOpen ? "true" : "false");
     };
   }
 

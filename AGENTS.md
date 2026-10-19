@@ -65,6 +65,9 @@ Never expose port `8099` or the panel's endpoints to the public internet.
 ```bash
 # run the service locally; it falls back to render/fixture.json with no HA token
 DATA_DIR=/tmp/epaper-data ./.venv/bin/python addon/app/server.py
+
+# the tests (Python, plus the firmware core compiled on this machine)
+./.venv/bin/python -m unittest discover -s tests
 ```
 
 Then open `http://127.0.0.1:8080/` for the editor and
@@ -139,7 +142,7 @@ When touching display code, `it.image()` at a negative offset is a trap: see
 
 - **A render never waits on an outside service.** Anything that calls ESPN,
   Flightradar24, OpenSky, a racing calendar, or a slow Home Assistant
-  service goes through `live_data` (`@_live(seconds)` in `server.py`), and
+  service goes through `live_data` (`@runtime.live(seconds)`, see `sources/`), and
   callers must cope with "no value yet".
 
 - **Never guess an entity ID or an action name** from a device name. Find the

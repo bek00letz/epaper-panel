@@ -1,4 +1,5 @@
 """Building the frames: which pages are live, their values, alerts, quiet hours, rendering, packing."""
+
 import asyncio
 import hashlib
 import io
@@ -85,7 +86,6 @@ def _png(img) -> bytes:
 
 def _etag(data: bytes) -> str:
     return f'"{hashlib.sha256(data).hexdigest()[:16]}"'
-
 
 
 async def enrich_page_values(session, page, vals):
