@@ -8,6 +8,7 @@ import { TYPES, BREAKABLE, isWidget, hasText, elName, normalizeLineParity } from
 import { OPS, parseShowIf, compileShowIf, evaluate, describe, syncWidgetShowIf, syncDynamicGridShowIf } from "./conditions.js";
 import { explodeWidget, getWidgetSensorId, suggestIconForEntity } from "./legacy.js";
 
+const SHOWS_TEXT_EXTRA = [["unit", "Its unit"]];
 const SHOWS = [["state", "Its value"], ["attribute", "One of its details"], ["last_changed", "When it last changed"], ["last_updated", "When it last updated"],
   ["days_until", "Days until it"], ["date_formatted", "Its date"], ["calendar_title", "The event's name"]];
 const FORMATS = [["relative", "2 hours ago"], ["date", "3 Mar"], ["day_date", "Thu, 24 Oct"], ["day_full", "Thursday, 24 Oct"], ["time", "14:05"], ["time_12", "2:05 PM"], ["datetime", "Date and time"]];
@@ -180,7 +181,10 @@ function shows(app, el, set) {
       app.doc.commit();
     }));
     const show = el.show || "state";
-    s.append(field("Show", select(SHOWS, show, (v) => { set("show", v === "state" ? "" : v); })));
+    s.append(field("Show", select(el.type === "text" ? [...SHOWS, ...SHOWS_TEXT_EXTRA] : SHOWS, show, (v) => {
+      if (v === "unit" && !el.units) { const u = app.entMap.get(el.entity)?.unit; if (u) el.units = { base: u, mode: "scale", decimals: 2 }; }
+      set("show", v === "state" ? "" : v);
+    })));
     if (show === "attribute") {
       const b = h("button", { class: "entbtn", "aria-label": `Detail: ${el.attribute || "none"}. Change` },
         h("span", { class: "eb-text" }, h("span", { class: "e1", text: el.attribute || "Choose a detail" })), icon("chev", "sm"));
@@ -200,6 +204,8 @@ function shows(app, el, set) {
       s.append(h("div", { class: "pair" },
         field("Decimals", number(el.decimals, (v) => set("decimals", v), { min: "0", max: "6", placeholder: "1" })),
         field("If missing", input(el.fallback, (v) => set("fallback", v), { placeholder: "--" }))));
+      const u = unitsRows(app, el, set); if (u) s.append(u);
+    } else if (show === "unit") {
       const u = unitsRows(app, el, set); if (u) s.append(u);
     }
     s.append(replacements(app, el));

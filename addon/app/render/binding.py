@@ -78,6 +78,10 @@ def template_for(el):
         else:
             src = f"states('{_quote(ent)}')"
         core = f"as_timestamp({src}) | timestamp_custom('{pattern}')"
+    elif show == "unit":
+        # The value itself; the renderer turns it into the unit it's shown in
+        # and applies the replacements to that word (layout.element_text).
+        return "{{ states('" + _quote(ent) + "') }}"
     elif show == "calendar_title":
         core = f"state_attr('{_quote(ent)}', 'message')"
     else:
@@ -93,7 +97,7 @@ def template_for(el):
     return "{{ " + core + " }}"
 
 
-LOCAL_SHOWS = ("state", "attribute")
+LOCAL_SHOWS = ("state", "attribute", "unit")
 
 
 def local_value(el, registry):
@@ -125,7 +129,7 @@ def local_value(el, registry):
     else:
         text = str(val)
     repl_map = el.get("replace")
-    if isinstance(repl_map, dict):
+    if isinstance(repl_map, dict) and show != "unit":
         for find, repl in repl_map.items():
             text = text.replace(str(find), str(repl))
     return text

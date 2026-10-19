@@ -502,3 +502,4 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
   .pop, .pop.picker, .pop.insert, .pop.status { width: calc(100vw - 16px); }
   #toast { bottom: calc(88px + env(safe-area-inset-bottom)); }
 }
+.unitsbox { display: flex; flex-direction: column; gap: 8px; }

@@ -27,6 +27,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from . import theme as T
 from . import binding
+from . import units
 from .binding import template_for
 from .qr import encode_qr_matrix
 
@@ -507,8 +508,11 @@ def _fmt_number(raw, el):
     # If explicit Jinja template was used in value, preserve its custom precision!
     if isinstance(el.get("value"), str) and "{{" in el.get("value"):
         return f"{el.get('prefix', '')}{raw_str}{el.get('suffix', '')}"
-    dec = max(0, min(6, int(el.get("decimals", 0))))
-    formatted = f"{v:.{dec}f}"
+    if isinstance(el.get("units"), dict) and el["units"].get("base"):
+        formatted = units.format_value(v, el)          # picks its own unit: 1234 W -> 1.23 kW
+    else:
+        dec = max(0, min(6, int(el.get("decimals", 0))))
+        formatted = f"{v:.{dec}f}"
     if not (isinstance(el.get("value"), str) and el.get("value").strip()):
         return f"{el.get('prefix', '')}{formatted}{el.get('suffix', '')}"
     return formatted
@@ -1980,6 +1984,14 @@ def element_text(el, vals, idx):
     if el["type"] == "text":
         got = vals.get(idx)
         base = str(got) if got is not None else str(el.get("value", "") or "")
+        if el.get("show") == "unit" and not (isinstance(el.get("value"), str) and el.get("value").strip()):
+            # The unit the value is shown in right now, in the user's words.
+            word = units.unit_for(base, el)
+            for find, repl in (el.get("replace") or {}).items():
+                if word == str(find):
+                    word = str(repl)
+                    break
+            return f"{el.get('prefix', '')}{word}{el.get('suffix', '')}"
         if not (isinstance(el.get("value"), str) and el.get("value").strip()):
             return f"{el.get('prefix', '')}{base}{el.get('suffix', '')}"
         return base
