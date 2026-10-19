@@ -11,7 +11,7 @@ export REFRESH_SECONDS="$(bashio::config 'refresh_seconds')"
 export HA_BASE="http://supervisor/core"
 export HA_TOKEN="${SUPERVISOR_TOKEN}"
 export DATA_DIR="/data"
-export ADDON_VERSION="$(bashio::addon.version)"
+export ADDON_VERSION="$(bashio::app.version 2>/dev/null || bashio::addon.version)"
 
 # The broker the Supervisor offers (the Mosquitto app), for the add-on's
 # Home Assistant entities. Without one the panel works the same; the values

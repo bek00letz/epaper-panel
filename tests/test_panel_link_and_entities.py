@@ -234,6 +234,18 @@ class TestEntityPublisher(unittest.TestCase):
         run(pub._on_message(mqtt_bridge.BUTTON_COMMAND, b"PRESS"))
         self.assertEqual(pressed, [True])
 
+    def test_first_render_waits_until_entities_are_back_online(self):
+        async def scenario():
+            pub, t = self.make(FakeHass(registry=[]))
+            waiter = asyncio.create_task(pub.wait_ready(5))
+            await asyncio.sleep(0)
+            self.assertFalse(waiter.done())
+            await pub._on_connect()
+            self.assertTrue(await waiter)
+            self.assertFalse(await self.make(FakeHass(registry=[]))[0].wait_ready(0.01))  # gives up, renders anyway
+
+        run(scenario())
+
     def test_without_a_broker_it_says_so_plainly(self):
         pub = mqtt_bridge.EntityPublisher(None, FakeHass(), Path(self.tmp.name), "0.9.0")
         self.assertEqual(pub.status()["mode"], "off")

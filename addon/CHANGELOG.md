@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.1
+- **No missing pages after a restart.** While the add-on is stopped, its
+  entities read "unavailable". The first render now waits (up to 20 s) until
+  they're back, so pages whose condition reads one, like *watch*, no longer drop
+  out for the first minute.
+- Uses `bashio::app.version` (the old name logged a deprecation warning).
+
 ## 0.9.0
 Add-on only. The panel's firmware is unchanged, and so is everything it downloads.
 

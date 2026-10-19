@@ -74,6 +74,7 @@ class EntityPublisher:
         self._registered: dict[str, str] = {}         # our unique_id -> entity_id, from the registry
         self._all_registered: set[str] = set()        # every registered entity_id
         self._ready = False
+        self._ready_event = asyncio.Event()
         self._lock = asyncio.Lock()
         self.last_seen: dict[str, float] = self._load(self._state_path)
         self.problem = "" if transport is not None else (
@@ -121,6 +122,21 @@ class EntityPublisher:
                         await self._withdraw(obj)
             self._save(self._state_path, self.last_seen)
 
+    async def wait_ready(self, timeout: float) -> bool:
+        """Wait until the entities are online in Home Assistant again.
+
+        While the add-on is stopped its entities read "unavailable". Rendering
+        before they are back would hide every page whose condition reads one.
+        """
+        if self.transport is None:
+            return True
+        try:
+            await asyncio.wait_for(self._ready_event.wait(), timeout)
+            return True
+        except asyncio.TimeoutError:
+            print(f"mqtt: not connected after {int(timeout)}s; rendering anyway", flush=True)
+            return False
+
     def status(self) -> dict:
         return {"mode": self.mode, "problem": self.problem, "entities": len(self.desired)}
 
@@ -139,6 +155,7 @@ class EntityPublisher:
         self.problem = ""
         print("mqtt: connected, publishing entities", flush=True)
         await self.sync()
+        self._ready_event.set()
 
     async def _on_message(self, topic: str, payload: bytes):
         text = payload.decode("utf-8", "ignore").strip() if payload else ""

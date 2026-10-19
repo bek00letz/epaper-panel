@@ -2692,6 +2692,8 @@ async def render_loop():
     global LAST_PANEL_PUSH_TIME
     was_alert = None
     LAST_PANEL_PUSH_TIME = time.time()
+    if PUBLISHER is not None:
+        await PUBLISHER.wait_ready(20)
     while True:
         try:
             await refresh_frames(SHARED_SESSION)
