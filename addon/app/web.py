@@ -2,7 +2,6 @@
 
 import asyncio
 import hashlib
-import hmac
 import json
 import re
 import time
@@ -15,7 +14,9 @@ from aiohttp import web
 import feeds
 import live_data
 from render import binding, epf, layout, sleep, stripmeta, subitems, theme as T
+import airports
 import config
+import frame_token
 import runtime
 from config import ADDON_VERSION, FRAME_PORT, HA_BASE, HA_TOKEN, INGRESS_GATEWAY, REFRESH, SLEEP_PAGE, WEB_DIR, valid_entity_id
 from fixture import load_fixture
@@ -23,7 +24,7 @@ from frames import _etag, _png, enrich_page_values, refresh_frames, split_page_v
 from ha import curve_series, ha_json, resolve_templates
 from layouts_store import load_layouts, load_sources, sanitize_layouts, save_layouts
 from panel_ops import push_panel_update, step_panel_page
-from panel_setup import _detect_external_port, _detect_panel_connection, _new_api_key, _new_ota_password, generate_esphome_yaml, load_panel_setup, save_panel_setup
+from panel_setup import _detect_external_port, _detect_panel_connection, _new_api_key, generate_esphome_yaml, load_panel_setup, save_panel_setup
 from sources.flights import fetch_overhead_aircraft
 
 
@@ -49,28 +50,24 @@ async def ingress_only(request, handler):
     return await handler(request)
 
 
-def _require_frame_token(request):
-    """LAN endpoints that make the add-on or the panel do something.
+def _provided_token(request) -> str:
+    auth_hdr = request.headers.get("Authorization") or ""
+    if auth_hdr.lower().startswith("bearer "):
+        return auth_hdr[7:].strip()
+    return request.query.get("token") or request.headers.get("X-Frame-Token") or ""
 
-    They are off unless a frame_token is set: without one, anything on the
-    network could make the panel redraw or step pages.
-    """
-    if not config.FRAME_TOKEN:
-        raise web.HTTPForbidden(text=(
-            "This endpoint is off. Set frame_token in the add-on's options to use it, "
-            "or use the panel's actions and the Refresh panel button in Home Assistant."))
-    _check_frame_auth(request)
+
+def _require_frame_token(request):
+    """LAN endpoints that make the add-on or the panel do something: always
+    need the token, even while plain frame downloads are still switching over."""
+    if frame_token.check(_provided_token(request)) != "ok":
+        raise web.HTTPUnauthorized(text="This needs the frame token (Panel setup shows it in the panel's YAML).")
 
 
 def _check_frame_auth(request):
-    if not config.FRAME_TOKEN:
-        return
-    auth_hdr = request.headers.get("Authorization") or ""
-    if auth_hdr.lower().startswith("bearer "):
-        provided = auth_hdr[7:].strip()
-    else:
-        provided = request.query.get("token") or request.headers.get("X-Frame-Token") or ""
-    if not hmac.compare_digest(provided, config.FRAME_TOKEN):
+    """Frames and status on the LAN port (see frame_token for the switch-over)."""
+    result = frame_token.check(_provided_token(request))
+    if result == "wrong" or (result == "missing" and frame_token.required()):
         raise web.HTTPUnauthorized(text="invalid or missing token")
 
 
@@ -415,6 +412,15 @@ async def api_preview(request):
                         headers={"X-Metrics": json.dumps(metrics)})
 
 
+async def api_airport(request):
+    """A three-letter airport code, as a place for the flight widget."""
+    code = (request.query.get("code") or "").strip()
+    found = airports.lookup(code)
+    if not found:
+        return web.json_response({"error": f"No airport with the code “{code.upper()[:8]}”."}, status=404)
+    return web.json_response(found)
+
+
 async def api_aircraft(request):
     try:
         radius = float(request.query.get("radius") or 35.0)
@@ -509,7 +515,8 @@ async def api_panel_setup_get(request):
         "yaml": yaml_text,
         "secrets_yaml": secrets_text,
         "frame_port": cfg.get("frame_port", detected_port),
-        "has_frame_token": bool(config.FRAME_TOKEN),
+        "has_frame_token": True,
+        "frame_protection": frame_token.status(),
         "panel": conn,
     })
 
@@ -521,7 +528,6 @@ async def api_panel_setup_post(request):
     cur = load_panel_setup()
     if body.get("regenerate_keys"):
         cur["api_encryption_key"] = _new_api_key()
-        cur["ota_password"] = _new_ota_password()
     for k in ("device_name", "ha_host", "wifi_ssid", "refresh_interval", "display"):
         if k in body and isinstance(body[k], str):
             cur[k] = body[k].strip()
@@ -544,7 +550,7 @@ async def api_panel_setup_post(request):
     if "wifi_password" in body and isinstance(body["wifi_password"], str):
         if body["wifi_password"] != feeds.SECRET_MASK:
             cur["wifi_password"] = body["wifi_password"]
-    for k in ("api_encryption_key", "ota_password"):
+    for k in ("api_encryption_key",):
         if k in body and isinstance(body[k], str) and body[k].strip():
             if not body.get("regenerate_keys"):
                 cur[k] = body[k].strip()
@@ -583,7 +589,8 @@ async def api_panel_setup_post(request):
         "secrets_yaml": secrets_text,
         "esphome_synced": esphome_synced,
         "frame_port": saved.get("frame_port", FRAME_PORT),
-        "has_frame_token": bool(config.FRAME_TOKEN),
+        "has_frame_token": True,
+        "frame_protection": frame_token.status(),
         "panel": conn,
     })
 
@@ -678,6 +685,7 @@ def make_apps():
         web.get("/api/entities", api_entities),
         web.get("/api/attributes", api_attributes),
         web.get("/api/aircraft", api_aircraft),
+        web.get("/api/airport", api_airport),
         web.post("/api/preview", api_preview),
         web.post("/api/push", api_push),
         web.get("/api/sources", api_sources_get),

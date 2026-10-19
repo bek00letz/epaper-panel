@@ -61,7 +61,9 @@ The add-on runs two HTTP listeners in one event loop:
   other than Home Assistant's Ingress proxy (`172.30.32.2`).
 - **Port `8099` (LAN):** `/frames.epf` and `/frame.epf` for the panel, the PNG
   versions for the editor and older clients, and a minimal `/status`. ETag /
-  `304 Not Modified`, optional `frame_token`.
+  `304 Not Modified`. Protected by a frame token: the option, or one the
+  add-on generates. Frames start requiring it once the panel has first used it
+  (`frame_token.py`), so moving a panel over never blanks it.
 
 Every 60 seconds, and right away on a save or push, `frames.refresh_frames()`:
 

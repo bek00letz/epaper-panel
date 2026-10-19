@@ -68,7 +68,7 @@ def display_blocks(disp: dict) -> tuple[str, str]:
 
 
 def render(*, disp: dict, version: str, device_name: str, frames_url: str, api_key: str,
-           ota_password: str, wifi_ssid: str, wifi_password: str, interval_min: int,
+           wifi_ssid: str, wifi_password: str, interval_min: int,
            orientation: int) -> str:
     """The YAML text. Credential arguments are YAML scalars, e.g. '"abc"' or '!secret x'."""
     component, block = display_blocks(disp)
@@ -76,7 +76,7 @@ def render(*, disp: dict, version: str, device_name: str, frames_url: str, api_k
         "DISPLAY_NAME": disp["name"], "SKU": disp["sku"], "W": str(disp["w"]), "H": str(disp["h"]),
         "VERSION": version or "dev", "DEVICE_NAME": device_name, "FRAMES_URL": frames_url,
         "COMPONENT_REF": component_ref(version), "DISPLAY_COMPONENT": component,
-        "DISPLAY_BLOCK": block, "API_KEY": api_key, "OTA_PASSWORD": ota_password,
+        "DISPLAY_BLOCK": block, "API_KEY": api_key,
         "WIFI_SSID": wifi_ssid, "WIFI_PASSWORD": wifi_password,
         "INTERVAL_MIN": str(max(1, min(60, int(interval_min)))),
         **{k: str(v) for k, v in button_pins(orientation).items()},

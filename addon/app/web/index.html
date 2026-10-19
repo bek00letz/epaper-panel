@@ -1422,6 +1422,7 @@ aside {
     </div>
     <div id="setupconn" class="chip" style="margin:0">Checking panel connection…</div>
     <div id="setupentities" class="chip" style="margin:0;display:none"></div>
+    <div id="setupframes" class="chip" style="margin:0;display:none"></div>
     <div style="overflow-y:auto;display:flex;flex-direction:column;gap:12px;padding-right:2px;max-height:60vh">
       <div class="card"><div class="body">
         <div class="row">
@@ -1471,13 +1472,9 @@ aside {
           <label style="width:130px">API encryption key</label>
           <input id="cfg_apikey" readonly style="font-family:ui-monospace,monospace;font-size:12px;background:var(--bg-input)">
           <button id="copyapikey" class="sm" title="Copy key for Home Assistant adoption">Copy key</button>
+          <button id="regenkeys" class="sm" title="Generate a new key. The panel then needs reinstalling and re-adding in Home Assistant">Regenerate</button>
         </div>
-        <div class="row">
-          <label style="width:130px">OTA password</label>
-          <input id="cfg_otapw" style="font-family:ui-monospace,monospace;font-size:12px">
-          <button id="copyotapw" class="sm" title="Copy OTA password">Copy</button>
-          <button id="regenkeys" class="sm" title="Generate a fresh random API key and OTA password">Regenerate</button>
-        </div>
+        <div class="hint" style="margin:-4px 0 4px 136px">The same key also protects firmware updates; there's no separate update password.</div>
         <div class="row" style="margin-top:4px">
           <label style="width:130px"></label>
           <label style="width:auto;display:flex;align-items:center;gap:6px;cursor:pointer;color:var(--text-primary)">
@@ -1510,7 +1507,7 @@ aside {
         <div class="lbl" style="font-size:11px;color:var(--text-secondary);text-transform:uppercase;margin-bottom:6px">How to flash in Home Assistant</div>
         <ol class="steps">
           <li>Open the <b>ESPHome</b> add-on → click <b>New Device</b> → name it and pick <b>ESP32-S3</b> → click <b>Skip</b>.</li>
-          <li>Click <b>Edit</b> on the newly created device card, replace the file with the YAML above, and click <b>Install</b> (use USB-C for the first flash; updates after that are wireless OTA).</li>
+          <li>Click <b>Edit</b> on the newly created device card, replace the file with the YAML above, and click <b>Install</b> (use USB-C for the first install; after that, updates go over Wi-Fi).</li>
           <li>When Home Assistant discovers the panel under <b>Settings → Devices &amp; Services</b>, click <b>Configure</b> and paste the <b>API encryption key</b> above.</li>
         </ol>
       </div></div>
@@ -3537,8 +3534,15 @@ function props() {
         <option value="split"${el.style === "split" ? " selected" : ""}>Radar Scope + Telemetry (Split)</option>
         <option value="radar"${el.style === "radar" ? " selected" : ""}>PPI Radar Scope (Tactical Circular)</option>
       </select></div>
+      <div class="row"><label>airport</label>
+        <div style="display:flex;gap:6px;flex:1;align-items:center">
+          <input type="text" id="fl_airport" maxlength="3" placeholder="code, e.g. LHR" autocapitalize="characters" autocomplete="off" spellcheck="false" aria-label="Airport code" style="text-transform:uppercase;width:120px">
+          <button type="button" class="sm" id="fl_airport_go">Go</button>
+        </div>
+      </div>
+      <div class="hint" id="fl_airport_msg" role="status" aria-live="polite" style="margin-top:-4px"></div>
       <div class="row"><label>location label</label>
-        <input type="text" data-k="location_name" placeholder="Home (or TSR / LHR / JFK)" value="${esc(el.location_name || '')}">
+        <input type="text" data-k="location_name" placeholder="Home" value="${esc(el.location_name || '')}">
       </div>
       <div class="row"><label>latitude</label>
         <input type="number" step="any" data-k="lat" placeholder="Default (HA Home)" value="${el.lat !== undefined ? el.lat : ''}">
@@ -3546,13 +3550,11 @@ function props() {
       <div class="row"><label>longitude</label>
         <input type="number" step="any" data-k="lon" placeholder="Default (HA Home)" value="${el.lon !== undefined ? el.lon : ''}">
       </div>
-      <div class="row"><label>quick presets</label>
-        <div style="display:flex;gap:4px;flex-wrap:wrap">
-          <button type="button" class="sm flight-preset-btn" data-preset="home" style="padding:2px 8px;font-size:11px">Home</button>
-          <button type="button" class="sm flight-preset-btn" data-preset="tsr" style="padding:2px 8px;font-size:11px">TSR (Timisoara)</button>
-          <button type="button" class="sm flight-preset-btn" data-preset="lhr" style="padding:2px 8px;font-size:11px">LHR (Heathrow)</button>
-          <button type="button" class="sm flight-preset-btn" data-preset="jfk" style="padding:2px 8px;font-size:11px">JFK (New York)</button>
-          <button type="button" class="sm flight-preset-btn" data-preset="fra" style="padding:2px 8px;font-size:11px">FRA (Frankfurt)</button>
+      <div class="row"><label>saved places</label>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;flex:1">
+          <button type="button" class="sm fl-place" data-i="home" title="Home Assistant's own location">Home</button>
+          ${(spec.location_presets || []).map((p, i) => `<span style="display:inline-flex"><button type="button" class="sm fl-place" data-i="${i}" title="${esc(p.lat + ', ' + p.lon)}">${esc(p.label)}</button><button type="button" class="sm fl-place-x" data-i="${i}" aria-label="Forget ${esc(p.label)}" title="Forget ${esc(p.label)}">×</button></span>`).join("")}
+          ${(spec.location_presets || []).length < 4 && el.lat !== undefined && el.lon !== undefined ? `<button type="button" class="sm" id="fl_place_save">+ Save this place</button>` : ""}
         </div>
       </div>
       <div class="row"><label>airspace radius (km)</label>
@@ -3950,26 +3952,66 @@ function props() {
     };
   }
 
-  box.querySelectorAll(".flight-preset-btn").forEach(btn => {
+  // Flight widget: airport code, saved places (yours, up to 4), Home.
+  const placeMsg = box.querySelector("#fl_airport_msg");
+  const goAirport = async () => {
+    const input = box.querySelector("#fl_airport");
+    const code = (input.value || "").trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(code)) {
+      placeMsg.textContent = "Type a three-letter airport code, like LHR.";
+      placeMsg.style.color = "var(--danger)";
+      return;
+    }
+    try {
+      const res = await fetch("api/airport?code=" + encodeURIComponent(code));
+      const a = await res.json();
+      if (!res.ok) throw new Error(a.error || "Not found");
+      snapshot();
+      el.lat = a.lat; el.lon = a.lon; el.location_name = a.code;
+      props(); paint(); preview();
+      const m = box.querySelector("#fl_airport_msg");
+      m.textContent = `${a.name}${a.city ? ", " + a.city : ""}`;
+      m.style.color = "";
+    } catch (e) {
+      placeMsg.textContent = e.message;
+      placeMsg.style.color = "var(--danger)";
+    }
+  };
+  const airportGo = box.querySelector("#fl_airport_go");
+  if (airportGo) {
+    airportGo.onclick = goAirport;
+    box.querySelector("#fl_airport").onkeydown = e => { if (e.key === "Enter") { e.preventDefault(); goAirport(); } };
+  }
+  box.querySelectorAll(".fl-place").forEach(btn => {
     btn.onclick = () => {
       snapshot();
-      const p = btn.dataset.preset;
-      const presets = {
-        home: { lat: undefined, lon: undefined, name: "" },
-        tsr: { lat: 45.8100, lon: 21.3378, name: "TSR" },
-        lhr: { lat: 51.4700, lon: -0.4543, name: "LHR" },
-        jfk: { lat: 40.6413, lon: -73.7781, name: "JFK" },
-        fra: { lat: 50.0379, lon: 8.5622, name: "FRA" }
-      };
-      const c = presets[p];
-      if (c) {
-        if (c.lat !== undefined) el.lat = c.lat; else delete el.lat;
-        if (c.lon !== undefined) el.lon = c.lon; else delete el.lon;
-        if (c.name) el.location_name = c.name; else delete el.location_name;
-        props(); paint(); preview();
-      }
+      const p = btn.dataset.i === "home" ? null : (spec.location_presets || [])[Number(btn.dataset.i)];
+      if (p) { el.lat = p.lat; el.lon = p.lon; el.location_name = p.label; }
+      else { delete el.lat; delete el.lon; delete el.location_name; }
+      props(); paint(); preview();
     };
   });
+  box.querySelectorAll(".fl-place-x").forEach(btn => {
+    btn.onclick = async () => {
+      const list = spec.location_presets || [];
+      const gone = list.splice(Number(btn.dataset.i), 1)[0];
+      spec.location_presets = list;
+      props();
+      try { await saveLayouts(); msg(`Forgot ${gone.label}.`); } catch (e) { msg("Couldn't save: " + e.message); }
+    };
+  });
+  const placeSave = box.querySelector("#fl_place_save");
+  if (placeSave) {
+    placeSave.onclick = async () => {
+      const list = spec.location_presets || [];
+      if (list.length >= 4) return;
+      const label = (el.location_name || "").trim().slice(0, 12) || `${Number(el.lat).toFixed(2)},${Number(el.lon).toFixed(2)}`;
+      list.push({ label, lat: Number(el.lat), lon: Number(el.lon) });
+      spec.location_presets = list;
+      props();
+      try { await saveLayouts(); msg(`Saved ${label} as a place.`); } catch (e) { msg("Couldn't save: " + e.message); }
+    };
+  }
 
   const addDg = box.querySelector("#dgadditem");
   if (addDg) {
@@ -4352,7 +4394,6 @@ function applySetupResponse(r) {
   $("cfg_ssid").value = c.wifi_ssid || "";
   $("cfg_pw").value = c.wifi_password || "";
   $("cfg_apikey").value = c.api_encryption_key || "";
-  $("cfg_otapw").value = c.ota_password || "";
   $("cfg_secrets").checked = !!c.use_secrets;
   $("yamlout").value = r.yaml || "";
   $("secretsout").value = r.secrets_yaml || "";
@@ -4369,6 +4410,12 @@ function applySetupResponse(r) {
     conn.className = "chip";
     conn.innerHTML = `<b>No panel yet.</b> Generate the ESPHome YAML below, install it from the ESPHome Device Builder, then add the device in Home Assistant.`;
   }
+  const framesChip = $("setupframes");
+  const waiting = r.frame_protection && r.frame_protection !== "on";
+  framesChip.style.display = waiting ? "block" : "none";
+  framesChip.textContent = waiting
+    ? "Frames on your network aren't protected yet. Install the YAML below on the panel to switch it on; nothing goes blank in between."
+    : "";
   const ents = (liveStatus && liveStatus.ha_entities) || {};
   const entChip = $("setupentities");
   entChip.style.display = ents.problem ? "block" : "none";
@@ -4404,7 +4451,6 @@ async function savePanelSetup(extra = {}) {
     wifi_ssid: $("cfg_ssid").value.trim(),
     wifi_password: $("cfg_pw").value,
     api_encryption_key: $("cfg_apikey").value.trim(),
-    ota_password: $("cfg_otapw").value.trim(),
     use_secrets: $("cfg_secrets").checked,
     ...extra
   };
@@ -4516,7 +4562,7 @@ function copyFromField(targetInput, btn, successMsg) {
 }
 
 // Auto-update YAML whenever setup inputs change
-["cfg_dev", "cfg_host", "cfg_port", "cfg_ssid", "cfg_pw", "cfg_otapw"].forEach(id => {
+["cfg_dev", "cfg_host", "cfg_port", "cfg_ssid", "cfg_pw"].forEach(id => {
   const el = $(id);
   if (el) el.addEventListener("change", () => savePanelSetup());
 });
@@ -4527,19 +4573,13 @@ $("cfg_orient").onchange = () => savePanelSetup().then(() => msg(`Mount set to $
 if ($("cfg_model")) {
   $("cfg_model").onchange = () => savePanelSetup().then(() => msg(`Model set to ${curDisplay().name} and YAML updated.`));
 }
-$("regenkeys").onclick = () => savePanelSetup({ regenerate_keys: true }).then(() => msg("Generated new API key and OTA password."));
+$("regenkeys").onclick = () => savePanelSetup({ regenerate_keys: true }).then(() => msg("New key generated. Reinstall the panel and re-add it in Home Assistant to use it."));
 
 $("copyapikey").onclick = (e) => {
   e.preventDefault();
   copyFromField($("cfg_apikey"), $("copyapikey"), "Copied API encryption key.");
 };
 
-if ($("copyotapw")) {
-  $("copyotapw").onclick = (e) => {
-    e.preventDefault();
-    copyFromField($("cfg_otapw"), $("copyotapw"), "Copied OTA password.");
-  };
-}
 
 $("copyyaml").onclick = (e) => {
   e.preventDefault();

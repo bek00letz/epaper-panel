@@ -1,6 +1,7 @@
 """The add-on's own values: recording them, and mirroring them into Home Assistant."""
 
 import json
+import re
 import urllib.parse
 
 import feeds
@@ -8,7 +9,7 @@ import runtime
 from config import HA_BASE, HA_TOKEN, PUBLISH_VIA_STATES_API, RETIRED_SENSORS, valid_entity_id
 from ha import call_ha_service, ha_json
 from layouts_store import load_layouts, load_sources
-from sources.flights import fetch_overhead_aircraft
+from sources.flights import fetch_overhead_aircraft, place_of
 from sources.geo import get_home_timezone
 from sources.racing import compute_racing_active_window, fetch_racing_data
 from sources.sports import compute_sports_active_window
@@ -70,6 +71,40 @@ async def publish_category_sensors(session, cur_f):
         print(f"publish category sensors error: {exc!r}", flush=True)
 
 
+async def publish_flights(session, lat, lon, radius, label, suffix=""):
+    aircraft = await fetch_overhead_aircraft(session, radius_km=radius, lat=lat, lon=lon)
+    if aircraft is None:
+        raise LookupError("no flight data yet")
+    where = label or "Home"
+    attrs = {
+        "unit_of_measurement": "aircraft",
+        "friendly_name": f"E-Paper · Flights overhead ({label})" if label else "E-Paper · Flights overhead",
+        "closest_callsign": aircraft[0]["callsign"] if aircraft else "None",
+        "radius_km": radius,
+        "location_name": where,
+        "icon": "mdi:airplane",
+    }
+    if lat is not None and lon is not None:
+        attrs["latitude"], attrs["longitude"] = lat, lon
+    if aircraft:
+        a = aircraft[0]
+        attrs["closest_distance_km"] = a["distance_km"]
+        attrs["closest_bearing"] = a["bearing_cardinal"]
+        attrs["closest_route"] = f"{a['origin']} → {a['destination']}" if a.get("origin") and a.get("destination") else ""
+        attrs["closest_model"] = a.get("model", "")
+    await publish_entity(session, f"sensor.epaper_flights_overhead{suffix}", len(aircraft), attrs)
+    if aircraft:
+        a = aircraft[0]
+        alt_m, spd_ms = float(a.get("altitude_m") or 0.0), float(a.get("velocity_ms") or 0.0)
+        await publish_entity(session, f"sensor.epaper_closest_aircraft{suffix}", a["callsign"], {
+            "friendly_name": f"E-Paper · Closest aircraft ({label})" if label else "E-Paper · Closest aircraft",
+            "distance_km": a.get("distance_km"), "bearing": a.get("bearing_cardinal"),
+            "altitude_m": int(alt_m), "altitude_ft": int(alt_m * 3.28084),
+            "speed_kts": int(spd_ms * 1.94384), "speed_kmh": int(spd_ms * 3.6),
+            "track_deg": int(a.get("track_deg") or 0), "country": a.get("country"),
+            "model": a.get("model", ""), "location_name": where, "icon": "mdi:airplane"})
+
+
 async def publish_computed(session):
     """Run configured data sources and publish on-demand sensors for active E-Paper Studio widgets."""
     srcs = load_sources()
@@ -97,67 +132,26 @@ async def publish_computed(session):
             elif t == "sports_racing":
                 racing_elements.append(el)
 
-    # 1. On-demand Overhead Aircraft sensors (only when flight_tracker or flight sensor is used)
-    if flight_elements or "epaper_flights_overhead" in spec_text or "epaper_closest_aircraft" in spec_text or "overhead_aircraft_count" in spec_text:
+    # 1. Aircraft overhead: one pair of sensors per distinct place. The first
+    #    place keeps the original names, so existing pages and automations stay
+    #    put; others get the place's label (or coordinates) as a suffix.
+    places = []
+    for el in flight_elements:
+        p = place_of(el)
+        if all(p[:3] != q[:3] for q in places):
+            places.append(p)
+    if not places and ("epaper_flights_overhead" in spec_text or "epaper_closest_aircraft" in spec_text
+                       or "overhead_aircraft_count" in spec_text):
+        places.append((None, None, 35.0, ""))
+    for i, (lat, lon, radius, label) in enumerate(places):
+        suffix = "" if i == 0 else "_" + (re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")
+                                           or f"{lat:.2f}_{lon:.2f}".replace("-", "m").replace(".", "_"))
         try:
-            flight_radius = 35.0
-            custom_lat = None
-            custom_lon = None
-            custom_loc = None
-            if flight_elements:
-                el = flight_elements[0]
-                flight_radius = float(el.get("radius") or 35.0)
-                if el.get("lat") is not None and el.get("lon") is not None:
-                    try:
-                        custom_lat = float(el.get("lat"))
-                        custom_lon = float(el.get("lon"))
-                    except (ValueError, TypeError):
-                        pass
-                if el.get("location_name"):
-                    custom_loc = str(el.get("location_name")).strip()
-
-            aircraft = await fetch_overhead_aircraft(session, radius_km=flight_radius, lat=custom_lat, lon=custom_lon)
-            if aircraft is None:
-                raise LookupError("no flight data yet")     # skip this cycle; don't publish a false zero
-            closest_cs = aircraft[0]["callsign"] if aircraft else "None"
-            friendly_sensor_name = f"E-Paper · Flights Overhead ({custom_loc})" if custom_loc else "E-Paper · Flights Overhead"
-            attrs = {
-                "unit_of_measurement": "aircraft",
-                "friendly_name": friendly_sensor_name,
-                "closest_callsign": closest_cs,
-                "radius_km": flight_radius,
-                "location_name": custom_loc or "Home",
-                "icon": "mdi:airplane"
-            }
-            if custom_lat is not None and custom_lon is not None:
-                attrs["latitude"] = custom_lat
-                attrs["longitude"] = custom_lon
-            if aircraft:
-                attrs["closest_distance_km"] = aircraft[0]["distance_km"]
-                attrs["closest_bearing"] = aircraft[0]["bearing_cardinal"]
-                attrs["closest_route"] = aircraft[0].get("origin", "") + " → " + aircraft[0].get("destination", "") if (aircraft[0].get("origin") and aircraft[0].get("destination")) else ""
-                attrs["closest_model"] = aircraft[0].get("model", "")
-            await publish_entity(session, "sensor.epaper_flights_overhead", len(aircraft), attrs)
-            if aircraft:
-                ac0 = aircraft[0]
-                alt_m0 = float(ac0.get("altitude_m") or 0.0)
-                spd_ms0 = float(ac0.get("velocity_ms") or 0.0)
-                await publish_entity(session, "sensor.epaper_closest_aircraft", closest_cs,
-                                     {"friendly_name": "E-Paper · Closest Aircraft",
-                                      "distance_km": ac0.get("distance_km"),
-                                      "bearing": ac0.get("bearing_cardinal"),
-                                      "altitude_m": int(alt_m0),
-                                      "altitude_ft": int(alt_m0 * 3.28084),
-                                      "speed_kts": int(spd_ms0 * 1.94384),
-                                      "speed_kmh": int(spd_ms0 * 3.6),
-                                      "track_deg": int(ac0.get("track_deg") or 0),
-                                      "country": ac0.get("country"),
-                                      "model": ac0.get("model", ""),
-                                      "location_name": custom_loc or "Home",
-                                      "icon": "mdi:airplane"})
+            await publish_flights(session, lat, lon, radius, label, suffix)
+        except LookupError:
+            pass                                          # no flight data yet; don't publish a false zero
         except Exception as exc:
-            if not isinstance(exc, LookupError):
-                print(f"publish aircraft sensor failed: {exc!r}", flush=True)
+            print(f"publish aircraft sensor failed: {exc!r}", flush=True)
 
     # 2. On-demand Sports Matchday Window sensors (only for leagues actually present in pages)
     try:

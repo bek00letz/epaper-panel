@@ -16,7 +16,7 @@ from entities import publish_category_sensors, publish_computed, publish_entity,
 from ha import curve_series, ha_json, resolve_templates
 from layouts_store import load_layouts
 from panel_ops import push_panel_update
-from sources.flights import fetch_overhead_aircraft
+from sources.flights import fetch_overhead_aircraft, place_of
 from sources.geo import get_home_timezone
 from sources.ha_services import fetch_calendar_events, fetch_weather_forecast
 from sources.racing import compute_racing_active_window, fetch_racing_data
@@ -103,9 +103,7 @@ async def enrich_page_values(session, page, vals):
                 if cal_data:
                     vals[i] = cal_data
         elif t == "flight_tracker":
-            radius = float(el.get("radius") or 35)
-            custom_lat = el.get("lat") or el.get("latitude")
-            custom_lon = el.get("lon") or el.get("lng") or el.get("longitude")
+            custom_lat, custom_lon, radius, _ = place_of(el)
             fl_data = await fetch_overhead_aircraft(session, radius_km=radius, lat=custom_lat, lon=custom_lon)
             if fl_data is not None:
                 vals[i] = fl_data
@@ -210,9 +208,7 @@ async def _evaluate_widget_gate(session, widget: dict, home_tz: str) -> bool:
         win = await compute_racing_active_window(session, series, pre_buffer_hours=pre_b, post_buffer_hours=post_b, window_mode=w_mode, tz_name=el_tz)
         return bool(win.get("is_active"))
     if wtype == "flight_tracker":
-        radius = float(widget.get("radius") or 35.0)
-        custom_lat = widget.get("lat") or widget.get("latitude")
-        custom_lon = widget.get("lon") or widget.get("lng") or widget.get("longitude")
+        custom_lat, custom_lon, radius, _ = place_of(widget)
         aircraft = await fetch_overhead_aircraft(session, radius_km=radius, lat=custom_lat, lon=custom_lon)
         return len(aircraft or []) > 0
     return True

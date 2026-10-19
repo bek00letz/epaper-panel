@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.9.7
+**Reinstall the panel's firmware to get the last two items.** Save Panel
+setup, then Install, as before.
+
+- **Flight widget: type an airport code.** Enter a three-letter code (LHR,
+  OTP, JFK…) and the widget goes there; the airport's full name is shown to
+  confirm. Codes are looked up offline from a bundled copy of OurAirports
+  (public domain, every open airport with a code), so nothing is sent
+  anywhere.
+- **Your own saved places, up to four.** Save the current place with one
+  click; it's kept with your settings in the add-on, and × forgets it. The
+  built-in TSR, LHR, JFK and FRA buttons are gone. Home is still one click
+  away.
+- **Fixed:** a latitude or longitude of exactly 0 was treated as "not set".
+  Two flight widgets for different places now get their own sensors (the
+  first keeps the original names).
+- **Frames are protected by a token,** generated automatically if you
+  haven't set `frame_token`. Panel setup puts it in the panel's YAML. Your
+  panel keeps getting frames until it's reinstalled with the token, and from
+  then on the token is required, so nothing goes blank in between. Panel
+  setup shows whether protection is on yet.
+- **Firmware updates use your encryption key instead of a separate
+  password,** as ESPHome recommends (it drops password-only updates in
+  2027.3). Panels built with ESPHome 2026.9 already accept this, so the
+  next install just works. The OTA password field is gone from Panel setup.
+
 ## 0.9.6
 Add-on only; no firmware change.
 

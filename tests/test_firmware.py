@@ -143,7 +143,7 @@ def reference_yaml():
     return firmware_gen.render(
         disp=T.get_display(DISPLAY), version=version, device_name="crowpanel-epaper",
         frames_url='"http://homeassistant.local:8099/frames.epf"', api_key="!secret api_encryption_key",
-        ota_password="!secret ota_password", wifi_ssid="!secret wifi_ssid", wifi_password="!secret wifi_password",
+        wifi_ssid="!secret wifi_ssid", wifi_password="!secret wifi_password",
         interval_min=5, orientation=180), version
 
 

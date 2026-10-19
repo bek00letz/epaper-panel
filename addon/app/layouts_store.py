@@ -65,6 +65,11 @@ def migrate_legacy_entity_refs(text: str) -> str:
     return out
 
 
+# Saved places for the flight widget: the user's own, at most this many (they
+# sit as one row of buttons in the editor's sidebar).
+MAX_PLACES = 4
+
+
 def sanitize_layouts(spec: dict) -> dict:
     """Validate and normalize a layout spec before saving."""
     raw_pages = spec.get("pages")
@@ -146,8 +151,21 @@ def sanitize_layouts(spec: dict) -> dict:
                     "elements": [el for el in cp["elements"] if isinstance(el, dict)],
                 })
 
+    places = []
+    for raw in spec.get("location_presets") or []:
+        if len(places) == MAX_PLACES:
+            break
+        try:
+            lat, lon = float(raw.get("lat")), float(raw.get("lon"))
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if -90 <= lat <= 90 and -180 <= lon <= 180:
+            label = str(raw.get("label") or "").strip()[:12] or f"{lat:.2f},{lon:.2f}"
+            places.append({"label": label, "lat": round(lat, 5), "lon": round(lon, 5)})
+
     return {
         "display": disp_id,
+        "location_presets": places,
         "orientation": orient,
         "rotate_seconds": rot_sec,
         "quiet_hours": quiet_hours,

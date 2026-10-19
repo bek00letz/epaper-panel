@@ -113,9 +113,12 @@ api:
         - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::LOCK_TOGGLE);'
         - script.execute: redraw
 
+# Updates are encrypted with the same key as the Home Assistant connection
+# (an empty encryption block reuses it). No separate password: ESPHome
+# recommends this, and drops the password-only route in 2027.3.
 ota:
   - platform: esphome
-    password: @OTA_PASSWORD@
+    encryption: {}
 
 wifi:
   ssid: @WIFI_SSID@

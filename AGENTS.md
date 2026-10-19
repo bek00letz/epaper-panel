@@ -29,7 +29,7 @@ the add-on itself lives in `addon/`.
 | Endpoint | Purpose |
 |---|---|
 | HA Sidebar (`:8080` via Ingress) | Drag-and-drop visual editor and JSON API. Answers only Home Assistant's Ingress proxy (`172.30.32.2`); any other app on the internal network gets 403 |
-| `<homeassistant>:8099` | Frame server for the panel on the LAN: `/frames.epf`, `/frame.epf`, the PNG fallbacks, and a minimal `/status`. `POST /api/action/refresh|page` exist only when `frame_token` is set. Remappable in the add-on's network settings |
+| `<homeassistant>:8099` | Frame server for the panel on the LAN: `/frames.epf`, `/frame.epf`, the PNG fallbacks, and a minimal `/status`. `POST /api/action/refresh|page` always need the token. Frames need it once the panel has used it (`frame_token.py`). Remappable in the add-on's network settings |
 | ESPHome node (`crowpanel-epaper`) | Exposes `refresh_now`, `show_page`, `page_step`, and `hold_toggle` actions over the encrypted ESPHome native API |
 
 Never expose port `8099` or the panel's endpoints to the public internet.
@@ -157,7 +157,9 @@ When touching display code, `it.image()` at a negative offset is a trap: see
 
 - **The LAN port serves frames and nothing else that matters.** No layouts,
   no page names, no quiet-hours reason (it can reveal whether anyone is home).
-  Anything that makes the add-on or panel *do* something needs `frame_token`.
+  Every install has a frame token (`frame_token.py`, the option or a generated
+  one). Frames switch to requiring it the first time the panel uses it, so a
+  reinstall never leaves the panel blank. Actions always need it.
 - **No built-in location or timezone.** Home Assistant's settings are the
   source; a default would be someone's real home.
 

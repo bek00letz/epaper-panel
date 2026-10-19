@@ -5,6 +5,7 @@ from aiohttp.test_utils import TestClient, TestServer
 
 import support
 import config
+import frame_token
 import frames
 import web
 
@@ -43,18 +44,43 @@ class TestRoutes(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(r.status, 404, path)
 
     async def test_lan_status_says_nothing_about_presence_or_pages(self):
-        body = await (await self.lan.get("/status")).json()
+        config.FRAME_TOKEN = ""
+        body = await (await self.lan.get(f"/status?token={frame_token.token()}")).json()
         self.assertTrue(body["ok"])
         for key in ("quiet_reason", "quiet_active", "cat_names"):
             self.assertNotIn(key, body)
 
-    async def test_lan_actions_are_off_without_a_token(self):
+    async def test_lan_actions_always_need_the_token(self):
         config.FRAME_TOKEN = ""
         r = await self.lan.post("/api/action/refresh")
-        self.assertEqual(r.status, 403)
-        self.assertIn("frame_token", await r.text())
+        self.assertEqual(r.status, 401)
         r = await self.lan.get("/api/action/refresh")         # a link preview can't trigger it
         self.assertEqual(r.status, 405)
+
+    async def test_switch_over_never_leaves_the_panel_blank(self):
+        config.FRAME_TOKEN = ""
+        (config.DATA_DIR / frame_token.SEEN_FILE).unlink(missing_ok=True)
+        tok = frame_token.token()
+        self.assertEqual(tok, frame_token.token(), "the generated token is kept")
+        self.assertEqual((await self.lan.get("/frames.epf")).status, 200, "old firmware still gets frames")
+        self.assertEqual((await self.lan.get("/frames.epf?token=nope")).status, 401)
+        self.assertEqual((await self.lan.get(f"/frames.epf?token={tok}")).status, 200, "new firmware switches it on")
+        self.assertEqual((await self.lan.get("/frames.epf")).status, 401, "from then on, no token no frames")
+        self.assertEqual((await self.lan.get("/status")).status, 401)
+        (config.DATA_DIR / frame_token.SEEN_FILE).unlink(missing_ok=True)
+
+    async def test_an_explicit_token_is_required_from_the_start(self):
+        config.FRAME_TOKEN = "chosen-by-you"
+        self.assertEqual((await self.lan.get("/frames.epf")).status, 401)
+        self.assertEqual((await self.lan.get("/frames.epf?token=chosen-by-you")).status, 200)
+
+    async def test_the_panel_yaml_carries_the_token(self):
+        config.FRAME_TOKEN = ""
+        import panel_setup
+        yaml_text, _ = panel_setup.generate_esphome_yaml(panel_setup.load_panel_setup())
+        self.assertIn(f"/frames.epf?token={frame_token.token()}", yaml_text)
+        self.assertIn("encryption: {}", yaml_text)
+        self.assertNotIn("password: ", yaml_text.split("ota:")[1].split("wifi:")[0], "no OTA password")
 
     async def test_lan_actions_need_the_right_token(self):
         config.FRAME_TOKEN = "s3cret"
@@ -62,7 +88,8 @@ class TestRoutes(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(r.status, 401)
 
     async def test_frames_carry_only_caching_headers(self):
-        r = await self.lan.get("/frames.epf")
+        config.FRAME_TOKEN = ""
+        r = await self.lan.get(f"/frames.epf?token={frame_token.token()}")
         self.assertEqual(r.status, 200)
         self.assertFalse([h for h in r.headers if h.lower().startswith("x-cat") or h.lower() == "x-quiet-hours"])
 

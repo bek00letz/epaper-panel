@@ -12,6 +12,7 @@ import aiohttp
 import firmware_gen
 from render import binding, epf, layout, sleep, stripmeta, subitems, theme as T
 import config
+import frame_token
 import runtime
 from config import ADDON_VERSION, FRAME_PORT, HA_TOKEN
 from fixture import load_fixture
@@ -20,10 +21,6 @@ from layouts_store import load_layouts
 
 def _new_api_key() -> str:
     return base64.b64encode(os.urandom(32)).decode("ascii")
-
-
-def _new_ota_password() -> str:
-    return secrets.token_urlsafe(12)
 
 
 def load_panel_setup(default_host: str = "homeassistant.local") -> dict:
@@ -42,7 +39,6 @@ def load_panel_setup(default_host: str = "homeassistant.local") -> dict:
         "wifi_ssid": "",
         "wifi_password": "",
         "api_encryption_key": _new_api_key(),
-        "ota_password": _new_ota_password(),
         "refresh_interval": "5min",
         "use_secrets": False,
     }
@@ -121,14 +117,13 @@ def generate_esphome_yaml(cfg: dict) -> tuple[str, str]:
         scheme = "http"
 
     base_url = f"{scheme}://{host_only}:{port}"
-    token_q = f"?token={urllib.parse.quote(config.FRAME_TOKEN)}" if config.FRAME_TOKEN else ""
+    token_q = f"?token={urllib.parse.quote(frame_token.token())}"
     frames_epf_url = f"{base_url}/frames.epf{token_q}"
 
     use_secrets = bool(cfg.get("use_secrets"))
     ssid = (cfg.get("wifi_ssid") or "").strip()
     pw = cfg.get("wifi_password") or ""
     api_key = (cfg.get("api_encryption_key") or "").strip() or _new_api_key()
-    ota_pw = (cfg.get("ota_password") or "").strip() or _new_ota_password()
     raw_interval = cfg.get("refresh_interval") or "5min"
     m_int = re.search(r"\d+", str(raw_interval))
     initial_min = max(1, min(60, int(m_int.group(0)))) if m_int else 5
@@ -143,10 +138,6 @@ def generate_esphome_yaml(cfg: dict) -> tuple[str, str]:
     else:
         api_key_line = _yaml_str(api_key)
 
-    if use_secrets and "ota_password" in known_secrets:
-        ota_pw_line = "!secret ota_password"
-    else:
-        ota_pw_line = _yaml_str(ota_pw)
 
     if (use_secrets or not ssid) and "wifi_ssid" in known_secrets:
         wifi_ssid_line = "!secret wifi_ssid"
@@ -160,14 +151,13 @@ def generate_esphome_yaml(cfg: dict) -> tuple[str, str]:
 
     yaml_text = firmware_gen.render(
         disp=disp, version=ADDON_VERSION, device_name=dev_name, frames_url=_yaml_str(frames_epf_url),
-        api_key=api_key_line, ota_password=ota_pw_line, wifi_ssid=wifi_ssid_line, wifi_password=wifi_pw_line,
+        api_key=api_key_line, wifi_ssid=wifi_ssid_line, wifi_password=wifi_pw_line,
         interval_min=initial_min, orientation=orient)
 
     secrets_text = f"""# Put these in your ESPHome secrets.yaml if using !secret references:
 wifi_ssid: {_yaml_str(ssid or "your-wifi-ssid")}
 wifi_password: {_yaml_str(pw or "your-wifi-password")}
 api_encryption_key: {_yaml_str(api_key)}
-ota_password: {_yaml_str(ota_pw)}
 """
     return yaml_text, secrets_text
 

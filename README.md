@@ -78,7 +78,7 @@ In addition to rendering any Home Assistant entity, the add-on includes built-in
   - Displays current conditions alongside a 3-to-5 day forecast (`Split Hero + Forecast` or `Full-Width Forecast Only`).
   - Uses a **4-tier forecast resolver**: (1) HA REST `weather.get_forecasts` (`daily` / `hourly`), (2) HA WebSocket `weather/get_forecasts`, (3) legacy `attributes.forecast`, and (4) **automatic Open-Meteo fallback** using your Home Assistant `zone.home` coordinates so forecasts never get stuck on `"Forecast loading..."`.
 - **Real-Time ADS-B Airspace Radar (`flight_tracker`):**
-  - Live aircraft tracking via Flightradar24 (with OpenSky fallback) around your `zone.home` coordinates or any custom airport preset (`TSR`, `LHR`, `JFK`, `FRA`, or custom `lat`/`lon`).
+  - Live aircraft tracking via Flightradar24 (with OpenSky fallback) around your Home Assistant home, or anywhere else: type an airport's three-letter code (looked up offline, from a bundled copy of OurAirports), or enter latitude and longitude. Save up to four places of your own for one-click switching.
   - Renders a 1-bit Plan Position Indicator (PPI) radar scope with range rings, heading vectors, callsigns, routes (`BEY → DUS`), aircraft ICAO types (`A320`, `B77W`), altitude, and groundspeed, expanding multiple overhead aircraft into parallel sub-pages.
   - Includes a self-contained **Only show page when aircraft overhead (> 0)** toggle in the Studio inspector and publishes `sensor.epaper_flights_overhead` and `sensor.epaper_closest_aircraft` on demand.
 - **Motorsport Pit-Wall (`sports_racing` — Formula 1, Formula E, NASCAR & IndyCar):**
@@ -218,15 +218,17 @@ Or for separating the number value and the unit label across two elements:
    `https://github.com/bek00letz/epaper-panel`
 2. Install **E-paper panel** and start it.
 3. Open **E-paper** in the sidebar and click **Panel setup** to generate a
-   ready-to-flash ESPHome YAML (with your Home Assistant address, Wi-Fi, and
-   auto-generated API encryption key & OTA password pre-filled) to paste into
-   your ESPHome Dashboard.
+   ready-to-flash ESPHome YAML (your Home Assistant address, Wi-Fi, an
+   auto-generated encryption key that also protects firmware updates, and the
+   frame token), written straight into Home Assistant's ESPHome folder.
 
 With no data sources set up the add-on simply renders the entities you already
 have. Optional add-on settings let you customize `esphome_device` (also synced
-automatically by the **Panel setup** wizard) and `frame_token` (optional token
-authentication on port `8099`, automatically appended to the wizard's generated
-frame URLs).
+automatically by the **Panel setup** wizard) and `frame_token`. Frames on port
+`8099` are always protected by a token. The add-on generates one if you don't
+set your own, and Panel setup puts it in the panel's YAML. An existing panel
+keeps getting frames until it's reinstalled with the token, and from then on
+the token is required.
 
 ## Data sources (optional)
 

@@ -12,6 +12,35 @@ _aircraft_cache = {}
 _warned_no_location = False
 
 
+def _first_number(el: dict, *keys):
+    for k in keys:
+        v = el.get(k)
+        if v is None or (isinstance(v, str) and not v.strip()):
+            continue
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+    return None
+
+
+def place_of(el: dict) -> tuple[float | None, float | None, float, str]:
+    """A flight widget's place: (lat, lon, radius_km, label). lat/lon None means Home.
+
+    0 is a real coordinate (the equator, Greenwich), so only a missing or
+    empty value falls back to Home.
+    """
+    lat = _first_number(el, "lat", "latitude")
+    lon = _first_number(el, "lon", "lng", "longitude")
+    if lat is None or lon is None:
+        lat = lon = None
+    try:
+        radius = float(el.get("radius") or 35.0)
+    except (TypeError, ValueError):
+        radius = 35.0
+    return lat, lon, radius, str(el.get("location_name") or "").strip()
+
+
 @runtime.live(30)
 async def fetch_overhead_aircraft(session, radius_km=35.0, lat=None, lon=None):
     global _warned_no_location
