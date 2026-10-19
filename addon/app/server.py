@@ -35,10 +35,11 @@ from PIL import Image
 sys.path.insert(0, str(Path(__file__).parent))
 import feeds  # noqa: E402
 import firmware_gen  # noqa: E402
+import live_data  # noqa: E402
 import mqtt_bridge  # noqa: E402
 from hass import Hass  # noqa: E402
 from panel_link import PanelLink  # noqa: E402
-from render import binding, epf, layout, stripmeta, subitems, theme as T  # noqa: E402
+from render import binding, epf, layout, sleep, stripmeta, subitems, theme as T  # noqa: E402
 from render.linger import Linger  # noqa: E402
 
 DATA_DIR = Path(os.environ.get("DATA_DIR", "/data"))
@@ -73,6 +74,9 @@ PUBLISH_VIA_STATES_API = False
 # the add-on pushes only when there is something new. Switched off, not deleted.
 PROACTIVE_TIMED_PUSH = False
 
+# The sleep screen's name in the rotation; outside what PAGE_RE allows a user page to be called.
+SLEEP_PAGE = "sleep screen"
+
 # Firmware-plumbing sensors from before the frame file carried its own
 # directory. Nothing reads them; they are withdrawn unless a page uses one.
 RETIRED_SENSORS = (
@@ -93,6 +97,9 @@ HASS = Hass(HA_BASE, HA_TOKEN, lambda: SHARED_SESSION)
 LINK = PanelLink(HASS, lambda: ESPHOME_DEVICE)
 PUBLISHER: "mqtt_bridge.EntityPublisher | None" = None
 WIDGET_LINGER = Linger()
+# Outside data is fetched in the background; renders only read it (live_data).
+LIVE = live_data.LiveData()
+_live = lambda interval: LIVE.decorate(interval, lambda: SHARED_SESSION)  # noqa: E731
 
 
 def valid_entity_id(eid: str) -> bool:
@@ -391,6 +398,7 @@ def sanitize_layouts(spec: dict) -> dict:
         "end": qh_end,
         "presence_entity": qh_pres,
         "allow_alerts": bool(raw_qh.get("allow_alerts", True)),
+        "sleep_screen": bool(raw_qh.get("sleep_screen", True)),
     }
 
     raw_presets = spec.get("custom_presets")
@@ -776,6 +784,7 @@ async def get_home_coordinates(session):
     return _home_location_cache["lat"], _home_location_cache["lon"]
 
 
+@_live(30)
 async def fetch_overhead_aircraft(session, radius_km=35.0, lat=None, lon=None):
     if lat is not None and lon is not None:
         try:
@@ -919,6 +928,7 @@ async def fetch_overhead_aircraft(session, radius_km=35.0, lat=None, lon=None):
 
 
 
+@_live(300)
 async def fetch_weather_forecast(session, entity_id, fallback=None):
     eid = str(entity_id or "weather.forecast_home").strip()
     now = time.time()
@@ -984,6 +994,7 @@ async def fetch_weather_forecast(session, entity_id, fallback=None):
         return base_data
 
 
+@_live(120)
 async def fetch_calendar_events(session, entity_id, days=31, fallback=None):
     raw_eid = str(entity_id or "").strip()
     if not raw_eid:
@@ -1035,6 +1046,7 @@ async def fetch_calendar_events(session, entity_id, days=31, fallback=None):
         return fallback
 
 
+@_live(30)
 async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_name=None):
     if not tz_name:
         tz_name = await get_home_timezone(session)
@@ -1422,6 +1434,7 @@ _sports_window_cache: dict[str, dict] = {}
 _racing_window_cache: dict[str, dict] = {}
 
 
+@_live(60)
 async def compute_sports_active_window(session, entity_or_league="soccer/eng.1", pre_buffer_hours=2.0, post_buffer_hours=2.0, tz_name=None, team=None):
     if not tz_name:
         tz_name = await get_home_timezone(session)
@@ -1560,6 +1573,7 @@ async def compute_sports_active_window(session, entity_or_league="soccer/eng.1",
     return result
 
 
+@_live(60)
 async def compute_racing_active_window(session, series="f1", pre_buffer_hours=2.0, post_buffer_hours=2.0, window_mode="session", tz_name=None):
     """Compute whether a Motorsport series (F1, Formula E, NASCAR, IndyCar) is in an active session/race-weekend window."""
     if not tz_name:
@@ -1739,6 +1753,7 @@ async def compute_racing_active_window(session, series="f1", pre_buffer_hours=2.
     return result
 
 
+@_live(30)
 async def fetch_sports_match(session, entity_or_league="soccer/eng.1", team=None, fallback=None, tz_name=None):
     if not tz_name:
         tz_name = await get_home_timezone(session)
@@ -2098,6 +2113,8 @@ async def publish_computed(session):
                     custom_loc = str(el.get("location_name")).strip()
 
             aircraft = await fetch_overhead_aircraft(session, radius_km=flight_radius, lat=custom_lat, lon=custom_lon)
+            if aircraft is None:
+                raise LookupError("no flight data yet")     # skip this cycle; don't publish a false zero
             closest_cs = aircraft[0]["callsign"] if aircraft else "None"
             friendly_sensor_name = f"E-Paper · Flights Overhead ({custom_loc})" if custom_loc else "E-Paper · Flights Overhead"
             attrs = {
@@ -2135,7 +2152,8 @@ async def publish_computed(session):
                                       "location_name": custom_loc or "Home",
                                       "icon": "mdi:airplane"})
         except Exception as exc:
-            print(f"publish aircraft sensor failed: {exc!r}", flush=True)
+            if not isinstance(exc, LookupError):
+                print(f"publish aircraft sensor failed: {exc!r}", flush=True)
 
     # 2. On-demand Sports Matchday Window sensors (only for leagues actually present in pages)
     try:
@@ -2161,6 +2179,8 @@ async def publish_computed(session):
                 continue
             seen_leagues.add(key)
             win_info = await compute_sports_active_window(session, lg, pre_buffer_hours=pre_b, post_buffer_hours=post_b, tz_name=s_tz, team=team)
+            if not win_info:
+                continue                                  # not fetched yet
             slug = win_info["slug"]
             sensor_id = f"sensor.epaper_sports_{slug}"
             sport_icon = "mdi:soccer"
@@ -2222,6 +2242,8 @@ async def publish_computed(session):
                 continue
             seen_series.add(ser)
             win_info = await compute_racing_active_window(session, ser, pre_buffer_hours=pre_b, post_buffer_hours=post_b, window_mode=w_mode, tz_name=r_tz)
+            if not win_info:
+                continue                                  # not fetched yet
             slug = win_info["slug"]
             sensor_id = f"sensor.epaper_racing_{slug}"
             r_data = await fetch_racing_data(session, slug, tz_name=r_tz)
@@ -2545,6 +2567,23 @@ async def build_frames(session):
                 battery_pct=None, series=series.get(cat_name), orientation=orient, display=display)
             imgs.append(T.orient_for_panel(T.to_1bit(img), orient, display=display))
 
+    # Quiet hours: the sleep screen goes first, so the panel can show it and
+    # the dial still reaches every page. No footer pill on it (width 0).
+    cat_flags = [0] * len(cat_offsets)
+    qh = spec.get("quiet_hours") or {}
+    if quiet_active and not alert and qh.get("sleep_screen", True):
+        sleep_img = await asyncio.to_thread(
+            sleep.render_sleep_page, sleep.wake_text(quiet_reason, qh.get("end") or "07:00"),
+            orient, display)
+        imgs.insert(0, T.orient_for_panel(T.to_1bit(sleep_img), orient, display=display))
+        cat_offsets = [0] + [o + 1 for o in cat_offsets]
+        cat_sizes = [1] + cat_sizes
+        cat_names = [SLEEP_PAGE] + cat_names
+        cat_pill_widths = [0] + cat_pill_widths
+        cat_sub_keys = [[SLEEP_PAGE]] + cat_sub_keys
+        cat_flags = [epf.CAT_FLAG_SLEEP] + cat_flags
+        live = [SLEEP_PAGE] + list(live)
+
     slice_pngs = [_png(im) for im in imgs]
     slices_digest = hashlib.md5(b"".join(slice_pngs)).digest()
     etag_b0, etag_b1 = slices_digest[0], slices_digest[1]
@@ -2585,6 +2624,7 @@ async def build_frames(session):
         orientation_180=(orient == 180),
         content_hash=int.from_bytes(slices_digest[:8], "big"),
         geometry=geo,
+        cat_flags=cat_flags,
     )
     epf_single = epf.extract_page_epf(epf_data, 0)
 
@@ -2745,7 +2785,10 @@ async def render_loop():
         except Exception as exc:
             print(f"render loop error: {exc!r}", flush=True)
             FRAMES.error = repr(exc)
-        await asyncio.sleep(REFRESH)
+        # Render again on the cadence, or as soon as outside data arrives for
+        # the first time (a newly added widget, or just after a start).
+        if await LIVE.wait_for_news(REFRESH):
+            await asyncio.sleep(1)                        # let a burst of arrivals land together
 
 
 # The Supervisor's Ingress proxy. Under Home Assistant it is the only client
@@ -2953,6 +2996,7 @@ async def status(request):
         "display": spec.get("display", T.DEFAULT_DISPLAY),
         "orientation": int(spec.get("orientation") or 0),
         "panel_link": LINK.status(),
+        "live_data": LIVE.status(),
         "ha_entities": PUBLISHER.status() if PUBLISHER is not None else
                        {"mode": "off", "problem": "not started", "entities": 0},
         "version": ADDON_VERSION,
@@ -3117,7 +3161,8 @@ async def api_preview(request):
     vals, tpls = split_page_values(page)
     if tpls:
         vals.update(await resolve_templates(SHARED_SESSION, tpls))
-    await enrich_page_values(SHARED_SESSION, page, vals)
+    with live_data.waiting_for_fresh():                   # someone is looking at this preview
+        await enrich_page_values(SHARED_SESSION, page, vals)
     series = {}
     for i, el in enumerate(page.get("elements", [])):
         if el.get("type") in ("curve", "bar_chart") and el.get("entity"):
@@ -3147,7 +3192,8 @@ async def api_aircraft(request):
         radius = 35.0
     lat = request.query.get("lat")
     lon = request.query.get("lon")
-    aircraft = await fetch_overhead_aircraft(SHARED_SESSION, radius_km=radius, lat=lat, lon=lon)
+    with live_data.waiting_for_fresh():
+        aircraft = await fetch_overhead_aircraft(SHARED_SESSION, radius_km=radius, lat=lat, lon=lon) or []
     return web.json_response({"aircraft": aircraft, "count": len(aircraft)})
 
 
@@ -3648,7 +3694,7 @@ async def main():
         SHARED_SESSION = session
         start_entity_publisher()
         await start(runners)
-        background = [asyncio.create_task(panel_link_loop())]
+        background = [asyncio.create_task(panel_link_loop()), asyncio.create_task(LIVE.run())]
         if PUBLISHER is not None:
             background.append(asyncio.create_task(PUBLISHER.run()))
         try:

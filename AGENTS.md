@@ -137,6 +137,11 @@ When touching display code, `it.image()` at a negative offset is a trap: see
 
 ## Talking to Home Assistant and the panel
 
+- **A render never waits on an outside service.** Anything that calls ESPN,
+  Flightradar24, OpenSky, a racing calendar, or a slow Home Assistant
+  service goes through `live_data` (`@_live(seconds)` in `server.py`), and
+  callers must cope with "no value yet".
+
 - **Never guess an entity ID or an action name** from a device name. Find the
   panel through `panel_link.PanelLink` (service list, registry unique_ids).
 - **Never write entities with `POST /api/states`.** The add-on's values go

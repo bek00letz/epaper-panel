@@ -132,6 +132,27 @@ render) live in one record inside the add-on, `_epaper_published_entities`.
   removes the directly written states and restores each entity's intended ID.
   It only touches IDs Home Assistant suffixed itself (`<id>_<n>`).
 
+## Outside data
+
+`live_data.py`. Flights, sports, racing, weather and calendars are fetched in
+the background; a render only reads what's already there and never waits on
+an outside service. The first read of something new returns at once, using the
+caller's fallback, and schedules the fetch. When it lands, the render loop
+wakes, so a new widget fills in within seconds. A failed fetch keeps the last
+good value. The seven fetchers are decorated `@_live(seconds)` in `server.py`;
+their own caches still stop them hitting a service more often than it allows.
+The editor's preview (and its aircraft list) wait for fresh data, because
+there a person asked.
+
+## The sleep screen
+
+During quiet hours (`sleep_screen` on), `build_frames` puts a sleep page
+first (`render/sleep.py`: closed eyes and when it wakes). It has no footer
+pill and carries `CAT_FLAG_SLEEP` in its category record. The firmware jumps
+to it when quiet hours start (one full refresh), and goes back to it after
+120 s untouched. A page or category lock wins over both. Older firmware just
+sees one more page in the rotation.
+
 ## Reaching the panel
 
 `panel_link.py` is the only code that talks to the panel, through Home

@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.9.5
+**New panel firmware** for the sleep screen (install as before). The add-on
+part works with older firmware too.
+
+- **A sleep screen for quiet hours.** While quiet hours last, the panel shows
+  large closed eyes and when it wakes: "back at 07:00", or "back when
+  someone’s home" when nobody's home. It switches over with one clean full
+  refresh. Your pages are still one turn of the dial away, and after two
+  untouched minutes the panel goes back to sleep. A locked page stays on
+  screen all night instead. Turn it off under Quiet Hours ("Sleep screen")
+  to keep your pages up overnight.
+- **Rendering never waits on outside services.** Flights, sports, racing,
+  weather and calendars are now fetched in the background, and pages are
+  drawn from what's already there. A slow or broken ESPN, Flightradar24 or
+  racing site can't hold up an update to the panel or a preview in the editor
+  any more. Newly added widgets still fill in within seconds, and a failed
+  fetch keeps showing the last good data.
+
 ## 0.9.4
 **New panel firmware** (install as for 0.9.3).
 

@@ -168,6 +168,48 @@ static void test_waveform() {
   CHECK(pc.begin_redraw(), "the Clear ghosting button is a full refresh");
 }
 
+// Quiet hours with a sleep screen: shown when they start, the dial still
+// reaches the pages, and it comes back after two untouched minutes. A lock wins.
+static epf::Stream sleep_stream(bool quiet) {
+  epf::Stream s;
+  s.header.page_count = 3;
+  s.header.flags = quiet ? epf::FLAG_QUIET_HOURS : 0;
+  s.categories.push_back({7000, 0, 1, 0, quiet ? epf::CAT_FLAG_SLEEP : (uint16_t) 0});
+  s.categories.push_back({7001, 1, 1, 100, 0});
+  s.categories.push_back({7002, 2, 1, 100, 0});
+  s.pages = {{7100, 7000, 0, 0}, {7101, 7001, 1, 0}, {7102, 7002, 2, 0}};
+  return s;
+}
+
+static void test_sleep_screen() {
+  auto &pc = epf::PanelController::instance();
+  using A = epf::NavAction;
+  epf::Stream day = sleep_stream(false), night = sleep_stream(true);
+  if (pc.pinned()) pc.dispatch(A::PIN_PAGE_TOGGLE);
+  if (pc.cat_pinned()) pc.dispatch(A::PIN_CAT_TOGGLE);
+  pc.on_stream_loaded(day);
+  pc.dispatch(A::GOTO_PAGE, 2);
+  pc.on_stream_loaded(night);
+  CHECK(pc.page() == 0, "quiet hours start on the sleep screen (page %d)", pc.page());
+  CHECK(pc.overlay_state().cat_pill_w == 0, "no highlight on the sleep screen");
+
+  pc.dispatch(A::NEXT);
+  CHECK(pc.page() == 1, "the dial still reaches the pages (page %d)", pc.page());
+  for (int t = 0; t < epf::SLEEP_RETURN_SEC - 5; t += 5) {
+    pc.tick_seconds(5);
+    CHECK(!pc.check_auto_rotate() || pc.page() != 0, "not back to sleep too early (t=%d)", t);
+  }
+  pc.tick_seconds(10);
+  CHECK(pc.check_auto_rotate() && pc.page() == 0, "back to sleep after two untouched minutes (page %d)", pc.page());
+
+  pc.on_stream_loaded(day);
+  pc.dispatch(A::GOTO_PAGE, 2);
+  pc.dispatch(A::PIN_PAGE_TOGGLE);
+  pc.on_stream_loaded(night);
+  CHECK(pc.page() == 2, "a locked page stays on screen overnight (page %d)", pc.page());
+  pc.dispatch(A::PIN_PAGE_TOGGLE);
+}
+
 int main(int argc, char **argv) {
   if (argc < 2) {
     std::printf("usage: core_test <fixture-dir>\n");
@@ -177,6 +219,7 @@ int main(int argc, char **argv) {
   test_rejects_bad_files(argv[1]);
   test_controller(argv[1]);
   test_waveform();
+  test_sleep_screen();
   if (failures) {
     std::printf("%d check(s) failed\n", failures);
     return 1;

@@ -59,6 +59,7 @@ Click **`🌙 Quiet`** in the top toolbar (or **Settings → Night / Quiet Hours
 - **On / Off Toggle (`enabled`):** Enable or disable Quiet Hours at any time with one click.
 - **Daily Quiet Window (`start` – `end`):** Set your overnight quiet schedule in `HH:MM` (e.g. `23:30` to `07:00`). Supports both overnight spans (`23:30`–`07:00`) and daytime spans (`09:00`–`17:00`).
 - **Optional Away / Presence Entity (`presence_entity`):** Optionally bind a Home Assistant entity such as `zone.home`, `person.*`, `group.family`, or `input_boolean.sleep_mode`. When its state is `0`, `not_home`, `away`, or `off`, Quiet Hours activate automatically even outside the scheduled clock window.
+- **Sleep screen (`sleep_screen`, on by default):** While quiet hours last, the panel shows large closed eyes and when it wakes ("back at 07:00", or "back when someone’s home" when nobody's home), so you can tell from across the room. Your pages are one turn of the dial away, and after two untouched minutes the panel goes back to sleep. A locked page stays on screen instead, and turning the switch off keeps your pages up all night.
 - **Allow Interrupt Alerts (`allow_alerts`):** When enabled (default), high-priority **Interrupt (`alert`)** pages will still wake and push to the panel during Quiet Hours.
 - **How It Works Under the Hood:**
   1. When Quiet Hours begin, the server pushes one last update whose frame file is marked quiet, then stops pushing until Quiet Hours end. The wake-up at the end is retried until the panel confirms it.

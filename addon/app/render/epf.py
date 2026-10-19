@@ -37,6 +37,9 @@ FLAG_FORCE_FULL = 0x0004
 FLAG_ORIENTATION_180 = 0x0008
 FLAG_GEOMETRY = 0x0010          # the reserved header bytes carry an OverlayGeometry
 
+# Category flags (EpfCategory.flags)
+CAT_FLAG_SLEEP = 0x0001         # the quiet-hours sleep screen
+
 # Panels whose frame buffer stores each row right-to-left (the CrowPanel
 # driver's mirror_x). Pages are flipped before packing so a straight memcpy
 # into the buffer shows them the right way round.
@@ -163,6 +166,7 @@ def encode_epf(
     orientation_180: bool = False,
     content_hash: int = 0,
     geometry: OverlayGeometry | None = None,
+    cat_flags: Sequence[int] | None = None,
 ) -> bytes:
     """Encode layout pages and identity directories into an aligned .epf binary buffer."""
     num_pages = len(pages)
@@ -227,7 +231,8 @@ def encode_epf(
         off = int(cat_offsets[c]) if c < len(cat_offsets) else c
         sz = int(cat_sizes[c]) if c < len(cat_sizes) else 1
         pw = int(cat_pill_widths[c]) if c < len(cat_pill_widths) else 110
-        cat_records.append(struct.pack(">IHHHHI", cid, off, sz, pw, 0, 0))
+        cf = int(cat_flags[c]) if cat_flags and c < len(cat_flags) else 0
+        cat_records.append(struct.pack(">IHHHHI", cid, off, sz, pw, cf, 0))
     cat_bytes = b"".join(cat_records)
 
     # 3. Pack Page Directory

@@ -37,6 +37,9 @@ constexpr uint32_t FLAG_FORCE_FULL = 0x0004;
 constexpr uint32_t FLAG_ORIENTATION_180 = 0x0008;
 constexpr uint32_t FLAG_GEOMETRY = 0x0010;
 
+constexpr uint16_t CAT_FLAG_SLEEP = 0x0001;  // category 0 is the quiet-hours sleep screen
+constexpr int SLEEP_RETURN_SEC = 120;        // back to the sleep screen after this long untouched
+
 enum class FetchResult : uint8_t {
   OK,
   NOT_MODIFIED,
@@ -504,6 +507,14 @@ class PanelController {
   }
 
   bool check_auto_rotate() {
+    // Quiet hours: someone browsed the pages, then left. Go back to sleep.
+    if (quiet_ && has_sleep_ && page_ != 0 && !pinned_ && !cat_pinned_ && user_cool_sec_ >= SLEEP_RETURN_SEC) {
+      go_to_sleep_();
+      ESP_LOGI(TAG, "Untouched for %d s during quiet hours: back to the sleep screen", SLEEP_RETURN_SEC);
+      pending_redraw_ = true;
+      redraw_automatic_ = true;
+      return true;
+    }
     if (quiet_ || pinned_ || user_cool_sec_ < 15) return false;
     if (idle_sec_ < (rotate_sec_ >= 5 ? rotate_sec_ : 30)) return false;
     idle_sec_ = 0;
@@ -553,6 +564,7 @@ class PanelController {
       cat_ids_.push_back(c.cat_id);
     }
     for (const auto &p : s.pages) sub_ids_.push_back(p.sub_id);
+    has_sleep_ = !s.categories.empty() && (s.categories[0].flags & CAT_FLAG_SLEEP);
 
     sub_pos_.assign(cat_ids_.size(), 0);
     for (size_t i = 0; i < cat_ids_.size(); i++)
@@ -591,6 +603,11 @@ class PanelController {
         else if (sub_idx_ < 0 || sub_idx_ >= sz) sub_idx_ = sub_pos_[cat_idx_] % sz;
         go_(cat_idx_, sub_idx_);
       }
+    }
+    if (has_sleep_ && quiet_ && !was_quiet && !pinned_ && !cat_pinned_) {
+      go_to_sleep_();
+      ESP_LOGI(TAG, "Quiet hours: showing the sleep screen");
+      return;
     }
     update_ids_();
   }
@@ -639,6 +656,11 @@ class PanelController {
     page_ = (p >= 0 && p < page_count_) ? p : 0;
     update_ids_();
   }
+  void go_to_sleep_() {
+    cat_idx_ = sub_idx_ = page_ = 0;
+    sub_mode_ = false;
+    update_ids_();
+  }
   void enter_category_(int c) {
     cat_idx_ = c;
     int sz = size_(c);
@@ -683,7 +705,7 @@ class PanelController {
   }
 
   int page_{0}, cat_idx_{0}, sub_idx_{0}, page_count_{1};
-  bool sub_mode_{false}, pinned_{false}, cat_pinned_{false}, quiet_{false}, alert_{false};
+  bool sub_mode_{false}, pinned_{false}, cat_pinned_{false}, quiet_{false}, alert_{false}, has_sleep_{false};
   uint32_t pinned_cat_id_{0}, pinned_sub_id_{0}, cur_cat_id_{0}, cur_sub_id_{0};
   int rotate_sec_{30}, idle_sec_{0}, user_cool_sec_{999}, fetch_idle_sec_{0};
   bool pending_redraw_{false}, pending_refetch_{false};
