@@ -93,6 +93,15 @@ machine) with no ESP-IDF in it, and is compiled and tested on the host by
   the network.
 - **While someone is scrolling** (15 s after the last press), new frames
   wait, so the pages don't change under them.
+- **One input path.** Every button, the dial, remotes and Home Assistant
+  actions call `PanelController::dispatch(NavAction)`. That's also how the
+  panel knows whether a person caused a redraw.
+- **Ghost clearing** (`WaveformPolicy`). A person never causes a full
+  refresh. Once N partials have built up (default 10, the "Ghost clear after"
+  setting), the next automatic change is full. There's a fallback after 60 s
+  still with 3×N built up, and a full refresh for alerts and when quiet hours
+  start. "Every Nth refresh" restores the old fixed count. The driver's own
+  `full_update_every` is set out of reach so only the policy decides.
 - **The YAML has one source**: `addon/app/firmware/panel.yaml`, filled in by
   `firmware_gen.py`. Panel setup writes it into Home Assistant's ESPHome
   folder (keeping the previous file as `.previous`).

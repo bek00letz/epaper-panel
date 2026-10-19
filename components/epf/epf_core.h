@@ -276,6 +276,79 @@ inline void draw_overlays(uint8_t *buf, int buf_w, int buf_h, const Geometry &g,
 }
 
 // ---------------------------------------------------------------------------
+// When to do a full (ghost-clearing) refresh instead of a quick partial one.
+//
+// A full refresh flashes black and white for ~1.8 s; partial ones are quick but
+// leave faint ghosts that build up. In the default mode a person never sees a
+// flash they caused: scrolling and pressing are always partial. Once enough
+// partials have built up, the next change the panel makes on its own
+// (auto-rotation, new frames) is done as a full refresh. If someone browses so
+// long that no such change comes, it clears after a minute of stillness.
+// "Classic" is the driver's old every-Nth-refresh, kept as a one-tap revert.
+class WaveformPolicy {
+ public:
+  void set_threshold(int n) { threshold_ = n < 2 ? 2 : (n > 200 ? 200 : n); }
+  void set_classic(bool on) { classic_ = on; }
+  int threshold() const { return threshold_; }
+  bool classic() const { return classic_; }
+  int partials() const { return partials_; }
+
+  // Decide this refresh and record it. `user_cool_sec`: seconds since the last press.
+  bool decide(bool forced, bool by_person, bool automatic, int user_cool_sec) {
+    bool full;
+    if (classic_) full = forced || partials_ + 1 >= threshold_;
+    else full = forced || (!by_person && automatic && partials_ >= threshold_ && user_cool_sec >= 15);
+    partials_ = full ? 0 : partials_ + 1;
+    return full;
+  }
+
+  bool idle_clear_due(int still_sec) const {
+    return !classic_ && partials_ >= 3 * threshold_ && still_sec >= 60;
+  }
+
+ private:
+  int threshold_{10};
+  bool classic_{false};
+  int partials_{0};
+};
+
+// Every way a person or Home Assistant can move the panel. dispatch() is the
+// only entry point, so every input shares one state machine and one notion of
+// "someone is using the panel right now".
+enum class NavAction : uint8_t {
+  NEXT,             // param: steps (default 1)
+  PREV,             // param: steps (default 1)
+  MODE_TOGGLE,      // categories <-> the current category's items
+  LOCK_TOGGLE,      // context-aware: page lock in item mode, category lock otherwise
+  PIN_CAT_TOGGLE,   // category lock
+  PIN_PAGE_TOGGLE,  // page lock
+  CAT_STEP,         // param: delta
+  SUB_STEP,         // param: delta
+  RESET_HOME,
+  GOTO_PAGE,        // param: page index
+  GOTO_CAT_SUB,     // param: category, param2: item
+  CLEAR_GHOSTING,   // full refresh of what's on screen now
+};
+
+inline const char *nav_name(NavAction a) {
+  switch (a) {
+    case NavAction::NEXT: return "next";
+    case NavAction::PREV: return "previous";
+    case NavAction::MODE_TOGGLE: return "mode toggle";
+    case NavAction::LOCK_TOGGLE: return "lock toggle";
+    case NavAction::PIN_CAT_TOGGLE: return "category lock";
+    case NavAction::PIN_PAGE_TOGGLE: return "page lock";
+    case NavAction::CAT_STEP: return "category step";
+    case NavAction::SUB_STEP: return "item step";
+    case NavAction::RESET_HOME: return "home";
+    case NavAction::GOTO_PAGE: return "go to page";
+    case NavAction::GOTO_CAT_SUB: return "go to category";
+    case NavAction::CLEAR_GHOSTING: return "clear ghosting";
+  }
+  return "?";
+}
+
+// ---------------------------------------------------------------------------
 // Navigation: which page is shown, locks, auto-rotation. One state machine for
 // the dial, the buttons, remotes and Home Assistant actions.
 class PanelController {
@@ -285,7 +358,52 @@ class PanelController {
     return inst;
   }
 
-  void page_step(int delta) {
+  void dispatch(NavAction action, int param = 0, int param2 = 0) {
+    ESP_LOGI(TAG, "Input: %s (%d, %d)", nav_name(action), param, param2);
+    switch (action) {
+      case NavAction::NEXT: page_step_(param > 0 ? param : 1); break;
+      case NavAction::PREV: page_step_(-(param > 0 ? param : 1)); break;
+      case NavAction::MODE_TOGGLE: mode_toggle_(); break;
+      case NavAction::LOCK_TOGGLE: sub_mode_ ? hold_toggle_() : category_pin_toggle_(); break;
+      case NavAction::PIN_CAT_TOGGLE: category_pin_toggle_(); break;
+      case NavAction::PIN_PAGE_TOGGLE: hold_toggle_(); break;
+      case NavAction::CAT_STEP: category_step_(param); break;
+      case NavAction::SUB_STEP: sub_step_(param); break;
+      case NavAction::RESET_HOME: reset_home_(); break;
+      case NavAction::GOTO_PAGE: show_page_(param); break;
+      case NavAction::GOTO_CAT_SUB: show_category_(param, param2); break;
+      case NavAction::CLEAR_GHOSTING: redraw_forced_ = true; pending_redraw_ = true; break;
+    }
+  }
+
+  // Home Assistant's page_step(delta): forward or back by |delta|.
+  void step(int delta) {
+    if (delta != 0) dispatch(delta > 0 ? NavAction::NEXT : NavAction::PREV, delta > 0 ? delta : -delta);
+  }
+
+  // Called by the redraw script just before the display updates: whether this
+  // one should be a full refresh. Consumes what caused the redraw.
+  bool begin_redraw() {
+    bool full = waveform_.decide(redraw_forced_, redraw_by_person_, redraw_automatic_, user_cool_sec_);
+    if (full) ESP_LOGI(TAG, "Full refresh (%s)", redraw_forced_ ? "requested" : "ghosting built up");
+    redraw_forced_ = redraw_by_person_ = redraw_automatic_ = false;
+    pending_redraw_ = false;
+    return full;
+  }
+
+  // The fallback: nobody has touched the panel for a minute and no automatic
+  // change came along to carry the clear.
+  bool idle_clear_due() {
+    if (!waveform_.idle_clear_due(user_cool_sec_ < idle_sec_ ? user_cool_sec_ : idle_sec_)) return false;
+    redraw_forced_ = true;
+    pending_redraw_ = true;
+    return true;
+  }
+
+  WaveformPolicy &waveform() { return waveform_; }
+
+ private:
+  void page_step_(int delta) {
     touch_();
     int cats = cats_();
     if (cat_idx_ >= cats) cat_idx_ = 0;
@@ -301,13 +419,13 @@ class PanelController {
     }
   }
 
-  void category_step(int delta) {
+  void category_step_(int delta) {
     touch_();
     int cats = cats_();
     enter_category_((((cat_idx_ + delta) % cats) + cats) % cats);
   }
 
-  void sub_step(int delta) {
+  void sub_step_(int delta) {
     touch_();
     int sz = size_(cat_idx_);
     if (sz <= 1) return;
@@ -316,13 +434,13 @@ class PanelController {
     go_(cat_idx_, sub_idx_);
   }
 
-  void mode_toggle() {
+  void mode_toggle_() {
     touch_();
     sub_mode_ = size_(cat_idx_) > 1 ? !sub_mode_ : false;
     ESP_LOGI(TAG, "Navigation mode: %s", sub_mode_ ? "sub-items" : "categories");
   }
 
-  void hold_toggle() {
+  void hold_toggle_() {
     touch_();
     pinned_ = !pinned_;
     if (pinned_) {
@@ -335,7 +453,7 @@ class PanelController {
     ESP_LOGI(TAG, "Panel lock: %d", pinned_);
   }
 
-  void category_pin_toggle() {
+  void category_pin_toggle_() {
     touch_();
     cat_pinned_ = !cat_pinned_;
     if (cat_pinned_) {
@@ -348,16 +466,14 @@ class PanelController {
     ESP_LOGI(TAG, "Category lock: %d", cat_pinned_);
   }
 
-  void lock_toggle() { sub_mode_ ? hold_toggle() : category_pin_toggle(); }
-
-  void reset_home() {
+  void reset_home_() {
     touch_();
     sub_mode_ = false;
     cat_idx_ = sub_idx_ = page_ = 0;
     update_ids_();
   }
 
-  void show_page(int index) {
+  void show_page_(int index) {
     touch_();
     if (index < 0 || index >= page_count_) return;
     for (int c = (int) offsets_.size() - 1; c >= 0; c--) {
@@ -371,7 +487,7 @@ class PanelController {
     update_ids_();
   }
 
-  void show_category(int category, int sub) {
+  void show_category_(int category, int sub) {
     touch_();
     if (category < 0 || category >= cats_()) return;
     int sz = size_(category);
@@ -380,6 +496,7 @@ class PanelController {
     go_(cat_idx_, sub_idx_);
   }
 
+ public:
   void tick_seconds(int s) {
     idle_sec_ += s;
     fetch_idle_sec_ += s;
@@ -408,6 +525,7 @@ class PanelController {
       go_(c, s);
     }
     pending_redraw_ = true;
+    redraw_automatic_ = true;
     return true;
   }
 
@@ -420,7 +538,13 @@ class PanelController {
     std::vector<int> old_pos = sub_pos_;
     page_count_ = s.header.page_count;
     if (s.header.rotate_sec >= 5 && s.header.rotate_sec <= 3600) rotate_sec_ = s.header.rotate_sec;
+    bool was_quiet = quiet_;
     quiet_ = (s.header.flags & FLAG_QUIET_HOURS) != 0;
+    // New frames are a change the panel makes on its own. Alerts, a forced
+    // full refresh and the start of quiet hours (held all night) are full.
+    pending_redraw_ = true;
+    redraw_automatic_ = true;
+    if ((s.header.flags & (FLAG_ALERT_INTERRUPT | FLAG_FORCE_FULL)) || (quiet_ && !was_quiet)) redraw_forced_ = true;
     offsets_.clear(); sizes_.clear(); pill_w_.clear(); cat_ids_.clear(); sub_ids_.clear();
     for (const auto &c : s.categories) {
       offsets_.push_back(c.offset_page);
@@ -498,8 +622,6 @@ class PanelController {
   bool pending_refetch() const { return pending_refetch_; }
   void set_pending_refetch(bool v) { pending_refetch_ = v; }
   bool pending_redraw() const { return pending_redraw_; }
-  void set_pending_redraw() { pending_redraw_ = true; }
-  void clear_pending_redraw() { pending_redraw_ = false; }
 
  private:
   PanelController() = default;
@@ -507,7 +629,7 @@ class PanelController {
   int cats_() const { return offsets_.empty() ? 1 : (int) offsets_.size(); }
   int size_(int c) const { return (c >= 0 && c < (int) sizes_.size() && sizes_[c] > 0) ? sizes_[c] : 1; }
   int offset_(int c) const { return (c >= 0 && c < (int) offsets_.size()) ? offsets_[c] : c; }
-  void touch_() { idle_sec_ = 0; user_cool_sec_ = 0; pending_redraw_ = true; }
+  void touch_() { idle_sec_ = 0; user_cool_sec_ = 0; pending_redraw_ = true; redraw_by_person_ = true; }
   void remember_sub_(int c, int sz) {
     if ((int) sub_pos_.size() <= c) sub_pos_.resize(cats_(), 0);
     sub_pos_[c] = (sub_idx_ + 1) % sz;
@@ -565,6 +687,8 @@ class PanelController {
   uint32_t pinned_cat_id_{0}, pinned_sub_id_{0}, cur_cat_id_{0}, cur_sub_id_{0};
   int rotate_sec_{30}, idle_sec_{0}, user_cool_sec_{999}, fetch_idle_sec_{0};
   bool pending_redraw_{false}, pending_refetch_{false};
+  bool redraw_forced_{false}, redraw_by_person_{false}, redraw_automatic_{false};
+  WaveformPolicy waveform_;
   std::vector<int> offsets_, sizes_, pill_w_, sub_pos_;
   std::vector<uint32_t> cat_ids_, sub_ids_;
 };

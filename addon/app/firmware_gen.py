@@ -46,7 +46,9 @@ def display_blocks(disp: dict) -> tuple[str, str]:
     reset_pin: 47
     busy_pin: 48
     invert_colors: true
-    full_update_every: 10
+    # Full refreshes are decided by the panel's ghost-clearing policy
+    # (WaveformPolicy), not by a fixed count.
+    full_update_every: 1000000
     update_interval: never
     auto_clear_enabled: false"""
     else:

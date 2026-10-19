@@ -18,6 +18,11 @@ esphome:
   on_boot:
     priority: -100
     then:
+      - lambda: |-
+          auto &w = epf::PanelController::instance().waveform();
+          w.set_threshold((int) id(ghost_clear_after).state);
+          auto mode = id(ghost_mode).active_index();
+          w.set_classic(mode.has_value() && mode.value() == 1);
       - script.execute: refetch
 
 esp32:
@@ -58,49 +63,49 @@ api:
       variables:
         index: int
       then:
-        - lambda: 'epf::PanelController::instance().show_page(index);'
+        - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::GOTO_PAGE, index);'
         - script.execute: redraw
     - action: show_category
       variables:
         category: int
         sub: int
       then:
-        - lambda: 'epf::PanelController::instance().show_category(category, sub);'
+        - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::GOTO_CAT_SUB, category, sub);'
         - script.execute: redraw
     # Relative paging, for remotes and Home Assistant automations.
     - action: page_step
       variables:
         delta: int
       then:
-        - lambda: 'epf::PanelController::instance().page_step(delta);'
+        - lambda: 'epf::PanelController::instance().step(delta);'
         - script.execute: redraw
     - action: mode_toggle
       then:
-        - lambda: 'epf::PanelController::instance().mode_toggle();'
+        - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::MODE_TOGGLE);'
         - script.execute: redraw
     - action: category_step
       variables:
         delta: int
       then:
-        - lambda: 'epf::PanelController::instance().category_step(delta);'
+        - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::CAT_STEP, delta);'
         - script.execute: redraw
     - action: sub_step
       variables:
         delta: int
       then:
-        - lambda: 'epf::PanelController::instance().sub_step(delta);'
+        - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::SUB_STEP, delta);'
         - script.execute: redraw
     - action: hold_toggle
       then:
-        - lambda: 'epf::PanelController::instance().hold_toggle();'
+        - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::PIN_PAGE_TOGGLE);'
         - script.execute: redraw
     - action: category_pin_toggle
       then:
-        - lambda: 'epf::PanelController::instance().category_pin_toggle();'
+        - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::PIN_CAT_TOGGLE);'
         - script.execute: redraw
     - action: lock_toggle
       then:
-        - lambda: 'epf::PanelController::instance().lock_toggle();'
+        - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::LOCK_TOGGLE);'
         - script.execute: redraw
 
 ota:
@@ -141,7 +146,7 @@ binary_sensor:
     pin: {number: @NEXT_PIN@, mode: {input: true, pullup: true}, inverted: true}
     filters: [delayed_on: 25ms, delayed_off: 25ms]
     on_press:
-      - lambda: 'epf::PanelController::instance().page_step(1);'
+      - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::NEXT);'
       - script.execute: redraw
 
   - platform: gpio
@@ -150,7 +155,7 @@ binary_sensor:
     pin: {number: @PREV_PIN@, mode: {input: true, pullup: true}, inverted: true}
     filters: [delayed_on: 25ms, delayed_off: 25ms]
     on_press:
-      - lambda: 'epf::PanelController::instance().page_step(-1);'
+      - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::PREV);'
       - script.execute: redraw
 
   # Dial centre: hold 1 s to switch between categories and their items. A short
@@ -164,7 +169,7 @@ binary_sensor:
       - min_length: 1000ms
         max_length: 5000ms
         then:
-          - lambda: 'epf::PanelController::instance().mode_toggle();'
+          - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::MODE_TOGGLE);'
           - script.execute: redraw
 
   # Top button: click locks the category, hold locks the page.
@@ -177,12 +182,12 @@ binary_sensor:
       - min_length: 30ms
         max_length: 750ms
         then:
-          - lambda: 'epf::PanelController::instance().category_pin_toggle();'
+          - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::PIN_CAT_TOGGLE);'
           - script.execute: redraw
       - min_length: 750ms
         max_length: 6000ms
         then:
-          - lambda: 'epf::PanelController::instance().hold_toggle();'
+          - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::PIN_PAGE_TOGGLE);'
           - script.execute: redraw
 
   # Bottom button: click goes to the first page, hold downloads new frames now.
@@ -195,7 +200,7 @@ binary_sensor:
       - min_length: 30ms
         max_length: 750ms
         then:
-          - lambda: 'epf::PanelController::instance().reset_home();'
+          - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::RESET_HOME);'
           - script.execute: redraw
       - min_length: 750ms
         max_length: 6000ms
@@ -228,12 +233,55 @@ number:
     unit_of_measurement: "min"
     mode: box
 
+  # Ghost clearing (see WaveformPolicy in epf_core.h). Settings, not
+  # controls: they live in the device's configuration section in Home
+  # Assistant and survive reboots.
+  - platform: template
+    name: "Ghost clear after"
+    id: ghost_clear_after
+    entity_category: config
+    icon: "mdi:ghost-outline"
+    optimistic: true
+    min_value: 2
+    max_value: 60
+    step: 1
+    initial_value: 10
+    restore_value: true
+    unit_of_measurement: "refreshes"
+    mode: box
+    on_value:
+      - lambda: 'epf::PanelController::instance().waveform().set_threshold((int) x);'
+
+select:
+  - platform: template
+    name: "Ghost clearing"
+    id: ghost_mode
+    entity_category: config
+    icon: "mdi:ghost-outline"
+    optimistic: true
+    restore_value: true
+    options:
+      - "On automatic changes"
+      - "Every Nth refresh"
+    initial_option: "On automatic changes"
+    on_value:
+      - lambda: 'epf::PanelController::instance().waveform().set_classic(i == 1);'
+
+button:
+  - platform: template
+    name: "Clear ghosting"
+    icon: "mdi:ghost-off-outline"
+    on_press:
+      - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::CLEAR_GHOSTING);'
+      - script.execute: redraw
+
 script:
   - id: redraw
     mode: restart
     then:
       - delay: 80ms
-      - lambda: 'epf::PanelController::instance().clear_pending_redraw();'
+      - lambda: |-
+          if (epf::PanelController::instance().begin_redraw()) id(epd).force_full_update();
       - component.update: epd
 
   # Home Assistant asked for new frames. While someone is scrolling, wait
@@ -277,8 +325,6 @@ interval:
           auto &panel = epf::PanelController::instance();
           if (result == epf::FetchResult::OK) {
             panel.on_stream_loaded(client.stream());
-            if (client.is_alert_interrupt() || client.is_force_full_waveform())
-              id(epd).force_full_update();
             id(redraw).execute();
           } else if (result != epf::FetchResult::NOT_MODIFIED) {
             int every = std::max(30, (int) (id(panel_refresh_interval).state * 60.0f));
@@ -295,6 +341,7 @@ interval:
             id(refetch).execute();
           }
           if (panel.check_auto_rotate()) id(redraw).execute();
+          else if (panel.idle_clear_due()) id(redraw).execute();
           // The panel's own timer. During quiet hours it stays asleep until
           // the add-on wakes it (the add-on retries until that's delivered).
           if (!panel.quiet_hours_active()) {

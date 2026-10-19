@@ -104,12 +104,13 @@ static void test_controller(const std::string &dir) {
   CHECK(epf::parse_stream(fb.data(), fb.size(), 792, 272, b) == epf::FetchResult::OK, "nav_b");
   CHECK(epf::parse_stream(fal.data(), fal.size(), 792, 272, alert) == epf::FetchResult::OK, "nav_alert");
 
-  pc.on_stream_loaded(a);  // solar, sports(3), temps
-  pc.page_step(1);         // -> sports
-  pc.mode_toggle();        // into its items
-  pc.page_step(1);         // second match
+  using A = epf::NavAction;
+  pc.on_stream_loaded(a);           // solar, sports(3), temps
+  pc.dispatch(A::NEXT);             // -> sports
+  pc.dispatch(A::MODE_TOGGLE);      // into its items
+  pc.step(1);                       // second match (Home Assistant's page_step)
   CHECK(pc.cat_idx() == 1 && pc.sub_idx() == 1, "on sports 2/3 (cat %d sub %d)", pc.cat_idx(), pc.sub_idx());
-  pc.hold_toggle();        // lock this match
+  pc.dispatch(A::LOCK_TOGGLE);      // in item mode: lock this match
 
   pc.on_stream_loaded(b);  // a new category was inserted before sports
   CHECK(pc.pinned() && pc.cat_idx() == 2 && pc.sub_idx() == 1, "lock follows the match (cat %d sub %d)",
@@ -118,10 +119,53 @@ static void test_controller(const std::string &dir) {
   pc.on_stream_loaded(alert);  // an alert takes over...
   CHECK(pc.page() == 0, "alert shows page 0");
   CHECK(!pc.overlay_state().panel_locked, "no padlock drawn over an alert");
-  pc.page_step(1);             // ...someone presses a button during it...
+  pc.dispatch(A::NEXT);         // ...someone presses a button during it...
   pc.on_stream_loaded(b);      // ...and when it's over the lock is still there
   CHECK(pc.pinned() && pc.cat_idx() == 2 && pc.sub_idx() == 1, "lock survives an alert (cat %d sub %d)",
         pc.cat_idx(), pc.sub_idx());
+}
+
+// The waveform policy: no flash from a person, the clear rides on the next
+// automatic change, the fallback, forced clears, and the classic revert.
+static void test_waveform() {
+  epf::WaveformPolicy w;
+  w.set_threshold(10);
+  for (int i = 0; i < 25; i++)
+    CHECK(!w.decide(false, true, false, 0), "a press is never a full refresh (#%d)", i);
+  CHECK(w.partials() == 25, "partials counted (%d)", w.partials());
+  CHECK(!w.decide(false, false, true, 3), "not right after someone stopped scrolling");
+  CHECK(w.decide(false, false, true, 20), "the next automatic change carries the clear");
+  CHECK(w.partials() == 0, "count resets after a full refresh");
+  for (int i = 0; i < 5; i++) w.decide(false, false, true, 999);
+  CHECK(!w.decide(false, false, true, 999), "below the threshold, automatic stays partial");
+  CHECK(!w.decide(false, true, true, 999), "a press and an automatic change together: the press wins");
+  CHECK(w.decide(true, true, false, 0), "a forced clear (alert, button) is always full");
+
+  for (int i = 0; i < 30; i++) w.decide(false, true, false, 0);
+  CHECK(!w.idle_clear_due(59) && w.idle_clear_due(60), "fallback after a minute still, with 3x built up");
+
+  epf::WaveformPolicy c;
+  c.set_threshold(10);
+  c.set_classic(true);
+  int fulls = 0;
+  for (int i = 0; i < 30; i++) fulls += c.decide(false, true, false, 0);
+  CHECK(fulls == 3, "classic: every 10th refresh is full, scrolling or not (%d)", fulls);
+  CHECK(!c.idle_clear_due(999), "classic has no idle fallback");
+
+  // Through the controller: quiet hours starting forces one full refresh.
+  auto &pc = epf::PanelController::instance();
+  pc.waveform().set_classic(false);
+  epf::Stream q;
+  q.header.page_count = 1;
+  q.header.flags = epf::FLAG_QUIET_HOURS;
+  q.categories.push_back({1, 0, 1, 50, 0});
+  q.pages.push_back({1, 1, 0, 0});
+  pc.on_stream_loaded(q);
+  CHECK(pc.begin_redraw(), "quiet hours starting: one full refresh");
+  pc.on_stream_loaded(q);
+  CHECK(!pc.begin_redraw(), "...and not again while they last");
+  pc.dispatch(epf::NavAction::CLEAR_GHOSTING);
+  CHECK(pc.begin_redraw(), "the Clear ghosting button is a full refresh");
 }
 
 int main(int argc, char **argv) {
@@ -132,6 +176,7 @@ int main(int argc, char **argv) {
   test_streams_and_mapping(argv[1]);
   test_rejects_bad_files(argv[1]);
   test_controller(argv[1]);
+  test_waveform();
   if (failures) {
     std::printf("%d check(s) failed\n", failures);
     return 1;

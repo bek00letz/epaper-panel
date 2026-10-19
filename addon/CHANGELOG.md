@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.9.4
+**New panel firmware** (install as for 0.9.3).
+
+- **No more flashes while you scroll.** The ghost-clearing full refresh (the
+  ~1.8 s black-and-white flash) used to happen on every 10th redraw, even in
+  the middle of scrolling. Now nothing you do triggers it. Once ghosting has
+  built up, the next change the panel makes on its own (auto-rotation, new
+  frames) carries the clear, so it rides on a change that was happening
+  anyway. If you browse so long that no such change comes, it clears after a
+  minute of stillness. It also clears once when quiet hours start, and for
+  alerts.
+- **Tune or revert it from Home Assistant, without reflashing.** In the
+  panel's device page, under Configuration:
+  - **Ghost clear after**: how many quick refreshes build up before a clear
+    (default 10). Lower it if ghosting shows sooner.
+  - **Ghost clearing**: *On automatic changes* (new), or *Every Nth refresh*
+    (the old behaviour, as a one-tap revert).
+  - **Clear ghosting**: a button that clears the screen now.
+- **One entry point for every input.** The dial, the buttons, remotes and
+  Home Assistant actions all go through `PanelController::dispatch()`, as the
+  architecture spec intends, and each input is logged once.
+
 ## 0.9.3
 **New panel firmware.** Install it from the ESPHome Device Builder once the
 add-on is updated. The previous firmware is in `esphome/rollback/` if you need

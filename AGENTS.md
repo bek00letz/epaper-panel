@@ -99,6 +99,11 @@ YAML comes only from `addon/app/firmware/panel.yaml`. After changing it, run
 - **Changing navigation state does nothing on screen on its own.** Follow it
   with `script.execute: redraw`, or the change only appears at the next
   unrelated refresh. This is what made the hold indicator look stuck.
+- **Every input goes through `PanelController::dispatch()`.** Don't call
+  navigation methods directly (they're private): the waveform policy relies
+  on dispatch to know a person is at the panel.
+- **Full refreshes are the policy's decision** (`begin_redraw()` in the redraw
+  script). Don't call `force_full_update()` anywhere else.
 - **Only the main loop touches the front buffer and the display.** The
   download task writes the back buffer; `EpfClient::poll()` swaps them on the
   main loop. Keep it that way, or a page can be drawn mid-swap.
