@@ -143,6 +143,22 @@ def _parse_espn_event(ev, league_title="MATCH", tz_name=None):
 _sports_window_cache: dict[str, dict] = {}
 
 
+def preferred_teams(team) -> list[str]:
+    """Your teams, lower-case: "Arsenal, Lakers" is two. Empty means any team."""
+    return [t.strip().lower() for t in str(team or "").split(",") if t.strip()]
+
+
+_STATUS_RANK = {"IN": 0, "PRE": 1}
+
+
+def match_priority(m: dict, team=None) -> tuple:
+    """Your teams first, then games being played, then upcoming, then finished."""
+    teams = preferred_teams(team)
+    names = f"{m.get('home_team', '')} {m.get('away_team', '')}".lower()
+    mine = any(t in names for t in teams)
+    return (0 if mine else 1, _STATUS_RANK.get(str(m.get("status", "")).upper(), 2))
+
+
 def league_slug(entity_or_league) -> tuple[str, str]:
     """A league as (ESPN path, slug): the slug names its sensor, sensor.epaper_sports_<slug>."""
     raw_input = str(entity_or_league or "soccer/eng.1").strip()
@@ -159,6 +175,7 @@ async def compute_sports_active_window(session, entity_or_league="soccer/eng.1",
         tz_name = await get_home_timezone(session)
     endpoint_path, slug = league_slug(entity_or_league)
     team_q = str(team or "").strip().lower()
+    teams_q = preferred_teams(team)
 
     cache_key = f"{endpoint_path}:{pre_buffer_hours}:{post_buffer_hours}:{tz_name}:{team_q}"
     now_ts = time.time()
@@ -203,13 +220,13 @@ async def compute_sports_active_window(session, entity_or_league="soccer/eng.1",
             pass
 
     def _matches_team_filter(ev_obj):
-        if not team_q:
+        if not teams_q:
             return True
         comp = (ev_obj.get("competitions") or [{}])[0]
         for c in (comp.get("competitors") or []):
             t_info = c.get("team") or {}
             names = f"{t_info.get('displayName', '')} {t_info.get('shortDisplayName', '')} {t_info.get('abbreviation', '')}".lower()
-            if team_q in names:
+            if any(t in names for t in teams_q):
                 return True
         return False
 
@@ -284,6 +301,7 @@ async def compute_sports_active_window(session, entity_or_league="soccer/eng.1",
         "today_matches": today_parsed,
     }
     _sports_window_cache[cache_key] = {"at": now_ts, "data": result}
+    runtime.prune(_sports_window_cache)
     return result
 
 
@@ -375,25 +393,13 @@ async def fetch_sports_match(session, entity_or_league="soccer/eng.1", team=None
 
         parsed_matches = [_parse_espn_event(ev, league_title, tz_name=tz_name) for ev in events]
 
-        if team:
-            query = str(team).lower().strip()
-            matched, others = [], []
-            for m in parsed_matches:
-                if (query in m["home_team"].lower() or query in m["away_team"].lower()):
-                    matched.append(m)
-                else:
-                    others.append(m)
-            parsed_matches = matched + others
-        else:
-            def _st_sort(m):
-                st = m.get("status", "")
-                if st == "IN": return 0
-                if st == "PRE": return 1
-                return 2
-            parsed_matches.sort(key=_st_sort)
+        # Most important first: when the panel can't hold every match, the
+        # ones at the end are the ones left out (frames.fit_counts).
+        parsed_matches.sort(key=lambda m: match_priority(m, team))
 
         is_any_live = any(m.get("is_live") for m in parsed_matches)
         _sports_match_cache[cache_key] = {"at": now, "data": parsed_matches, "is_live": is_any_live}
+        runtime.prune(_sports_match_cache)
         return parsed_matches
     except Exception as exc:
         print(f"fetch_sports_match error: {health.describe(exc)}", flush=True)

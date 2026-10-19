@@ -16,6 +16,7 @@ A source is a dict in /data/sources.json:
 Each returns [(entity_id, state, attributes)] for the caller to publish.
 """
 import copy
+import secrets
 import importlib
 import json
 import os
@@ -36,8 +37,13 @@ def load(data_dir):
         cfg = json.loads((Path(data_dir) / "sources.json").read_text())
     except Exception:
         return []
-    items = cfg if isinstance(cfg, list) else cfg.get("sources", [])
-    return [s for s in items if isinstance(s, dict)]
+    items = [s for s in (cfg if isinstance(cfg, list) else cfg.get("sources", [])) if isinstance(s, dict)]
+    if any(not s.get("id") for s in items):
+        # Sources from before 0.10.1 get the id that lets them be renamed safely.
+        for s in items:
+            s.setdefault("id", secrets.token_hex(6))
+        save(data_dir, items)
+    return items
 
 
 def save(data_dir, sources):
@@ -66,8 +72,14 @@ def mask_secrets(sources):
 
 
 def unmask_secrets(incoming, existing):
-    """Restore masked secrets from existing stored sources when saving or testing."""
-    by_name = {clean_slug(s.get("name")): s for s in (existing or []) if s.get("name")}
+    """Restore masked secrets from the stored sources when saving or testing.
+
+    Matched by the source's id, which never changes, so renaming a source
+    keeps its key. Sources saved before ids existed are matched by name once
+    and get an id.
+    """
+    by_id = {s["id"]: s for s in (existing or []) if isinstance(s, dict) and s.get("id")}
+    by_name = {clean_slug(s.get("name")): s for s in (existing or []) if isinstance(s, dict) and s.get("name")}
     out = []
     for idx, s in enumerate(incoming or []):
         if not isinstance(s, dict):
@@ -75,7 +87,10 @@ def unmask_secrets(incoming, existing):
         c = copy.deepcopy(s)
         slug = clean_slug(c.get("name"))
         c["name"] = slug
-        prev = by_name.get(slug) or {}
+        prev = by_id.get(c.get("id")) if c.get("id") else None
+        if prev is None:
+            prev = by_name.get(slug) or {}
+        c["id"] = str(c.get("id") or prev.get("id") or secrets.token_hex(6))
         if c.get("key") == SECRET_MASK and isinstance(prev, dict):
             c["key"] = prev.get("key", "")
         if c.get("headers") == SECRET_MASK and isinstance(prev, dict):

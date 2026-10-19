@@ -49,7 +49,9 @@ def check(provided: str) -> str:
     the first time the right one is seen."""
     if not provided:
         return "missing"
-    if not hmac.compare_digest(provided, token()):
+    # Bytes, not str: compare_digest raises on non-ASCII text (a 500 for anyone
+    # who sends ?token=é).
+    if not hmac.compare_digest(provided.encode("utf-8", "replace"), token().encode()):
         return "wrong"
     seen = config.DATA_DIR / SEEN_FILE
     if not seen.exists():

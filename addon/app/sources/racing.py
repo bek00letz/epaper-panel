@@ -180,6 +180,7 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_na
                 }
 
             _racing_cache[cache_key] = {"at": now, "data": fe_event, "is_live": is_live}
+            runtime.prune(_racing_cache)
             return fe_event
         except Exception as exc:
             print(f"fetch_formula_e_data error: {health.describe(exc)}", flush=True)
@@ -266,6 +267,7 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_na
                             event_data["standings"] = parsed_standings
 
         _racing_cache[cache_key] = {"at": now, "data": event_data, "is_live": is_live}
+        runtime.prune(_racing_cache)
         return event_data
     except Exception as exc:
         print(f"fetch_racing_data error: {health.describe(exc)}", flush=True)
@@ -450,4 +452,5 @@ async def compute_racing_active_window(session, series="f1", pre_buffer_hours=2.
         "post_buffer_hours": post_buffer_hours,
     }
     _racing_window_cache[cache_key] = {"at": now_ts, "data": result}
+    runtime.prune(_racing_window_cache)
     return result

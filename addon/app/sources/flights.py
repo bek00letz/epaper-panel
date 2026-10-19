@@ -136,6 +136,7 @@ async def fetch_overhead_aircraft(session, radius_km=35.0, lat=None, lon=None):
                     })
                 aircraft.sort(key=lambda a: a["distance_km"])
                 _aircraft_cache[cache_key] = {"at": now, "items": aircraft}
+                runtime.prune(_aircraft_cache)
                 return aircraft
     except Exception as exc:
         pass                                              # health.py has recorded it
@@ -179,6 +180,7 @@ async def fetch_overhead_aircraft(session, radius_km=35.0, lat=None, lon=None):
                     })
                 aircraft.sort(key=lambda a: a["distance_km"])
                 _aircraft_cache[cache_key] = {"at": now, "items": aircraft}
+                runtime.prune(_aircraft_cache)
                 return aircraft
     except Exception as exc:
         pass

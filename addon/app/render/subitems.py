@@ -168,10 +168,16 @@ def compute_identities(
         cat_ids.append(c_id)
 
     sub_ids: list[int] = []
+    occurrence: dict[str, int] = {}
     for cat_name, sub_keys in zip(live_cats, cat_sub_keys):
+        # A page listed twice in the rotation is two places to be: its second
+        # copy gets its own item identities, so a lock on it stays there. The
+        # first copy keeps the identities it always had.
+        occurrence[cat_name] = occurrence.get(cat_name, 0) + 1
+        prefix = cat_name if occurrence[cat_name] == 1 else f"{cat_name}#{occurrence[cat_name]}"
         seen_slice_ids: set[int] = set()
         for k in sub_keys:
-            s_id = stripmeta.identity(f"slice:{cat_name}:{k}")
+            s_id = stripmeta.identity(f"slice:{prefix}:{k}")
             disambig = 2
             while s_id in seen_slice_ids:
                 s_id = stripmeta.identity(f"slice:{cat_name}:{k}:{disambig}")

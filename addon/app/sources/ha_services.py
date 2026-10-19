@@ -74,6 +74,7 @@ async def fetch_weather_forecast(session, entity_id, fallback=None):
             base_data["forecast"] = forecast_list
 
         _weather_cache[eid] = {"at": now, "data": base_data}
+        runtime.prune(_weather_cache)
         return base_data
     except Exception as exc:
         print(f"fetch_weather_forecast error for {eid}: {health.describe(exc)}", flush=True)
@@ -126,6 +127,7 @@ async def fetch_calendar_events(session, entity_id, days=31, fallback=None):
 
         all_events.sort(key=_event_key)
         _calendar_cache[raw_eid] = {"at": now, "data": all_events}
+        runtime.prune(_calendar_cache)
         return all_events
     except Exception as exc:
         print(f"fetch_calendar_events error for {raw_eid}: {health.describe(exc)}", flush=True)

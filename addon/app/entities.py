@@ -2,6 +2,7 @@
 
 import json
 import re
+import time
 import urllib.parse
 
 import feeds
@@ -40,6 +41,7 @@ async def publish_entity(session, entity_id, state, attrs=None, register_mqtt=Tr
             "state": "" if state is None else str(state)[:255],
             "attributes": merged_attrs,
             "register_mqtt": register_mqtt,
+            "at": time.time(),
         }
         if runtime.PUBLISHER is not None and register_mqtt:
             runtime.PUBLISHER.set(clean_id, None if state is None else str(state)[:255], merged_attrs)
@@ -155,8 +157,9 @@ async def publish_computed(session):
     """Run configured data sources and publish on-demand sensors for active E-Paper Studio widgets."""
     # Everything the configuration produces, answering or not: a value whose
     # service is down keeps its entity (mqtt_bridge withdraws only the rest).
+    prune_published()
     wanted = await publish_sources(session)
-    wanted |= {"sensor.epaper_quiet_hours", "sensor.epaper_panel_last_render"}
+    wanted |= {"sensor.epaper_quiet_hours", "sensor.epaper_panel_last_render", "sensor.epaper_panel_pages"}
 
     cur_spec = load_layouts()
     spec_text = json.dumps(cur_spec)
@@ -320,6 +323,14 @@ async def publish_computed(session):
     if runtime.PUBLISHER is not None:
         runtime.PUBLISHER.keep(wanted)
     await sync_entities()
+
+
+def prune_published(max_age: float = runtime.CACHE_DAY) -> None:
+    """Forget values nothing has published for a day (a removed widget or source)."""
+    now = time.time()
+    for eid in [e for e, info in runtime.PUBLISHED.items() if now - info.get("at", now) > max_age]:
+        runtime.PUBLISHED.pop(eid, None)
+        runtime.FEED_ITEMS.pop(eid, None)
 
 
 def publish_health() -> set[str]:

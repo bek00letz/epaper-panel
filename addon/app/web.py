@@ -21,7 +21,7 @@ import frame_token
 import runtime
 from config import ADDON_VERSION, FRAME_PORT, HA_BASE, HA_TOKEN, INGRESS_GATEWAY, REFRESH, SLEEP_PAGE, WEB_DIR, valid_entity_id
 from fixture import load_fixture
-from frames import _etag, _png, enrich_page_values, refresh_frames, split_page_values
+from frames import _etag, _png, as_int, enrich_page_values, refresh_frames, split_page_values
 from ha import curve_series, ha_json, resolve_templates
 from layouts_store import clear_draft, layouts_etag, load_draft, load_layouts, load_sources, sanitize_layouts, save_draft, save_layouts
 from panel_ops import push_panel_update, step_panel_page
@@ -141,6 +141,11 @@ async def frame_epf(request):
 
 async def frames_epf(request):
     _check_frame_auth(request)
+    try:
+        if "cap" in request.query and runtime.set_panel_capacity(int(request.query["cap"])):
+            runtime.LIVE._event().set()                # render to the new size now
+    except ValueError:
+        pass
     f = runtime.FRAMES
     if not getattr(f, "epf_strip", None):
         raise web.HTTPServiceUnavailable(text="no epf frame rendered yet")
@@ -229,6 +234,8 @@ async def status(request):
         # Every outside service and data source: last success, and the problem
         # if it is failing (also a problem sensor in Home Assistant).
         "services": health.status(),
+        # How many pages the panel holds, and what was left out to fit.
+        "fit": runtime.FIT,
         "ha_entities": runtime.PUBLISHER.status() if runtime.PUBLISHER is not None else
                        {"mode": "off", "problem": "not started", "entities": 0},
         "version": ADDON_VERSION,
@@ -470,6 +477,8 @@ async def api_attributes(request):
 async def api_preview(request):
     """Render one page spec through the real engine, so WYSIWYG cannot lie."""
     body = await request.json()
+    if not isinstance(body, dict) or not isinstance(body.get("page") or {}, dict):
+        raise web.HTTPBadRequest(text="expected {page}")
     page = body.get("page") or {}
     try:
         orient = int(body.get("orientation") if "orientation" in body else load_layouts().get("orientation", 0))
@@ -486,8 +495,7 @@ async def api_preview(request):
     series = {}
     for i, el in enumerate(page.get("elements", [])):
         if el.get("type") in ("curve", "bar_chart") and el.get("entity"):
-            series[i] = await curve_series(runtime.SESSION, el["entity"],
-                                           int(el.get("hours", 24)))
+            series[i] = await curve_series(runtime.SESSION, el["entity"], as_int(el.get("hours"), 24))
     metrics = []
     try:
         dist = float(body.get("distance") or 3.0)
@@ -557,8 +565,9 @@ async def api_action_page(request):
         body = {}
     try:
         delta = int(body.get("delta") if "delta" in body else (request.query.get("delta") or 1))
-    except (TypeError, ValueError):
+    except (TypeError, ValueError, OverflowError):
         delta = 1
+    delta = max(-100, min(100, delta))                # the panel steps one page at a time
     ha_stepped = await step_panel_page(delta=delta)
     return web.json_response({"success": True, "action": "page_step", "delta": delta, "ha_stepped": ha_stepped})
 

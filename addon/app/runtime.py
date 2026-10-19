@@ -70,3 +70,48 @@ MQTT_DISCOVERED: set[str] = set()
 
 
 LAST_PANEL_PUSH_TIME = time.time()
+
+
+# Caches keyed by what pages ask for (a place, a league, an entity) keep only
+# what was used in the last day, so editing pages for months doesn't grow them.
+CACHE_DAY = 86400.0
+
+
+def prune(cache: dict, max_age: float = CACHE_DAY) -> None:
+    now = time.time()
+    for k in [k for k, v in cache.items() if isinstance(v, dict) and now - v.get("at", now) > max_age]:
+        del cache[k]
+
+
+# How many bytes of frame file the panel can hold. New firmware says so on
+# every download (?cap=), remembered across restarts; older firmware holds 1 MiB.
+FIT: dict | None = None                     # what frames.fit_counts left out, for the editor
+_capacity: int | None = None
+
+
+def panel_capacity() -> int:
+    global _capacity
+    if _capacity is None:
+        import config
+        from render import epf
+        try:
+            _capacity = int((config.DATA_DIR / "panel_capacity").read_text())
+        except (OSError, ValueError):
+            _capacity = epf.DEFAULT_CAPACITY
+    return _capacity
+
+
+def set_panel_capacity(value: int) -> bool:
+    """Remember what the panel says it holds. Returns whether it changed."""
+    global _capacity
+    import config
+    value = max(256 * 1024, min(16 * 1024 * 1024, int(value)))
+    if value == panel_capacity():
+        return False
+    _capacity = value
+    try:
+        (config.DATA_DIR / "panel_capacity").write_text(str(value))
+    except OSError:
+        pass
+    print(f"frames: the panel holds {value // 1024} KB of pages", flush=True)
+    return True

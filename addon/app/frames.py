@@ -1,6 +1,5 @@
 """Building the frames: which pages are live, their values, alerts, quiet hours, rendering, packing."""
 
-import health
 import asyncio
 import hashlib
 import io
@@ -11,6 +10,7 @@ from email.utils import formatdate
 from PIL import Image
 
 from render import binding, epf, layout, sleep, stripmeta, subitems, theme as T
+import health
 import runtime
 from config import HA_TOKEN, SLEEP_PAGE, valid_entity_id
 from entities import publish_category_sensors, publish_computed, publish_entity, sync_entities
@@ -123,6 +123,72 @@ async def enrich_page_values(session, page, vals):
                 vals[i] = match_data
 
 
+def as_int(value, default: int) -> int:
+    """A number from a page element, or the default for anything else (null, "24h", Infinity)."""
+    try:
+        return int(float(value))
+    except (TypeError, ValueError, OverflowError):
+        return default
+
+
+async def _fetch_feed_items(session, elements):
+    """Items of a feed sensor the add-on doesn't publish itself, read once from Home Assistant."""
+    for el in elements:
+        ent = str(el.get("entity", ""))
+        if ent.startswith("sensor.epaper_") and not ent.endswith("_count") and not ent.startswith("sensor.epaper_category_") and not ent.startswith("sensor.epaper_panel_"):
+            own_items = ((runtime.PUBLISHED.get(ent) or {}).get("attributes") or {}).get("items")
+            if own_items:
+                runtime.FEED_ITEMS[ent] = own_items
+            if ent not in runtime.FEED_ITEMS and valid_entity_id(ent):
+                try:
+                    st_data = await ha_json(session, f"/states/{ent}")
+                    items = (st_data.get("attributes") or {}).get("items")
+                    if items:
+                        runtime.FEED_ITEMS[ent] = items
+                except Exception:
+                    pass
+
+
+def fit_counts(wants: list[int], page_bytes: int, capacity: int, extra_pages: int = 1) -> list[int]:
+    """How many items each page shows so the frame file fits the panel.
+
+    Every page keeps its first item; then one more item per page, round by
+    round in rotation order, while there is room. Items within a page are
+    already in order of importance (your team, live games, the closest
+    aircraft, the newest episode), so the ones left out are the least
+    important. If even one item per page doesn't fit, pages at the end of the
+    rotation are left out. `extra_pages`: the sleep screen.
+    """
+    def fits(pages: int, cats: int) -> bool:
+        return epf.encoded_size(pages + extra_pages, cats + extra_pages, page_bytes) <= capacity
+
+    n = len(wants)
+    while n and not fits(n, n):
+        n -= 1
+    counts = [1] * n + [0] * (len(wants) - n)
+    total = n
+    grew = True
+    while grew:
+        grew = False
+        for i in range(n):
+            if counts[i] < wants[i] and fits(total + 1, n):
+                counts[i] += 1
+                total += 1
+                grew = True
+    return counts
+
+
+def record_fit(plans: list[dict], counts: list[int]) -> None:
+    """What was left out to fit the panel, for the editor and Home Assistant."""
+    trimmed = [{"page": p["name"], "shown": c, "of": p["want"]} for p, c in zip(plans, counts) if c < p["want"]]
+    fit = {"capacity": runtime.panel_capacity(), "pages_shown": sum(counts),
+           "pages_wanted": sum(p["want"] for p in plans), "trimmed": trimmed}
+    if trimmed and fit["trimmed"] != (runtime.FIT or {}).get("trimmed"):
+        what = ", ".join(f"{t['page']} {t['shown']} of {t['of']}" for t in trimmed)
+        print(f"frames: the panel holds {fit['pages_shown']} of {fit['pages_wanted']} pages; showing {what}", flush=True)
+    runtime.FIT = fit
+
+
 def split_page_values(page):
     """A page's values the add-on already holds, and templates for the rest.
 
@@ -202,12 +268,12 @@ async def _evaluate_widget_gate(session, widget: dict, home_tz: str) -> bool:
         lg = widget.get("league") or "soccer/eng.1"
         team = widget.get("team")
         win = await compute_sports_active_window(session, lg, pre_buffer_hours=pre_b, post_buffer_hours=post_b, tz_name=el_tz, team=team)
-        return bool(win.get("is_active"))
+        return bool((win or {}).get("is_active"))                # None: not fetched yet
     if wtype == "sports_racing":
         series = widget.get("series") or "f1"
         w_mode = widget.get("window_mode") or "session"
         win = await compute_racing_active_window(session, series, pre_buffer_hours=pre_b, post_buffer_hours=post_b, window_mode=w_mode, tz_name=el_tz)
-        return bool(win.get("is_active"))
+        return bool((win or {}).get("is_active"))
     if wtype == "flight_tracker":
         custom_lat, custom_lon, radius, _ = place_of(widget)
         aircraft = await fetch_overhead_aircraft(session, radius_km=radius, lat=custom_lat, lon=custom_lon)
@@ -351,7 +417,32 @@ async def build_frames(session):
         for i, el in enumerate(spec["pages"][name].get("elements", [])):
             if el.get("type") in ("curve", "bar_chart") and el.get("entity"):
                 series.setdefault(name, {})[i] = await curve_series(
-                    session, el["entity"], int(el.get("hours", 24)))
+                    session, el["entity"], as_int(el.get("hours"), 24))
+
+    # Pass 1: what each page wants to show (how many items).
+    plans = []
+    for cat_name in live:
+        try:
+            page_def = spec["pages"][cat_name]
+            page_vals = vals.get(cat_name, {})
+            elements = page_def.get("elements", [])
+            await _fetch_feed_items(session, elements)
+            sub_count, sub_type, sub_keys, feed_items, feed_entity = subitems.inspect_category_subitems(
+                page_def, page_vals, runtime.FEED_ITEMS
+            )
+            plans.append({"name": cat_name, "page_def": page_def, "vals": page_vals, "elements": elements,
+                          "want": sub_count, "sub_type": sub_type, "sub_keys": sub_keys,
+                          "feed_items": feed_items, "feed_entity": feed_entity})
+        except Exception as exc:
+            # One page that can't be built must not cost the others.
+            print(f"page {cat_name} left out: {health.describe(exc)}", flush=True)
+
+    # The panel holds a limited number of pages. Every page keeps its first
+    # item; extra items are shared out fairly; the rest are left out, and
+    # said so (runtime.FIT, /api/status, sensor.epaper_panel_pages).
+    counts = fit_counts([p["want"] for p in plans], page_bytes=((dw + 7) // 8) * dh,
+                        capacity=runtime.panel_capacity(), extra_pages=0 if alert else 1)
+    record_fit(plans, counts)
 
     imgs = []
     cat_offsets = []
@@ -361,103 +452,92 @@ async def build_frames(session):
     cat_sub_keys = []
     clock = datetime.now().strftime("%H:%M")       # one clock for the whole strip
     geo = None
+    kept = [(p, c) for p, c in zip(plans, counts) if c > 0]
 
-    for cat_i, cat_name in enumerate(live):
-        page_def = spec["pages"][cat_name]
-        page_vals = vals.get(cat_name, {})
-        elements = page_def.get("elements", [])
-
-        # Fetch any uncached feed items
-        for el in elements:
-            ent = str(el.get("entity", ""))
-            if ent.startswith("sensor.epaper_") and not ent.endswith("_count") and not ent.startswith("sensor.epaper_category_") and not ent.startswith("sensor.epaper_panel_"):
-                own_items = ((runtime.PUBLISHED.get(ent) or {}).get("attributes") or {}).get("items")
-                if ent not in runtime.FEED_ITEMS and own_items:
-                    runtime.FEED_ITEMS[ent] = own_items
-                if ent not in runtime.FEED_ITEMS:
-                    try:
-                        st_data = await ha_json(session, f"/states/{ent}")
-                        items = (st_data.get("attributes") or {}).get("items")
-                        if items:
-                            runtime.FEED_ITEMS[ent] = items
-                    except Exception:
-                        pass
-
-        sub_count, sub_type, sub_keys, feed_items, feed_entity = subitems.inspect_category_subitems(
-            page_def, page_vals, runtime.FEED_ITEMS
-        )
-        cat_sub_keys.append(sub_keys)
-
+    # Pass 2: draw them.
+    for cat_i, (plan, sub_count) in enumerate(kept):
+        cat_name, page_def, page_vals, elements = plan["name"], plan["page_def"], plan["vals"], plan["elements"]
+        sub_type, feed_items, feed_entity = plan["sub_type"], plan["feed_items"], plan["feed_entity"]
+        sub_keys = plan["sub_keys"][:sub_count]
         cat_display_name = cat_name.replace("_", " ").upper()
-        cat_label = f"{cat_i + 1}/{len(live)}  {cat_display_name}"
+        cat_label = f"{cat_i + 1}/{len(kept)}  {cat_display_name}"
         # The same numbers the footer is drawn with, so the panel's highlight
         # lands exactly on the pill in every orientation.
         fg = T.footer_geometry(clock=clock, cat_label=cat_label, has_sub=sub_count > 1,
                                orientation=orient, display=display)
+        page_imgs = []
+        try:
+            # Render each sub-item for this category
+            for s_idx in range(sub_count):
+                cloned_page = {**page_def, "elements": []}
+                cloned_vals = dict(page_vals)
+
+                for el_idx, el in enumerate(elements):
+                    el_c = dict(el)
+                    if el.get("type") in ("flight_tracker", "sports_match"):
+                        el_c["sub_index"] = s_idx
+                    elif sub_type in ("feed", "watch") and feed_items and s_idx < len(feed_items):
+                        item_data = feed_items[s_idx]
+                        top_title = str(feed_items[0].get("title", "")).strip()
+                        top_detail = str(feed_items[0].get("detail", "")).strip()
+                        ent = str(el.get("entity", "")).strip()
+                        val_str = str(el.get("value", "")).strip()
+                        cur_val = str(cloned_vals.get(el_idx, "")).strip()
+
+                        # 1. Detail / Episode field
+                        is_detail = (
+                            (ent and (ent == feed_entity or ent == "sensor.epaper_watch") and el.get("show") == "attribute" and "detail" in str(el.get("attribute", "")).lower())
+                            or ("detail" in val_str.lower() and any(k in val_str.lower() for k in ("state_attr", "states", feed_entity, "watch", "jelly", "item")))
+                            or (bool(top_detail) and cur_val == top_detail)
+                        )
+
+                        # 2. Show title field
+                        is_title = (
+                            (ent and (ent == feed_entity or ent == "sensor.epaper_watch") and el.get("show") != "attribute")
+                            or (bool(top_title) and cur_val == top_title)
+                        )
+
+                        own = subitems.item_value(el, feed_entity, item_data)
+                        if own is not None:
+                            cloned_vals[el_idx] = own
+                        elif is_detail:
+                            cloned_vals[el_idx] = item_data.get("detail", "")
+                            if "value" in el_c and "{{" in str(el_c["value"]):
+                                el_c["value"] = ""
+                        elif is_title:
+                            cloned_vals[el_idx] = item_data.get("title", "")
+                            if "value" in el_c and "{{" in str(el_c["value"]):
+                                el_c["value"] = ""
+                        elif el.get("type") == "text" and any(k in val_str.lower() for k in ("watch", "deck", "media", "episode", "unwatch")) and sub_count > 1:
+                            base_val = val_str.split("  [")[0]
+                            el_c["value"] = f"{base_val}  [{s_idx + 1}/{sub_count}]"
+
+                    cloned_page["elements"].append(el_c)
+
+                sub_label = f"{s_idx + 1}/{sub_count}" if sub_count > 1 else ""
+
+                img = await asyncio.to_thread(
+                    layout.render_page, cloned_page, cloned_vals,
+                    clock=clock,
+                    label=cat_display_name,
+                    cat_label=cat_label,
+                    sub_label=sub_label,
+                    battery_pct=None, series=series.get(cat_name), orientation=orient, display=display)
+                page_imgs.append(T.orient_for_panel(T.to_1bit(img), orient, display=display))
+        except Exception as exc:
+            print(f"page {cat_name} left out: {health.describe(exc)}", flush=True)
+            continue
         if geo is None:
             geo = panel_geometry(fg, orient, display)
         cat_offsets.append(len(imgs))
         cat_sizes.append(sub_count)
         cat_names.append(cat_name)
         cat_pill_widths.append(fg["cat_w"])
-
-        # Render each sub-item for this category
-        for s_idx in range(sub_count):
-            cloned_page = {**page_def, "elements": []}
-            cloned_vals = dict(page_vals)
-
-            for el_idx, el in enumerate(elements):
-                el_c = dict(el)
-                if el.get("type") in ("flight_tracker", "sports_match"):
-                    el_c["sub_index"] = s_idx
-                elif sub_type in ("feed", "watch") and feed_items and s_idx < len(feed_items):
-                    item_data = feed_items[s_idx]
-                    top_title = str(feed_items[0].get("title", "")).strip()
-                    top_detail = str(feed_items[0].get("detail", "")).strip()
-                    ent = str(el.get("entity", "")).strip()
-                    val_str = str(el.get("value", "")).strip()
-                    cur_val = str(cloned_vals.get(el_idx, "")).strip()
-
-                    # 1. Detail / Episode field
-                    is_detail = (
-                        (ent and (ent == feed_entity or ent == "sensor.epaper_watch") and el.get("show") == "attribute" and "detail" in str(el.get("attribute", "")).lower())
-                        or ("detail" in val_str.lower() and any(k in val_str.lower() for k in ("state_attr", "states", feed_entity, "watch", "jelly", "item")))
-                        or (bool(top_detail) and cur_val == top_detail)
-                    )
-
-                    # 2. Show title field
-                    is_title = (
-                        (ent and (ent == feed_entity or ent == "sensor.epaper_watch") and el.get("show") != "attribute")
-                        or (bool(top_title) and cur_val == top_title)
-                    )
-
-                    own = subitems.item_value(el, feed_entity, item_data)
-                    if own is not None:
-                        cloned_vals[el_idx] = own
-                    elif is_detail:
-                        cloned_vals[el_idx] = item_data.get("detail", "")
-                        if "value" in el_c and "{{" in str(el_c["value"]):
-                            el_c["value"] = ""
-                    elif is_title:
-                        cloned_vals[el_idx] = item_data.get("title", "")
-                        if "value" in el_c and "{{" in str(el_c["value"]):
-                            el_c["value"] = ""
-                    elif el.get("type") == "text" and any(k in val_str.lower() for k in ("watch", "deck", "media", "episode", "unwatch")) and sub_count > 1:
-                        base_val = val_str.split("  [")[0]
-                        el_c["value"] = f"{base_val}  [{s_idx + 1}/{sub_count}]"
-
-                cloned_page["elements"].append(el_c)
-
-            sub_label = f"{s_idx + 1}/{sub_count}" if sub_count > 1 else ""
-
-            img = await asyncio.to_thread(
-                layout.render_page, cloned_page, cloned_vals,
-                clock=clock,
-                label=cat_display_name,
-                cat_label=cat_label,
-                sub_label=sub_label,
-                battery_pct=None, series=series.get(cat_name), orientation=orient, display=display)
-            imgs.append(T.orient_for_panel(T.to_1bit(img), orient, display=display))
+        cat_sub_keys.append(sub_keys)
+        imgs.extend(page_imgs)
+    live = cat_names
+    if not imgs:
+        raise RuntimeError("no page could be drawn")
 
     # The sleep screen always goes first, so the panel can fall asleep
     # instantly (dial centre held, or its Sleep switch) without asking us.
@@ -535,24 +615,36 @@ def panel_geometry(fg: dict, orient: int, display: str) -> epf.OverlayGeometry:
         sub_x0=fg["sub_x0"], sub_x1=fg["sub_x1"])
 
 
+_lock: asyncio.Lock | None = None
+_lock_loop = None
+
+
+def _render_lock() -> asyncio.Lock:
+    global _lock, _lock_loop
+    loop = asyncio.get_running_loop()
+    if _lock is None or _lock_loop is not loop:
+        _lock, _lock_loop = asyncio.Lock(), loop
+    return _lock
+
+
 async def refresh_frames(session):
-    """Build a new Frames snapshot and atomically swap runtime.FRAMES."""
+    """Build a new Frames snapshot and swap runtime.FRAMES.
+
+    One render at a time: the render loop, Send, Push, the Refresh button and
+    the action endpoint can all ask at once, and an older render finishing
+    last would put old pages back. Each waits its turn, and each render reads
+    the pages as saved when it starts.
+    """
+    async with _render_lock():
+        return await _refresh_frames(session)
+
+
+async def _refresh_frames(session):
     res = await build_frames(session)
     strip, single, slices, names, cat_offsets, cat_sizes, cat_names, cat_pill_widths, quiet_active, quiet_reason, rot_sec, cat_ids, sub_ids, epf_strip, epf_single = res
     old_f = runtime.FRAMES
     has_prev = old_f is not None and getattr(old_f, "rendered_at", None)
-    struct_changed = (
-        has_prev and (
-            old_f.cat_offsets != cat_offsets or
-            old_f.cat_sizes != cat_sizes or
-            old_f.cat_names != cat_names or
-            getattr(old_f, "cat_pill_widths", None) != cat_pill_widths or
-            getattr(old_f, "cat_ids", None) != cat_ids or
-            getattr(old_f, "sub_ids", None) != sub_ids
-        )
-    )
     quiet_changed = bool(has_prev and getattr(old_f, "quiet_active", False) != quiet_active)
-    rot_changed = bool(has_prev and getattr(old_f, "rotate_seconds", 30) != rot_sec)
     nxt = Frames()
     nxt.strip, nxt.single, nxt.slices, nxt.names = strip, single, slices, names
     nxt.strip_etag = _etag(strip)
@@ -583,21 +675,25 @@ async def refresh_frames(session):
                           "pages_count": len([n for n in nxt.names if n != SLEEP_PAGE]),
                           "active_pages": [n for n in nxt.names if n != SLEEP_PAGE],
                           "device_class": "timestamp"})
+    fit = runtime.FIT or {}
+    await publish_entity(session, "sensor.epaper_panel_pages", fit.get("pages_shown", len(names)), {
+        "friendly_name": "E-Paper · Pages on the panel", "icon": "mdi:book-open-page-variant-outline",
+        "unit_of_measurement": "pages", "pages_wanted": fit.get("pages_wanted"),
+        "capacity_kb": (fit.get("capacity") or 0) // 1024,
+        "left_out": ", ".join(f"{t['page']}: {t['shown']} of {t['of']}" for t in fit.get("trimmed") or []) or "nothing"})
     await publish_category_sensors(session, nxt)
     await sync_entities()
-    if quiet_changed:
+    # The panel's own refresh interval is the contract: new content waits for
+    # it, however often pages come and go (a panel on a battery may fetch
+    # every hour). The add-on wakes it early only for alerts (render loop),
+    # quiet hours starting or ending, and what a person does (Send, Push, the
+    # Refresh button, the action endpoint).
+    qh = load_layouts().get("quiet_hours") or {}
+    if quiet_changed or (not has_prev and qh.get("enabled") and not quiet_active):
         # Delivered with retries: the panel stops fetching on its own during
-        # quiet hours, so missing the wake-up would leave it asleep.
-        print(f"Quiet Hours state transitioned to {quiet_active} ({quiet_reason}) -- syncing panel state", flush=True)
+        # quiet hours, so missing the wake-up would leave it asleep. After a
+        # restart we can't know whether it is still asleep, so wake it once.
+        print(f"Quiet hours {'started' if quiet_active else 'ended'} ({quiet_reason}): telling the panel", flush=True)
         runtime.LAST_PANEL_PUSH_TIME = time.time()
         await push_panel_update("quiet hours " + ("started" if quiet_active else "ended"))
-    elif struct_changed or rot_changed:
-        spec = load_layouts()
-        allow_alerts = bool((spec.get("quiet_hours") or {}).get("allow_alerts", True))
-        if quiet_active and not (runtime.ALERT["name"] and allow_alerts):
-            print(f"Layout/rotation changed during Quiet Hours ({quiet_reason}) -- deferring panel push", flush=True)
-        else:
-            print("Category structure or rotation interval changed -- pushing immediate refresh to panel", flush=True)
-            runtime.LAST_PANEL_PUSH_TIME = time.time()
-            await push_panel_update("pages changed")
     return nxt

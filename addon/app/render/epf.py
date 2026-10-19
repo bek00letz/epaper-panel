@@ -50,6 +50,16 @@ HEADER_FMT = ">4sHHHHHHHHIQIII"          # 44 bytes, then 20 reserved
 GEOMETRY_FMT = ">HHBBHHHHH4x"             # 20 bytes in the reserved area
 
 
+# What a panel can hold when it hasn't said (firmware before 0.10.1 has two
+# 1 MiB buffers and doesn't report its size).
+DEFAULT_CAPACITY = 1024 * 1024
+
+
+def encoded_size(pages: int, cats: int, page_bytes: int) -> int:
+    """The size of a frame file with this many pages and categories."""
+    return HEADER_SIZE + cats * CAT_RECORD_SIZE + pages * (PAGE_RECORD_SIZE + page_bytes) + CRC_SIZE
+
+
 @dataclass(frozen=True)
 class OverlayGeometry:
     """How the panel finds the footer pills it highlights.
