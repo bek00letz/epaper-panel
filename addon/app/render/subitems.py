@@ -19,9 +19,9 @@ from __future__ import annotations
 
 from typing import Any
 try:
-    from . import stripmeta
+    from . import binding, stripmeta
 except (ImportError, ValueError):
-    from render import stripmeta
+    from render import binding, stripmeta
 
 
 def derive_item_key(item: Any, fallback_index: int) -> str:
@@ -44,6 +44,23 @@ def derive_item_key(item: Any, fallback_index: int) -> str:
     elif isinstance(item, str) and item.strip():
         return item.strip()[:60]
     return str(fallback_index)
+
+
+def item_value(el: dict, feed_entity: str | None, item: Any) -> str | None:
+    """What an attribute binding shows on the slice for one feed item.
+
+    A feed's items carry the same parts as its sensor's attributes (Jellyfin's
+    `episode_name`, `added_ago`, ...), so on each slice the binding reads that
+    item's own value, with the element's replacements applied. Returns None
+    when the element doesn't bind to one of the item's parts.
+    """
+    if not feed_entity or not isinstance(item, dict) or el.get("show") != "attribute":
+        return None
+    if str(el.get("entity", "")).strip() != feed_entity:
+        return None
+    if el.get("attribute") not in item:
+        return None
+    return binding.local_value(el, {feed_entity: {"attributes": item}})
 
 
 def inspect_category_subitems(

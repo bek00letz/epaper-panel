@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+Add-on only; no firmware change.
+
+- **Jellyfin's details on their own.** A Jellyfin source still has `detail`
+  ("2 new episodes · yesterday"), unchanged, and now also each part of it:
+  `episode_name`, `episode_number` (S02E04), `new_episodes` (a number),
+  `what_is_new` (the episode name, "2 new episodes" or "film"), `kind`
+  (episode, series or film), `added_ago` ("yesterday") and `added` (the date
+  and time it arrived). Pick them under "One of its details".
+- **Pages that step through what's new** now show each item's own value for
+  any of these, not the first item's on every step. Replacements you set on
+  `detail` now apply on every step too, not just the first.
+
 ## 0.10.0
 A new editor. Add-on only; no firmware change. The previous editor is still
 there for now: add `?classic=1` to the editor's address.
