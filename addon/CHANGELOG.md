@@ -1,7 +1,59 @@
 # Changelog
 
 ## 0.10.1 (unreleased)
-Add-on only; no firmware change.
+**Firmware change:** after updating, install the panel again from Panel
+setup (Install in the ESPHome Device Builder). Until then the old firmware
+keeps working as before.
+
+- **Slow or dead services no longer hold anything up.** Your data sources
+  (Jellyfin, web addresses, statistics) are fetched in the background, like
+  the sports and flight widgets already were. A server that's slow, asleep or
+  silent can't delay the panel or Send any more; a statistics query that
+  never answers gives up after 15 seconds.
+- **A service that stops answering says so.** Each one (ESPN,
+  Flightradar24, OpenSky, the racing calendars, each data source) gets a
+  problem sensor in Home Assistant, on once it has failed for five minutes,
+  with the error and its last success. You can build an automation on it.
+  The editor's status (`/api/status`) lists them too.
+- **Entities stay put while their source is down.** A source that fails for
+  an hour used to have its entity removed from Home Assistant, losing its
+  name and area. Now only a value nothing produces any more is removed.
+- **Your refresh interval is the contract.** Pages coming and going (a match
+  starting, planes overhead) no longer make the add-on wake the panel early.
+  It waits for the panel's own interval, which matters on a battery. Alerts,
+  quiet hours and what you do yourself (Send, Push, the Refresh button) still
+  update it at once.
+- **More pages fit, and nothing is left out silently.** The panel now holds
+  2 MB of pages (about 77 on the 5.79"), and says how much it holds. If the
+  rotation needs more, every page keeps its first item and the extras are
+  shared out; within a page, your teams come first, then live games, then
+  upcoming, then finished; the closest planes; the newest episodes. What was
+  left out shows in `sensor.epaper_panel_pages`. A sports widget can follow
+  several teams: "Arsenal, Lakers".
+- **Asleep, alerts and Home Assistant.** An alert still shows over sleep, and
+  the panel now goes back to sleep afterwards (unless someone pressed a
+  button meanwhile). Home Assistant's "show page" and "next page" now wake the
+  panel *and* go there, and don't count as someone standing at it.
+- **A failed download while asleep is retried** (30 s, then longer), instead
+  of leaving the panel asleep all morning when the wake-up download failed.
+  A refresh asked for during a download now follows it instead of being
+  dropped.
+- **Fixed:** errors from Home Assistant, Jellyfin or a web source wrote the
+  add-on's Home Assistant token or the source's key into the add-on's log.
+  Errors are now described without them.
+- **Fixed:** two renders at once could put the previous pages back after a
+  Send, until the panel's next refresh.
+- **Fixed:** a page with a broken number (an empty "hours", say) stopped every
+  render; now only that page is left out.
+- **Fixed:** renaming a data source erased its saved key.
+- **Fixed:** with both flight services down, the last list of planes was
+  shown for hours; now at most five minutes. With no planes overhead, "closest
+  aircraft" is cleared instead of keeping the last one.
+- **Fixed:** a page listed twice in the rotation shares no identity with its
+  first copy, so a lock on it stays there.
+- **Fixed:** a very large page step from Home Assistant could freeze the
+  panel until it restarted; a non-ASCII token on the LAN port caused an
+  error instead of a refusal.
 
 - **A name and a face.** The add-on is now called e-Paper Panel, "e-Paper"
   in the sidebar, and has its own icon and logo: the panel in its frame,

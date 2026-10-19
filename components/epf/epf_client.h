@@ -22,7 +22,12 @@ class DisplayBufferAccessor : public esphome::display::DisplayBuffer {
   static uint8_t *raw(esphome::display::DisplayBuffer *d) { return static_cast<DisplayBufferAccessor *>(d)->buffer_; }
 };
 
-constexpr size_t BUFFER_CAPACITY = 1048576;  // per buffer, in PSRAM
+// Per buffer, in PSRAM. Two of the larger size fit an N8R8 board's 8 MB with
+// room to spare; a board that can't give that much gets the smaller one. The
+// panel tells the add-on which it got (?cap=), and the add-on fits the frame
+// file to it.
+constexpr size_t BUFFER_CAPACITY = 2 * 1048576;
+constexpr size_t BUFFER_CAPACITY_SMALL = 1048576;
 
 inline esp_err_t epf_http_event_(esp_http_client_event_t *evt) {
   if (evt->event_id == HTTP_EVENT_ON_HEADER && evt->user_data && strcasecmp(evt->header_key, "ETag") == 0)
@@ -42,7 +47,7 @@ class EpfClient {
   bool start_fetch(const std::string &url, esphome::display::DisplayBuffer *epd) {
     if (state_.load(std::memory_order_acquire) != IDLE) return false;
     if (!alloc_()) return false;
-    url_ = url;
+    url_ = url + (url.find('?') == std::string::npos ? "?" : "&") + "cap=" + std::to_string(capacity_);
     send_etag_ = current_etag_;
     native_w_ = epd ? epd->get_native_width() : 0;
     native_h_ = epd ? epd->get_native_height() : 0;
@@ -104,16 +109,20 @@ class EpfClient {
 
   bool alloc_() {
     if (front_buf_ && back_buf_) return true;
-    front_buf_ = (uint8_t *) heap_caps_malloc(BUFFER_CAPACITY, MALLOC_CAP_SPIRAM);
-    back_buf_ = (uint8_t *) heap_caps_malloc(BUFFER_CAPACITY, MALLOC_CAP_SPIRAM);
-    if (!front_buf_ || !back_buf_) {
-      ESP_LOGE(TAG, "Couldn't allocate 2 x %u KB in PSRAM", (unsigned) (BUFFER_CAPACITY / 1024));
+    for (size_t cap : {BUFFER_CAPACITY, BUFFER_CAPACITY_SMALL}) {
+      front_buf_ = (uint8_t *) heap_caps_malloc(cap, MALLOC_CAP_SPIRAM);
+      back_buf_ = (uint8_t *) heap_caps_malloc(cap, MALLOC_CAP_SPIRAM);
+      if (front_buf_ && back_buf_) {
+        capacity_ = cap;
+        ESP_LOGI(TAG, "Frame buffers: 2 x %u KB in PSRAM", (unsigned) (cap / 1024));
+        return true;
+      }
       heap_caps_free(front_buf_);
       heap_caps_free(back_buf_);
       front_buf_ = back_buf_ = nullptr;
-      return false;
     }
-    return true;
+    ESP_LOGE(TAG, "Couldn't allocate frame buffers in PSRAM");
+    return false;
   }
 
   static void task_entry_(void *arg) {
@@ -146,8 +155,12 @@ class EpfClient {
       } else if (status == 200) {
         bool full = false;
         while (true) {
-          if (total >= BUFFER_CAPACITY) { full = true; break; }
-          int n = esp_http_client_read(client, (char *) back_buf_ + total, BUFFER_CAPACITY - total);
+          if (total >= capacity_) {
+            char extra;                     // exactly full is fine; one byte more is not
+            full = esp_http_client_read(client, &extra, 1) > 0;
+            break;
+          }
+          int n = esp_http_client_read(client, (char *) back_buf_ + total, capacity_ - total);
           if (n < 0) { total = 0; break; }
           if (n == 0) break;
           total += (size_t) n;
@@ -169,6 +182,7 @@ class EpfClient {
   FetchResult task_result_{FetchResult::OK};
   uint8_t *front_buf_{nullptr};
   uint8_t *back_buf_{nullptr};
+  size_t capacity_{0};
   int native_w_{0}, native_h_{0};
   std::string url_, send_etag_, incoming_etag_, current_etag_;
   Stream stream_, pending_;

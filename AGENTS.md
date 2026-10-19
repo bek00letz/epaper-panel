@@ -102,9 +102,10 @@ YAML comes only from `addon/app/firmware/panel.yaml`. After changing it, run
 - **Changing navigation state does nothing on screen on its own.** Follow it
   with `script.execute: redraw`, or the change only appears at the next
   unrelated refresh. This is what made the hold indicator look stuck.
-- **Every input goes through `PanelController::dispatch()`.** Don't call
-  navigation methods directly (they're private): the waveform policy relies
-  on dispatch to know a person is at the panel.
+- **Every input goes through `PanelController::dispatch()` (a person) or
+  `remote()` (Home Assistant, automations).** Don't call navigation methods
+  directly (they're private): the waveform policy and sleep rely on knowing
+  whether a person is at the panel.
 - **Full refreshes are the policy's decision** (`begin_redraw()` in the redraw
   script). Don't call `force_full_update()` anywhere else.
 - **Only the main loop touches the front buffer and the display.** The
@@ -169,9 +170,15 @@ When touching display code, `it.image()` at a negative offset is a trap: see
 ## Talking to Home Assistant and the panel
 
 - **A render never waits on an outside service.** Anything that calls ESPN,
-  Flightradar24, OpenSky, a racing calendar, or a slow Home Assistant
-  service goes through `live_data` (`@runtime.live(seconds)`, see `sources/`), and
-  callers must cope with "no value yet".
+  Flightradar24, OpenSky, a racing calendar, a data source, or a slow Home
+  Assistant service goes through `live_data` (`@runtime.live(seconds)`, see
+  `sources/`; `entities.publish_sources` for `feeds/`), and callers must cope
+  with "no value yet".
+- **A failing service must be visible.** A new service's host goes in
+  `health.SERVICES`; anything else reports with `health.ok()` /
+  `health.fail()`. That's what the problem sensors in Home Assistant show.
+- **Only alerts, quiet hours and people wake the panel early.** Never push on
+  a content or shape change: the panel's refresh interval is the user's.
 
 - **Never guess an entity ID or an action name** from a device name. Find the
   panel through `panel_link.PanelLink` (service list, registry unique_ids).
@@ -182,6 +189,11 @@ When touching display code, `it.image()` at a negative offset is a trap: see
   it, and show the truth in the editor. Don't report success you didn't get.
 
 ## Security & data hygiene
+
+- **Errors reach logs and responses only through `health.describe(exc)`.**
+  Never `repr(exc)` or `{exc!r}`: aiohttp's errors carry the request headers,
+  which is how the add-on's Home Assistant token and Jellyfin's key ended up in
+  the log before 0.10.1.
 
 - **The LAN port serves frames and nothing else that matters.** No layouts,
   no page names, no quiet-hours reason (it can reveal whether anyone is home).

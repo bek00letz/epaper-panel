@@ -68,14 +68,14 @@ api:
       variables:
         index: int
       then:
-        - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::GOTO_PAGE, index);'
+        - lambda: 'epf::PanelController::instance().remote(epf::NavAction::GOTO_PAGE, index);'
         - script.execute: redraw
     - action: show_category
       variables:
         category: int
         sub: int
       then:
-        - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::GOTO_CAT_SUB, category, sub);'
+        - lambda: 'epf::PanelController::instance().remote(epf::NavAction::GOTO_CAT_SUB, category, sub);'
         - script.execute: redraw
     # Relative paging, for remotes and Home Assistant automations.
     - action: page_step
@@ -86,31 +86,31 @@ api:
         - script.execute: redraw
     - action: mode_toggle
       then:
-        - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::MODE_TOGGLE);'
+        - lambda: 'epf::PanelController::instance().remote(epf::NavAction::MODE_TOGGLE);'
         - script.execute: redraw
     - action: category_step
       variables:
         delta: int
       then:
-        - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::CAT_STEP, delta);'
+        - lambda: 'epf::PanelController::instance().remote(epf::NavAction::CAT_STEP, delta);'
         - script.execute: redraw
     - action: sub_step
       variables:
         delta: int
       then:
-        - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::SUB_STEP, delta);'
+        - lambda: 'epf::PanelController::instance().remote(epf::NavAction::SUB_STEP, delta);'
         - script.execute: redraw
     - action: hold_toggle
       then:
-        - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::PIN_PAGE_TOGGLE);'
+        - lambda: 'epf::PanelController::instance().remote(epf::NavAction::PIN_PAGE_TOGGLE);'
         - script.execute: redraw
     - action: category_pin_toggle
       then:
-        - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::PIN_CAT_TOGGLE);'
+        - lambda: 'epf::PanelController::instance().remote(epf::NavAction::PIN_CAT_TOGGLE);'
         - script.execute: redraw
     - action: lock_toggle
       then:
-        - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::LOCK_TOGGLE);'
+        - lambda: 'epf::PanelController::instance().remote(epf::NavAction::LOCK_TOGGLE);'
         - script.execute: redraw
 
 # Updates are encrypted with the same key as the Home Assistant connection
@@ -144,7 +144,7 @@ switch:
       - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::SLEEP);'
       - script.execute: redraw
     turn_off_action:
-      - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::WAKE);'
+      - lambda: 'epf::PanelController::instance().remote(epf::NavAction::WAKE);'
       - script.execute: redraw
 
 @DISPLAY_BLOCK@
@@ -352,8 +352,13 @@ script:
           auto &panel = epf::PanelController::instance();
           panel.set_pending_refetch(false);
           panel.reset_fetch_idle();
-          if (!epf::EpfClient::instance().start_fetch("${frames_url}", id(epd)))
-            ESP_LOGD("panel", "A download is already running");
+          auto &client = epf::EpfClient::instance();
+          if (!client.start_fetch("${frames_url}", id(epd)) && client.busy()) {
+            // Asked while a download runs: that one may carry the old pages.
+            // Download again once it's done.
+            panel.set_pending_refetch(true);
+            ESP_LOGD("panel", "A download is running; another follows it");
+          }
 
 interval:
   # Pick up a finished download. Cheap when there is none.
@@ -366,13 +371,12 @@ interval:
           if (panel.take_wake_fetch()) id(refetch).execute();   // just woke: get fresh frames
           if (!client.poll(result)) return;
           if (result == epf::FetchResult::OK) {
+            panel.note_fetch(true);
             panel.on_stream_loaded(client.stream());
             id(redraw).execute();
           } else {
-            if (result != epf::FetchResult::NOT_MODIFIED) {
-              int every = std::max(30, (int) (id(panel_refresh_interval).state * 60.0f));
-              panel.retry_fetch_in(30, every);
-            }
+            // Failed: owed, and retried with a backoff even while resting.
+            panel.note_fetch(result == epf::FetchResult::NOT_MODIFIED);
             // Nothing new, but a redraw is still owed (e.g. the clear on a
             // long press of the bottom button).
             if (panel.pending_redraw()) id(redraw).execute();
@@ -383,18 +387,17 @@ interval:
       - lambda: |-
           auto &panel = epf::PanelController::instance();
           panel.tick_seconds(5);
-          if (panel.pending_refetch() && !panel.should_defer_refetch()) {
+          if (panel.pending_refetch() && !panel.should_defer_refetch() && !epf::EpfClient::instance().busy()) {
             ESP_LOGI("panel", "Scrolling stopped: downloading the deferred frames");
             id(refetch).execute();
           }
           if (panel.check_auto_rotate()) id(redraw).execute();
           else if (panel.idle_clear_due()) id(redraw).execute();
           // The panel's own timer. Asleep or in quiet hours, it waits for
-          // the add-on or a press instead (the add-on retries until delivered).
-          if (!panel.resting()) {
-            int every = std::max(30, (int) (id(panel_refresh_interval).state * 60.0f));
-            if (panel.fetch_idle_sec() >= every) {
-              panel.reset_fetch_idle();
-              id(request_refetch).execute();
-            }
+          // the add-on or a press instead (the add-on retries until
+          // delivered), except to retry a download that failed.
+          int every = std::max(30, (int) (id(panel_refresh_interval).state * 60.0f));
+          if (panel.fetch_due(every)) {
+            panel.reset_fetch_idle();
+            id(request_refetch).execute();
           }

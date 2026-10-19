@@ -108,11 +108,25 @@ machine) with no ESP-IDF in it, and is compiled and tested on the host by
   that every offset and count stays inside the file. The main loop swaps it
   in. The dial, the buttons and the Home Assistant connection never wait on
   the network.
+- **The panel holds 2 MB of pages** (two 2 MB buffers in PSRAM, or 1 MB on a
+  board that can't spare it) and says so on every download (`?cap=`). The
+  add-on fits the frame file to it (`frames.fit_counts`): every page keeps its
+  first item, extra items are shared out in rotation order, and pages at the
+  end are left out only if one each doesn't fit. Items within a page are in
+  order of importance (your teams, live, upcoming, finished; the closest
+  aircraft; the newest episode). What was left out is in
+  `sensor.epaper_panel_pages` and `/api/status` (`fit`).
+- **A failed download is owed** (`note_fetch`, `fetch_due`): retried after
+  30 s, doubling to 10 min, even while resting, because only a download can
+  tell a sleeping panel that quiet hours are over. A refresh asked for while a
+  download runs follows it.
 - **While someone is scrolling** (15 s after the last press), new frames
   wait, so the pages don't change under them.
-- **One input path.** Every button, the dial, remotes and Home Assistant
-  actions call `PanelController::dispatch(NavAction)`. That's also how the
-  panel knows whether a person caused a redraw.
+- **One input path, two doors.** The buttons and the dial call
+  `PanelController::dispatch(NavAction)`: a person is at the panel, so a press
+  while asleep only wakes it, and rotation and ghost clearing hold off.
+  Home Assistant actions call `remote(NavAction)`: the panel wakes *and* does
+  what was asked, and nobody is counted as standing there.
 - **Ghost clearing** (`WaveformPolicy`). A person never causes a full
   refresh. Once N partials have built up (default 10, the "Ghost clear after"
   setting), the next automatic change is full. There's a fallback after 60 s
@@ -141,8 +155,15 @@ render) live in one record inside the add-on, `runtime.PUBLISHED`.
   Supervisor hands over the broker login (`services: mqtt:want`). Each value
   is a sensor with a `unique_id` under an "E-Paper Studio" device, has
   availability through the add-on's last will, and is published only when it
-  changes. Values unused for an hour are withdrawn, never in the first hour
-  after a start.
+  changes. A value is withdrawn only when nothing configured produces it any
+  more and it hasn't been refreshed for an hour (never in the first hour after
+  a start). A source that is *failing* still produces it (`PUBLISHER.keep`),
+  so an outage never deletes an entity.
+- **Every outside service reports its health** (`health.py`): the widgets'
+  services by host through aiohttp tracing on the shared session, and each
+  data source. Home Assistant gets one problem sensor per service
+  (`binary_sensor.epaper_problem_<name>`, on after five minutes of failing),
+  and `/api/status` lists them (`services`).
 - 0.8.x also wrote every value straight into the state machine
   (`POST /api/states`), so each sensor existed twice and the MQTT copy became
   `_2`. That path is switched off (`PUBLISH_VIA_STATES_API`). A one-time step
@@ -156,7 +177,9 @@ the background; a render only reads what's already there and never waits on
 an outside service. The first read of something new returns at once, using the
 caller's fallback, and schedules the fetch. When it lands, the render loop
 wakes, so a new widget fills in within seconds. A failed fetch keeps the last
-good value. The seven fetchers in `sources/` are decorated `@runtime.live(seconds)`;
+good value, unless it has a `stale_after` age (an aircraft list older than five
+minutes is dropped). Your data sources (`feeds/`) go through the same store,
+each on its own interval. The seven fetchers in `sources/` are decorated `@runtime.live(seconds)`;
 their own caches still stop them hitting a service more often than it allows.
 The editor's preview (and its aircraft list) wait for fresh data, because
 there a person asked.
@@ -189,14 +212,19 @@ Assistant. It never guesses names:
 - **Entities** (refresh interval, IP, Wi-Fi) are found by registry
   `unique_id`, which ESPHome builds from the firmware's entity names
   (`<MAC>/0/number/Refresh interval`). It survives any rename of the entity ID.
-- **A refresh is delivered or kept pending.** New content, alerts and the
-  quiet-hours wake-up call `request_refresh()`. `panel_link_loop` retries
+- **A refresh is delivered or kept pending.** Alerts, quiet hours starting or
+  ending, and what a person does (Send, Push, the Refresh button, the action
+  endpoint) call `request_refresh()`. `panel_link_loop` retries
   with a backoff (5 s, 15 s, 30 s, then every 60 s) until Home Assistant
   confirms it. This matters most when quiet hours end, because the panel
   doesn't fetch on its own until it's woken.
 - **The panel's own refresh interval is the one source of truth** for how
-  often it fetches. The add-on only pushes when there is something new
+  often it fetches. Pages coming and going (a match starting, planes
+  overhead) wait for it: a panel on a battery may fetch once an hour, and the
+  add-on must not override that. Only the reasons above wake it early
   (`PROACTIVE_TIMED_PUSH` is off).
+- **One render at a time.** `refresh_frames` holds a lock, so an older render
+  can never finish last and put old pages back.
 - **Live widget pages linger** (`render/linger.py`). Once a widget page has
   appeared, it stays 5 minutes after its condition last held, so a plane at
   the edge of the radius doesn't reshape the rotation every minute.

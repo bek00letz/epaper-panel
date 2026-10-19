@@ -5,6 +5,7 @@
 
 #include "../../components/epf/epf_core.h"
 
+#include <chrono>
 #include <cstdio>
 #include <fstream>
 #include <iterator>
@@ -243,6 +244,75 @@ static void test_sleep() {
   pc.dispatch(A::PIN_PAGE_TOGGLE);
 }
 
+static epf::Stream alert_stream() {
+  epf::Stream s;
+  s.header.page_count = 1;
+  s.header.flags = epf::FLAG_ALERT_INTERRUPT;
+  s.categories.push_back({7900, 0, 1, 100, 0});
+  s.pages = {{7901, 7900, 0, 0}};
+  return s;
+}
+
+// Audit 2026-10-19: Home Assistant commands, alerts over sleep, retries while
+// resting, and huge steps.
+static void test_remote_alerts_and_fetches() {
+  auto &pc = epf::PanelController::instance();
+  using A = epf::NavAction;
+  epf::Stream day = sleep_stream(false), night = sleep_stream(true, 7199);
+  if (pc.pinned()) pc.dispatch(A::PIN_PAGE_TOGGLE);
+  if (pc.cat_pinned()) pc.dispatch(A::PIN_CAT_TOGGLE);
+  if (pc.sleeping()) pc.dispatch(A::WAKE);
+  pc.on_stream_loaded(day);
+
+  // Home Assistant while asleep: wakes and goes where it was asked.
+  pc.dispatch(A::SLEEP);
+  pc.tick_seconds(30);
+  pc.remote(A::GOTO_PAGE, 1);
+  CHECK(!pc.sleeping() && pc.page() == 2, "show_page while asleep wakes and goes to the page (page %d)", pc.page());
+  CHECK(!pc.should_defer_refetch(), "a Home Assistant command isn't a person at the panel");
+
+  // Asleep by hand, an alert comes and goes: back to sleep.
+  pc.dispatch(A::SLEEP);
+  pc.on_stream_loaded(alert_stream());
+  CHECK(!pc.sleeping(), "the alert shows over sleep");
+  pc.on_stream_loaded(day);
+  CHECK(pc.sleeping(), "after the alert the panel goes back to sleep");
+  // ...unless someone pressed a button during the alert.
+  pc.on_stream_loaded(alert_stream());
+  pc.dispatch(A::NEXT);
+  pc.on_stream_loaded(day);
+  CHECK(!pc.sleeping(), "a press during the alert leaves it awake");
+
+  // A failed download while resting is retried, with a backoff.
+  pc.on_stream_loaded(night);
+  CHECK(pc.sleeping() && pc.resting(), "quiet hours: asleep and resting");
+  pc.reset_fetch_idle();
+  pc.tick_seconds(600);
+  CHECK(!pc.fetch_due(60), "resting: no timed downloads");
+  pc.note_fetch(false);
+  pc.tick_seconds(25);
+  CHECK(!pc.fetch_due(60), "a failed download isn't retried at once");
+  pc.tick_seconds(10);
+  CHECK(pc.fetch_due(60), "a failed download is retried while resting");
+  pc.reset_fetch_idle();
+  pc.note_fetch(false);
+  pc.tick_seconds(35);
+  CHECK(!pc.fetch_due(3600), "the second retry waits longer");
+  pc.tick_seconds(30);
+  CHECK(pc.fetch_due(3600), "...60 s");
+  pc.note_fetch(true);
+  pc.tick_seconds(600);
+  CHECK(!pc.fetch_due(60), "once a download works, resting means no timed downloads again");
+  pc.dispatch(A::WAKE);
+
+  // A huge step costs nothing.
+  auto t0 = std::chrono::steady_clock::now();
+  pc.step(2000000000);
+  pc.step(-2147483647 - 1);
+  double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+  CHECK(ms < 5, "page_step(2,000,000,000) took %.1f ms", ms);
+}
+
 int main(int argc, char **argv) {
   if (argc < 2) {
     std::printf("usage: core_test <fixture-dir>\n");
@@ -253,6 +323,7 @@ int main(int argc, char **argv) {
   test_controller(argv[1]);
   test_waveform();
   test_sleep();
+  test_remote_alerts_and_fetches();
   if (failures) {
     std::printf("%d check(s) failed\n", failures);
     return 1;

@@ -368,19 +368,29 @@ class PanelController {
     return inst;
   }
 
-  void dispatch(NavAction action, int param = 0, int param2 = 0) {
-    ESP_LOGI(TAG, "Input: %s (%d, %d)", nav_name(action), param, param2);
+  // A person at the panel: its buttons and dial.
+  void dispatch(NavAction action, int param = 0, int param2 = 0) { handle_(action, param, param2, true); }
+
+  // Home Assistant, a remote or an automation: nobody is standing at the
+  // panel. It wakes and does what was asked (a press only wakes), and it
+  // doesn't hold off rotation or ghost clearing as a person would.
+  void remote(NavAction action, int param = 0, int param2 = 0) { handle_(action, param, param2, false); }
+
+ private:
+  void handle_(NavAction action, int param, int param2, bool person) {
+    person_ = person;
+    ESP_LOGI(TAG, "Input: %s (%d, %d)%s", nav_name(action), param, param2, person ? "" : " from Home Assistant");
     if (action == NavAction::SLEEP || (action == NavAction::SLEEP_TOGGLE && !sleeping_)) {
       enter_sleep_(true);
       return;
     }
     if (action == NavAction::WAKE || action == NavAction::SLEEP_TOGGLE) {
-      if (sleeping_) wake_(true);
+      if (sleeping_) wake_(person);
       return;
     }
     if (sleeping_ && action != NavAction::CLEAR_GHOSTING) {
-      wake_(true);                          // the first press only wakes the panel
-      return;
+      wake_(person);
+      if (person) return;                   // the first press only wakes the panel
     }
     switch (action) {
       case NavAction::NEXT: page_step_(param > 0 ? param : 1); break;
@@ -399,9 +409,28 @@ class PanelController {
     }
   }
 
+ public:
   // Home Assistant's page_step(delta): forward or back by |delta|.
   void step(int delta) {
-    if (delta != 0) dispatch(delta > 0 ? NavAction::NEXT : NavAction::PREV, delta > 0 ? delta : -delta);
+    if (delta == 0) return;
+    long long n = delta > 0 ? (long long) delta : -(long long) delta;
+    remote(delta > 0 ? NavAction::NEXT : NavAction::PREV, (int) (n > 1000000 ? 1000000 : n));
+  }
+
+  // Downloads. A failed one is owed: retried with a backoff (30 s, doubling
+  // to 10 min) even while resting, because only a download can tell a
+  // sleeping panel that quiet hours are over. Otherwise the panel's own
+  // interval decides, and resting (asleep, quiet hours) skips it.
+  void note_fetch(bool ok) {
+    if (ok) { fetch_owed_ = false; owed_retry_sec_ = 30; return; }
+    if (fetch_owed_) owed_retry_sec_ = owed_retry_sec_ >= 300 ? 600 : owed_retry_sec_ * 2;
+    fetch_owed_ = true;
+    fetch_idle_sec_ = 0;
+  }
+  bool fetch_owed() const { return fetch_owed_; }
+  bool fetch_due(int interval_sec) const {
+    if (fetch_owed_) return fetch_idle_sec_ >= (owed_retry_sec_ < interval_sec ? owed_retry_sec_ : interval_sec);
+    return !resting() && fetch_idle_sec_ >= interval_sec;
   }
 
   // Called by the redraw script just before the display updates: whether this
@@ -595,7 +624,13 @@ class PanelController {
 
     if (s.header.flags & FLAG_ALERT_INTERRUPT) {
       // The alert owns the screen, even over sleep. Locks are kept and come
-      // back with the rotation when the alert is over.
+      // back with the rotation when the alert is over, and so does sleep:
+      // a panel asleep before the alert goes back to sleep after it, unless
+      // someone pressed a button in the meantime.
+      if (!alert_) {
+        asleep_before_alert_ = sleeping_;
+        manual_before_alert_ = sleep_manual_;
+      }
       sleeping_ = false;
       cat_idx_ = sub_idx_ = page_ = 0;
       sub_mode_ = false;
@@ -603,6 +638,7 @@ class PanelController {
       update_ids_(false);
       return;
     }
+    bool alert_ended = alert_;
     alert_ = false;
 
     if (pinned_ && pinned_sub_id_ && find_page_(pinned_sub_id_)) {
@@ -638,12 +674,16 @@ class PanelController {
     } else if (sleeping_ && !sleep_manual_ && was_quiet && !quiet_) {
       ESP_LOGI(TAG, "Quiet hours are over: waking up");
       wake_(false);
+    } else if (alert_ended && asleep_before_alert_ && has_sleep_) {
+      ESP_LOGI(TAG, "The alert is over: back to sleep");
+      enter_sleep_(manual_before_alert_);
     } else if (sleeping_ && sleep_id == sleep_sub_id_) {
       // Still asleep and the sleep screen hasn't changed: nothing to redraw.
       pending_redraw_ = redraw_automatic_ = false;
       redraw_forced_ = false;
     }
     sleep_sub_id_ = sleep_id;
+    if (alert_ended) asleep_before_alert_ = false;
   }
 
   OverlayState overlay_state() const {
@@ -690,7 +730,14 @@ class PanelController {
   int cats_() const { return offsets_.empty() ? 1 : (int) offsets_.size(); }
   int size_(int c) const { return (c >= 0 && c < (int) sizes_.size() && sizes_[c] > 0) ? sizes_[c] : 1; }
   int offset_(int c) const { return (c >= 0 && c < (int) offsets_.size()) ? offsets_[c] : c; }
-  void touch_() { idle_sec_ = 0; user_cool_sec_ = 0; pending_redraw_ = true; redraw_by_person_ = true; }
+  void touch_() {
+    idle_sec_ = 0;
+    pending_redraw_ = true;
+    if (!person_) { redraw_automatic_ = true; return; }
+    user_cool_sec_ = 0;
+    redraw_by_person_ = true;
+    asleep_before_alert_ = false;           // someone is here: leave it awake after an alert
+  }
   void remember_sub_(int c, int sz) {
     if ((int) sub_pos_.size() <= c) sub_pos_.resize(cats_(), 0);
     sub_pos_[c] = (sub_idx_ + 1) % sz;
@@ -704,6 +751,8 @@ class PanelController {
   // Step through categories, never landing on the sleep screen.
   int step_category_(int from, int delta) const {
     int cats = cats_(), c = from, n = delta < 0 ? -delta : delta, dir = delta < 0 ? -1 : 1;
+    int ring = (has_sleep_ && cats > 1) ? cats - 1 : cats;    // the sleep screen isn't stepped onto
+    n %= ring;                              // a huge step must not spin the main loop
     for (int i = 0; i < n; i++) {
       c = ((c + dir) % cats + cats) % cats;
       if (has_sleep_ && c == 0 && cats > 1) c = ((c + dir) % cats + cats) % cats;
@@ -786,6 +835,8 @@ class PanelController {
   int rotate_sec_{30}, idle_sec_{0}, user_cool_sec_{999}, fetch_idle_sec_{0};
   bool pending_redraw_{false}, pending_refetch_{false};
   bool redraw_forced_{false}, redraw_by_person_{false}, redraw_automatic_{false};
+  bool person_{true}, asleep_before_alert_{false}, manual_before_alert_{false}, fetch_owed_{false};
+  int owed_retry_sec_{30};
   WaveformPolicy waveform_;
   std::vector<int> offsets_, sizes_, pill_w_, sub_pos_;
   std::vector<uint32_t> cat_ids_, sub_ids_;
