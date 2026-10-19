@@ -22,7 +22,7 @@ from config import ADDON_VERSION, FRAME_PORT, HA_BASE, HA_TOKEN, INGRESS_GATEWAY
 from fixture import load_fixture
 from frames import _etag, _png, enrich_page_values, refresh_frames, split_page_values
 from ha import curve_series, ha_json, resolve_templates
-from layouts_store import load_layouts, load_sources, sanitize_layouts, save_layouts
+from layouts_store import clear_draft, layouts_etag, load_draft, load_layouts, load_sources, sanitize_layouts, save_draft, save_layouts
 from panel_ops import push_panel_update, step_panel_page
 from panel_setup import _detect_external_port, _detect_panel_connection, _new_api_key, generate_esphome_yaml, load_panel_setup, save_panel_setup
 from sources.flights import fetch_overhead_aircraft
@@ -271,8 +271,21 @@ async def api_panel_refresh(request):
     })
 
 
+def _quoted(tag: str) -> str:
+    return f'"{tag}"'
+
+
+def _if_match(request) -> str | None:
+    """The version a client says it edited, or None when it didn't say."""
+    raw = request.headers.get("If-Match")
+    if raw is None:
+        return None
+    return raw.strip().removeprefix("W/").strip('"')
+
+
 async def api_layouts_get(request):
-    return web.json_response(load_layouts())
+    spec = load_layouts()
+    return web.json_response(spec, headers={"ETag": _quoted(layouts_etag(spec))})
 
 
 async def api_layouts_put(request):
@@ -283,7 +296,20 @@ async def api_layouts_put(request):
         clean = sanitize_layouts(spec)
     except ValueError as exc:
         raise web.HTTPBadRequest(text=str(exc))
+    # A client that says which version it edited gets a 409 if someone saved
+    # in between, with what's there now so it can merge. Without If-Match the
+    # save goes through as it always has.
+    expected = _if_match(request)
+    if expected is not None and expected != "*":
+        current = load_layouts()
+        current_tag = layouts_etag(current)
+        if expected != current_tag:
+            return web.json_response({"error": "These pages were changed somewhere else since you opened them.",
+                                      "current": current, "etag": current_tag},
+                                     status=409, headers={"ETag": _quoted(current_tag)})
     save_layouts(clean)
+    clear_draft()                                         # sent: nothing is waiting any more
+    tag = layouts_etag(load_layouts())
     try:
         await refresh_frames(runtime.SESSION)
     except Exception as exc:
@@ -295,7 +321,64 @@ async def api_layouts_put(request):
         "rotation": clean["rotation"],
         "rotate_seconds": clean["rotate_seconds"],
         "orientation": clean["orientation"],
-    })
+        "etag": tag,
+    }, headers={"ETag": _quoted(tag)})
+
+
+async def api_draft_get(request):
+    """Unsent editor changes, and the version of what's live."""
+    return web.json_response({"draft": load_draft(), "etag": layouts_etag()})
+
+
+async def api_draft_put(request):
+    """Save the editor's changes as you go, without sending them to the panel.
+
+    Body: {spec, base, base_etag}: the pages as edited, and the live pages they
+    started from. If-Match carries the draft version the client last saw; on a
+    mismatch (another window saved, or the draft was sent) the answer is 409
+    with the current draft and the live pages, so the client can merge.
+    """
+    body = await request.json()
+    if not isinstance(body, dict) or not isinstance(body.get("spec"), dict):
+        raise web.HTTPBadRequest(text="expected {spec, base, base_etag}")
+    try:
+        spec = sanitize_layouts(body["spec"])
+        base = sanitize_layouts(body["base"]) if isinstance(body.get("base"), dict) else None
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text=str(exc))
+    current = load_draft()
+    version = int(current.get("version") or 0) if current else 0
+    expected = _if_match(request)
+    if expected is not None and expected != "*" and expected != str(version):
+        live = load_layouts()
+        return web.json_response({"error": "These pages were changed in another window.",
+                                  "draft": current, "live": live, "etag": layouts_etag(live)}, status=409)
+    draft = {"version": version + 1, "base_etag": str(body.get("base_etag") or ""),
+             "base": base, "spec": spec, "saved_at": time.time()}
+    save_draft(draft)
+    return web.json_response({"saved": True, "version": draft["version"]})
+
+
+async def api_panel_device_get(request):
+    """The panel's Sleep and ghost-clearing settings, read through Home Assistant."""
+    return web.json_response(await runtime.LINK.device_settings())
+
+
+async def api_panel_device_post(request):
+    """Change one panel setting: {sleep: bool} | {ghost_after: n} | {ghost_mode: s} | {clear_ghosting: true}."""
+    body = await request.json()
+    if not isinstance(body, dict) or len(body) != 1:
+        raise web.HTTPBadRequest(text="expected one setting")
+    key, value = next(iter(body.items()))
+    ok, err = await runtime.LINK.set_device_setting(key, value)
+    return web.json_response({"ok": ok, "error": err or None}, status=200 if ok or key in
+                             ("sleep", "ghost_after", "ghost_mode", "clear_ghosting") else 400)
+
+
+async def api_draft_delete(request):
+    """Throw away unsent changes (the editor offers this as one undoable step)."""
+    clear_draft()
+    return web.json_response({"cleared": True})
 
 
 async def api_entities(request):
@@ -647,7 +730,9 @@ async def api_displays(request):
 
 
 async def editor_index(request):
-    index = WEB_DIR / "index.html"
+    # The editor before 0.10, kept reachable until the new one has proven itself.
+    name = "classic.html" if request.query.get("classic") in ("1", "true") else "index.html"
+    index = WEB_DIR / name
     if not index.exists():
         return web.Response(text="Editor not built yet.", content_type="text/plain")
     return web.FileResponse(index, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
@@ -682,6 +767,12 @@ def make_apps():
         web.get("/api/strip.epf", editor_strip_epf),
         web.get("/api/layouts", api_layouts_get),
         web.put("/api/layouts", api_layouts_put),
+        web.get("/api/draft", api_draft_get),
+        web.put("/api/draft", api_draft_put),
+        web.delete("/api/draft", api_draft_delete),
+        web.get("/api/panel-device", api_panel_device_get),
+        web.post("/api/panel-device", api_panel_device_post),
+        web.get("/fonts/{name}", panel_font),
         web.get("/api/entities", api_entities),
         web.get("/api/attributes", api_attributes),
         web.get("/api/aircraft", api_aircraft),

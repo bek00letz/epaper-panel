@@ -19,6 +19,11 @@ def layouts_path() -> Path:
     return DATA_DIR / "layouts.json"
 
 
+def draft_path() -> Path:
+    """Editor changes saved as you go, not yet sent to the panel."""
+    return DATA_DIR / "draft.json"
+
+
 def panel_setup_path() -> Path:
     return DATA_DIR / "panel_setup.json"
 

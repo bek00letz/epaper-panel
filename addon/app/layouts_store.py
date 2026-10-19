@@ -1,5 +1,6 @@
 """Pages and data sources on disk: loading, migrating and checking what the editor saves."""
 
+import hashlib
 import json
 import os
 import re
@@ -141,10 +142,14 @@ def sanitize_layouts(spec: dict) -> dict:
     custom_presets = []
     if isinstance(raw_presets, list):
         for cp in raw_presets[:50]:
-            if isinstance(cp, dict) and cp.get("name") and isinstance(cp.get("elements"), list):
+            # The editor has always sent `title`; until 0.10 only `name` was
+            # kept, so every preset saved from the editor vanished.
+            title = cp.get("title") or cp.get("name") if isinstance(cp, dict) else None
+            if title and isinstance(cp.get("elements"), list):
                 custom_presets.append({
                     "id": str(cp.get("id") or f"custom_{len(custom_presets)+1}")[:40],
-                    "name": str(cp.get("name"))[:60],
+                    "name": str(title)[:60],
+                    "title": str(title)[:60],
                     "desc": str(cp.get("desc") or "Custom saved layout preset")[:140],
                     "tier": cp.get("tier") if cp.get("tier") in ("rotate", "when", "alert") else "rotate",
                     "show_if": migrate_legacy_entity_refs(str(cp.get("show_if") or "").strip()),
@@ -173,6 +178,39 @@ def sanitize_layouts(spec: dict) -> dict:
         "rotation": rotation,
         "pages": pages,
     }
+
+
+def layouts_etag(spec: dict | None = None) -> str:
+    """A version for the saved pages: changes whenever what's saved changes."""
+    if spec is None:
+        spec = load_layouts()
+    canon = json.dumps(spec, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(canon.encode()).hexdigest()[:16]
+
+
+def load_draft() -> dict | None:
+    """The editor's unsent changes: {version, base_etag, base, spec}, or None."""
+    try:
+        d = json.loads(config.draft_path().read_text())
+    except Exception:
+        return None
+    if not isinstance(d, dict) or not isinstance(d.get("spec"), dict):
+        return None
+    return d
+
+
+def save_draft(draft: dict) -> None:
+    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    tmp = config.draft_path().with_suffix(".json.tmp")
+    tmp.write_text(json.dumps(draft))
+    tmp.replace(config.draft_path())
+
+
+def clear_draft() -> None:
+    try:
+        config.draft_path().unlink()
+    except FileNotFoundError:
+        pass
 
 
 def save_layouts(spec):

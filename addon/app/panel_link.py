@@ -29,7 +29,15 @@ ENTITY_KEYS = {
     "refresh": ("number", "Refresh interval"),
     "ip": ("text_sensor", "Panel IP"),
     "wifi": ("sensor", "Panel Wi-Fi"),
+    # The panel's own settings, shown in the editor (firmware 0.9.5 and later).
+    "sleep": ("switch", "Sleep"),
+    "ghost_after": ("number", "Ghost clear after"),
+    "ghost_mode": ("select", "Ghost clearing"),
+    "clear_ghosting": ("button", "Clear ghosting"),
 }
+
+# What each device setting is, and how Home Assistant changes it.
+DEVICE_SETTINGS = ("sleep", "ghost_after", "ghost_mode", "clear_ghosting")
 
 DISCOVERY_TTL = 300.0
 RETRY_STEPS = (5.0, 15.0, 30.0, 60.0)
@@ -201,6 +209,66 @@ class PanelLink:
             return max(1, int(float(st.get("state"))))
         except (HassError, TypeError, ValueError, AttributeError):
             return None
+
+    async def device_settings(self) -> dict:
+        """The panel's Sleep and ghost-clearing settings as Home Assistant has them.
+
+        A setting the panel doesn't have (older firmware) or that Home
+        Assistant can't read is None, so the editor can leave it out.
+        """
+        await self.discover()
+        out = {"available": bool(self.node), "problem": "" if self.node else self.problem,
+               "sleep": None, "ghost_after": None, "ghost_mode": None, "ghost_modes": [],
+               "can_clear": bool(self.entities.get("clear_ghosting"))}
+        for key in ("sleep", "ghost_after", "ghost_mode"):
+            ent = self.entities.get(key)
+            if not ent:
+                continue
+            try:
+                st = await self.hass.rest("GET", f"/states/{ent}")
+            except HassError:
+                continue
+            val = st.get("state")
+            if val in (None, "", "unknown", "unavailable"):
+                continue
+            if key == "sleep":
+                out["sleep"] = val == "on"
+            elif key == "ghost_after":
+                try:
+                    out["ghost_after"] = int(float(val))
+                except (TypeError, ValueError):
+                    pass
+            else:
+                out["ghost_mode"] = val
+                out["ghost_modes"] = list((st.get("attributes") or {}).get("options") or [])
+        return out
+
+    async def set_device_setting(self, key: str, value) -> tuple[bool, str]:
+        """Change one of the panel's settings through Home Assistant. Returns (accepted, error)."""
+        if key not in DEVICE_SETTINGS:
+            return False, "not a panel setting"
+        if not await self.discover():
+            return False, self.problem
+        ent = self.entities.get(key)
+        if not ent:
+            return False, "this panel's firmware doesn't have that setting yet. Reinstall it from Panel setup"
+        if key == "sleep":
+            call = ("switch", "turn_on" if value else "turn_off", {"entity_id": ent})
+        elif key == "ghost_after":
+            try:
+                n = max(2, min(60, int(value)))
+            except (TypeError, ValueError):
+                return False, "the number of refreshes must be a whole number"
+            call = ("number", "set_value", {"entity_id": ent, "value": n})
+        elif key == "ghost_mode":
+            call = ("select", "select_option", {"entity_id": ent, "option": str(value)})
+        else:
+            call = ("button", "press", {"entity_id": ent})
+        try:
+            await self.hass.rest("POST", f"/services/{call[0]}/{call[1]}", json=call[2])
+            return True, ""
+        except HassError as exc:
+            return False, _human_error(str(exc))
 
     async def connection(self) -> dict:
         await self.discover()
