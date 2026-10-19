@@ -2,271 +2,300 @@
 
 # E-paper panel
 
-A Home Assistant add-on that renders your entities and live feeds onto an Elecrow CrowPanel e-paper display, with a drag-and-drop visual studio for designing every screen down to the pixel.
+A Home Assistant add-on for Elecrow's CrowPanel e-paper displays. It turns
+whatever you care about into calm, glanceable pages: on your desk under the
+monitor, by the bed, on the wall, or across the room from the sofa. You design
+the pages in a visual editor in Home Assistant's sidebar; the panel takes
+turns showing them, and a page appears only when it has something to say.
 
-![The pages it renders](docs/pages.png)
+![Pages the add-on draws](docs/pages.png)
 
-Designed around one constraint: the panel hangs about three metres from a sofa. At that distance a 25 px character is at the threshold of legibility and 110 px is effortless — on a 272 px-tall panel that means **bold, high-contrast typography and purposeful hierarchy**, rotating smoothly across screens, rather than a cramped grey dashboard you have to walk up to.
+## What it's good for
 
----
+- **The game you're missing at work.** A live score with the clock and the
+  scorers, for the Premier League, Champions League, La Liga, Bundesliga,
+  Serie A, NBA, NFL, MLB or NHL, for every match or just your team. The page
+  turns up before kick-off and leaves after the final whistle on its own.
+- **Race weekends.** Formula 1, Formula E, NASCAR and IndyCar: the top ten
+  with gaps and tyres while a session runs, and the countdown to the next one
+  the rest of the week.
+- **What's flying over.** When a plane comes near, a page shows its flight,
+  airline, route, height and speed, or a radar of everything around you.
+  Around your home, an airport you type in, or places you save.
+- **Your home's energy.** What the solar panels made today and this month,
+  the battery, the house's load, as big numbers, gauges, curves and bar charts.
+  Watts turn into kilowatts on their own.
+- **The house at a glance.** Inside and outside temperatures, whether a door
+  is open, where the cat is, which heaters are on right now.
+- **Things that need you.** The dryer's time left, bin day, a countdown to
+  something on the calendar. Pages like these show only while they matter,
+  and an alert ("arriving home", "water leak") can take over the screen at
+  once and hand it back later.
+- **Your day.** This month's calendar, the next events, the weather and the
+  next few days, a clock you can read from anywhere in the room.
+- **Something to watch tonight.** What's new and unwatched in Jellyfin.
+- **Guests.** A QR code they point their phone at to join your Wi-Fi.
+- **Anything else in Home Assistant.** Any entity: its value, one of its
+  details, when it last changed, days until a date, in your own words.
 
-## E-Paper Studio (The Visual Editor)
+The live data (sports, racing, planes, a weather fallback) needs no accounts
+or keys. Data sources add things Home Assistant can't answer itself: any JSON
+address, a long-term statistic, Jellyfin.
 
-![The editor](docs/editor.jpg)
+## Wherever you put it
 
-Lives in your Home Assistant sidebar behind your existing login. Designed to blend effortless one-click templates for quick setup with hyper-customizable pixel control for power users:
+E-paper doesn't glow, doesn't flicker and needs no power to hold a picture,
+so it suits a desk as well as a wall. Tell the editor how far away you'll be
+(desk, bedside, sofa or across the room) and it says, for every piece of
+text, how tall it will be in millimetres and whether it reads from there.
+Mount the panel landscape, portrait, or upside down so the cable runs the way
+you need; the pages and the buttons follow.
 
-- **Built-In & Custom Screen Presets:** Click **Presets** to add battle-tested screen templates (`Room Climate & Comfort`, `Solar Power & Generation`, `Weather & 4-Day Forecast`, `Energy & Battery Gauges`, `Guest Wi-Fi QR Card`, `Airspace Radar (ADS-B)`, `F1 & Formula E Pit-Wall`, `Sports Scoreboard`, `Calendar Month & Agenda`, `Event Countdown`, `Door & Pet Presence`, `Bin Day Collection`, `Digital Clock & Date`). You can also click **💾 Save Page as Preset…** on any page you design to save it to your personal **Custom Presets** library.
-- **Editable Composite Widgets + "✂️ Break Apart":** High-density composite widgets (`weather_forecast`, `flight_tracker`, `sports_racing`, `sports_match`, `calendar_month`, `calendar_agenda`, `dynamic_grid`) include a **Font Scale (`70%`–`160%`)** slider, **Show Outer Border** toggle, and layout-specific density controls (`Forecast Days`, `Split Hero + Forecast` vs `Full-Width Forecast`, `Max Events`, `Max Matches`, `Radar Split` vs `Telemetry Only`). Want total control over every label and number? Click **✂️ Break Apart into Editable Elements** in the inspector to decompose any composite card into individual, draggable `text`, `number`, `icon`, and `line` elements on the canvas.
-- **Rich 1-Bit Element Primitives:**
-  - **Big Number (`number`) & Text (`text`):** Crisp typography (**Lato**, **DejaVu Sans**, **Roboto Mono** in Bold or Regular) with optional **Invert (White on Black)** and **Pill / Badge Frame** styling + configurable corner radius.
-  - **MDI Vector Icons (`icon`):** Any `mdi:*` icon rendered at crisp 1-bit thresholds, with optional inverted or outlined badge frames.
-  - **Box / Card (`box`):** Structural containers, pills, dividers, and **50% Checkerboard Screen (`screen`)** regions with configurable corner `radius` and border `thickness`.
-  - **Progress & Gauge Bar (`bar`):** Horizontal (`solid` or `segmented` battery blocks) or `vertical` tank/column gauges bound to any numeric entity, with `min_val`, `max_val`, `title`, `suffix`, and value readout.
-  - **Sparkline (`curve`) & Multi-Bar History Chart (`bar_chart`):** Bind directly to Home Assistant entity history (`1`–`72` hours) to render smooth sparklines or bucketed vertical column charts (`4`–`24` bars) with min/max scale labels.
-  - **1-Bit QR Code (`qr`):** Zero-dependency ISO 18004 QR generator supporting URLs/text, dynamic entity values, or **Guest Wi-Fi credentials** (`SSID`, `Password`, `WPA/WPA2`/`WEP`/`Open`) so guests can scan the wall panel to join your network.
-- **Multi-Select (`Shift+Click`), Group Alignment & Smart Snap Guides:**
-  - Dragging any element on the canvas displays live **magenta smart snap guides** when aligning with the canvas centerlines or other elements' edges and centers (hold `Alt` to bypass snapping).
-  - Hold **`Shift` + Click** to select multiple elements on the canvas, move or arrow-nudge them together, or use the **Multi-Element Alignment Toolbar** (`Align Left`, `Center H`, `Align Right`, `Align Top`, `Middle V`, `Align Bottom`, `Distribute H`, `Distribute V`, `Duplicate Selected`, `Delete Selected`).
-- **Plain-English Bindings & Per-Element Conditional Visibility (`show_if`):**
-  - Bind elements to an entity's state, an attribute, `last_changed`, a date countdown (`days_until`), formatted dates (`date_formatted`), or next calendar title (`calendar_title`) without writing Jinja. A visual "say it differently" table maps raw states (`on` → `Open`) automatically, while raw Jinja templates remain available at any time.
-  - Every individual element also has its own **Element Visibility (`show_if`)** rule so individual warning badges, icons, or secondary metrics can appear or hide dynamically on the same page.
-- **Flexible Viewing Distance Legibility:** Real-time font size and millimetre calculation in the inspector with selectable viewing distances: **Desk (0.8 m)**, **Bedside (1.5 m)**, **Sofa (3.0 m)**, **Wall (5.0 m)**, or **Disabled**.
-- **Zero-Reflash Hardware Refresh Rate Slider:** Adjust how frequently the hardware panel fetches and redraws directly from the editor toolbar (1–60 minutes).
+## Made for every CrowPanel
 
----
+The add-on is built for the whole CrowPanel e-paper family: the renderer, the
+editor and the firmware generator all know every size below. Only the 5.79"
+has been tested on a real device so far. If you have another one, please try
+it and [open an issue](https://github.com/bek00letz/epaper-panel/issues)
+saying what worked and what didn't, so the table can say "tested" for more of
+them.
 
-## Pages Appear When They Matter
+| Model | SKU | Pixels | Status |
+|---|---|---|---|
+| CrowPanel 5.79" | DIS08792E | 792 × 272 | Tested on the device |
+| CrowPanel 4.2" | DIS08042E | 400 × 300 | Should work, not tested yet |
+| CrowPanel 2.9" | DIS08029E | 296 × 128 | Should work, not tested yet |
+| CrowPanel 7.5" | DIS08075E | 800 × 480 | Should work, not tested yet |
+| CrowPanel 10.2" | DIS08102E | 960 × 640 | Should work, not tested yet |
 
-Each page has a display tier:
+## The editor
 
-| Tier | Behaviour |
-|---|---|
-| **In rotation (`rotation`)** | Takes its turn in the normal rotation sequence |
-| **Only when true (`when`)** | Joins the rotation only while its `show_if` condition holds |
-| **Interrupt (`alert`)** | Never rotates normally; seizes the screen immediately when its condition becomes true, holds for `hold_minutes`, then hands the panel back |
+![The editor: page strip above the canvas, the selected value in the inspector](docs/editor.png)
 
-So a dryer page exists only while the dryer is running, a Premier League scoreboard joins the rotation automatically 2 hours before kickoff, and an "arriving home" or "water leak" alert can take over the panel immediately and then vanish.
+What you see on the canvas is drawn by the same engine that draws the panel,
+so it can't disagree with it. Your pages run along the top in the order the
+panel shows them; drag to reorder. Select anything to change it on the right;
+select nothing and the right side shows the page: when it appears, how often,
+what it's called.
 
----
+- **New page** starts from a preset and asks which of your sensors it
+  should show, or starts blank.
+- **Insert** finds element types and your sensors in one search. Drag a
+  sensor straight onto the canvas.
+- **Copy, paste, and paste and match** move things between pages in the same
+  place and size, or give one page the layout of another.
+- **Send to panel** puts your changes on the panel. Until then they're saved
+  as drafts, and a dot shows something is waiting.
+- **Now on the panel**, at the front of the page strip, says whether the
+  panel is up to date, what's rotating, which pages are hidden right now and
+  why, and lets you put it to sleep or clear ghosting.
 
-## Night / Quiet Hours (Zero-Ghosting Deep Idle)
+![The New page sheet with presets for months, weather, planes, Formula 1, scores, devices and more](docs/new-page.png)
 
-E-paper retains its image indefinitely with zero power draw and zero backlight, so turning the screen black at night defeats the purpose of e-ink. However, refreshing and rotating pages every few minutes while everyone is asleep or away causes unnecessary e-ink mechanical wear and visible black-white flashing in dark rooms.
+It follows your system's light or dark mode, works with the keyboard (press
+**?** for every shortcut), and works on a phone in the Home Assistant app.
+The page strip can also sit below the canvas or down the side.
 
-Click **`🌙 Quiet`** in the top toolbar (or **Settings → Night / Quiet Hours…**) to configure **Night / Quiet Hours** (`Off` by default):
+<p>
+<img src="docs/editor-dark.png" alt="The editor in dark mode, with the pages down the side" width="72%">
+<img src="docs/editor-phone.png" alt="The editor on a phone" width="24%">
+</p>
 
-- **On / Off Toggle (`enabled`):** Enable or disable Quiet Hours at any time with one click.
-- **Daily Quiet Window (`start` – `end`):** Set your overnight quiet schedule in `HH:MM` (e.g. `23:30` to `07:00`). Supports both overnight spans (`23:30`–`07:00`) and daytime spans (`09:00`–`17:00`).
-- **Optional Away / Presence Entity (`presence_entity`):** Optionally bind a Home Assistant entity such as `zone.home`, `person.*`, `group.family`, or `input_boolean.sleep_mode`. When its state is `0`, `not_home`, `away`, or `off`, Quiet Hours activate automatically even outside the scheduled clock window.
-- **Sleep screen (`sleep_screen`, on by default):** While quiet hours last, the panel sleeps: large closed eyes and when it wakes ("back at 07:00", or "back when someone’s home" when nobody's home), so you can tell from across the room. Any press wakes it, and after two untouched minutes it goes back to sleep. Morning wakes it. A locked page stays on screen instead, and turning the switch off keeps your pages up all night.
-- **Sleep any time:** hold the dial centre for a second, or use the panel's **Sleep** switch in Home Assistant (handy in automations). It sleeps until something wakes it: "press any button to wake".
-- **Allow Interrupt Alerts (`allow_alerts`):** When enabled (default), high-priority **Interrupt (`alert`)** pages will still wake and push to the panel during Quiet Hours.
-- **How It Works Under the Hood:**
-  1. When Quiet Hours begin, the server pushes one last update whose frame file is marked quiet, then stops pushing until Quiet Hours end. The wake-up at the end is retried until the panel confirms it.
-  2. The ESP32 pauses its 10-second auto-rotation timer so the display performs **zero physical refreshes** while holding the current page cleanly on screen.
-  3. Because the ESP32 stays connected to Wi-Fi in light-sleep, **physical buttons and IKEA BILRESA scroll remotes remain 100% responsive** if you manually flip pages at night.
-  4. Publishes `sensor.epaper_quiet_hours` (`active` / `inactive`) to Home Assistant with schedule and trigger reason attributes.
+## Getting started
 
----
+### 1. Install the add-on
 
-## Built-In Live Integrations & Composite Cards
-
-In addition to rendering any Home Assistant entity, the add-on includes built-in data engines that require zero external API keys. All add-on-generated entities use the **`sensor.epaper_*`** namespace (tagged with an **`E-PAPER`** badge and filterable via the **`✦ E-Paper`** chip in the Studio's Entities Explorer) and are published **on-demand** only for widgets present in your layouts:
-
-- **Weather & Multi-Day Forecast (`weather_forecast`):**
-  - Displays current conditions alongside a 3-to-5 day forecast (`Split Hero + Forecast` or `Full-Width Forecast Only`).
-  - Uses a **4-tier forecast resolver**: (1) HA REST `weather.get_forecasts` (`daily` / `hourly`), (2) HA WebSocket `weather/get_forecasts`, (3) legacy `attributes.forecast`, and (4) **automatic Open-Meteo fallback** using your Home Assistant `zone.home` coordinates so forecasts never get stuck on `"Forecast loading..."`.
-- **Real-Time ADS-B Airspace Radar (`flight_tracker`):**
-  - Live aircraft tracking via Flightradar24 (with OpenSky fallback) around your Home Assistant home, or anywhere else: type an airport's three-letter code (looked up offline, from a bundled copy of OurAirports), or enter latitude and longitude. Save up to four places of your own for one-click switching.
-  - Renders a 1-bit Plan Position Indicator (PPI) radar scope with range rings, heading vectors, callsigns, routes (`BEY → DUS`), aircraft ICAO types (`A320`, `B77W`), altitude, and groundspeed, expanding multiple overhead aircraft into parallel sub-pages.
-  - Includes a self-contained **Only show page when aircraft overhead (> 0)** toggle in the Studio inspector and publishes `sensor.epaper_flights_overhead` and `sensor.epaper_closest_aircraft` on demand.
-- **Motorsport Pit-Wall (`sports_racing` — Formula 1, Formula E, NASCAR & IndyCar):**
-  - Live calendar, circuit telemetry, practice/qualifying/sprint/race session countdowns (automatically converted to your local timezone), and live standings/results for **Formula 1 (`f1`)**, **Formula E (`fe`)**, **NASCAR (`nascar`)**, and **IndyCar (`indycar`)**.
-  - Includes self-contained **Active Race Window** controls directly in the Studio inspector: toggle **Only show page during active race window**, choose **Around Each Session (FP / Quali / Race)** or **Entire Race Weekend (FP1 → Checkered Flag)**, and set **`show before (hrs)`** and **`show after (hrs)`** without touching Home Assistant sensor settings. Publishes `sensor.epaper_racing_<series>` (`active` / `idle`) on demand.
-- **Live Sports Scoreboard (`sports_match`):**
-  - Tracks **Premier League**, **UEFA Champions League**, **La Liga**, **Bundesliga**, **Serie A**, **NBA**, **NFL**, **MLB**, and **NHL** with optional team filtering, localized kickoff times, live scores, and scorer highlights.
-  - Includes self-contained **Active Matchday Window** controls directly in the Studio inspector (`Only show page during active matchday window`, `show before (hrs)`, `show after (hrs)`). Switching leagues or filtering by team automatically updates the active window and publishes the matching `sensor.epaper_sports_<league>` (`active` / `idle`) sensor on demand.
-
----
-
-## Hardware & Supported Models
-
-The add-on is designed for the **Elecrow CrowPanel E-Paper** family (ESP32-S3).
-
-### Compatibility Matrix
-
-| Model | SKU | Resolution | Active Area | Aspect Ratio | Driver Component | Status |
-|---|---|---|---|---|---|---|
-| **CrowPanel 5.79"** | `DIS08792E` | 792 × 272 px | 139.1 × 47.7 mm | ~2.9:1 (panoramic) | `crowpanel_epaper` (`5.79in`) | **Primary / Fully Tested** |
-| **CrowPanel 4.2"** | `DIS08042E` | 400 × 300 px | 84.8 × 63.6 mm | 4:3 | `crowpanel_epaper` (`4.2in`) | Supported |
-| **CrowPanel 2.9"** | `DIS08029E` | 296 × 128 px | 66.9 × 29.1 mm | ~2.3:1 (compact) | `waveshare_epaper` (`2.90inv2`) | Supported |
-| **CrowPanel 7.5"** | `DIS08075E` | 800 × 480 px | 163.2 × 97.9 mm | 5:3 | `waveshare_epaper` (`7.50inv2`) | Supported |
-| **CrowPanel 10.2"** | `DIS08102E` | 960 × 640 px | 215.0 × 143.4 mm | 3:2 (large) | `waveshare_epaper` (`10.2in`) | Supported |
-
-> [!NOTE]
-> The **CrowPanel 5.79"** is the primary reference board on which the rendering pipeline and firmware were developed. You can switch models at any time using the **Model** selector in the editor toolbar or inside the **Panel setup** wizard; the editor and firmware generator automatically adjust dimensions, aspect ratios, component platforms, and DPI legibility metrics.
-
-### Firmware & ESPHome Integration
-
-The firmware is ESPHome and the reference configuration lives in [`esphome/crowpanel-epaper.yaml`](esphome/crowpanel-epaper.yaml). The built-in **Panel setup** wizard generates ready-to-paste YAML for your selected model:
-- Models **5.79"** and **4.2"** use the [`ESPBoards/esphome-lvgl-crowpanel-epaper-5.79-4.2`](https://github.com/ESPBoards/esphome-lvgl-crowpanel-epaper-5.79-4.2) external component.
-- Models **2.9"**, **7.5"**, and **10.2"** use ESPHome's standard `waveshare_epaper` platform.
-
-### Mounting Orientations (`0°`, `90°`, `180°`, `270°`)
-
-Whether you mount the panel normally, **upside-down (`180°`)** to route the USB-C cable cleanly, or **vertically in portrait (`90°` / `270°`)**, the editor toolbar and **Panel setup** wizard let you configure mounting orientation:
-- The canvas adapts to your model's logical aspect ratio (e.g. **792×272** landscape or **272×792** portrait on the 5.79") with a one-click **Reflow** helper to restack existing elements.
-- The server pre-rotates each page into the panel's native framebuffer and tells the panel where the footer pills ended up, so changing orientation in the editor works on **Save / Push to panel**. Reflashing is only needed for the button swap below.
-- When generating new ESPHome firmware for `180°` or `270°` mounts, the wizard also swaps the `Next` and `Prev` button pins (`GPIO 4` and `GPIO 6`) so the physical buttons match the board's orientation.
-
----
-
-## 2D Hierarchical Navigation & Remote Control
-
-The display organizes content as a two-dimensional grid: **Top-level Categories** along the horizontal axis, and **Parallel Sub-Items** along the vertical axis.
-
-```
-Category 1 (Solar)       ──>  Single slide
-Category 2 (Watch)       ──>  [Episode 1: Scrubs]  ─>  [Episode 2: Brothers]
-Category 3 (Flights)     ──>  [Plane 1: BAW71LK]   ─>  [Plane 2: THY41Y]
-Category 4 (Scores)      ──>  [Game 1: Bulls v Bucks] ─> [Game 2: Knicks v Raptors]
-```
-
-- **Sequential Sub-Item Rotation Memory (`cat_sub_pos`):** Every category remembers which sub-item it showed last (`cat_sub_pos[c]`). On pass 1 through a multi-item category (e.g. Watch, Airspace Radar, Sports), the panel shows sub-item `1/N`, on pass 2 it shows `2/N`, on pass 3 it shows `3/N`, and so on. Background 1-minute data refreshes preserve `cat_sub_pos` and `sub_idx` so sub-item rotation never resets to page 1.
-- **Manual Scroll Protection & 15s Debounce (`user_cool_sec` & `request_refetch`):** Every physical button press and remote scroll action starts a 15-second interaction cooldown (`user_cool_sec`). If a background 1-minute update (`refresh_now`) triggers while you are manually scrolling, the network download is automatically paused (`pending_refetch = true`) so scrolling never freezes, and resumes 15 seconds after you stop scrolling.
-- **One checked frame file:** The panel downloads `/frames.epf` in the background, checks it completely (checksum, panel size, every offset), and only then swaps it in. A bad or partial download never reaches the screen, and the buttons never wait for the network.
-
-### Physical Controls & Button Mapping
-
-The CrowPanel features five discrete physical inputs: a 3-way rocker dial (rotate up, rotate down, press center) and two push buttons (top and bottom). The firmware automatically remaps pins to match your mounting orientation:
-
-| Physical Control | Visual Direction | 180° Mount (USB-C Top) | 0° Mount (Standard) | Action & Behavior |
-|---|---|---|---|---|
-| **Top Button** | Physical Top | `GPIO 1` | `GPIO 2` | **Short Press (<750ms):** Toggle **Category Lock** (`cat_pinned`).<br>**Long Hold (≥750ms):** Toggle **Panel Lock** (`pinned`). |
-| **Rocker Turn Forward** | Right / Clockwise | `GPIO 6` | `GPIO 4` | **In Category Mode:** Advance to next category.<br>**In Sub-Item Mode:** Advance to next sub-item within current category. |
-| **Rocker Turn Backward** | Left / Counter-Clockwise | `GPIO 4` | `GPIO 6` | **In Category Mode:** Return to previous category.<br>**In Sub-Item Mode:** Return to previous sub-item within current category. |
-| **Rocker Center Push** | Push Inward | `GPIO 5` | `GPIO 5` | **Press:** Switch between **categories** and the current category's **items**. A press within 0.4 s of turning the dial is ignored, because the dial tilts as it turns.<br>**Hold (≥1 s):** Put the panel to sleep, or wake it. While it's asleep, any press only wakes it. |
-| **Bottom Button** | Physical Bottom | `GPIO 2` | `GPIO 1` | **Short Press (<750ms):** Jump to **Page 1 (Category 1)**.<br>**Long Hold (≥750ms):** Download new frames now and clear ghosting in the same redraw (one flash). |
-
-### ESPHome Native Actions (IKEA BILRESA / Zigbee / Matter Remotes)
-
-The firmware exposes encrypted ESPHome native API actions so external scroll remotes (such as the **IKEA BILRESA** scroll remote) or Home Assistant automations can control the panel seamlessly:
-
-| ESPHome Action | Parameters | Behavior |
-|---|---|---|
-| `esphome.<device>_page_step` | `delta: 1` or `-1` | Context-aware step: steps categories when in Category mode, or sub-items when in Sub-Item mode. |
-| `esphome.<device>_mode_toggle` | *(none)* | Switches between Category Navigation Mode and Sub-Item Navigation Mode (if the current category has multiple sub-pages) and redraws the active focus pill. |
-| `esphome.<device>_lock_toggle` | *(none)* | Context-aware lock: toggles **Category Lock** in Category mode, or **Panel Lock** in Sub-Item mode. |
-| `esphome.<device>_show_page` | `index: N` | Jumps directly to page `N` (counting from 0) and works out its category automatically. |
-| `esphome.<device>_refresh_now` | *(none)* | Downloads new frames from the add-on now (or once scrolling stops). |
-
----
-
-### Visual Indicators & Status Badges
-
-All navigation states and locks are rendered directly inside the uneditable 32px footer bar, leaving the canvas completely unobstructed:
-
-```
-┌────────────────────────────────────────────────────────────────────────┐
-│                                                                        │
-│                            [ Card Content ]                            │
-│                                                                        │
-├────────────────────────────────────────────────────────────────────────┤
-│ 15:42   [ 1/9 WATCH ] (inverted)   [ 🔒 ]               [ 🔒 ]   [ 1/2 ] │
-└────────────────────────────────────────────────────────────────────────┘
-```
-
-1. **Active Focus Inversion:**
-   - **Category Mode (Default):** The Category Pill (`[ 1/9 WATCH ]`) is solid black with crisp white text. Turning the rocker or remote scroll wheel flips through categories.
-   - **Sub-Item Mode:** Toggling mode inverts the Sub-Item Pill (`[ 1/2 ]`) and reverts the category pill to an outline. Turning the rocker or scroll wheel flips through sub-items inside that category.
-2. **Padlock Badges:**
-   - **Category Lock Badge (`[ 🔒 ]`):** Rendered immediately to the right of the category pill (`[ 1/9 WATCH ] [ 🔒 ]`). Indicates the panel will stay on this category (and cycle its sub-items if any).
-   - **Panel Lock Badge (`[ 🔒 ]`):** Rendered beside the sub-item pill (or in the right margin when single-page). Indicates this exact slide is pinned and will not rotate.
-
----
-
-### Dynamic Unit Scaling & Formatting Tips
-
-When displaying instantaneous values that span orders of magnitude (e.g. Watts vs Kilowatts), you can dynamically format both the number and the unit using Jinja templates in the editor:
-
-```jinja2
-{% set p = states('sensor.instant_power') | float(0) %}
-{% if p >= 1000 %}
-  {{ (p / 1000) | round(2) }} kW
-{% else %}
-  {{ p | round(0) }} W
-{% endif %}
-```
-
-Or for separating the number value and the unit label across two elements:
-- **Number Element Value Template:**
-  ```jinja2
-  {% set p = states('sensor.instant_power') | float(0) %}
-  {{ (p / 1000) | round(2) if p >= 1000 else p | round(0) }}
-  ```
-- **Label Element Text Template:**
-  ```jinja2
-  {{ 'kW' if states('sensor.instant_power') | float(0) >= 1000 else 'W' }}
-  ```
-
----
-
-## Install
-
-1. **Settings → Add-ons → Add-on Store → ⋮ → Repositories**, add
-   `https://github.com/bek00letz/epaper-panel`
+1. In Home Assistant, go to **Settings › Add-ons › Add-on store**, open the
+   **⋮** menu, choose **Repositories** and add
+   `https://github.com/bek00letz/epaper-panel`.
 2. Install **E-paper panel** and start it.
-3. Open **E-paper** in the sidebar and click **Panel setup** to generate a
-   ready-to-flash ESPHome YAML (your Home Assistant address, Wi-Fi, an
-   auto-generated encryption key that also protects firmware updates, and the
-   frame token), written straight into Home Assistant's ESPHome folder.
+3. Open **E-paper** in the sidebar.
 
-With no data sources set up the add-on simply renders the entities you already
-have. Optional add-on settings let you customize `esphome_device` (also synced
-automatically by the **Panel setup** wizard) and `frame_token`. Frames on port
-`8099` are always protected by a token. The add-on generates one if you don't
-set your own, and Panel setup puts it in the panel's YAML. An existing panel
-keeps getting frames until it's reinstalled with the token, and from then on
-the token is required.
+Optional: with the **Mosquitto broker** add-on installed, the add-on's own
+values (quiet hours, data sources, live scores and planes) also become Home
+Assistant entities for your automations. Everything else works without it.
 
-## Data sources (optional)
+### 2. Set up the panel
 
-Some things Home Assistant cannot answer directly. Sources fetch them as
-`sensor.epaper_<name>` values, which pages bind to like any entity. Pages read
-them straight from the add-on, so they work with or without an MQTT broker.
+1. In the editor, open **Settings** (the gear) › **Install or update**.
+2. Check Home Assistant's address and your Wi-Fi details. The add-on makes an
+   encryption key and a frame token for you.
+3. **Copy** or **Download** the panel's file. If Home Assistant's ESPHome
+   folder is there, the add-on has already written it in.
+4. In the **ESPHome** add-on: **New device**, give it a name, pick
+   **ESP32-S3**, then **Skip**. **Edit** the new device, replace everything
+   with the file, and **Install**. Use USB-C the first time; after that it
+   updates over Wi-Fi.
+5. When Home Assistant finds the panel under **Settings › Devices &
+   services**, choose **Configure** and paste the encryption key.
 
-With the Mosquitto broker app installed, the add-on also turns these values
-into real Home Assistant entities under an **E-Paper Studio** device, over MQTT
-discovery. You can rename them, give them an area and use them in automations.
-They show as unavailable while the add-on is stopped, and the device has a
-**Refresh panel** button.
+### 3. Your first page
 
-- **Jellyfin** — what is new *and* unwatched (`/Items/Latest?IsPlayed=false&GroupItems=true`). HA's own Jellyfin integration reports who is watching; it knows nothing about your library.
-- **Any JSON API** — a URL, headers, and a dot-path into the JSON response.
-- **A long-term statistic** — e.g. this month's solar generation via Home Assistant's `recorder/statistics_during_period` WebSocket API.
+1. Choose **New page** at the front of the page strip.
+2. Pick a preset, say **Match score** or **Solar today**, and your sensor if
+   it asks for one.
+3. Choose **Add page**, then **Send to panel**.
+
+## Doing more
+
+### Pages that show only when it matters
+
+Select the page, then click an empty part of the canvas. Under **Shows**,
+choose **Only when** and pick a sensor and its state, like a timer that's
+`active`. The sports, racing and flights widgets set this up for you with
+one switch ("Only show on match days"). **As an alert** takes over the panel
+the moment the condition turns true and hands it back after the minutes you
+set. Now on the panel lists every hidden page and why it's hidden.
+
+### The rotation
+
+The page strip is the rotation. Drag a page to move it, **Show again** puts
+a page in twice so it comes round more often, and **Take out** keeps a page
+without showing it. **Each page shows for** sets how long every page stays
+up.
+
+### The same layout on two pages
+
+Select everything on one page (⌘A), copy (⌘C), open the other page, and
+**Paste and match** (⌥⇧⌘V). The elements already there take the place, size
+and text style of what you copied; your sensors and words stay.
+
+### Watts that become kilowatts
+
+Select a value, and under **Units** choose **Step up**: 950 W stays watts,
+1,234 W shows as 1.23 kW. It works for Wh, g, m, bytes, seconds and more.
+**Convert** shows a value in another unit, like m/s in km/h or °C in °F.
+**Add a label that follows the unit** puts "W used" underneath that becomes
+"kW used" by itself.
+
+### Quiet nights
+
+**Settings › Quiet hours** sets a nightly window, and optionally "while
+nobody's home". The panel stops flashing and downloading, and shows a sleep
+screen that says when it wakes. Its buttons still work. Sleep it any time by
+holding the dial's centre, from Now on the panel, or with its **Sleep**
+switch in Home Assistant.
+
+### Your own data
+
+**Settings › Data sources** turns something outside Home Assistant into a
+sensor your pages can show: what's new and unwatched in Jellyfin (grouped by
+series, only the recent ones), any JSON address, or a long-term statistic
+like this month's solar. **Test** shows what it would publish.
+
+### Small things worth knowing
+
+- Click again on the same spot to reach what's underneath; **Layers** shows
+  the order.
+- Long text can **wrap onto more lines**.
+- Widgets have a **Text size** slider, and **Break apart** turns weather,
+  flights, agenda, racing and match widgets into pieces you can move.
+- Nothing asks "are you sure?": everything has **Undo**.
+- The previous editor is still there for now: add `?classic=1` to the
+  editor's address.
+
+## On the panel
+
+The panel shows your pages as **categories**; some have several **items**
+inside (several planes, several games, several episodes). The footer shows the
+time, where you are, and a padlock when something is locked.
+
+| Control | Press | Hold |
+|---|---|---|
+| Dial, turn | Next or previous category, or item | |
+| Dial, centre | Switch between categories and the items inside one | 1 s: sleep, or wake |
+| Top button | Lock the category | Lock this page |
+| Bottom button | Back to the first page | Fetch new pages now and clear ghosting, in one flash |
+
+While you're pressing buttons, new pages wait until you've stopped for 15 s,
+so nothing changes under your finger. E-paper keeps faint traces of earlier
+pictures; the panel cleans them with one full flash, but only when nobody's
+looking, and you can set how often in **Settings › Panel**.
+
+## Home Assistant
+
+### Actions
+
+For automations, dashboard buttons and scroll remotes like the IKEA BILRESA,
+the panel offers these as `esphome.<device>_<action>`:
+
+| Action | Takes | Does |
+|---|---|---|
+| `refresh_now` | | Fetch new pages now (or once someone stops scrolling) |
+| `show_page` | `index` | Go to a page, counting from 0 in rotation order |
+| `show_category` | `category`, `sub` | Go to a category and an item in it |
+| `page_step` | `delta` | Step forward or back: categories or items, whichever is active |
+| `category_step`, `sub_step` | `delta` | Step categories, or items, specifically |
+| `mode_toggle` | | Switch between categories and items |
+| `lock_toggle` | | Lock or unlock, whichever is active |
+| `category_pin_toggle`, `hold_toggle` | | Lock the category, or this page |
+
+### Entities
+
+From the panel: **Sleep**, **Refresh interval**, **Ghost clear after**,
+**Ghost clearing**, **Clear ghosting**, **Panel IP** and **Panel Wi-Fi**.
+
+From the add-on, with an MQTT broker, under an **E-Paper Studio** device:
+`sensor.epaper_quiet_hours`, `sensor.epaper_panel_last_render`, one sensor per
+data source, the live widgets' own (`sensor.epaper_flights_overhead`,
+`sensor.epaper_closest_aircraft`, `sensor.epaper_racing_<series>`,
+`sensor.epaper_sports_<league>`), and a **Refresh panel** button. They show as
+unavailable while the add-on is stopped, and one no page has used for an hour
+is withdrawn.
+
+## Privacy and security
+
+- **The editor is behind your Home Assistant login** and answers only Home
+  Assistant's own proxy.
+- **The panel's port (8099) serves pictures of pages and nothing else**: no
+  layouts, entity names or places. Its frames are protected by a token the
+  add-on makes for you. Don't expose that port to the internet.
+- **No accounts, no analytics.** The add-on reaches outside services only for
+  the widgets you put on a page and the data sources you set up. Airport codes
+  are looked up from a copy bundled with the add-on.
+- **The panel talks to Home Assistant encrypted**, with its own key, which
+  also protects its updates over Wi-Fi.
 
 ## How it works
 
-Home Assistant renders; the panel draws. The panel downloads every page of the
-rotation in one frame file (`/frames.epf`), keeps it in PSRAM and copies one page
-at a time into the display, so a button press or remote scroll redraws without
-any network round trip.
-
-[ARCHITECTURE.md](ARCHITECTURE.md) has the hardware measurements behind the design
-decisions, including the self-describing strip metadata protocol, why the fetch cost is per-pixel rather than per-byte, and what that means for battery vs mains operation.
+Home Assistant does the work; the panel only draws. The add-on renders every
+page with real fonts, turns it into black and white, and packs all the pages
+into one checked file. The panel downloads it in the background and copies one
+page at a time into the display, so a button press redraws in under a second
+with no network round trip. [ARCHITECTURE.md](ARCHITECTURE.md) has the
+measurements behind each decision.
 
 ## Honest limitations
 
-- **It assumes you know your entities.** The picker shows friendly names, categories, and live values, and presets give you ready-made starting points, but you choose which entities belong on your wall.
-- **Only the 5.79" is hardware-tested.** Other CrowPanel sizes (`4.2"`, `2.9"`, `7.5"`, `10.2"`) are supported in the layout engine and firmware generator.
-- **No battery readout.** The voltage divider's GPIO is undocumented on this board.
-- **Mains power is assumed.** Deep sleep would cost instant updates, remote control, and alerts that arrive when they happen — Use **Night / Quiet Hours** instead to eliminate overnight e-ink refreshes while keeping instant remote and button responsiveness.
+- **Only the 5.79" is tested on a device** (see above).
+- **You choose the entities.** Presets and search help, but it doesn't guess
+  what belongs on your screen.
+- **No battery reading.** The board's battery pin isn't documented.
+- **It expects mains power.** Deep sleep would cost instant updates, remote
+  control and alerts; quiet hours give you still, dark nights without that.
+
+## Development
+
+```bash
+# run it on your computer, with stand-in data when there's no Home Assistant
+DATA_DIR=/tmp/epaper-data ./.venv/bin/python addon/app/server.py
+
+# the tests, including the panel's firmware core compiled on this machine
+./.venv/bin/python -m unittest discover -s tests
+```
+
+The editor is then at `http://127.0.0.1:8080/`, and what the panel would
+fetch at `http://127.0.0.1:8099/frames.png`. Read [AGENTS.md](AGENTS.md)
+before changing anything, and the [changelog](addon/CHANGELOG.md) for what
+changed in each release.
 
 ## Credits
 
 [ESPBoards](https://github.com/ESPBoards/esphome-lvgl-crowpanel-epaper-5.79-4.2)
-for the display component, Elecrow for publishing their demo source (the
-authoritative pin reference), [Lato](https://www.latofonts.com/) (SIL OFL) and
-[Material Design Icons](https://pictogrammers.com/library/mdi/) (Apache 2.0).
-
+for the 5.79" and 4.2" display component; Elecrow for publishing their demo
+source, the reference for the pins;
+[Lato](https://www.latofonts.com/) (SIL OFL),
+[DejaVu](https://dejavu-fonts.github.io/) (free licence),
+[Roboto Mono](https://fonts.google.com/specimen/Roboto+Mono) (Apache 2.0);
+[Material Design Icons](https://pictogrammers.com/library/mdi/) (Apache 2.0);
+[OurAirports](https://ourairports.com/) (public domain) for airport codes.

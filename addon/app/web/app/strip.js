@@ -27,7 +27,7 @@ async function pump(app) {
     const job = queue.shift();
     if (!job.img.isConnected) continue;
     try {
-      const r = await api("api/preview", { method: "POST", raw: true, body: { page: job.page, label: job.name.replace(/^preset:/, ""), orientation: Number(app.doc.spec.orientation || 0), distance: 0, display: app.doc.spec.display } });
+      const r = await api("api/preview", { method: "POST", raw: true, body: { page: job.page, label: job.name.replace(/^preset:(__blank)?/, ""), orientation: Number(app.doc.spec.orientation || 0), distance: 0, display: app.doc.spec.display } });
       const url = URL.createObjectURL(await r.blob());
       thumbCache.set(job.key, url);
       if (thumbCache.size > 80) { const [k, u] = thumbCache.entries().next().value; URL.revokeObjectURL(u); thumbCache.delete(k); }
@@ -48,7 +48,7 @@ export function statusSummary(app) {
   else if (s.panel_link?.pending_refresh) { tone = "wait"; line1 = "Panel not updated yet"; }
   if (s.active_alert) line1 = doc.dirty ? line1 : "Alert showing";
   if (app.device?.sleep && !doc.dirty) line1 = "Asleep";
-  const line2 = !s.pages ? "Checking the panel…" : liveCount ? `${liveCount} page${liveCount === 1 ? "" : "s"} rotating · ${app.doc.live.rotate_seconds || 30} s` : "No pages rotating";
+  const line2 = !s.pages ? "Checking the panel…" : liveCount ? `${liveCount} rotating · ${app.doc.live.rotate_seconds || 30} s` : "No pages rotating";
   return { tone, line1, line2 };
 }
 

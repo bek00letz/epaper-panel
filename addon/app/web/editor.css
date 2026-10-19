@@ -518,7 +518,8 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
   #app[data-strip="side"] .canvasbar { grid-column: 2; grid-row: 1; }
   #app[data-strip="side"] .canvaswrap { grid-column: 2; grid-row: 2; }
   #app[data-strip="side"] .strip { flex-direction: column; gap: 10px; min-height: 0; }
-  #app[data-strip="side"] .stripfront { width: 100%; padding: 0; }
+  #app[data-strip="side"] .stripfront { width: 100%; padding: 0; margin: 0; height: auto; }
+  #app[data-strip="side"] .stathead, #app[data-strip="side"] .newpage { flex: none; min-height: 40px; }
   #app[data-strip="side"] .tiles { flex-direction: column; align-items: stretch; overflow-x: hidden; overflow-y: auto; padding: 2px 3px 16px; margin: 0 -3px; }
   #app[data-strip="side"] .tile { width: 100%; }
   #app[data-strip="side"] .groupsep { width: auto; height: 0.5px; align-self: stretch; margin: 4px 0 0; }
