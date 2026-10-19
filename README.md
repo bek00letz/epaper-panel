@@ -14,8 +14,9 @@ turns showing them, and a page appears only when it has something to say.
 
 - **The game you're missing at work.** A live score with the clock and the
   scorers, for the Premier League, Champions League, La Liga, Bundesliga,
-  Serie A, NBA, NFL, MLB or NHL, for every match or just your team. The page
-  turns up before kick-off and leaves after the final whistle on its own.
+  Serie A, NBA, NFL, MLB or NHL: every match, your team, or a few of them
+  ("Arsenal, Lakers"). The page turns up before kick-off and leaves after the
+  final whistle on its own.
 - **Race weekends.** Formula 1, Formula E, NASCAR and IndyCar: the top ten
   with gaps and tyres while a session runs, and the countdown to the next one
   the rest of the week.
@@ -33,7 +34,9 @@ turns showing them, and a page appears only when it has something to say.
   once and hand it back later.
 - **Your day.** This month's calendar, the next events, the weather and the
   next few days, a clock you can read from anywhere in the room.
-- **Something to watch tonight.** What's new and unwatched in Jellyfin.
+- **Something to watch tonight.** What's new and unwatched in Jellyfin: one
+  episode at a time with its name and when it arrived, or everything new on
+  one screen.
 - **Guests.** A QR code they point their phone at to join your Wi-Fi.
 - **Anything else in Home Assistant.** Any entity: its value, one of its
   details, when it last changed, days until a date, in your own words.
@@ -129,6 +132,10 @@ Assistant entities for your automations. Everything else works without it.
 5. When Home Assistant finds the panel under **Settings › Devices &
    services**, choose **Configure** and paste the encryption key.
 
+When a release changes the panel's firmware, the changelog says so at the
+top; install it again the same way. Until you do, the panel keeps working on
+the firmware it has.
+
 ### 3. Your first page
 
 1. Choose **New page** at the front of the page strip.
@@ -146,6 +153,10 @@ choose **Only when** and pick a sensor and its state, like a timer that's
 one switch ("Only show on match days"). **As an alert** takes over the panel
 the moment the condition turns true and hands it back after the minutes you
 set. Now on the panel lists every hidden page and why it's hidden.
+
+A page that appears or disappears reaches the panel at its next check, so a
+panel that checks rarely (on a battery, say) isn't woken for it. Alerts, quiet
+hours and **Send to panel** reach it at once.
 
 ### The rotation
 
@@ -181,7 +192,22 @@ switch in Home Assistant.
 **Settings › Data sources** turns something outside Home Assistant into a
 sensor your pages can show: what's new and unwatched in Jellyfin (grouped by
 series, only the recent ones), any JSON address, or a long-term statistic
-like this month's solar. **Test** shows what it would publish.
+like this month's solar. **Test** shows what it would publish. Sources are
+fetched in the background, so a slow or sleeping server never holds up the
+panel.
+
+Jellyfin's details come separately, so a page can show just the part it
+wants: the episode's name, which episode (S02E04), how many are new, when it
+arrived, a film's year and length, and the next few titles. **New page** has
+three Jellyfin presets: **New to watch**, **Episode card** and **Up next**.
+
+### When something stops answering
+
+Every outside service (the sports and racing feeds, Flightradar24, OpenSky,
+each data source) is watched. One that has failed for five minutes turns on a
+problem sensor in Home Assistant, `binary_sensor.epaper_problem_<name>`, with
+the error and when it last worked, so you can build an automation on it.
+Meanwhile its entities stay in Home Assistant instead of disappearing.
 
 ### Small things worth knowing
 
@@ -239,9 +265,11 @@ From the add-on, with an MQTT broker, under an **E-Paper Studio** device:
 `sensor.epaper_quiet_hours`, `sensor.epaper_panel_last_render`, one sensor per
 data source, the live widgets' own (`sensor.epaper_flights_overhead`,
 `sensor.epaper_closest_aircraft`, `sensor.epaper_racing_<series>`,
-`sensor.epaper_sports_<league>`), and a **Refresh panel** button. They show as
-unavailable while the add-on is stopped, and one no page has used for an hour
-is withdrawn.
+`sensor.epaper_sports_<league>`), `sensor.epaper_panel_pages` (how many pages
+the panel holds right now, and what was left out), a problem sensor per
+outside service, and a **Refresh panel** button. They show as unavailable
+while the add-on is stopped. An entity stays while its source is down; it's
+removed only once nothing produces it any more.
 
 ## Privacy and security
 
@@ -270,6 +298,10 @@ measurements behind each decision.
 - **Only the 5.79" is tested on a device** (see above).
 - **You choose the entities.** Presets and search help, but it doesn't guess
   what belongs on your screen.
+- **Up to about 77 pages at a time** on the 5.79" (the panel keeps 2 MB of them).
+  If the rotation needs more, every page keeps its first item and the extra
+  items are shared out; what was left out shows in
+  `sensor.epaper_panel_pages`.
 - **No battery reading.** The board's battery pin isn't documented.
 - **It expects mains power.** Deep sleep would cost instant updates, remote
   control and alerts; quiet hours give you still, dark nights without that.
