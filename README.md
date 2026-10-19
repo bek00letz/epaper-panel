@@ -1,6 +1,6 @@
 > Vibecoded! While I strive to keep things safe and limit vulnerabilities, you should be aware and use at your own risk.
 
-# E-paper panel
+# e-Paper Panel
 
 A Home Assistant add-on for Elecrow's CrowPanel e-paper displays. It turns
 whatever you care about into calm, glanceable pages: on your desk under the
@@ -108,8 +108,8 @@ The page strip can also sit below the canvas or down the side.
 1. In Home Assistant, go to **Settings › Add-ons › Add-on store**, open the
    **⋮** menu, choose **Repositories** and add
    `https://github.com/bek00letz/epaper-panel`.
-2. Install **E-paper panel** and start it.
-3. Open **E-paper** in the sidebar.
+2. Install **e-Paper Panel** and start it.
+3. Open **e-Paper** in the sidebar.
 
 Optional: with the **Mosquitto broker** add-on installed, the add-on's own
 values (quiet hours, data sources, live scores and planes) also become Home

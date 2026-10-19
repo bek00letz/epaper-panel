@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.1 (unreleased)
+Add-on only; no firmware change.
+
+- **A name and a face.** The add-on is now called e-Paper Panel, "e-Paper"
+  in the sidebar, and has its own icon and logo: the panel in its frame,
+  showing a reading. The editor's tab icon matches.
+
 ## 0.10.0
 A new editor. Add-on only; no firmware change. The previous editor is still
 there for now: add `?classic=1` to the editor's address.

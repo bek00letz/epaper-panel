@@ -156,7 +156,7 @@ class App {
   /* ---------- drawing ---------- */
   refresh() {
     this.renderToolbar(); this.renderBar(); this.renderStrip(); this.renderInspector(); this.renderLayers(); this.canvas.draw();
-    document.title = this.doc.cur ? `${pageTitle(this.doc.cur)} · E-paper panel` : "E-paper panel";
+    document.title = this.doc.cur ? `${pageTitle(this.doc.cur)} · e-Paper Panel` : "e-Paper Panel";
   }
 
   renderToolbar() {

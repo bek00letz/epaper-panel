@@ -1,4 +1,4 @@
-name: E-paper panel
+name: e-Paper Panel
 version: "0.10.0"
 slug: epaper_panel
 description: 'Render Home Assistant onto Elecrow CrowPanel E-Paper displays (primary: 5.79" DIS08792E; also 4.2", 2.9", 7.5", 10.2"), with an intuitive visual editor'
@@ -16,7 +16,7 @@ map:
 ingress: true
 ingress_port: 8080
 panel_icon: mdi:tablet-dashboard
-panel_title: E-paper
+panel_title: e-Paper
 
 # A second port so the panel can fetch frames over the LAN without ingress.
 # Optionally protected by `frame_token` (?token=...).
