@@ -106,7 +106,13 @@ Reaching home**, choose how it gets them:
 
 Away from home every screen needs its own key, and wrong keys slow down.
 Install each CrowPanel again once (**Install or update**) so it uses the new
-address over HTTPS; give it the other place's Wi-Fi there too.
+address over HTTPS, and add the other place's Wi-Fi there too.
+
+Somewhere it knows no Wi-Fi, a CrowPanel opens its own ("Kitchen setup"), and
+its screen tells you to join it from your phone and choose a network. The
+password is in **Install or update**. A network chosen that way replaces the
+ones in its file until you install it again, so list the places it goes
+often. You can turn this off per screen.
 
 ## The editor
 

@@ -170,6 +170,31 @@ class TestFirmwareYaml(unittest.TestCase):
         self.assertNotIn("fast_connect", several, "a fast connect only ever tries the first network")
         self.assertEqual(several.count("- ssid:"), 2)
 
+    def test_its_own_wifi_when_it_finds_none_it_knows(self):
+        block = firmware_gen.wifi_block([('"home"', '"pw"')], ('"Kitchen setup"', '"abcdefghjkmn"'))
+        self.assertIn('  ap:\n    ssid: "Kitchen setup"\n    password: "abcdefghjkmn"', block)
+        self.assertIn("\ncaptive_portal:", block, "a page for choosing a network")
+        self.assertNotIn("ap:", firmware_gen.wifi_block([('"home"', '"pw"')]))
+
+    def test_panel_setup_turns_it_on_with_its_own_password(self):
+        import devices
+        import panel_setup
+        from test_devices import fresh_data_dir
+        fresh_data_dir()
+        try:
+            dev = devices.add("crowpanel", "A rather long kitchen panel name", "crowpanel_579")
+            cfg = panel_setup.load_panel_setup(dev)
+            self.assertEqual(len(cfg["hotspot_password"]), 12)
+            name = panel_setup.hotspot_name(devices.get(dev["id"]))
+            self.assertLessEqual(len(name), 32, "a Wi-Fi name holds 32 characters")
+            self.assertTrue(name.endswith(" setup"))
+            text, _ = panel_setup.generate_esphome_yaml(cfg, devices.get(dev["id"]))
+            self.assertIn(f'password: "{cfg["hotspot_password"]}"', text)
+            text, _ = panel_setup.generate_esphome_yaml({**cfg, "hotspot": False}, devices.get(dev["id"]))
+            self.assertNotIn("captive_portal", text)
+        finally:
+            support.use_test_data_dir()
+
     def test_home_assistant_calls_the_panel_by_its_screens_name(self):
         text = firmware_gen.render(
             disp=T.get_display(DISPLAY), version="1.2.3", device_name="kitchen", frames_url='"https://x/frames.epf"',

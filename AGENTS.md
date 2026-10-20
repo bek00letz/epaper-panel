@@ -179,6 +179,9 @@ YAML comes only from `addon/app/firmware/panel.yaml`. After changing it, run
 - `psram: mode: octal` assumes an N8R8 board. Unconfirmed; if it will not boot,
   comment it out and read the boot log.
 - **Trust Elecrow's demo source over their wiki** for pin numbers.
+- **A network chosen on the panel's own Wi-Fi (captive portal) replaces every
+  network in its YAML** until the next install (ESPHome stores one, keyed to
+  the build). Say so wherever the hotspot is offered; don't promise both.
 - **One Wi-Fi network uses `fast_connect`; several are scanned for.** A fast
   connect only ever tries the first network (`firmware_gen.wifi_block`).
 - **HTTPS is checked against ESP-IDF's certificate bundle**

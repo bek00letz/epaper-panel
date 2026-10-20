@@ -42,9 +42,12 @@ def load_panel_setup(dev: dict, default_host: str = "homeassistant.local") -> di
         "api_encryption_key": _new_api_key(),
         "refresh_interval": "5min",
         "use_secrets": False,
+        # Its own Wi-Fi when it finds no network it knows (wifi_block).
+        "hotspot": True,
+        "hotspot_password": _new_hotspot_password(),
     }
     for k, v in defaults.items():
-        if not cfg.get(k) and k not in ("wifi_ssid", "wifi_password", "use_secrets"):
+        if not cfg.get(k) and k not in ("wifi_ssid", "wifi_password", "use_secrets", "hotspot"):
             cfg[k] = v
             changed = True
         elif k not in cfg:
@@ -63,6 +66,17 @@ def save_panel_setup(device_id, cfg: dict) -> dict:
     cfg["device_name"] = dev_name or "crowpanel-epaper"
     devices.update(device_id, setup=cfg)
     return dict(cfg)
+
+
+def _new_hotspot_password() -> str:
+    """Easy to type on a phone: no characters that look alike."""
+    alphabet = "abcdefghjkmnpqrstuvwxyz23456789"
+    return "".join(secrets.choice(alphabet) for _ in range(12))
+
+
+def hotspot_name(dev: dict) -> str:
+    """The panel's own Wi-Fi: the screen's name, so you know which panel it is (32 characters at most)."""
+    return (ha_name(dev)[:26].strip() + " setup")[:32]
 
 
 def ha_name(dev: dict) -> str:
@@ -171,7 +185,9 @@ def generate_esphome_yaml(cfg: dict, dev: dict, public_base: str | None = None) 
         disp=disp, version=ADDON_VERSION, device_name=dev_name, frames_url=_yaml_str(frames_epf_url),
         api_key=api_key_line, wifi_ssid=wifi_ssid_line, wifi_password=wifi_pw_line,
         interval_min=initial_min, orientation=orient, friendly_name=_yaml_str(ha_name(dev)),
-        more_networks=more)
+        more_networks=more,
+        hotspot=(_yaml_str(hotspot_name(dev)), _yaml_str(cfg.get("hotspot_password") or _new_hotspot_password()))
+        if cfg.get("hotspot", True) else None)
 
     secrets_text = f"""# Put these in your ESPHome secrets.yaml if using !secret references:
 wifi_ssid: {_yaml_str(ssid or "your-wifi-ssid")}

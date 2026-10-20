@@ -411,7 +411,7 @@ async function installPane(app, pane) {
     try {
       const body = { ha_host: host.value.trim() || location.hostname || "homeassistant.local", frame_port: parseInt(port.value, 10) || 8099,
         device_name: dev.value.trim() || "crowpanel-epaper", wifi_ssid: ssid.value.trim(), wifi_password: pw.value, api_encryption_key: key.value.trim(), use_secrets: useSecrets,
-        wifi_networks: nets.filter((n) => n.ssid.trim()), ...extra };
+        wifi_networks: nets.filter((n) => n.ssid.trim()), hotspot: hotspotOn, ...extra };
       r = (await api("api/panel-setup", { method: "POST", body })).body;
       apply();
       if (msg) toast(msg); else if (r.esphome_synced) toast("Saved, and written to Home Assistant's ESPHome folder.");
@@ -432,9 +432,23 @@ async function installPane(app, pane) {
   const pw = input(c.wifi_password, () => save(), { type: "password", placeholder: "From your secrets" });
   const key = h("input", { class: "inp code", readonly: true, value: c.api_encryption_key || "", "aria-label": "Encryption key" });
   let useSecrets = !!c.use_secrets;
+  // Its own Wi-Fi, for choosing a network from a phone where it knows none.
+  let hotspotOn = c.hotspot !== false;
+  const hotspotBox = h("div");
+  const drawHotspot = () => {
+    const cc = r.config || c;
+    hotspotBox.replaceChildren(group(
+      grow("Its own Wi-Fi when it's lost", `Where it finds none of these networks, it opens “${cc.hotspot_name || "setup"}” so you can choose one from your phone. Its screen says so.`,
+        toggle(hotspotOn, (v) => { hotspotOn = v; save(); }, "Its own Wi-Fi when it's lost")),
+      hotspotOn ? grow("Password", "For joining it from your phone", h("div", { class: "inline" },
+        h("input", { class: "inp code", readonly: true, value: cc.hotspot_password || "", "aria-label": "The panel's own Wi-Fi password" }),
+        h("button", { class: "btn tinted", onclick: () => copyText(cc.hotspot_password || "", "the password") }, "Copy"))) : null),
+      hotspotOn ? h("p", { class: "fnote", text: "A network you choose there replaces the ones above until you install the panel again, so add places it goes often above." }) : null);
+  };
   const copy = copyText;
   function apply() {
     const cc = r.config || {};
+    drawHotspot();
     yaml.value = r.yaml || ""; secrets.value = r.secrets_yaml || ""; key.value = cc.api_encryption_key || key.value;
     secretsWrap.hidden = !(cc.use_secrets || !cc.wifi_ssid);
     const p = r.panel || {};
@@ -447,7 +461,7 @@ async function installPane(app, pane) {
   box.replaceChildren(status,
     group(grow("Home Assistant's address", "Where the panel fetches pages from", host), grow("Port", null, port), grow("Device name", null, dev)),
     group(grow("Wi-Fi network", null, ssid), grow("Wi-Fi password", null, pw), grow("Use secrets.yaml", "Keep the Wi-Fi details out of the file", toggle(useSecrets, (v) => { useSecrets = v; save(); }, "Use secrets.yaml"))),
-    h("h4", { class: "gtitle", text: "Other networks" }), h("p", { class: "fnote", text: "Where else the screen goes, like work. It joins whichever it finds." }), netsBox,
+    h("h4", { class: "gtitle", text: "Other networks" }), h("p", { class: "fnote", text: "Where else the screen goes, like work. It joins whichever it finds." }), netsBox, hotspotBox,
     group(grow("Encryption key", "Also protects updates over Wi-Fi", h("div", { class: "inline" }, key, h("button", { class: "btn tinted", onclick: () => copy(key.value, "the key") }, "Copy"))),
       grow("New key", "The panel then needs reinstalling and re-adding in Home Assistant", h("button", { class: "btn tinted danger", onclick: () => save({ regenerate_keys: true }, "New key made. Reinstall the panel and add it again in Home Assistant.") }, "Make a new key"))),
     h("h4", { class: "gtitle", text: "The panel's file" }), yaml,

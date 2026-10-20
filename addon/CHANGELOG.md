@@ -16,6 +16,11 @@ than one Wi-Fi network. Until then it keeps working as before.
   asks for one restart) or through a tunnel of yours. Away from home every
   screen needs its key, and wrong keys slow down. Panels fetch over HTTPS, can
   know several Wi-Fi networks, and show the screen's name in Home Assistant.
+- **Wi-Fi setup from your phone.** Where a panel knows no network, it opens
+  its own Wi-Fi and its screen says how to join it and choose one. On by
+  default, per screen, with its own password in Install or update.
+- **Fixed:** on the 7.5" and 10.2" panels the footer clock ran into the page
+  pill.
 - **One style around several elements.** Select two or more, then choose an
   outline, a pill or an inverted area under Together. It follows them when
   they move. Dragging several at once now snaps to the guides too.

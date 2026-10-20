@@ -27,7 +27,7 @@ from frames import _png, as_int, enrich_page_values, refresh_frames, split_page_
 from ha import curve_series, ha_json, resolve_templates
 from layouts_store import clear_draft, layouts_etag, load_draft, load_layouts, load_sources, sanitize_layouts, save_draft, save_layouts
 from panel_ops import push_panel_update
-from panel_setup import _detect_external_port, _detect_panel_connection, _new_api_key, generate_esphome_yaml, ha_name, load_panel_setup, more_networks, save_panel_setup
+from panel_setup import _detect_external_port, _detect_panel_connection, _new_api_key, generate_esphome_yaml, ha_name, hotspot_name, load_panel_setup, more_networks, save_panel_setup
 from sources.flights import fetch_overhead_aircraft
 
 
@@ -720,13 +720,15 @@ async def api_sources_test(request):
                               "error": errors[0] if errors else None})
 
 
-def _masked_setup(cfg: dict) -> dict:
+def _masked_setup(cfg: dict, dev: dict) -> dict:
     """A panel's setup for the browser: passwords masked."""
     out = dict(cfg)
     if out.get("wifi_password"):
         out["wifi_password"] = feeds.SECRET_MASK
     out["wifi_networks"] = [{"ssid": n["ssid"], "password": feeds.SECRET_MASK if n["password"] else ""}
                             for n in more_networks(cfg)]
+    # Shown, not masked: you need it on your phone, standing next to the panel.
+    out["hotspot_name"] = hotspot_name(dev)
     return out
 
 
@@ -740,7 +742,7 @@ async def api_panel_setup_get(request):
     detected_port = await _detect_external_port(runtime.SESSION)
     if "frame_port" not in cfg:
         cfg["frame_port"] = detected_port
-    masked_cfg = _masked_setup(cfg)
+    masked_cfg = _masked_setup(cfg, dev)
     public = await reach.public_base(runtime.HASS)
     yaml_text, secrets_text = generate_esphome_yaml(masked_cfg, dev, public)
     conn = await _detect_panel_connection(dev)
@@ -775,6 +777,8 @@ async def api_panel_setup_post(request):
     cur.pop("display", None)
     if "use_secrets" in body:
         cur["use_secrets"] = bool(body["use_secrets"])
+    if "hotspot" in body:
+        cur["hotspot"] = bool(body["hotspot"])
     if "wifi_password" in body and isinstance(body["wifi_password"], str):
         if body["wifi_password"] != feeds.SECRET_MASK:
             cur["wifi_password"] = body["wifi_password"]
@@ -789,7 +793,7 @@ async def api_panel_setup_post(request):
                 cur[k] = body[k].strip()
     saved = save_panel_setup(dev["id"], cur)
     saved["display"] = T.get_display(load_layouts(dev["id"]).get("display"))["id"]
-    masked_cfg = _masked_setup(saved)
+    masked_cfg = _masked_setup(saved, dev)
     # The file the panel is built from gets the real values; only the copy
     # shown in the browser is masked. (0.9.2 and earlier wrote the mask into
     # the file when the Wi-Fi password was left untouched.)

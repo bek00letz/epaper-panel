@@ -67,33 +67,43 @@ def display_blocks(disp: dict) -> tuple[str, str]:
     return component, block
 
 
-def wifi_block(networks: list[tuple[str, str]]) -> str:
+def wifi_block(networks: list[tuple[str, str]], hotspot: tuple[str, str] | None = None) -> str:
     """One network connects straight away; several are scanned for, so the panel
-    joins whichever it finds (at home, at work). Values are YAML scalars."""
+    joins whichever it finds (at home, at work). Values are YAML scalars.
+
+    `hotspot` (ssid, password): when it finds none of them, the panel opens
+    its own Wi-Fi with a page for choosing a network from a phone. A network
+    chosen there replaces these until the panel is installed again (ESPHome)."""
     if len(networks) <= 1:
         ssid, password = networks[0] if networks else ('""', '""')
-        return f"wifi:\n  ssid: {ssid}\n  password: {password}\n  fast_connect: true"
-    lines = ["wifi:", "  # Joins whichever of these it finds.", "  networks:"]
-    for ssid, password in networks:
-        lines += [f"    - ssid: {ssid}", f"      password: {password}"]
+        lines = ["wifi:", f"  ssid: {ssid}", f"  password: {password}", "  fast_connect: true"]
+    else:
+        lines = ["wifi:", "  # Joins whichever of these it finds.", "  networks:"]
+        for ssid, password in networks:
+            lines += [f"    - ssid: {ssid}", f"      password: {password}"]
+    if hotspot:
+        lines += ["  # Finds none of them: its own Wi-Fi, to choose a network from a phone.",
+                  "  ap:", f"    ssid: {hotspot[0]}", f"    password: {hotspot[1]}",
+                  "", "captive_portal:"]
     return "\n".join(lines)
 
 
 def render(*, disp: dict, version: str, device_name: str, frames_url: str, api_key: str,
            wifi_ssid: str, wifi_password: str, interval_min: int,
            orientation: int, friendly_name: str = '"E-paper panel"',
-           more_networks: list[tuple[str, str]] = ()) -> str:
+           more_networks: list[tuple[str, str]] = (), hotspot: tuple[str, str] | None = None) -> str:
     """The YAML text. Credential and name arguments are YAML scalars, e.g. '"abc"' or '!secret x'.
 
     `friendly_name` is what Home Assistant calls the panel (the screen's name).
-    `more_networks`: Wi-Fi networks besides the first, as (ssid, password)."""
+    `more_networks`: Wi-Fi networks besides the first, as (ssid, password).
+    `hotspot`: (ssid, password) of its own setup Wi-Fi, or None for none."""
     component, block = display_blocks(disp)
     values = {
         "DISPLAY_NAME": disp["name"], "SKU": disp["sku"], "W": str(disp["w"]), "H": str(disp["h"]),
         "VERSION": version or "dev", "DEVICE_NAME": device_name, "FRAMES_URL": frames_url,
         "COMPONENT_REF": component_ref(version), "DISPLAY_COMPONENT": component,
         "DISPLAY_BLOCK": block, "API_KEY": api_key,
-        "WIFI_BLOCK": wifi_block([(wifi_ssid, wifi_password), *more_networks]),
+        "WIFI_BLOCK": wifi_block([(wifi_ssid, wifi_password), *more_networks], hotspot),
         "FRIENDLY_NAME": friendly_name,
         "INTERVAL_MIN": str(max(1, min(60, int(interval_min)))),
         **{k: str(v) for k, v in button_pins(orientation).items()},
