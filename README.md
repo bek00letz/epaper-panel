@@ -110,11 +110,11 @@ be that server, so you design its pages in the same editor.
 
 What's different from a CrowPanel:
 
-- **It shows one page per wake.** A timer wake moves on through the rotation
-  (every item of every page, conditions and alerts included); its button goes
-  to the next page. How often it wakes is a setting of that screen (every
-  15 minutes to start).
-- **Nothing can wake it early.** New pages and alerts show at its next wake,
+- **It always sleeps between updates.** It updates every 15 minutes to start;
+  **Update every** in Settings › Screen takes it from 5 minutes to a day, and
+  **Rotate every** says how many updates each page stays (every update to
+  start). Its button goes to the next page.
+- **Nothing can wake it early.** New pages and alerts show at its next update,
   and the editor says so.
 - **Quiet hours** show the sleep screen and let it sleep until they end. A
   press of its button shows a page for two minutes.
@@ -239,16 +239,31 @@ one switch ("Only show on match days"). **As an alert** takes over the panel
 the moment the condition turns true and hands it back after the minutes you
 set. Now on the panel lists every hidden page and why it's hidden.
 
-A page that appears or disappears reaches the panel at its next check, so a
-panel that checks rarely (on a battery, say) isn't woken for it. Alerts, quiet
-hours and **Send to panel** reach it at once.
+A page that appears or disappears reaches the panel at its next update, so a
+panel that sleeps between updates isn't woken for it. On an always-on panel,
+alerts, quiet hours and **Send to panel** reach it at once.
 
 ### The rotation
 
 The page strip is the rotation. Drag a page to move it, **Show again** puts
 a page in twice so it comes round more often, and **Take out** keeps a page
-without showing it. **Each page shows for** sets how long every page stays
-up.
+without showing it. **Rotate every**, in Settings › Screen, sets how long
+every page stays up.
+
+### Always on, or on a battery
+
+Every screen has two settings, in Settings › Screen, and a new one asks which
+it is when you add it:
+
+- **Update every.** **1 minute** is always on, the default: for a panel on a
+  cable. Its buttons answer at once, alerts show straight away and Home
+  Assistant can wake it. **2 minutes or more** and it sleeps in between, for
+  a battery: the longer, the longer the battery lasts (up to a day). Alerts
+  and new pages then show at its next update; a button press updates it right
+  away.
+- **Rotate every.** Always on, how many seconds each page shows. Asleep, how
+  many updates each page stays: every update refreshes the page on screen,
+  and this moves on to the next (every update, or every 2nd, 3rd…).
 
 ### The same layout on two pages
 
@@ -341,8 +356,9 @@ the panel offers these as `esphome.<device>_<action>`:
 
 ### Entities
 
-From the panel: **Sleep**, **Refresh interval**, **Ghost clear after**,
-**Ghost clearing**, **Clear ghosting**, **Panel IP** and **Panel Wi-Fi**.
+From the panel: **Sleep**, **Refresh interval** (kept at the screen's
+**Update every** by the add-on), **Ghost clear after**, **Ghost clearing**,
+**Clear ghosting**, **Panel IP** and **Panel Wi-Fi**.
 
 From the add-on, with an MQTT broker, under an **E-Paper Studio** device:
 `sensor.epaper_quiet_hours`, `sensor.epaper_panel_last_render`, one sensor per

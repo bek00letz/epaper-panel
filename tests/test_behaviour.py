@@ -10,6 +10,7 @@ from aiohttp.test_utils import make_mocked_request
 
 import support
 import config
+import devices
 import frames
 import layouts_store
 import runtime
@@ -97,7 +98,7 @@ class TestSavingLayouts(unittest.TestCase):
         self.assertEqual(clean["pages"]["flights"]["tier"], "rotate")
         self.assertEqual(clean["pages"]["dryer"]["hold_minutes"], 1440)
         self.assertEqual(clean["orientation"], 0)
-        self.assertEqual(clean["rotate_seconds"], 5)
+        self.assertNotIn("rotate_seconds", clean, "Rotate every is the screen's own, never sent with pages")
         self.assertEqual(clean["quiet_hours"]["start"], "23:00")
         self.assertEqual(clean["quiet_hours"]["end"], "07:30")
         self.assertEqual(clean["quiet_hours"]["presence_entity"], "")
@@ -136,11 +137,21 @@ class TestPanelSetupSave(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("real-secret", res["yaml"], "the browser gets the masked copy")
 
     async def test_a_changed_file_keeps_the_previous_one(self):
-        await self.post({"device_name": "crowpanel-epaper", "wifi_password": "one", "refresh_interval": "5min"})
-        await self.post({"device_name": "crowpanel-epaper", "wifi_password": "one", "refresh_interval": "7min"})
+        await self.post({"device_name": "crowpanel-epaper", "wifi_password": "one-one-one"})
+        await self.post({"device_name": "crowpanel-epaper", "wifi_password": "two-two-two"})
         folder = Path(self.tmp.name)
-        self.assertIn("initial_value: 7", (folder / "crowpanel_epaper.yaml").read_text())
-        self.assertIn("initial_value: 5", (folder / "crowpanel_epaper.yaml.previous").read_text())
+        self.assertIn('"two-two-two"', (folder / "crowpanel_epaper.yaml").read_text())
+        self.assertIn('"one-one-one"', (folder / "crowpanel_epaper.yaml.previous").read_text())
+
+    async def test_its_own_timer_starts_at_update_every(self):
+        # Always on, it checks every minute on its own timer; the form has no interval of its own.
+        res = await self.post({"device_name": "crowpanel-epaper", "refresh_interval": "7min"})
+        self.assertIn("initial_value: 1\n", res["yaml"])
+        first = devices.primary()["id"]
+        self.addCleanup(devices.update, first, update_minutes=None)
+        devices.update(first, update_minutes=30)
+        res = await self.post({"device_name": "crowpanel-epaper"})
+        self.assertIn("initial_value: 30\n", res["yaml"], "sleeping, its own timer doesn't run; it says the same")
 
 
 if __name__ == "__main__":

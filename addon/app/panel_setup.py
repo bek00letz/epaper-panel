@@ -40,7 +40,6 @@ def load_panel_setup(dev: dict, default_host: str = "homeassistant.local") -> di
         "wifi_ssid": "",
         "wifi_password": "",
         "api_encryption_key": _new_api_key(),
-        "refresh_interval": "5min",
         "use_secrets": False,
         # Its own Wi-Fi when it finds no network it knows (wifi_block).
         "hotspot": True,
@@ -155,9 +154,8 @@ def generate_esphome_yaml(cfg: dict, dev: dict, public_base: str | None = None) 
     ssid = (cfg.get("wifi_ssid") or "").strip()
     pw = cfg.get("wifi_password") or ""
     api_key = (cfg.get("api_encryption_key") or "").strip() or _new_api_key()
-    raw_interval = cfg.get("refresh_interval") or "5min"
-    m_int = re.search(r"\d+", str(raw_interval))
-    initial_min = max(1, min(60, int(m_int.group(0)))) if m_int else 5
+    # Its own timer, which runs only while it's always on: Update every (timing.py), never a setting here.
+    initial_min = kinds.of(dev).update_minutes(dev)
     try:
         orient = int(cfg.get("orientation") if "orientation" in cfg else view.get("orientation", 0))
     except (TypeError, ValueError):

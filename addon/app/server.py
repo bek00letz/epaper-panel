@@ -19,7 +19,6 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import asyncio
 import os
-import re
 import time
 import aiohttp
 from aiohttp import web
@@ -78,8 +77,7 @@ async def render_loop():
                 first_frames = runtime.device(first["id"]).frames
                 cur_alert = runtime.alert(first["design"])["name"]
                 allow_alerts = bool((load_layouts(first["id"]).get("quiet_hours") or {}).get("allow_alerts", True))
-                m_int = re.search(r"\d+", str((first.get("setup") or {}).get("refresh_interval", "5")))
-                panel_min = int(m_int.group(0)) if m_int else 5
+                panel_min = kinds.of(first).update_minutes(first)
                 panel_sec = max(30, panel_min * 60)
                 now = time.time()
                 if now - runtime.LAST_PANEL_PUSH_TIME >= panel_sec:

@@ -339,12 +339,15 @@ class TestAWake(TrmnlBase):
                          {"sensor.epaper_battery", "sensor.epaper_battery_voltage", "sensor.epaper_wifi_signal",
                           "sensor.epaper_last_seen"})
 
-    async def test_the_wake_interval_is_its_own_setting(self):
-        r = await self.ed.patch(f"/api/devices/{self.dev['id']}", json={"wake_minutes": 60})
+    async def test_update_every_is_its_own_setting(self):
+        r = await self.ed.patch(f"/api/devices/{self.dev['id']}", json={"update_minutes": 60})
         self.assertEqual(r.status, 200)
-        self.assertEqual((await r.json())["device"]["info"]["wake_minutes"], 60)
+        timers = (await r.json())["device"]["timing"]
+        self.assertEqual((timers["update_minutes"], timers["can_stay_on"]), (60, False))
         self.assertEqual((await self.wake(self.key))[1]["refresh_rate"], 3600)
-        self.assertEqual((await self.ed.patch(f"/api/devices/{self.dev['id']}", json={"wake_minutes": 7})).status, 400)
+        for never in (7, 1, 2):
+            r = await self.ed.patch(f"/api/devices/{self.dev['id']}", json={"update_minutes": never})
+            self.assertEqual(r.status, 400, f"{never} minutes: it always sleeps, from 5 minutes")
         status = await (await self.ed.get(f"/api/status?device={self.dev['id']}")).json()
         self.assertEqual(status["panel_interval"], 60)
 
@@ -392,7 +395,7 @@ class TestThePageEachWake(TrmnlBase):
         await self.wake(self.key)
         first = self.cursor()["pos"]
         await self.wake(self.key, source="button")
-        self.assertEqual(self.cursor(), {"pos": (first + 1) % len(self.plans), "name": self.plans[(first + 1) % len(self.plans)]["name"], "item": 0})
+        self.assertEqual(self.cursor(), {"pos": (first + 1) % len(self.plans), "name": self.plans[(first + 1) % len(self.plans)]["name"], "item": 0, "shown": 1})
 
     async def test_pictures_differ_as_the_page_changes(self):
         names = {(await self.wake(self.key))[1]["filename"] for _ in range(3)}

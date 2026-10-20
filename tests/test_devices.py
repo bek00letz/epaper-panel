@@ -17,6 +17,7 @@ import kinds
 import panel_link
 import panel_setup
 import runtime
+import timing
 import web
 from layouts_store import layouts_etag, load_draft, load_layouts, sanitize_layouts, save_layouts
 from render import epf
@@ -79,13 +80,16 @@ class TestMoveIn(unittest.TestCase):
     def test_the_panel_becomes_device_1_and_nothing_changes(self):
         before = self.write_legacy()
         view = load_layouts()
-        self.assertEqual(without_ids(view), LEGACY_SPEC, "the editor sees what layouts.json held")
+        held = {k: v for k, v in LEGACY_SPEC.items() if k != "rotate_seconds"}
+        self.assertEqual(without_ids(view), held, "the editor sees what layouts.json held")
         self.assertEqual([e["id"] for e in view["pages"]["solar"]["elements"]], ["e0"],
                          "plus an ID per element, the same every time until saved")
         dev = devices.primary()
         self.assertEqual((dev["id"], dev["kind"], dev["design"]), ("1", "crowpanel", "1"))
         self.assertTrue(dev["install_token"], "its key stays the install's frame token")
         self.assertEqual(dev["entity_suffix"], "", "its Home Assistant entities keep their names")
+        self.assertEqual(timing.rotate_seconds(dev), 45, "Rotate every is the screen's own, set apart from its pages")
+        self.assertEqual(timing.update_minutes(dev), 1, "always on, as it was")
         self.assertEqual(dev["setup"]["device_name"], "hallway-panel")
         self.assertEqual(dev["setup"]["wifi_password"], "secret")
         self.assertNotIn("display", dev["setup"], "the size has one home: the device")

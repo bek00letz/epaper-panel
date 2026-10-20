@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **Update every and Rotate every.** Every screen now has two settings, in
+  Settings › Screen under Power, and they replace Low Power Mode, its wake
+  interval and the panel's own "Check for new pages every". Update every
+  1 minute is always on: buttons and alerts answer at once. 2 minutes or more
+  (up to a day) and the screen sleeps in between, for a battery. Rotate every
+  is how long each page shows: seconds when always on, and when sleeping, a
+  number of updates (each update refreshes the page on screen, and every Nth
+  moves on; before, every update moved on). Both apply at once, no Send
+  needed. Adding a screen asks plainly: always on or sleeps between updates.
+  A TRMNL gets the same two, from 5 minutes. Nothing changes on upgrade: a
+  panel with Low Power Mode off is always on, one with it on keeps its
+  interval, and its rotation time comes along. An always-on panel now checks
+  every minute (the add-on sets its Refresh interval in Home Assistant to
+  match); before, it was 5 minutes unless you changed it. Going back to
+  0.12.0 finds your old settings as they were.
 - **Fixed:** in Low Power Mode, a panel whose refresh interval is one minute
   never went back to sleep after a button press: every download it made while
   awake kept it awake another minute. Only a wake does that now.

@@ -1,8 +1,9 @@
 """A screen that sleeps between wakes, and the add-on picks its page.
 
-The one mode for every screen that sleeps: a TRMNL always, a CrowPanel in
-Low Power Mode. The kind keeps only its protocol (how a wake asks, how the
-answer is said); what to show and how long to sleep are worked out here.
+The one mode for every screen that sleeps: a TRMNL always, a CrowPanel that
+updates every 2 minutes or more (timing.py). The kind keeps only its protocol
+(how a wake asks, how the answer is said); what to show and how long to sleep
+are worked out here.
 
 - **Drawn ahead** (`draw_ahead`, from the kind's `render` in every render
   cycle). Everything the screen can fetch at its next wakes: every item of
@@ -10,9 +11,11 @@ answer is said); what to show and how long to sleep are worked out here.
   "updated" when it last changed, not when the screen woke (`steady`), so an
   unchanged page keeps its picture and the screen neither downloads nor
   flashes. Quiet hours, presence included, come from the cycle.
-- **A wake only picks** (`wake`). The cursor steps (`step`: a timer moves
-  through every item of every page; a person goes to the next page), and the
-  sleep time comes from the clock (`sleep_seconds`): the wake interval, cut
+- **A wake only picks** (`wake`). A timer wake shows the page it's on,
+  freshly drawn, and every Nth (Rotate every, `rotate_updates`) the
+  cursor steps through every item of every page (`step`); a person goes to
+  the next page. The sleep time comes from the clock (`sleep_seconds`):
+  Update every, cut
   short to wake just after quiet hours start; through quiet hours, until they
   end. Quiet hours' schedule is checked against the clock at the wake (it's
   only arithmetic), so a wake just after they start or end is right even if
@@ -35,10 +38,9 @@ import devices
 import frames
 import health
 import runtime
+import timing as timers                  # paging.timing is a wake's timing
 from render import sleep, theme as T
 
-WAKE_CHOICES = (5, 10, 15, 30, 60, 120, 240)    # minutes
-DEFAULT_WAKE = 15
 GLANCE_SECONDS = 120                    # a press during quiet hours shows a page this long
 FIRST_RENDER_SECONDS = 60               # nothing drawn yet: ask again soon
 QUIET_MARGIN = 60                       # wake just after quiet hours start or end, never just before
@@ -59,32 +61,21 @@ def page_key(name: str, item: int) -> str:
     return f"{name}#{item}"
 
 
-# ---------------------------------------------------------------- the wake interval
+# ---------------------------------------------------------------- its timers
 
-def wake_minutes(dev: dict) -> int:
-    """How often the screen wakes. One setting for every kind (a TRMNL, a CrowPanel in
-    Low Power Mode); a TRMNL paired before it moved here kept it in its setup."""
-    raw = dev.get("wake_minutes")
-    if raw is None:
-        raw = (dev.get("setup") or {}).get("wake_minutes")
-    try:
-        minutes = int(raw or DEFAULT_WAKE)
-    except (TypeError, ValueError):
-        minutes = DEFAULT_WAKE
-    return minutes if minutes in WAKE_CHOICES else DEFAULT_WAKE
+def _kind(dev: dict):
+    import kinds                                    # kinds import this module
+    return kinds.of(dev)
 
 
-def wake_setting(body: dict) -> dict:
-    """The device field an editor change of the wake interval asks for ({} when it asks for none)."""
-    if "wake_minutes" not in body:
-        return {}
-    try:
-        minutes = int(body["wake_minutes"])
-    except (TypeError, ValueError):
-        minutes = 0
-    if minutes not in WAKE_CHOICES:
-        raise ValueError("Pick one of the intervals offered.")
-    return {"wake_minutes": minutes}
+def update_seconds(dev: dict) -> int:
+    """Update every, in seconds: how long it sleeps when nothing cuts it short."""
+    return _kind(dev).update_minutes(dev) * 60
+
+
+def rotate_updates(dev: dict) -> int:
+    """Rotate every, as a number of updates."""
+    return timers.rotate_updates(dev, _kind(dev).stays_on)
 
 
 # ---------------------------------------------------------------- drawn ahead
@@ -228,6 +219,16 @@ def seconds_until(hhmm: str, now: datetime) -> int | None:
     return int((target - now).total_seconds())
 
 
+def here(plans: list[dict], cursor: dict) -> tuple[int, int]:
+    """Where the cursor is: a page that moved is found by name; one that's gone starts the rotation again."""
+    pos, name, item = cursor.get("pos", -1), cursor.get("name"), int(cursor.get("item") or 0)
+    if not (isinstance(pos, int) and 0 <= pos < len(plans) and plans[pos]["name"] == name):
+        pos = next((i for i, p in enumerate(plans) if p["name"] == name), None)
+        if pos is None:
+            return 0, 0
+    return pos, max(0, min(item, max(1, plans[pos]["want"]) - 1))
+
+
 def step(plans: list[dict], cursor: dict, by_page: bool) -> tuple[int, int]:
     """The next (page position, item) after the cursor. A timer wake moves through every
     item of every page; a person goes to the next page. A page that has gone is
@@ -257,7 +258,7 @@ def quiet_now(ahead: Ahead, now: datetime) -> tuple[bool, str]:
 def sleep_seconds(dev: dict, ahead: Ahead, now: datetime, person: bool) -> int:
     """How long to sleep after this wake."""
     qh = _qh(ahead.spec)
-    wake = wake_minutes(dev) * 60
+    wake = update_seconds(dev)
     quiet, reason = quiet_now(ahead, now)
     alert = bool(ahead.st.alert) and (not quiet or qh.get("allow_alerts", True))
     if quiet and not alert and not person:
@@ -283,7 +284,9 @@ class Wake:
 
 
 def _choose(dev: dict, ahead: Ahead, now: datetime, person: bool) -> str | None:
-    """Which picture this wake shows (None: keep what it shows). Steps the cursor."""
+    """Which picture this wake shows (None: keep what it shows). Moves the cursor: a person
+    to the next page; a timer once the page has been shown at N wakes (Rotate every),
+    counted in the cursor."""
     qh = _qh(ahead.spec)
     quiet, reason = quiet_now(ahead, now)
     alert = bool(ahead.st.alert) and (not quiet or qh.get("allow_alerts", True))
@@ -295,9 +298,15 @@ def _choose(dev: dict, ahead: Ahead, now: datetime, person: bool) -> str | None:
     if not ahead.st.live or not plans:
         return EMPTY_KEY
     cursor = devices.state(dev["id"]).get("cursor") or {}
-    pos, item = step(plans, cursor, by_page=person)
+    shown = int(cursor.get("shown") or 0) if cursor else 0
+    if person or shown >= rotate_updates(dev):
+        pos, item = step(plans, cursor, by_page=person)
+        shown = 1
+    else:
+        pos, item = here(plans, cursor)               # the same page, drawn fresh
+        shown += 1
     plan = plans[pos]
-    devices.set_state(dev["id"], cursor={"pos": pos, "name": plan["name"], "item": item})
+    devices.set_state(dev["id"], cursor={"pos": pos, "name": plan["name"], "item": item, "shown": shown})
     return page_key(plan["name"], min(item, max(1, plan["want"]) - 1))
 
 

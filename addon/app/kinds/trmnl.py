@@ -69,6 +69,7 @@ class Trmnl(Kind):
     picks_page = "addon"
     owns_interval = "addon"
     setup_flow = "pair"
+    stays_on = False                    # it always sleeps between updates
 
     def enabled(self) -> bool:
         return config.TRMNL
@@ -93,20 +94,12 @@ class Trmnl(Kind):
             web.post("/api/devices/{id}/pair", editor_pair_open),
         ]
 
-    def interval(self, dev: dict) -> int:
-        return paging.wake_minutes(dev)
-
-    def sleeps(self, dev: dict) -> bool:
-        return True
-
     def describe(self, dev: dict) -> dict:
         st = devices.state(dev["id"])
         setup = dev.get("setup") or {}
         return {
             "paired": bool(setup.get("mac")),
             "friendly_id": setup.get("friendly_id") or "",
-            "wake_minutes": paging.wake_minutes(dev),
-            "wake_choices": list(paging.WAKE_CHOICES),
             "awake_s": paging.awake_average(dev),
             "pairing_left": pairing_left(dev["id"]),
             "paired_at": st.get("paired_at"),
@@ -118,9 +111,6 @@ class Trmnl(Kind):
             "firmware": st.get("firmware") or "",
             "log": [e["message"] for e in list(_rt(dev).get("logs") or [])[-3:]],
         }
-
-    def settings(self, dev: dict, body: dict) -> dict:
-        return paging.wake_setting(body)
 
     def entities(self, dev: dict) -> set[str]:
         return {"sensor.epaper_battery", "sensor.epaper_battery_voltage", "sensor.epaper_wifi_signal",
@@ -134,7 +124,7 @@ class Trmnl(Kind):
         f.names = list(st.live)
         f.cat_names = list(st.live)
         f.cat_count = len(st.live)
-        f.rotate_seconds = paging.wake_minutes(dev) * 60
+        f.rotate_seconds = paging.update_seconds(dev) * paging.rotate_updates(dev)
         # What the device was last sent: the editor's "what it shows".
         last = rt.get("last_png") or b""
         f.strip = f.single = last
@@ -393,7 +383,7 @@ async def api_display(request):
     except Exception as exc:
         # Nothing new to show: it keeps its picture and asks again at its next wake.
         print(f"{dev['name']}: couldn't pick its picture: {health.describe(exc)}", flush=True)
-        png, sleep_for = None, paging.wake_minutes(dev) * 60
+        png, sleep_for = None, paging.update_seconds(dev)
     body = {"status": 0, "image_url": "", "filename": "", "refresh_rate": int(sleep_for),
             "update_firmware": False, "firmware_url": "", "reset_firmware": False}
     if png:
@@ -456,7 +446,8 @@ async def _pairing(request, dev: dict) -> dict:
     away = await reach.public_base(runtime.HASS)
     if away:
         addresses.append({"where": "away", "url": away})
-    return {"device": dev["id"], **KIND.describe(devices.get(dev["id"])), "addresses": addresses,
+    dev = devices.get(dev["id"])
+    return {"device": dev["id"], **KIND.describe(dev), "update_minutes": KIND.update_minutes(dev), "addresses": addresses,
             "reach": reach.settings()["mode"]}
 
 

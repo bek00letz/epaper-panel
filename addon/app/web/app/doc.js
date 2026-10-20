@@ -13,7 +13,7 @@ import { groupBox } from "./elements.js";
 
 const HISTORY = 60;
 const AUTOSAVE_MS = 700;
-const TOP_KEYS = ["display", "orientation", "rotate_seconds", "quiet_hours", "custom_presets", "location_presets"];
+const TOP_KEYS = ["display", "orientation", "quiet_hours", "custom_presets", "location_presets"];
 
 /* Every element has an ID, unique across the pages: a screen of another
    size keeps its own place for each element by it. New, pasted and
@@ -38,7 +38,7 @@ export function normalize(spec) {
   if (!Array.isArray(spec.rotation)) spec.rotation = [];
   if (!spec.display) spec.display = "crowpanel_579";
   if (spec.orientation === undefined) spec.orientation = 0;
-  if (spec.rotate_seconds === undefined) spec.rotate_seconds = 30;
+  delete spec.rotate_seconds;     // Rotate every is the screen's own since 0.13 (Settings), never sent with pages
   if (!spec.quiet_hours) spec.quiet_hours = { enabled: false, start: "23:00", end: "07:00", presence_entity: "", allow_alerts: true, sleep_screen: true };
   if (!Array.isArray(spec.custom_presets)) spec.custom_presets = [];
   if (!Array.isArray(spec.location_presets)) spec.location_presets = [];

@@ -592,8 +592,8 @@ async def _refresh_device(session, dev: dict, spec: dict, st: DesignState) -> Fr
         "unit_of_measurement": "pages", "pages_wanted": fit.get("pages_wanted"),
         "capacity_kb": (fit.get("capacity") or 0) // 1024,
         "left_out": ", ".join(f"{t['page']}: {t['shown']} of {t['of']}" for t in fit.get("trimmed") or []) or "nothing"})
-    # A panel's own refresh interval is the contract: new content waits for
-    # it, however often pages come and go (a panel on a battery may fetch
+    # A screen's Update every (timing.py) is the contract: new content waits
+    # for it, however often pages come and go (a panel on a battery may fetch
     # every hour). The add-on wakes it early only for alerts (render loop),
     # quiet hours starting or ending, and what a person does (Send, Push, the
     # Refresh button, the action endpoint).

@@ -49,7 +49,8 @@ Where things live in `addon/app/`:
 | `config.py` / `runtime.py` | Settings from the environment; what the running add-on holds. Always read as `config.X` / `runtime.X`, so changes are seen everywhere |
 | `devices.py` | The screens the add-on drives, the design each shows, the shared library; keys; the move in from one panel |
 | `kinds/` | Kinds of device (`crowpanel.py`, `trmnl.py`): their sizes, device-port and editor routes, how they're woken, and what they fetch; which kinds are on; the one key check (`device_for`) and the wrong-key slowdown |
-| `paging.py` | Screens that sleep between wakes (a TRMNL; a CrowPanel in Low Power Mode): pictures drawn ahead, the cursor, the sleep time, the awake time |
+| `paging.py` | Screens that sleep between updates (a TRMNL; a CrowPanel updating every 2 minutes or more): pictures drawn ahead, the cursor, the sleep time, the awake time |
+| `timing.py` | Every screen's two timers, Update every and Rotate every: the choices, what a screen set before 0.13 means, and what the editor shows |
 | `render/arrange.py` | One design on several sizes: element IDs, automatic placement, each size's arrangement |
 | `reach.py` / `companion.py` / `companion/epaper_panel/` | Reaching home: how screens away from home get in, and the Home Assistant integration that passes them on |
 | `frames.py` | Per design: which pages are live, their values, alerts. Per device: quiet hours, then its kind renders it |
@@ -106,7 +107,7 @@ every design.
 
 | Belongs to | What | Stored in |
 |---|---|---|
-| The device | kind, name, size (`display`), orientation, seconds per page, quiet hours, key, Low Power Mode (`low_power`), wake interval (`wake_minutes`), its kind's setup (a CrowPanel's ESPHome settings) | `devices.json` (0600) |
+| The device | kind, name, size (`display`), orientation, quiet hours, key, its two timers (`update_minutes`, `rotate_seconds`, `rotate_updates`), its kind's setup (a CrowPanel's ESPHome settings) | `devices.json` (0600) |
 | The design | pages, rotation | `designs/<id>.json`; one never saved is the shipped starter pages |
 | The library | saved presets and places | `library.json` |
 | What a device reports | how much it holds; for a screen that sleeps, its cursor, when each page last changed, recent awake times, a stay-awake request | `state/<id>.json` |
@@ -127,14 +128,31 @@ every design.
 - **Kinds** (`kinds/`) say what a device of that kind supports: its display
   profiles (`theme.DISPLAYS[*].kind`), the routes it adds to the device port
   and to the editor's API, whether the add-on can wake it (`link`), who picks
-  the page and who owns the refresh interval, whether this screen sleeps
-  between wakes (`sleeps`), how a new one is set up (`setup_flow`: install or
+  the page, whether it can stay connected (`stays_on`) and so whether this
+  screen sleeps between updates (`sleeps`), how a new one is set up (`setup_flow`: install or
   pair), what the editor shows about it (`describe`), its own settings and the
   entities it publishes. The core names no kind. `crowpanel` is the panel
   described in the rest of this file; `trmnl` has [its own section](#trmnl).
-- **How a screen is powered is never assumed.** A CrowPanel on a big power
-  bank can stay connected; a plugged-in one can use Low Power Mode. Whether a
-  screen sleeps is its own setting, not its kind's.
+- **Two timers per screen** (`timing.py`), the same for every kind and the
+  one source of truth for when it fetches. **Update every**: 1 minute is
+  always on (a CrowPanel stays connected, its buttons answer at once, alerts
+  and Home Assistant reach it straight away); 2 minutes up to a day, it
+  sleeps between updates, and longer is lower power. **Rotate every**: always
+  on, seconds, and the panel turns its pages itself; asleep, a whole number of
+  updates (each wake refreshes the page on screen, every Nth moves on), at
+  least once a day. Each mode keeps its own, so switching back finds what you
+  had. They're set in Settings › Screen and apply at once, never sent with the
+  pages; a new screen chooses between two cards, always on picked. A kind
+  that can't stay connected (`stays_on` false: a TRMNL) has no always-on
+  choice and starts at 5 minutes. Whether a screen sleeps is never assumed
+  from its kind otherwise: a plugged-in panel may sleep, one on a battery may
+  stay on.
+- **What 0.12 kept means the same.** Before 0.13 a screen had a Low Power Mode
+  switch (`low_power`), a wake interval (`wake_minutes`) and, for a CrowPanel,
+  its own refresh interval in Panel setup (`refresh_interval`). A screen not
+  set since means what they meant: Low Power Mode off is always on, on keeps
+  its wake interval, and the rotation time it kept with its pages is its own. They're
+  never written or removed, so going back to 0.12 finds them as they were.
 - **A kind can be optional.** `Kind.enabled()` is its add-on option. While
   it's off its routes aren't added (`web.make_apps`), its devices aren't drawn,
   and the editor lists none of them or their sizes (`kinds.shown`,
@@ -340,9 +358,13 @@ Assistant. Each CrowPanel device has its own link. It never guesses names:
   with a backoff (5 s, 15 s, 30 s, then every 60 s) until Home Assistant
   confirms it. This matters most when quiet hours end, because the panel
   doesn't fetch on its own until it's woken.
-- **The panel's own refresh interval is the one source of truth** for how
-  often a connected panel fetches (in Low Power Mode it's the screen's wake
-  interval, and the panel can't be woken early, so `link` is None). Pages coming and going (a match starting, planes
+- **Update every is the one source of truth** for how often a panel
+  fetches. Always on, the panel fetches on its own timer, its "Refresh
+  interval" number in Home Assistant; the add-on keeps that at Update every
+  (`crowpanel.keep_its_timer`, checked every ten minutes in the background),
+  because the panel keeps the number it had through an upgrade and even a
+  reinstall. Sleeping, its own timer doesn't run and it can't be woken early,
+  so `link` is None. Pages coming and going (a match starting, planes
   overhead) wait for it: a panel on a battery may fetch once an hour, and the
   add-on must not override that. Only the reasons above wake it early
   (`PROACTIVE_TIMED_PUSH` is off).
@@ -354,8 +376,8 @@ Assistant. Each CrowPanel device has its own link. It never guesses names:
 
 ## Screens that sleep
 
-`paging.py`. A TRMNL always, and a CrowPanel in Low Power Mode, sleep between
-wakes and let the add-on pick the page. They share one mode; each kind keeps
+`paging.py`. A TRMNL always, and a CrowPanel updating every 2 minutes or
+more, sleep between updates and let the add-on pick the page. They share one mode; each kind keeps
 only its protocol (how a wake asks, how the answer is said).
 
 - **Drawn ahead** (`draw_ahead`, from the kind's `render`). Every item of
@@ -367,13 +389,14 @@ only its protocol (how a wake asks, how the answer is said).
   again with the time it had; if it comes out the same, nothing changed and it
   keeps its bytes, so its name or ETag stays the same and the screen neither
   downloads nor flashes. Only on the day after does the day join the time.
-- **A wake only picks** (`wake`). The cursor (`step`, in `state/<id>.json`):
-  a timer wake moves through every item of every live page; a person goes to
-  the next page. Alerts show while they last; conditions and linger apply as
+- **A wake only picks** (`wake`). The cursor (in `state/<id>.json`): a
+  timer wake shows the page it's on, drawn fresh, until that page has been
+  shown at Rotate every's number of wakes (`shown`), then moves through every
+  item of every live page (`step`); a person goes to the next page and the
+  count starts again. Alerts show while they last; conditions and linger apply as
   everywhere.
-- **The sleep time** (`sleep_seconds`): the wake interval (5 minutes to
-  4 hours, 15 by default; one setting, `wake_minutes`, for every kind), cut
-  short to wake just after quiet hours start. During quiet hours: the sleep
+- **The sleep time** (`sleep_seconds`): Update every (2 minutes to a day;
+  `timing.py`), cut short to wake just after quiet hours start. During quiet hours: the sleep
   screen until they end, plus a minute. A press shows a page for two minutes.
   Presence has no end, so it checks again at its interval.
 - **Quiet hours** come from the cycle, presence included. Their schedule is
@@ -542,31 +565,31 @@ table as unverified; the demo source is authoritative.
 ## Battery and deep sleep
 
 How a screen is powered is its owner's business, so it's a setting of each
-screen, never a property of a kind. Three setups make sense:
+screen (Update every), never a property of a kind. Three setups make sense:
 
-| Setup | Low Power Mode | What you get |
+| Setup | Update every | What you get |
 |---|---|---|
-| Plugged in | Off | Instant updates, alerts at once, remote control. The default. |
-| On a battery, always connected | Off | The same, for as long as the battery lasts. The 5.79" idles below about 0.25 W (brief 0.5 W redraws), so a 20,000 mAh power bank (about 74 Wh) lasts roughly ten days, a bigger one weeks. A long test on a power bank is under way. |
-| Low Power Mode | On | Months on a battery. Pages and alerts arrive at its next check; a button press checks right away. A plugged-in panel can use it too. |
+| Plugged in | 1 minute (always on) | Instant updates, alerts at once, remote control. The default. |
+| On a battery, always connected | 1 minute (always on) | The same, for as long as the battery lasts. The 5.79" idles below about 0.25 W (brief 0.5 W redraws), so a 20,000 mAh power bank (about 74 Wh) lasts roughly ten days, a bigger one weeks. A long test on a power bank is under way. |
+| Sleeping between updates | 2 minutes to a day | Months on a battery, longer the longer it sleeps. Pages and alerts arrive at its next update; a button press updates it right away. A plugged-in panel can sleep too. |
 
-### Low Power Mode
+### Sleeping between updates
 
-A switch per screen (Settings › Screen, and when adding one), off by
-default, with the shared wake interval (15 minutes by default, 5 minutes to
-4 hours). It makes a CrowPanel a [screen that sleeps](#screens-that-sleep).
+Update every 2 minutes or more (Settings › Screen, or the second card when
+adding a screen; always on is the default) makes a CrowPanel a
+[screen that sleeps](#screens-that-sleep).
 
 **One firmware for both modes; the add-on decides on every download.**
 
 - The panel says why it's awake when it fetches `/frames.epf`:
   `wake=timer|button|boot`, and `awake_ms=` (how long it was awake last
   time). Only firmware that can sleep sends `wake`, and the editor says when a
-  panel in Low Power Mode hasn't yet (`firmware_sleeps`).
-- With Low Power Mode on, every answer (200, 304 and 503 alike) carries
-  `X-EPF-Sleep: <seconds>; awake=<seconds>`: how long until it checks again,
-  counted from this answer, and how long to stay awake before sleeping. Off,
-  there's no such header, and the panel stays connected as it always has.
-  Older firmware ignores headers it doesn't know.
+  sleeping panel hasn't yet (`firmware_sleeps`).
+- While it sleeps between updates, every answer (200, 304 and 503 alike)
+  carries `X-EPF-Sleep: <seconds>; awake=<seconds>`: how long until it checks
+  again, counted from this answer, and how long to stay awake before
+  sleeping. Always on, there's no such header, and the panel stays connected
+  as it always has. Older firmware ignores headers it doesn't know.
 - Why a header and not a field in the frame file: a frame file is drawn once
   per cycle and served to every download, while the sleep time is worked out
   per download (the clock, quiet hours, a stay-awake request), and a 304 has
@@ -581,11 +604,11 @@ default, with the shared wake interval (15 minutes by default, 5 minutes to
 - **Stay awake** (the editor, for an update over Wi-Fi) is the same field:
   at its next check the answer says `awake=600`, and any download in those ten
   minutes gets what's left. A press on the panel makes that check happen now.
-- **Switching** takes effect at its next download. Turned on, the add-on asks
-  a connected panel to fetch at once (a person did something); turned off,
-  the panel is asleep and finds out at its next check or press. The editor
+- **Switching** takes effect at its next download. To sleep, the add-on asks
+  a connected panel to fetch at once (a person did something); to stay on,
+  the panel is asleep and finds out at its next update or press. The editor
   says which.
-- In Low Power Mode the panel can't be woken early, so its kind gives no
+- Sleeping, the panel can't be woken early, so its kind gives no
   link: alerts show at its next check and its Refresh button leaves Home
   Assistant. Its ghosting and sleep settings live on the panel: change them
   while it's asked to stay awake.
@@ -720,8 +743,8 @@ timer runs. When an `alert` page fires, the server replaces the strip with a
 single-page alert frame for `hold_minutes` and pushes a refresh to the panel.
 
 **The panel owns which page is shown; the server owns what the pages are.**
-(For a connected CrowPanel. A TRMNL can't page on its own, and a CrowPanel in
-Low Power Mode shows one page per timer wake, so for those the add-on picks:
+(For an always-on CrowPanel. A TRMNL can't page on its own, and a sleeping
+CrowPanel shows one page per timer wake, so for those the add-on picks:
 see [Screens that sleep](#screens-that-sleep).)
 Paging had to move onto the device to be quick, which means display state
 (current page, held or not) lives on the panel and is lost on reboot. The
