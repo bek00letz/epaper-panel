@@ -194,6 +194,36 @@ class TestEntityPublisher(unittest.TestCase):
         run(pub._on_connect())
         self.assertEqual(hass.renames, [])
 
+    def test_the_last_render_left_by_0_8_is_cleared(self):
+        # Before 0.8.27 the add-on had its own "Last render" sensor on homeassistant/epaper_panel/last_render,
+        # retained with a timestamp without a time zone, which Home Assistant refused at every start.
+        pub, t = self.make(FakeHass(registry=[]))
+        run(pub._on_connect())
+        self.assertEqual(t.messages["homeassistant/epaper_panel/last_render"], "")
+        self.assertEqual(t.messages["homeassistant/sensor/epaper_panel/last_render/config"], "")
+        pub.set("sensor.epaper_panel_last_render", "2026-10-20T09:15:00+03:00", {"device_class": "timestamp"})
+        run(pub.sync())
+        self.assertNotEqual(t.messages["homeassistant/sensor/epaper_panel/epaper_panel_last_render/config"], "",
+                            "today's Last render is untouched")
+
+    def test_timestamps_always_carry_a_time_zone(self):
+        pub, t = self.make(FakeHass(registry=[]))
+        run(pub._on_connect())
+        pub.set("sensor.epaper_panel_last_render", "2026-10-18T13:34:23", {"device_class": "timestamp"})
+        pub.set("sensor.epaper_last_seen", "2026-10-20T09:15:00+03:00", {"device_class": "timestamp"})
+        pub.set("sensor.epaper_solar_month", "2026-10-18T13:34:23", {})
+        run(pub.sync())
+        from datetime import datetime
+        sent = datetime.fromisoformat(t.messages["epaper_panel/epaper_panel_last_render/state"])
+        self.assertIsNotNone(sent.tzinfo, "a naive one is the add-on's local time")
+        self.assertEqual(sent.replace(tzinfo=None), datetime(2026, 10, 18, 13, 34, 23))
+        self.assertEqual(t.messages["epaper_panel/epaper_last_seen/state"], "2026-10-20T09:15:00+03:00")
+        self.assertEqual(t.messages["epaper_panel/epaper_solar_month/state"], "2026-10-18T13:34:23",
+                         "only timestamps are touched")
+        pub.set("sensor.epaper_panel_last_render", None, {"device_class": "timestamp"})
+        run(pub.sync())
+        self.assertEqual(t.messages["epaper_panel/epaper_panel_last_render/state"], "None")
+
     def test_only_changes_are_published(self):
         pub, t = self.make(FakeHass(registry=[]))
         run(pub._on_connect())

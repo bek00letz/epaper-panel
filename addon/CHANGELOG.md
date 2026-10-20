@@ -18,6 +18,11 @@
 - **You can change the password of the panel's own Wi-Fi** (Install or
   update, "Its own Wi-Fi when it's lost"). It needs 8 to 63 characters, and
   a change takes effect when you install the panel again.
+- **No more "last render" error in Home Assistant's log at every start.** A
+  "Last render" sensor from before 0.8.27 had left a time without a time
+  zone in the MQTT broker. The add-on now clears it, which also removes that
+  old, unused sensor (today's is sensor.epaper_panel_last_render), and every
+  time it publishes carries a time zone.
 
 ## 0.13.0
 **Firmware change:** install the panel again from Install or update to get
