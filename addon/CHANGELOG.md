@@ -52,6 +52,10 @@
   HTTP (audit #9). A new panel's address is now Home Assistant's own on your
   network (its internal URL, or its name there), never the browser's. The
   TRMNL pairing address too. An address you've already saved is kept.
+- **Going back to 0.11.0 with a TRMNL:** 0.11.0 doesn't know TRMNL screens,
+  and one saved by a later version breaks its list of screens. Before going
+  back, remove your TRMNL screens (Settings › Screen › Remove), or restore a
+  whole backup from before you updated instead. CrowPanels go back fine.
 - **Removed:** the previous editor (`?classic=1`). It predates several
   screens; an old bookmark to it now opens the editor.
 
