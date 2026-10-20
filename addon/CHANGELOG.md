@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **The panel fills the editor in Safari.** Fit stopped at the panel's
+  actual size, leaving most of a big window empty. It now uses the width it
+  has, as it already did in other browsers.
 - **Reaching home through Home Assistant's address now finishes setting
   itself up.** After the restart, Home Assistant loaded the integration but
   nobody turned it on, so screens away from home got "not found". The add-on
