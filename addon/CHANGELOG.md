@@ -12,6 +12,10 @@
 - **Fixed:** through Home Assistant's address, a sender could claim a new
   address with every request and so never be slowed down for wrong keys. Only
   the address the integration itself passes on counts now.
+- **Fixed:** sending pages with a size from another kind of screen (a TRMNL's
+  size on a CrowPanel) was accepted, and that screen then couldn't be drawn at
+  all. It's refused now, and a send that leaves the size out keeps the
+  screen's own.
 
 ## 0.12.0
 **Firmware change** (only needed for Low Power Mode, or if your panel has

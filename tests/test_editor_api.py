@@ -69,6 +69,21 @@ class TestVersionCheck(EditorClient):
         self.assertEqual(r.status, 200)
         self.assertEqual(layouts_store.load_layouts()["rotate_seconds"], 60)
 
+    async def test_a_size_from_another_kind_of_screen_is_refused(self):
+        # A CrowPanel given a TRMNL's size saved fine, then could never be drawn again.
+        spec, tag = await self.spec_and_tag()
+        spec["display"] = "trmnl_og"
+        r = await self.ed.put("/api/layouts", json=spec, headers={"If-Match": tag})
+        self.assertEqual(r.status, 400)
+        self.assertIn("CrowPanel sizes", await r.text())
+        await frames.refresh_frames(None)
+        self.assertIsNone(support.first_frames().error, "it still draws")
+        spec.pop("display")
+        spec["rotate_seconds"] = 50
+        r = await self.ed.put("/api/layouts", json=spec, headers={"If-Match": tag})
+        self.assertEqual(r.status, 200, "no size: it keeps its own")
+        self.assertEqual(layouts_store.load_layouts()["display"], "crowpanel_579")
+
     async def test_version_ignores_file_formatting(self):
         spec, tag = await self.spec_and_tag()
         self.assertEqual(f'"{layouts_store.layouts_etag(json.loads(json.dumps(spec, indent=4)))}"', tag)

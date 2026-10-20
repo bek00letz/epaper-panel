@@ -220,10 +220,16 @@ async def api_layouts_get(request):
 
 
 async def api_layouts_put(request):
-    dev_id = _device(request)["id"]
+    dev = _device(request)
+    dev_id = dev["id"]
     spec = await request.json()
     if not isinstance(spec, dict) or "pages" not in spec:
         raise web.HTTPBadRequest(text="expected {rotation, pages}")
+    # The size is the screen's own: one of its kind's, never another kind's (that one can't be drawn).
+    spec.setdefault("display", dev.get("display"))
+    kind = kinds.of(dev)
+    if T.get_display(spec.get("display")).get("kind") != kind.id:
+        raise web.HTTPBadRequest(text=f"Pick one of the {kind.name} sizes.")
     try:
         clean = sanitize_layouts(spec)
     except ValueError as exc:
