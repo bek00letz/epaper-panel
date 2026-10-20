@@ -317,6 +317,65 @@ class TestFirmwareYaml(unittest.TestCase):
         self.assertIn("esp_crt_bundle_attach", client)
         self.assertIn("CONFIG_MBEDTLS_CERTIFICATE_BUNDLE", (ROOT / "components" / "epf" / "__init__.py").read_text())
 
+    def test_low_power_mode_is_compiled_in_and_never_sleeps_on_its_own(self):
+        text, _ = reference_yaml()
+        block = text.split("\ndeep_sleep:\n", 1)[1].split("\n\n", 1)[0]
+        self.assertNotIn("run_duration", block, "only an answer from the add-on puts it to sleep")
+        self.assertNotIn("sleep_duration", block)
+        self.assertNotIn("esp32_ext1_wakeup", block, "the buttons are set as wake sources at sleep time")
+        self.assertIn("epf::power_prepare_sleep(millis(), (1ULL << 1) | (1ULL << 2) | (1ULL << 4) | (1ULL << 5) | (1ULL << 6))",
+                      text, "all five buttons wake it, whichever way it's mounted")
+        self.assertIn("reboot_timeout: 0s", text.split("\napi:\n", 1)[1].split("\n\n", 1)[0],
+                      "Home Assistant being away never restarts it")
+        self.assertIn("epf::power_begin();", text, "the first download says why it's awake")
+        self.assertIn("epf::power_note_download(millis(), result);", text)
+        self.assertIn("on_begin:\n      - lambda: 'epf::PowerPolicy::instance().hold(true);'", text, "never asleep mid-update")
+        self.assertEqual(text.count("epf::PowerPolicy::instance().note_press(millis());"), 5, "every button counts as a press")
+
+    def test_it_sleeps_only_once_the_display_is_done(self):
+        # Deep sleep cuts the display's power: a refresh still running would be cut short.
+        self.assertEqual(firmware_gen.display_settled(T.get_display("crowpanel_579")), "id(epd).is_idle()")
+        waveshare = T.get_display("crowpanel_750")
+        self.assertIn("last_redraw_ms", firmware_gen.display_settled(waveshare))
+        for disp in ("crowpanel_579", "crowpanel_750"):
+            text = firmware_gen.render(
+                disp=T.get_display(disp), version="1.2.3", device_name="kitchen", frames_url='"http://x/frames.epf"',
+                api_key='"k"', wifi_ssid='"a"', wifi_password='"b"', interval_min=5, orientation=0)
+            self.assertIn(f"!({firmware_gen.display_settled(T.get_display(disp))})", text)
+
+    def test_it_builds_with_or_without_its_own_wifi(self):
+        # get_ap() only exists when the panel has its own Wi-Fi (ESPHome's USE_WIFI_AP):
+        # unguarded, a panel set up without it didn't compile (fixed 2026-10-20).
+        text, _ = reference_yaml()
+        self.assertNotIn("captive_portal", text, "the reference is the setup without it")
+        body = text.split("#ifdef USE_WIFI_AP", 1)
+        self.assertEqual(len(body), 2, "the setup-Wi-Fi screen is only built with its own Wi-Fi")
+        guarded, after = body[1].split("#endif", 1)
+        self.assertIn("get_ap()", guarded)
+        self.assertNotIn("get_ap()", body[0] + after)
+
+    @unittest.skipUnless((ROOT / ".esphome-venv" / "bin" / "python").exists(), "no ESPHome here")
+    def test_esphome_reads_it_with_or_without_its_own_wifi(self):
+        # A text check isn't enough: a "#" at the start of a line inside a lambda
+        # ends the lambda and reads as a YAML comment.
+        for hotspot in (None, ('"Kitchen setup"', '"abcdefghjkmn"')):
+            text = firmware_gen.render(
+                disp=T.get_display(DISPLAY), version="1.2.3", device_name="kitchen",
+                frames_url='"http://x/frames.epf"', api_key='"k"', wifi_ssid='"a"', wifi_password='"b"',
+                interval_min=5, orientation=0, hotspot=hotspot)
+            with tempfile.TemporaryDirectory() as tmp:
+                path = Path(tmp) / "panel.yaml"
+                path.write_text(text)
+                out = subprocess.run(
+                    [str(ROOT / ".esphome-venv" / "bin" / "python"), "-c",
+                     "import sys, pathlib; from esphome import yaml_util; "
+                     "d = yaml_util.load_yaml(pathlib.Path(sys.argv[1])); "
+                     "print(str(d['display'][0]['lambda']))", str(path)],
+                    capture_output=True, text=True, timeout=60)
+            self.assertEqual(out.returncode, 0, out.stderr[-500:])
+            self.assertIn("#ifdef USE_WIFI_AP", out.stdout, "the guard is inside the lambda")
+            self.assertIn("get_ap()", out.stdout)
+
     def test_mounting_upside_down_swaps_the_buttons(self):
         self.assertEqual(firmware_gen.button_pins(180)["NEXT_PIN"], 6)
         self.assertEqual(firmware_gen.button_pins(0)["NEXT_PIN"], 4)

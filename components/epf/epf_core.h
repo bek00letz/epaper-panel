@@ -842,4 +842,189 @@ class PanelController {
   std::vector<uint32_t> cat_ids_, sub_ids_;
 };
 
+// ---------------------------------------------------------------- Low Power Mode
+//
+// One firmware for both modes: the add-on decides on every download. An answer
+// with `X-EPF-Sleep: <seconds>; awake=<seconds>` means "check again in that
+// many seconds (counted from this answer), and stay awake that long first";
+// an answer without it means "stay connected", as always. The panel never
+// sleeps on its own say-so, except to retry later when a timer wake couldn't
+// reach the add-on at all (it was told to sleep before, so it's on a battery).
+
+struct SleepOrder {
+  uint32_t sleep_sec{0};
+  uint32_t awake_sec{0};
+};
+
+constexpr uint32_t MIN_SLEEP_SEC = 30;             // never a wake loop, whatever an answer says
+constexpr uint32_t MAX_SLEEP_SEC = 26 * 3600;      // a day, plus quiet hours' margin
+constexpr uint32_t MAX_AWAKE_SEC = 3600;
+constexpr uint32_t PERSON_AWAKE_SEC = 60;          // after the last press
+constexpr uint32_t RETRY_FIRST_SEC = 60;           // couldn't reach the add-on: 60 s, doubling...
+constexpr uint32_t RETRY_MAX_SEC = 600;            // ...to 10 min, never past the interval
+constexpr uint32_t QUICK_WAKE_MS = 2000;           // a "press" this soon after sleeping is a floating pin
+constexpr uint32_t QUICK_WAKES_LIMIT = 3;
+
+// "900" or "900; awake=60" (spaces allowed). False for anything else, which is then ignored.
+inline bool parse_sleep_order(const char *v, SleepOrder &out) {
+  if (!v) return false;
+  auto skip = [&](const char *p) { while (*p == ' ' || *p == '\t') p++; return p; };
+  auto number = [&](const char *&p, uint32_t &n) {
+    if (*p < '0' || *p > '9') return false;
+    uint64_t acc = 0;
+    while (*p >= '0' && *p <= '9') {
+      acc = acc * 10 + (uint64_t) (*p++ - '0');
+      if (acc > 0xFFFFFFFFull) return false;
+    }
+    n = (uint32_t) acc;
+    return true;
+  };
+  SleepOrder o;
+  const char *p = skip(v);
+  if (!number(p, o.sleep_sec)) return false;
+  p = skip(p);
+  if (*p == ';') {
+    p = skip(p + 1);
+    if (std::strncmp(p, "awake=", 6) != 0) return false;
+    p += 6;
+    if (!number(p, o.awake_sec)) return false;
+    p = skip(p);
+  }
+  if (*p != '\0') return false;
+  o.sleep_sec = o.sleep_sec < MIN_SLEEP_SEC ? MIN_SLEEP_SEC : (o.sleep_sec > MAX_SLEEP_SEC ? MAX_SLEEP_SEC : o.sleep_sec);
+  o.awake_sec = o.awake_sec > MAX_AWAKE_SEC ? MAX_AWAKE_SEC : o.awake_sec;
+  out = o;
+  return true;
+}
+
+enum class Wake : uint8_t { BOOT, TIMER, BUTTON };
+
+inline const char *wake_name(Wake w) {
+  switch (w) {
+    case Wake::TIMER: return "timer";
+    case Wake::BUTTON: return "button";
+    case Wake::BOOT: break;
+  }
+  return "boot";
+}
+
+// What the panel keeps through deep sleep (in RTC memory, epf_power.cpp). Gone
+// after a power cut or a reset, which is right: then it's a fresh start.
+struct Remembered {
+  uint32_t magic;
+  uint32_t interval_sec;      // the last answer's sleep time; 0: stay connected
+  uint32_t failures;          // timer wakes in a row that couldn't reach the add-on
+  uint32_t awake_ms;          // how long the last wake was awake, for the add-on
+  uint32_t quick_wakes;       // button wakes in a row right after falling asleep
+  uint32_t buttons_off;       // the buttons woke it in a loop: timer only until the next timer wake
+  char etag[40];              // what's on screen, so an unchanged page is a 304: no download, no redraw
+};
+constexpr uint32_t REMEMBERED_MAGIC = 0x4C504D31;  // "LPM1"
+
+// When to sleep, and for how long. Times are millis(); differences survive its wrap.
+class PowerPolicy {
+ public:
+  static PowerPolicy &instance() {
+    static PowerPolicy inst;
+    return inst;
+  }
+
+  // At start-up. `slept_ms`: how long it was asleep (0 if not from deep sleep).
+  void begin(Wake wake, Remembered &mem, uint32_t slept_ms) {
+    if (mem.magic != REMEMBERED_MAGIC || wake == Wake::BOOT) {
+      mem = Remembered{};
+      mem.magic = REMEMBERED_MAGIC;
+    }
+    wake_ = wake;
+    mem_ = &mem;
+    have_ = held_ = pressed_ = false;
+    if (wake == Wake::BUTTON && slept_ms < QUICK_WAKE_MS) {
+      if (++mem.quick_wakes >= QUICK_WAKES_LIMIT && !mem.buttons_off) {
+        mem.buttons_off = 1;
+        ESP_LOGW(TAG, "The buttons woke the panel %u times as it fell asleep: waking on the timer only for now",
+                 (unsigned) mem.quick_wakes);
+      }
+    } else {
+      mem.quick_wakes = 0;
+      if (wake == Wake::TIMER) mem.buttons_off = 0;   // try them again
+    }
+  }
+
+  // After every download. `answered`: the add-on gave any HTTP answer at all.
+  void on_answer(bool answered, bool has_order, const SleepOrder &order, uint32_t now_ms) {
+    if (!mem_) return;
+    if (answered) {
+      mem_->failures = 0;
+      if (has_order) {
+        order_ = order;
+        have_ = true;
+        answer_ms_ = now_ms;
+        mem_->interval_sec = order.sleep_sec;
+      } else {
+        if (have_) ESP_LOGI(TAG, "Low Power Mode is off: staying connected");
+        have_ = false;
+        mem_->interval_sec = 0;
+      }
+      return;
+    }
+    // No answer. Already told what to do this wake: that stands. Never told: stay connected.
+    if (have_ || mem_->interval_sec == 0) return;
+    mem_->failures++;
+    order_.sleep_sec = retry_sec_();
+    order_.awake_sec = wake_ == Wake::TIMER ? 0 : PERSON_AWAKE_SEC;
+    have_ = true;
+    answer_ms_ = now_ms;
+    ESP_LOGW(TAG, "Couldn't reach the add-on: trying again in %u s", (unsigned) order_.sleep_sec);
+  }
+
+  // Someone pressed a button: awake a minute after their last press.
+  void note_press(uint32_t now_ms) {
+    pressed_ = true;
+    press_ms_ = now_ms;
+  }
+
+  // An update over Wi-Fi is running: never sleep in the middle of it.
+  void hold(bool on) { held_ = on; }
+
+  bool low_power() const { return have_; }
+  Wake wake() const { return wake_; }
+  bool buttons_wake() const { return !mem_ || !mem_->buttons_off; }
+
+  // Whether to sleep now. `busy`: a download, a redraw or a refresh is still going.
+  bool sleep_due(uint32_t now_ms, bool busy) const {
+    if (!have_ || held_ || busy) return false;
+    if (now_ms - answer_ms_ < order_.awake_sec * 1000u) return false;
+    uint32_t after_press = order_.awake_sec > PERSON_AWAKE_SEC ? order_.awake_sec : PERSON_AWAKE_SEC;
+    if (pressed_ && now_ms - press_ms_ < after_press * 1000u) return false;
+    return true;
+  }
+
+  // How long to sleep, counted from now: what the answer said, less the time awake since.
+  uint32_t sleep_ms(uint32_t now_ms) const {
+    uint64_t want = (uint64_t) order_.sleep_sec * 1000u, spent = now_ms - answer_ms_;
+    uint64_t left = want > spent ? want - spent : 0;
+    return (uint32_t) (left < MIN_SLEEP_SEC * 1000u ? MIN_SLEEP_SEC * 1000u : left);
+  }
+
+  // Just before sleeping: what the next wake tells the add-on.
+  void before_sleep(uint32_t now_ms) {
+    if (mem_) mem_->awake_ms = now_ms;
+  }
+
+ private:
+  PowerPolicy() = default;
+  uint32_t retry_sec_() const {
+    uint32_t s = RETRY_FIRST_SEC;
+    for (uint32_t i = 1; i < mem_->failures && s < RETRY_MAX_SEC; i++) s *= 2;
+    if (s > RETRY_MAX_SEC) s = RETRY_MAX_SEC;
+    return s < mem_->interval_sec ? s : mem_->interval_sec;
+  }
+
+  Remembered *mem_{nullptr};
+  Wake wake_{Wake::BOOT};
+  SleepOrder order_;
+  bool have_{false}, held_{false}, pressed_{false};
+  uint32_t answer_ms_{0}, press_ms_{0};
+};
+
 }  // namespace epf

@@ -4,6 +4,22 @@ It owns which page is shown and how often it fetches. The add-on packs the
 pages into the EPF frame file (render/epf.py) with the footer geometry the
 firmware draws its overlays with, fits the file to what the panel says it
 holds (`?cap=`), and wakes it early through Home Assistant (panel_link).
+
+**Low Power Mode** (a setting of the screen, off by default) makes it a
+screen that sleeps: the shared mode in paging.py picks the page for a timer
+wake and says how long to sleep. The firmware is the same either way. On
+each download the add-on decides: with Low Power Mode on, the answer carries
+`X-EPF-Sleep: <seconds>; awake=<seconds>` (how long until it next checks,
+counted from this answer, and how long to stay awake first); off, no such
+header, and the panel stays connected. A header, not a field in the frame
+file, because a frame file is drawn once per cycle for every download while
+the sleep time is worked out per download, and a 304 has no body. Older
+firmware ignores headers it doesn't know.
+
+What a panel that can sleep says when it fetches `/frames.epf`:
+`wake=timer|button|boot` (why it's awake) and `awake_ms=` (how long it was
+awake last time). A timer wake in Low Power Mode gets one page, picked;
+anything else gets every page, as always.
 """
 from __future__ import annotations
 
@@ -19,9 +35,10 @@ from PIL import Image
 import devices
 import frames
 import health
+import paging
 import panel_ops
 import runtime
-from config import SLEEP_PAGE
+from config import HA_TOKEN, SLEEP_PAGE
 from kinds import Kind, device_for, register
 from panel_link import PanelLink
 from render import epf, sleep, stripmeta, subitems, theme as T
@@ -44,6 +61,52 @@ class CrowPanel(Kind):
     def displays(self) -> list[str]:
         return [k for k, d in T.DISPLAYS.items() if d.get("kind") == self.id]
 
+    def sleeps(self, dev: dict) -> bool:
+        """Low Power Mode: the screen's own setting, off unless its owner turns it on."""
+        return bool(dev.get("low_power"))
+
+    async def switched(self, old: dict, dev: dict) -> str | None:
+        """Low Power Mode takes effect at the panel's next download. Turned on, the add-on asks a
+        connected panel to download now; turned off, the panel is asleep and finds out when it checks."""
+        minutes = paging.wake_minutes(dev)
+        if not self.sleeps(dev):
+            return (f"It stays connected from its next check, within {minutes} minutes, "
+                    "or as soon as you press a button on it.")
+        link = self.connected_link(dev)
+        if HA_TOKEN:
+            link.request_refresh("Low Power Mode on")
+            if await link.deliver():
+                return f"It switches now, then checks for new pages every {minutes} minutes."
+            link.pending = None                        # not retried: it would be asleep by then
+        return "It switches at its next download."
+
+    def editor_routes(self) -> list:
+        return [
+            web.post("/api/devices/{id}/stay-awake", editor_stay_awake),
+            web.delete("/api/devices/{id}/stay-awake", editor_stay_awake),
+        ]
+
+    def describe(self, dev: dict) -> dict:
+        st = devices.state(dev["id"])
+        return {
+            "low_power": self.sleeps(dev),
+            "wake_minutes": paging.wake_minutes(dev),
+            "wake_choices": list(paging.WAKE_CHOICES),
+            # Whether its firmware has said why it woke: only firmware that can sleep does.
+            "firmware_sleeps": bool(st.get("sleeps_seen")),
+            "last_seen": st.get("last_seen") if self.sleeps(dev) else None,
+            "awake_s": paging.awake_average(dev),
+            "stay_awake": paging.stay_awake_info(dev),
+        }
+
+    def settings(self, dev: dict, body: dict) -> dict:
+        fields = paging.wake_setting(body)
+        if "low_power" in body:
+            if not isinstance(body["low_power"], bool):
+                raise ValueError("Low Power Mode is on or off.")
+            fields["low_power"] = body["low_power"]
+        return fields
+
     def routes(self) -> list:
         return [
             web.get("/frame.png", frame_png),
@@ -59,7 +122,13 @@ class CrowPanel(Kind):
             # Nothing on the network used them; the editor keeps its own copies.
         ]
 
-    def link(self, dev: dict) -> PanelLink:
+    def link(self, dev: dict) -> PanelLink | None:
+        if self.sleeps(dev):
+            return None                                # asleep between checks: it can't be woken early
+        return self.connected_link(dev)
+
+    def connected_link(self, dev: dict) -> PanelLink:
+        """Its link through Home Assistant, whatever mode it's in (for the last push before it sleeps)."""
         rt = runtime.device(dev["id"])
         if rt.link is None:
             dev_id = dev["id"]
@@ -87,7 +156,10 @@ class CrowPanel(Kind):
         return rt.link
 
     def interval(self, dev: dict) -> int:
-        """What its Panel setup says; the panel's own number, through its link, wins."""
+        """In Low Power Mode, its wake interval. Otherwise what its Panel setup says; the
+        panel's own number, through its link, wins."""
+        if self.sleeps(dev):
+            return paging.wake_minutes(dev)
         m = re.search(r"\d+", str((dev.get("setup") or {}).get("refresh_interval", "5")))
         return int(m.group(0)) if m else 5
 
@@ -104,6 +176,11 @@ class CrowPanel(Kind):
             rot_sec = 30
         alert = st.alert
         rt = runtime.device(dev["id"])
+        if self.sleeps(dev):
+            # Low Power Mode: a timer wake gets one page, picked from these.
+            await paging.draw_ahead(dev, spec, st, quiet_active, quiet_reason, ART)
+        else:
+            paging.forget(dev)
 
         if not st.live:
             img = await asyncio.to_thread(frames.empty_page, orient, display)
@@ -240,6 +317,77 @@ def _frames(strip, single, slices, names, cat_offsets, cat_sizes, cat_names, cat
     return f
 
 
+def _single_epf(img, *, name: str, sub_key: str, spec: dict, fg: dict, pill_w: int, quiet: bool,
+                cat_flags: int = 0, cat_id: int | None = None, sub_id: int | None = None) -> bytes:
+    """One page as a frame file of its own, with the identities it has in the strip."""
+    orient, display = _orient(spec), T.get_display(spec.get("display"))["id"]
+    disp = T.get_display(display)
+    if cat_id is None or sub_id is None:
+        cat_ids, sub_ids = subitems.compute_identities([name], [[sub_key]])
+        cat_id, sub_id = cat_ids[0], sub_ids[0]
+    digest = hashlib.md5(img.tobytes()).digest()
+    return epf.encode_epf(
+        pages=[img], cat_ids=[cat_id], cat_offsets=[0], cat_sizes=[1], cat_pill_widths=[pill_w],
+        sub_ids=[sub_id], display_model=display, width=disp["w"], height=disp["h"],
+        rotate_sec=_rotate_seconds(spec), quiet_hours=quiet, alert_interrupt=False,
+        orientation_180=(orient == 180), content_hash=int.from_bytes(digest[:8], "big"),
+        geometry=frames.panel_geometry(fg, orient, display), cat_flags=[cat_flags])
+
+
+def _orient(spec: dict) -> int:
+    try:
+        orient = int(spec.get("orientation") or 0)
+    except (TypeError, ValueError):
+        orient = 0
+    return orient if orient in (0, 90, 180, 270) else 0
+
+
+def _rotate_seconds(spec: dict) -> int:
+    try:
+        return max(5, min(3600, int(spec.get("rotate_seconds") or 30)))
+    except (TypeError, ValueError):
+        return 30
+
+
+class _Art(paging.Art):
+    """A CrowPanel's pictures in Low Power Mode: one page each, as a frame file."""
+
+    async def page(self, dev, spec, st, plans, pos, item, clock) -> bytes:
+        orient, display = _orient(spec), T.get_display(spec.get("display"))["id"]
+        plan = plans[pos]
+        count = max(1, plan["want"])
+        item = min(item, count - 1)
+        fg = T.footer_plan(clock=clock, pages=[(p["name"], max(1, p["want"])) for p in plans],
+                           orientation=orient, display=display)
+        imgs = await frames.draw_category(plan, count, pos, footer=fg, page_def=spec["pages"][plan["name"]],
+                                          orient=orient, display=display, only=item)
+        # The identities it has in the frame file of every page, so a press after this wake keeps its place.
+        keys = [(p["sub_keys"] or [p["name"]])[:max(1, p["want"])] for p in plans]
+        cat_ids, sub_ids = subitems.compute_identities([p["name"] for p in plans], keys)
+        first = sum(len(k) for k in keys[:pos])
+        sub_id = sub_ids[first + min(item, len(keys[pos]) - 1)]
+        return _single_epf(imgs[0], name=plan["name"], sub_key="", spec=spec, fg=fg,
+                           pill_w=fg["pages"][pos]["w"], quiet=False, cat_id=cat_ids[pos], sub_id=sub_id)
+
+    async def sleep(self, dev, spec, text) -> bytes:
+        orient, display = _orient(spec), T.get_display(spec.get("display"))["id"]
+        img = await asyncio.to_thread(sleep.render_sleep_page, text, orient, display)
+        one = T.orient_for_panel(T.to_1bit(img), orient, display=display)
+        fg = T.footer_plan(clock="", orientation=orient, display=display)
+        return _single_epf(one, name=SLEEP_PAGE, sub_key=f"{SLEEP_PAGE}:{text}", spec=spec, fg=fg, pill_w=0,
+                           quiet=True, cat_flags=epf.CAT_FLAG_SLEEP | epf.CAT_FLAG_SLEEP_AUTO)
+
+    async def empty(self, dev, spec, clock) -> bytes:
+        orient, display = _orient(spec), T.get_display(spec.get("display"))["id"]
+        img = await asyncio.to_thread(frames.empty_page, orient, display, clock)
+        one = T.orient_for_panel(T.to_1bit(img), orient, display=display)
+        fg = T.footer_plan(clock=clock, orientation=orient, display=display)
+        return _single_epf(one, name="empty", sub_key="empty:0", spec=spec, fg=fg, pill_w=0, quiet=False)
+
+
+ART = _Art()
+
+
 # ---------------------------------------------------------------- the device port
 
 def _cache_headers(f, etag=None):
@@ -310,6 +458,14 @@ async def frame_epf(request):
     return web.Response(body=body, headers=h)
 
 
+WAKES = ("timer", "button", "boot")
+
+
+def sleep_header(got: paging.Wake) -> dict:
+    """What tells a panel in Low Power Mode to sleep. Absent, it stays connected."""
+    return {"X-EPF-Sleep": f"{int(got.sleep)}; awake={int(got.awake)}"}
+
+
 async def frames_epf(request):
     dev = device_for(request, CrowPanel.id)
     try:
@@ -317,16 +473,37 @@ async def frames_epf(request):
             runtime.LIVE._event().set()                # render to the new size now
     except ValueError:
         pass
+    wake = str(request.query.get("wake") or "").lower()
+    if wake:
+        # Only firmware that can sleep says why it woke.
+        wake = wake if wake in WAKES else "boot"
+        devices.set_state(dev["id"], sleeps_seen=True, wake_source=wake,
+                          last_seen=datetime.now().astimezone().isoformat(timespec="seconds"))
+        paging.note_awake(dev, request.query.get("awake_ms"))
     f = runtime.device(dev["id"]).frames
-    if not f.epf_strip:
-        raise web.HTTPServiceUnavailable(text="no epf frame rendered yet")
-    etag = f.epf_strip_etag
+    sleeps = KIND.sleeps(dev)
+    asleep = {}
+    body, etag = f.epf_strip, f.epf_strip_etag
+    if sleeps:
+        person = wake != "timer"
+        if wake == "timer":
+            got = await paging.wake(dev, person=False, art=ART)
+            if got.picture is not None:
+                body, etag = got.picture, f'"{paging.digest(got.picture)}"'
+            elif request.headers.get("If-None-Match"):
+                # Keep what it shows (quiet hours without the sleep screen).
+                raise web.HTTPNotModified(headers={**_cache_headers(f), **sleep_header(got)})
+        else:
+            got = paging.timing(dev, person=person)
+        asleep = sleep_header(got)
+    if not body:
+        raise web.HTTPServiceUnavailable(text="no epf frame rendered yet", headers=asleep)
     if etag and request.headers.get("If-None-Match") == etag:
-        raise web.HTTPNotModified(headers=_cache_headers(f, etag))
-    h = _cache_headers(f, etag)
+        raise web.HTTPNotModified(headers={**_cache_headers(f, etag), **asleep})
+    h = {**_cache_headers(f, etag), **asleep}
     h["Content-Type"] = "application/octet-stream"
     h["X-EPF-Version"] = "3.0"
-    return web.Response(body=f.epf_strip, headers=h)
+    return web.Response(body=body, headers=h)
 
 
 async def api_action_refresh(request):
@@ -359,4 +536,20 @@ async def api_action_page(request):
     return web.json_response({"success": True, "action": "page_step", "delta": delta, "ha_stepped": ha_stepped})
 
 
-register(CrowPanel())
+# ---------------------------------------------------------------- the editor
+
+async def editor_stay_awake(request):
+    """Ask a panel in Low Power Mode to stay awake ten minutes at its next check (POST), or stop asking (DELETE)."""
+    try:
+        dev = devices.get(request.match_info["id"])
+    except KeyError:
+        raise web.HTTPNotFound(text="There's no such screen.")
+    if dev.get("kind") != CrowPanel.id:
+        raise web.HTTPNotFound(text="That screen isn't a CrowPanel.")
+    if not KIND.sleeps(dev):
+        raise web.HTTPConflict(text="It's connected all the time, so it's already awake. Low Power Mode is off.")
+    info = paging.ask_to_stay_awake(dev, request.method == "POST")
+    return web.json_response({"stay_awake": info})
+
+
+KIND = register(CrowPanel())

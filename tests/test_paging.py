@@ -1,0 +1,307 @@
+"""The shared mode for screens that sleep (paging.py), and Low Power Mode on a CrowPanel.
+
+The cursor, "updated" as when a page last changed, the sleep time, quiet
+hours at the wake, the awake time, and the one wake interval setting. Then a
+CrowPanel in Low Power Mode, end to end through its device port: what tells it
+to sleep, and that nothing does when the mode is off.
+"""
+import unittest
+from datetime import datetime, timedelta
+
+from aiohttp.test_utils import TestClient, TestServer
+
+import support
+import config
+import devices
+import frames
+import kinds
+import paging
+import runtime
+import web
+from kinds import trmnl
+from render import epf
+
+from test_trmnl import display_headers, setup_headers
+
+
+def hhmm(dt):
+    return dt.strftime("%H:%M")
+
+
+def ahead(quiet_hours=None, quiet=False, reason="outside quiet window", alert=None):
+    spec = {"pages": {"a": {}, "b": {}}, "quiet_hours": quiet_hours or {}}
+    st = frames.DesignState(alert, ["a", "b"], [{"name": "a", "want": 2}, {"name": "b", "want": 1}])
+    return paging.Ahead("crowpanel_579", spec, st, quiet, reason, {})
+
+
+class TestTheCursor(unittest.TestCase):
+    def test_step(self):
+        plans = [{"name": "a", "want": 2}, {"name": "b", "want": 1}, {"name": "c", "want": 3}]
+        self.assertEqual(paging.step(plans, {}, by_page=False), (0, 0), "a first wake starts at the start")
+        self.assertEqual(paging.step(plans, {"pos": 0, "name": "a", "item": 0}, False), (0, 1))
+        self.assertEqual(paging.step(plans, {"pos": 0, "name": "a", "item": 1}, False), (1, 0))
+        self.assertEqual(paging.step(plans, {"pos": 0, "name": "a", "item": 0}, True), (1, 0), "a person skips items")
+        self.assertEqual(paging.step(plans, {"pos": 2, "name": "c", "item": 2}, False), (0, 0), "round again")
+        self.assertEqual(paging.step(plans, {"pos": 5, "name": "c", "item": 0}, False), (2, 1), "found by name")
+        self.assertEqual(paging.step(plans, {"pos": 1, "name": "gone", "item": 0}, False), (0, 0))
+
+    def test_the_day_joins_the_time_once_it_is_not_today(self):
+        now = datetime(2026, 10, 20, 9, 0)
+        self.assertEqual(paging.updated_label(datetime(2026, 10, 20, 8, 5), now), "updated 08:05")
+        self.assertEqual(paging.updated_label(datetime(2026, 10, 19, 22, 5), now), "updated Mon 22:05")
+
+
+class TestTheSleepTime(unittest.TestCase):
+    dev = {"id": "9", "wake_minutes": 15}
+    now = datetime(2026, 10, 20, 14, 0)
+
+    def test_the_wake_interval(self):
+        self.assertEqual(paging.sleep_seconds(self.dev, ahead(), self.now, person=False), 900)
+
+    def test_cut_short_to_wake_just_after_quiet_hours_start(self):
+        qh = {"enabled": True, "start": "14:05", "end": "07:00"}
+        self.assertEqual(paging.sleep_seconds(self.dev, ahead(qh), self.now, False), 5 * 60 + paging.QUIET_MARGIN)
+
+    def test_through_quiet_hours_until_they_end(self):
+        qh = {"enabled": True, "start": "13:00", "end": "16:00"}
+        self.assertEqual(paging.sleep_seconds(self.dev, ahead(qh), self.now, False), 2 * 3600 + paging.QUIET_MARGIN)
+        self.assertEqual(paging.sleep_seconds(self.dev, ahead(qh), self.now, True), paging.GLANCE_SECONDS,
+                         "a press shows a page for a while, then the sleep screen")
+
+    def test_away_has_no_end_so_it_checks_at_its_interval(self):
+        qh = {"enabled": True, "start": "23:00", "end": "07:00", "presence_entity": "person.someone"}
+        self.assertEqual(paging.sleep_seconds(self.dev, ahead(qh, True, "away (person.someone: not_home)"), self.now,
+                                              False), 900)
+
+    def test_an_alert_wakes_at_the_interval_through_quiet_hours(self):
+        qh = {"enabled": True, "start": "13:00", "end": "16:00"}
+        self.assertEqual(paging.sleep_seconds(self.dev, ahead(qh, alert="leak"), self.now, False), 900)
+
+    def test_the_schedule_is_the_clock_at_the_wake_not_the_last_cycle(self):
+        # The cycle a minute ago said quiet; they ended since. Sleeping "until they end"
+        # would be a whole day.
+        qh = {"enabled": True, "start": "23:00", "end": "07:00"}
+        stale = ahead(qh, quiet=True, reason="schedule (23:00–07:00)")
+        at = datetime(2026, 10, 20, 7, 0, 30)
+        self.assertEqual(paging.quiet_now(stale, at), (False, "outside quiet window"))
+        self.assertLessEqual(paging.sleep_seconds(self.dev, stale, at, False), 900)
+        # And the other way: they started after the last cycle.
+        self.assertTrue(paging.quiet_now(ahead(qh), datetime(2026, 10, 20, 23, 0, 20))[0])
+
+
+class TestTheWakeInterval(unittest.TestCase):
+    def test_one_setting_for_every_kind(self):
+        self.assertEqual(paging.wake_minutes({}), paging.DEFAULT_WAKE)
+        self.assertEqual(paging.wake_minutes({"wake_minutes": 60}), 60)
+        self.assertEqual(paging.wake_minutes({"setup": {"wake_minutes": 30}}), 30, "a TRMNL paired before it moved")
+        self.assertEqual(paging.wake_minutes({"wake_minutes": 7}), paging.DEFAULT_WAKE)
+        self.assertEqual(paging.wake_setting({"wake_minutes": "120"}), {"wake_minutes": 120})
+        self.assertEqual(paging.wake_setting({"name": "x"}), {})
+        with self.assertRaises(ValueError):
+            paging.wake_setting({"wake_minutes": 7})
+
+
+class TestAwake(unittest.TestCase):
+    def setUp(self):
+        support.fresh_data_dir()
+        self.dev = devices.add("crowpanel", "Hall", "crowpanel_579", low_power=True)
+
+    def tearDown(self):
+        support.use_test_data_dir()
+
+    def test_how_long_it_was_awake(self):
+        self.assertIsNone(paging.awake_average(self.dev))
+        for ms in ("4200", "3800", "nonsense", "0", "-5"):
+            paging.note_awake(self.dev, ms)
+        self.assertEqual(paging.awake_average(self.dev), 4.0)
+        for _ in range(paging.KEEP_AWAKE_TIMES):
+            paging.note_awake(self.dev, 1000)
+        self.assertEqual(paging.awake_average(self.dev), 1.0, "a short history: the recent average")
+
+    def test_a_person_keeps_it_awake_a_minute_and_an_update_ten(self):
+        self.assertEqual(paging.awake_seconds(self.dev, person=False), 0)
+        self.assertEqual(paging.awake_seconds(self.dev, person=True), paging.PERSON_AWAKE_SECONDS)
+        info = paging.ask_to_stay_awake(self.dev)
+        self.assertEqual(info, {"asked": True, "until": None}, "waits for its next wake")
+        self.assertGreater(paging.awake_seconds(self.dev, person=False), paging.STAY_AWAKE_SECONDS - 5)
+        self.assertTrue(paging.stay_awake_info(self.dev)["until"], "counts from the wake it was delivered at")
+        self.assertGreater(paging.awake_seconds(self.dev, person=False), 500, "a later wake in the ten minutes too")
+        paging.ask_to_stay_awake(self.dev, False)
+        self.assertEqual(paging.awake_seconds(self.dev, person=False), 0)
+
+
+class LowPowerBase(unittest.IsolatedAsyncioTestCase):
+    """Device 1 stays connected; a second CrowPanel ("Hall") shows the same pages, copied."""
+
+    async def asyncSetUp(self):
+        support.fresh_data_dir()
+        kinds.WRONG_KEYS = kinds.WrongKeys()
+        self.hall = devices.add("crowpanel", "Hall", "crowpanel_579", copy_from="1")
+        self.key = devices.key_of(self.hall)
+        panel, editor = web.make_apps()
+        self.lan = TestClient(TestServer(panel))
+        self.ed = TestClient(TestServer(editor))
+        await self.lan.start_server()
+        await self.ed.start_server()
+        await frames.refresh_frames(None)
+
+    async def asyncTearDown(self):
+        await self.lan.close()
+        await self.ed.close()
+        kinds.WRONG_KEYS = kinds.WrongKeys()
+        support.use_test_data_dir()
+
+    async def low_power(self, on=True, **more):
+        r = await self.ed.patch(f"/api/devices/{self.hall['id']}", json={"low_power": on, **more})
+        self.assertEqual(r.status, 200, await r.text())
+        return await r.json()
+
+    async def fetch(self, **params):
+        return await self.lan.get("/frames.epf", params={"token": self.key, **params})
+
+
+class TestLowPowerOff(LowPowerBase):
+    async def test_off_by_default_and_nothing_tells_it_to_sleep(self):
+        self.assertFalse(devices.get(self.hall["id"]).get("low_power"))
+        for params in ({}, {"wake": "timer"}, {"wake": "button"}):
+            r = await self.fetch(**params)
+            self.assertEqual(r.status, 200)
+            self.assertNotIn("X-EPF-Sleep", r.headers, "off: it stays connected, as today")
+            self.assertGreater(epf.decode_epf(await r.read()).header.page_count, 1, "every page, as always")
+        r = await self.fetch(wake="timer")
+        self.assertEqual((await self.lan.get("/frames.epf", params={"token": self.key, "wake": "timer"},
+                                             headers={"If-None-Match": r.headers["ETag"]})).status, 304)
+        listed = await (await self.ed.get("/api/devices")).json()
+        hall = next(d for d in listed["devices"] if d["id"] == self.hall["id"])
+        self.assertEqual((hall["owns_interval"], hall["can_wake"], hall["info"]["low_power"]), ("device", True, False))
+
+
+class TestLowPowerOn(LowPowerBase):
+    async def test_switching_it_on_in_the_editor(self):
+        body = await self.low_power()
+        hall = body["device"]
+        self.assertTrue(hall["info"]["low_power"])
+        self.assertEqual(hall["owns_interval"], "addon", "it wakes at the add-on's interval")
+        self.assertFalse(hall["can_wake"], "asleep between checks: alerts show at its next check")
+        self.assertEqual(body["note"], "It switches at its next download.")
+        self.assertFalse(hall["info"]["firmware_sleeps"], "until its firmware says why it woke")
+        await self.fetch(wake="timer")
+        listed = await (await self.ed.get("/api/devices")).json()
+        self.assertTrue(next(d for d in listed["devices"] if d["id"] == self.hall["id"])["info"]["firmware_sleeps"])
+        status = await (await self.ed.get(f"/api/status?device={self.hall['id']}")).json()
+        self.assertIsNone(status["panel_link"], "no early wakes queued for a panel that's asleep")
+        off = await self.low_power(False)
+        self.assertIn("within 15 minutes", off["note"])
+
+    async def test_a_timer_wake_gets_one_picked_page_and_how_long_to_sleep(self):
+        await self.low_power()
+        r = await self.fetch(wake="timer", awake_ms="3100")
+        self.assertEqual(r.headers["X-EPF-Sleep"], "900; awake=0")
+        first = epf.decode_epf(await r.read())
+        self.assertEqual(first.header.page_count, 1, "one page: a quarter of the decode time of the strip")
+        r2 = await self.fetch(wake="timer")
+        second = epf.decode_epf(await r2.read())
+        self.assertNotEqual(first.categories[0].cat_id, second.categories[0].cat_id, "the next page each wake")
+        # The page keeps the identity it has among every page, so a press after it keeps its place.
+        strip = epf.decode_epf(runtime.device(self.hall["id"]).frames.epf_strip)
+        self.assertIn(first.categories[0].cat_id, [c.cat_id for c in strip.categories])
+        self.assertEqual(paging.awake_average(devices.get(self.hall["id"])), 3.1)
+
+    async def test_an_unchanged_page_is_not_downloaded_again(self):
+        await self.low_power(wake_minutes=60)
+        devices.set_state(self.hall["id"], cursor={})
+        r = await self.fetch(wake="timer")
+        etag = r.headers["ETag"]
+        await frames.refresh_frames(None)
+        devices.set_state(self.hall["id"], cursor={})                # the same page again, next cycle
+        r = await self.lan.get("/frames.epf", params={"token": self.key, "wake": "timer"},
+                               headers={"If-None-Match": etag})
+        self.assertEqual(r.status, 304, "updated is when it last changed: same picture, same tag")
+        self.assertEqual(r.headers["X-EPF-Sleep"], "3600; awake=0", "a 304 still says how long to sleep")
+
+    async def test_a_press_gets_every_page_and_a_minute_awake(self):
+        await self.low_power()
+        r = await self.fetch(wake="button")
+        self.assertGreater(epf.decode_epf(await r.read()).header.page_count, 1)
+        self.assertEqual(r.headers["X-EPF-Sleep"], f"900; awake={paging.PERSON_AWAKE_SECONDS}")
+        r = await self.fetch()
+        self.assertIn("X-EPF-Sleep", r.headers, "firmware that can't sleep yet ignores it")
+
+    async def test_stay_awake_for_an_update(self):
+        await self.low_power()
+        r = await self.ed.post(f"/api/devices/{self.hall['id']}/stay-awake")
+        self.assertEqual((await r.json())["stay_awake"], {"asked": True, "until": None})
+        r = await self.fetch(wake="timer")
+        sleep_for, awake = r.headers["X-EPF-Sleep"].split("; awake=")
+        self.assertGreater(int(awake), paging.STAY_AWAKE_SECONDS - 5, "the same field carries it")
+        await self.ed.delete(f"/api/devices/{self.hall['id']}/stay-awake")
+        self.assertEqual((await self.fetch(wake="timer")).headers["X-EPF-Sleep"], "900; awake=0")
+        await self.low_power(False)
+        self.assertEqual((await self.ed.post(f"/api/devices/{self.hall['id']}/stay-awake")).status, 409)
+
+    async def test_quiet_hours_send_the_sleep_screen_until_they_end(self):
+        now = datetime.now()
+        devices.update(self.hall["id"], low_power=True,
+                       quiet_hours={"enabled": True, "start": hhmm(now - timedelta(hours=1)),
+                                    "end": hhmm(now + timedelta(hours=2))})
+        await frames.refresh_frames(None)
+        r = await self.fetch(wake="timer")
+        page = epf.decode_epf(await r.read())
+        self.assertEqual(page.categories[0].flags, epf.CAT_FLAG_SLEEP | epf.CAT_FLAG_SLEEP_AUTO)
+        sleep_for = int(r.headers["X-EPF-Sleep"].split(";")[0])
+        until_end = ((now + timedelta(hours=2)).replace(second=0, microsecond=0) - now).total_seconds()
+        self.assertAlmostEqual(sleep_for, until_end + paging.QUIET_MARGIN, delta=90)
+
+    async def test_the_interval_is_the_shared_setting(self):
+        await self.low_power(wake_minutes=30)
+        self.assertEqual(devices.get(self.hall["id"])["wake_minutes"], 30)
+        self.assertEqual((await self.fetch(wake="timer")).headers["X-EPF-Sleep"], "1800; awake=0")
+        self.assertEqual((await self.ed.patch(f"/api/devices/{self.hall['id']}", json={"wake_minutes": 7})).status, 400)
+        status = await (await self.ed.get(f"/api/status?device={self.hall['id']}")).json()
+        self.assertEqual(status["panel_interval"], 30)
+
+    async def test_added_in_low_power_mode(self):
+        r = await self.ed.post("/api/devices", json={"kind": "crowpanel", "name": "Porch", "display": "crowpanel_579",
+                                                     "pages": "new", "low_power": True, "wake_minutes": 60})
+        self.assertEqual(r.status, 200, await r.text())
+        info = (await r.json())["device"]["info"]
+        self.assertEqual((info["low_power"], info["wake_minutes"]), (True, 60))
+        r = await self.ed.post("/api/devices", json={"kind": "crowpanel", "name": "Shed", "display": "crowpanel_579",
+                                                     "low_power": "yes"})
+        self.assertEqual(r.status, 400)
+
+
+class TestTrmnlAwakeTime(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        support.fresh_data_dir()
+        kinds.WRONG_KEYS = kinds.WrongKeys()
+        trmnl._PAIRING.clear()
+        self._on = config.TRMNL
+        config.TRMNL = True
+        self.dev = devices.add("trmnl", "Desk", "trmnl_og")
+        panel, editor = web.make_apps()
+        self.lan = TestClient(TestServer(panel))
+        self.ed = TestClient(TestServer(editor))
+        await self.lan.start_server()
+        await self.ed.start_server()
+        await self.ed.post(f"/api/devices/{self.dev['id']}/pair")
+        self.key = (await (await self.lan.get("/api/setup", headers=setup_headers())).json())["api_key"]
+        await frames.refresh_frames(None)
+
+    async def asyncTearDown(self):
+        await self.lan.close()
+        await self.ed.close()
+        config.TRMNL = self._on
+        trmnl._PAIRING.clear()
+        support.use_test_data_dir()
+
+    async def test_its_wake_time_header_becomes_the_editors_average(self):
+        for ms in ("5000", "4000"):
+            headers = {**display_headers(self.key), "Wake-Time": ms}
+            self.assertEqual((await self.lan.get("/api/display", headers=headers)).status, 200)
+        info = await (await self.ed.get(f"/api/devices/{self.dev['id']}/pair")).json()
+        self.assertEqual(info["awake_s"], 4.5)
+
+
+if __name__ == "__main__":
+    unittest.main()

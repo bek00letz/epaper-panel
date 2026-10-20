@@ -1,6 +1,18 @@
 # Changelog
 
 ## Unreleased
+- **Low Power Mode.** A switch per screen in Settings › Screen, and when
+  adding one: the panel checks for new pages at an interval you choose and
+  deep-sleeps in between, for months on a battery. Each check shows the next
+  page; a button press shows every page and keeps it awake a minute. Stay
+  awake keeps it up ten minutes for an update over Wi-Fi. **Firmware
+  change:** install the panel again from Install or update to use it. The
+  same firmware stays connected while the switch is off. Not yet tried on a
+  real panel.
+- TRMNL screens show how long they're awake per wake, next to battery and
+  Wi-Fi.
+- Screens that sleep get pictures drawn ahead in every render, so a wake is
+  answered at once instead of waiting for drawing.
 - **TRMNL screens.** Turn on TRMNL screens in the add-on's configuration, then
   add one in the editor (Add a screen, TRMNL). It pairs within ten minutes of
   you asking, gets its own key and shows your pages: one per wake, at an
@@ -11,6 +23,8 @@
 - **Fixed:** on another screen size, elements placed automatically could run
   into the footer on small panels, or leave a gap above it on others. They now
   stop exactly at the footer, whose height has one source.
+- **Fixed:** a panel set up without its own Wi-Fi ("Its own Wi-Fi when it's
+  lost" off) couldn't be installed: its firmware didn't compile.
 - The Add a screen sheet no longer shows a stray "null" under the pages.
 - "Now on the panel" shows the time pages were rendered again, instead of
   "Invalid Date".

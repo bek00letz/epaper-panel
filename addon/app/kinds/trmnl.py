@@ -18,22 +18,23 @@ src/display_session.cpp, lib/trmnl/src/parse_response_api_*.cpp):
                      ID and Access-Token here too, because the address starts
                      with the server address it was given.
 
-The add-on picks the page (a cursor per device: a timer wake moves through
-the rotation, a button wake goes to the next page) and owns the wake interval.
-It can't be woken early: alerts show at its next wake. Pairing happens only
-inside the 10-minute window "Add a screen" opens in the editor.
+What it shows and how long it sleeps is the shared mode for screens that
+sleep (paging.py): every picture it can fetch is drawn ahead in the render
+cycle, and a wake only picks one (a timer wake moves through the rotation, a
+button wake goes to the next page). This file is only the protocol. It can't
+be woken early: alerts show at its next wake. Pairing happens only inside the
+10-minute window "Add a screen" opens in the editor.
 
 Off unless the add-on option `trmnl` turns it on (config.TRMNL).
 """
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import re
 import secrets
 import time
 from collections import OrderedDict, deque
-from datetime import datetime, timedelta
+from datetime import datetime
 
 from aiohttp import web
 
@@ -41,6 +42,7 @@ import config
 import devices
 import frames
 import health
+import paging
 import panel_setup
 import reach
 import runtime
@@ -49,12 +51,6 @@ from kinds import WRONG_KEYS, Kind, device_for, register, shown
 from render import sleep, theme as T
 
 PAIR_SECONDS = 600                      # how long "Add a screen" listens for a new TRMNL
-WAKE_CHOICES = (5, 10, 15, 30, 60, 120, 240)
-DEFAULT_WAKE = 15                       # minutes, TRMNL's own default
-GLANCE_SECONDS = 120                    # a press during quiet hours shows a page this long
-FIRST_RENDER_SECONDS = 60               # nothing drawn yet: ask again soon
-QUIET_MARGIN = 60                       # wake just after quiet hours end, never just before
-MAX_SLEEP = 24 * 3600
 KEEP_IMAGES = 4                         # pictures kept for the device to fetch after /api/display
 KEEP_LOGS = 20
 
@@ -98,7 +94,10 @@ class Trmnl(Kind):
         ]
 
     def interval(self, dev: dict) -> int:
-        return wake_minutes(dev)
+        return paging.wake_minutes(dev)
+
+    def sleeps(self, dev: dict) -> bool:
+        return True
 
     def describe(self, dev: dict) -> dict:
         st = devices.state(dev["id"])
@@ -106,8 +105,9 @@ class Trmnl(Kind):
         return {
             "paired": bool(setup.get("mac")),
             "friendly_id": setup.get("friendly_id") or "",
-            "wake_minutes": wake_minutes(dev),
-            "wake_choices": list(WAKE_CHOICES),
+            "wake_minutes": paging.wake_minutes(dev),
+            "wake_choices": list(paging.WAKE_CHOICES),
+            "awake_s": paging.awake_average(dev),
             "pairing_left": pairing_left(dev["id"]),
             "paired_at": st.get("paired_at"),
             "last_seen": st.get("last_seen"),
@@ -120,30 +120,21 @@ class Trmnl(Kind):
         }
 
     def settings(self, dev: dict, body: dict) -> dict:
-        if "wake_minutes" not in body:
-            return {}
-        try:
-            minutes = int(body["wake_minutes"])
-        except (TypeError, ValueError):
-            minutes = 0
-        if minutes not in WAKE_CHOICES:
-            raise ValueError("Pick one of the wake intervals offered.")
-        return {"setup": {**(dev.get("setup") or {}), "wake_minutes": minutes}}
+        return paging.wake_setting(body)
 
     def entities(self, dev: dict) -> set[str]:
         return {"sensor.epaper_battery", "sensor.epaper_battery_voltage", "sensor.epaper_wifi_signal",
                 "sensor.epaper_last_seen"}
 
     async def render(self, session, dev, spec, st, quiet_active, quiet_reason) -> runtime.Frames:
-        """Nothing is drawn here: a TRMNL gets its picture drawn when it wakes, from this cycle's state."""
+        """Every picture it can fetch at its next wakes, drawn ahead (paging.draw_ahead)."""
         rt = _rt(dev)
-        rt["snapshot"] = {"spec": spec, "st": st, "display": spec.get("display"),
-                          "orientation": _orientation(spec)}
+        await paging.draw_ahead(dev, spec, st, quiet_active, quiet_reason, ART)
         f = runtime.Frames()
         f.names = list(st.live)
         f.cat_names = list(st.live)
         f.cat_count = len(st.live)
-        f.rotate_seconds = wake_minutes(dev) * 60
+        f.rotate_seconds = paging.wake_minutes(dev) * 60
         # What the device was last sent: the editor's "what it shows".
         last = rt.get("last_png") or b""
         f.strip = f.single = last
@@ -163,12 +154,31 @@ def _orientation(spec: dict) -> int:
     return orient if orient in (0, 90, 180, 270) else 0
 
 
-def wake_minutes(dev: dict) -> int:
-    try:
-        minutes = int((dev.get("setup") or {}).get("wake_minutes") or DEFAULT_WAKE)
-    except (TypeError, ValueError):
-        minutes = DEFAULT_WAKE
-    return minutes if minutes in WAKE_CHOICES else DEFAULT_WAKE
+class _Art(paging.Art):
+    """A TRMNL's pictures: 1-bit PNGs at its size, turned for its mounting."""
+
+    async def page(self, dev, spec, st, plans, pos, item, clock) -> bytes:
+        orient, display = _orientation(spec), T.get_display(spec.get("display"))["id"]
+        plan = plans[pos]
+        count = max(1, plan["want"])
+        fg = T.footer_plan(clock=clock, pages=[(p["name"], max(1, p["want"])) for p in plans],
+                           orientation=orient, display=display)
+        imgs = await frames.draw_category(plan, count, pos, footer=fg, page_def=spec["pages"][plan["name"]],
+                                          orient=orient, display=display, only=min(item, count - 1))
+        return frames._png(imgs[0])
+
+    async def sleep(self, dev, spec, text) -> bytes:
+        orient, display = _orientation(spec), T.get_display(spec.get("display"))["id"]
+        img = await asyncio.to_thread(sleep.render_sleep_page, text, orient, display)
+        return frames._png(T.orient_for_panel(T.to_1bit(img), orient, display=display))
+
+    async def empty(self, dev, spec, clock) -> bytes:
+        orient, display = _orientation(spec), T.get_display(spec.get("display"))["id"]
+        img = await asyncio.to_thread(frames.empty_page, orient, display, clock)
+        return frames._png(T.orient_for_panel(T.to_1bit(img), orient, display=display))
+
+
+ART = _Art()
 
 
 # ---------------------------------------------------------------- pairing
@@ -301,6 +311,8 @@ def read_report(headers) -> dict:
         "model": _clip(headers.get("Model")),
         "firmware": _clip(headers.get("FW-Version")),
         "image_cached": str(headers.get("Image-Cached") or "").lower() == "true",
+        # How long it was awake at its previous wake, in ms (sleep_session.cpp).
+        "wake_ms": headers.get("Wake-Time"),
     }
 
 
@@ -318,136 +330,11 @@ def base_address(request) -> str:
     return f"{proto}://{host}{prefix}"
 
 
-def _seconds_until(hhmm: str, now: datetime) -> int | None:
-    try:
-        h, m = (int(x) for x in str(hhmm).strip()[:5].split(":"))
-        target = now.replace(hour=h, minute=m, second=0, microsecond=0)
-    except (TypeError, ValueError):
-        return None
-    if target <= now:
-        target += timedelta(days=1)
-    return int((target - now).total_seconds())
-
-
-def step(plans: list[dict], cursor: dict, by_page: bool) -> tuple[int, int]:
-    """The next (page position, item) after the cursor. A timer wake moves through every
-    item of every page; a button wake goes to the next page. A page that has gone
-    is looked for by name; failing that, the rotation starts again."""
-    n = len(plans)
-    pos, name, item = cursor.get("pos", -1), cursor.get("name"), int(cursor.get("item") or 0)
-    if not (isinstance(pos, int) and 0 <= pos < n and plans[pos]["name"] == name):
-        pos = next((i for i, p in enumerate(plans) if p["name"] == name), None)
-        if pos is None:
-            return 0, 0
-    if not by_page and item + 1 < max(1, plans[pos]["want"]):
-        return pos, item + 1
-    return (pos + 1) % n, 0
-
-
-async def _draw(dev: dict, now: datetime, person: bool) -> tuple[bytes | None, int]:
-    """The picture for this wake and how long to sleep after it."""
-    rt = _rt(dev)
-    snap = rt.get("snapshot")
-    if snap is None:
-        return None, FIRST_RENDER_SECONDS             # just started: nothing rendered yet
-    display = T.get_display(dev.get("display"))["id"]
-    # Drawn at the size the device has now. If it just said a new one, its pages placed for it.
-    spec = snap["spec"] if snap["display"] == display else devices.view(dev["id"])
-    orient = _orientation(spec)
-    st = snap["st"]
-    wake = wake_minutes(dev) * 60
-    qh = spec.get("quiet_hours") if isinstance(spec.get("quiet_hours"), dict) else {}
-    quiet, reason = await frames.evaluate_quiet_hours(runtime.SESSION, spec, dev)
-    alert = bool(st.alert) and (not quiet or qh.get("allow_alerts", True))
-
-    if quiet and not alert and not person:
-        end = None if str(reason).startswith("away") else _seconds_until(qh.get("end") or "07:00", now)
-        sleep_for = min(MAX_SLEEP, max(60, end + QUIET_MARGIN)) if end is not None else wake
-        if qh.get("sleep_screen", True) is False:
-            return rt.get("last_png"), sleep_for      # keeps what it shows: no flash in a dark room
-        img = await asyncio.to_thread(sleep.render_sleep_page, sleep.wake_text(reason, qh.get("end") or "07:00"),
-                                      orient, display)
-        return frames._png(T.orient_for_panel(T.to_1bit(img), orient, display=display)), sleep_for
-
-    sleep_for = GLANCE_SECONDS if quiet and not alert else wake
-    if qh.get("enabled") and not quiet:
-        # Asleep through the start of quiet hours would leave a page up all night.
-        start = _seconds_until(qh.get("start") or "23:00", now)
-        if start is not None:
-            sleep_for = min(sleep_for, start + QUIET_MARGIN)
-
-    plans = [p for p in st.plans if p["name"] in spec.get("pages", {})]
-    if not st.live or not plans:
-        async def empty(clock):
-            img = await asyncio.to_thread(frames.empty_page, orient, display, clock)
-            return frames._png(T.orient_for_panel(T.to_1bit(img), orient, display=display))
-        return await steady(dev, "\x00empty", now, empty), sleep_for
-
-    cursor = devices.state(dev["id"]).get("cursor") or {}
-    pos, item = step(plans, cursor, by_page=person)
-    plan = plans[pos]
-    devices.set_state(dev["id"], cursor={"pos": pos, "name": plan["name"], "item": item})
-    count = max(1, plan["want"])
-
-    async def page(clock):
-        fg = T.footer_plan(clock=clock, pages=[(p["name"], max(1, p["want"])) for p in plans],
-                           orientation=orient, display=display)
-        imgs = await frames.draw_category(plan, count, pos, footer=fg, page_def=spec["pages"][plan["name"]],
-                                          orient=orient, display=display, only=min(item, count - 1))
-        return frames._png(imgs[0])
-    return await steady(dev, f"{plan['name']}#{item}", now, page), sleep_for
-
-
-def updated_label(at: datetime, now: datetime) -> str:
-    """The footer's time: when this page last changed, with the day once it's not today."""
-    return f"updated {at.strftime('%H:%M') if at.date() == now.date() else at.strftime('%a %H:%M')}"
-
-
-KEEP_UPDATED = 64
-
-
-async def steady(dev: dict, key: str, now: datetime, draw) -> bytes:
-    """A page's picture, with "updated" saying when it last changed rather than when the
-    device woke. Drawn again with the time it had: if that's the same picture, nothing
-    changed, so it keeps its name (filename is its hash) and the device neither downloads
-    nor flashes. `draw(clock)` makes the picture with that footer text."""
-    seen = dict(devices.state(dev["id"]).get("updated") or {})
-    prev = seen.get(key)
-    if isinstance(prev, dict):
-        try:
-            at = datetime.fromisoformat(prev["at"])
-            png = await draw(prev["label"])
-        except (KeyError, TypeError, ValueError):
-            png = None
-        if png is not None and _digest(png) == prev.get("hash"):
-            label = updated_label(at, now)
-            if label == prev["label"]:
-                return png
-            png = await draw(label)                   # the same page, a day on: the day joins the time
-            seen[key] = {"at": prev["at"], "label": label, "hash": _digest(png)}
-            _keep_updated(dev, seen)
-            return png
-    label = updated_label(now, now)
-    png = await draw(label)
-    seen.pop(key, None)
-    seen[key] = {"at": now.isoformat(timespec="seconds"), "label": label, "hash": _digest(png)}
-    _keep_updated(dev, seen)
-    return png
-
-
-def _keep_updated(dev: dict, seen: dict) -> None:
-    devices.set_state(dev["id"], updated=dict(list(seen.items())[-KEEP_UPDATED:]))
-
-
-def _digest(png: bytes) -> str:
-    return hashlib.blake2s(png, digest_size=8).hexdigest()
-
-
 def _keep_image(dev: dict, png: bytes) -> str:
     """Keep a picture for the device to fetch; its name is its content hash, so an
     unchanged picture has the same name and the device skips the download."""
     rt = _rt(dev)
-    name = "ep-" + _digest(png)                         # 19 characters: the firmware keeps 31
+    name = "ep-" + paging.digest(png)                         # 19 characters: the firmware keeps 31
     images = rt.setdefault("images", OrderedDict())
     images[name] = png
     images.move_to_end(name)
@@ -497,14 +384,16 @@ async def api_display(request):
     seen = now.isoformat(timespec="seconds")
     devices.set_state(dev["id"], last_seen=seen, wake_source=rep["source"],
                       **{k: rep[k] for k in ("battery", "battery_v", "rssi", "model", "firmware") if rep[k] not in (None, "")})
+    paging.note_awake(dev, rep["wake_ms"])
     await _publish(dev, rep, seen)
 
     try:
-        png, sleep_for = await _draw(dev, now, person=rep["source"] not in ("timer", ""))
+        got = await paging.wake(dev, person=rep["source"] not in ("timer", ""), art=ART, now=now)
+        png, sleep_for = got.picture, got.sleep
     except Exception as exc:
         # Nothing new to show: it keeps its picture and asks again at its next wake.
-        print(f"{dev['name']}: couldn't draw its picture: {health.describe(exc)}", flush=True)
-        png, sleep_for = None, wake_minutes(dev) * 60
+        print(f"{dev['name']}: couldn't pick its picture: {health.describe(exc)}", flush=True)
+        png, sleep_for = None, paging.wake_minutes(dev) * 60
     body = {"status": 0, "image_url": "", "filename": "", "refresh_rate": int(sleep_for),
             "update_firmware": False, "firmware_url": "", "reset_firmware": False}
     if png:

@@ -107,13 +107,15 @@ export function openStatus(app, anchor) {
   popover(anchor, async (pop, close) => {
     pop.classList.add("status");
     const s = app.status || {}, doc = app.doc;
-    // A screen the add-on wakes on a timer (TRMNL): its own rhythm, one page per wake.
+    // A screen that sleeps between wakes (a TRMNL, a CrowPanel in Low Power Mode): its own rhythm, one page per wake.
     const wakes = app.screen?.owns_interval === "addon", info = app.screen?.info || {};
+    const pairs = app.screen?.setup === "pair", wake = pairs ? "wake" : "check";
     const { tone, line1 } = statusSummary(app);
     const lines = [];
     if (doc.saving === "error") lines.push(`Your changes couldn't be saved: ${doc.saveError} They're kept in this window, and it keeps trying.`);
     else if (doc.dirty) lines.push("Your changes are saved, but the panel doesn't have them until you send.");
-    else if (wakes) lines.push(info.last_seen ? `It last woke at ${hm(info.last_seen)} and wakes every ${s.panel_interval || info.wake_minutes} min, taking the next page each time.` : info.paired ? "Paired. It hasn't woken since." : "Not paired yet. Pair it in Settings.");
+    else if (wakes) lines.push(info.last_seen ? `It last ${pairs ? "woke" : "checked"} at ${hm(info.last_seen)} and ${pairs ? "wakes" : "checks"} every ${s.panel_interval || info.wake_minutes} min, taking the next page each time.`
+      : !pairs ? "It hasn't checked in since Low Power Mode went on." : info.paired ? "Paired. It hasn't woken since." : "Not paired yet. Pair it in Settings.");
     else if (s.rendered_at) lines.push(`Pages rendered at ${hm(s.rendered_at)}. The panel looks for new ones every ${s.panel_interval || 5} min.`);
     if (s.panel_link?.pending_refresh) lines.push(`The panel hasn't picked up the last change yet${s.panel_link.last_error ? `: ${s.panel_link.last_error}` : ""}. It keeps trying.`);
     if (s.panel_link?.problem && !s.panel_link?.node) lines.push(`No panel found: ${s.panel_link.problem}.`);
@@ -121,13 +123,13 @@ export function openStatus(app, anchor) {
     pop.append(h("div", { class: "sthead" }, h("span", { class: "led " + tone }), h("span", { text: line1 })), ...lines.map((l) => h("p", { class: "fnote", text: l })));
 
     const live = s.pages || [];
-    pop.append(h("div", { class: "poplab", text: "Rotating" }), h("p", { class: "fnote", text: live.length ? `${live.map(pageTitle).join(", ")}, ${wakes ? "one each wake" : `${doc.live.rotate_seconds || 30} s each`}.` : "Nothing at the moment." }));
+    pop.append(h("div", { class: "poplab", text: "Rotating" }), h("p", { class: "fnote", text: live.length ? `${live.map(pageTitle).join(", ")}, ${wakes ? `one each ${wake}` : `${doc.live.rotate_seconds || 30} s each`}.` : "Nothing at the moment." }));
     const hidden = [...new Set(doc.live.rotation)].filter((n) => doc.live.pages[n]?.tier === "when" && !live.includes(n));
     if (hidden.length) {
       pop.append(h("div", { class: "poplab", text: "Hidden right now" }));
       hidden.forEach((n) => { const d = describe(doc.live.pages[n].show_if, app.entMap); pop.append(h("p", { class: "fnote" }, h("b", { text: pageTitle(n) + ". " }), `${d.text}. ${d.why}`)); });
     }
-    if (s.active_alert) pop.append(h("div", { class: "poplab", text: "Alert" }), h("p", { class: "fnote", text: wakes ? `${pageTitle(s.active_alert)} shows at its next wake. It can't be woken sooner.` : `${pageTitle(s.active_alert)} has taken over the panel.` }));
+    if (s.active_alert) pop.append(h("div", { class: "poplab", text: "Alert" }), h("p", { class: "fnote", text: wakes ? `${pageTitle(s.active_alert)} shows at its next ${wake}. It can't be woken sooner.` : `${pageTitle(s.active_alert)} has taken over the panel.` }));
     const qh = doc.live.quiet_hours || {};
     pop.append(h("div", { class: "poplab", text: "Quiet hours" }), h("p", { class: "fnote", text: !qh.enabled ? "Off." : s.quiet_active ? `On now${s.quiet_reason ? ` (${s.quiet_reason})` : ""}, until ${qh.end}.` : `${qh.start} to ${qh.end}${qh.sleep_screen !== false ? ", with the sleep screen" : ""}.` }));
 
@@ -135,7 +137,7 @@ export function openStatus(app, anchor) {
     const dev = app.device || {};
     if (dev.sleep !== null && dev.sleep !== undefined) actions.append(h("button", { class: "btn tinted", onclick: async () => { close(); await app.deviceSet({ sleep: !dev.sleep }, dev.sleep ? "The panel is waking up." : "The panel is going to sleep."); } }, icon("moon", "sm"), dev.sleep ? "Wake" : "Sleep now"));
     if (dev.can_clear) actions.append(h("button", { class: "btn tinted", onclick: async () => { close(); await app.deviceSet({ clear_ghosting: true }, "The panel is clearing its ghosting."); } }, icon("sparkle", "sm"), "Clear ghosting"));
-    actions.append(h("button", { class: "btn tinted", onclick: () => { close(); openFullStrip(app); } }, icon("eye", "sm"), wakes ? "See what it shows" : "See every page"));
+    actions.append(h("button", { class: "btn tinted", onclick: () => { close(); openFullStrip(app); } }, icon("eye", "sm"), app.screen?.picks_page === "addon" ? "See what it shows" : "See every page"));
     pop.append(actions);
     if (doc.dirty) pop.append(h("button", { class: "btn tinted danger wide", onclick: () => { close(); doc.revert(); toast("Went back to what's on the panel.", { label: "Undo", run: () => doc.undo() }); } }, icon("revert", "sm"), "Throw away unsent changes"));
     // Fresh device state for next time; the buttons above use what's known now.
@@ -144,7 +146,7 @@ export function openStatus(app, anchor) {
 }
 
 export function openFullStrip(app) {
-  const wakes = app.screen?.owns_interval === "addon";
+  const wakes = app.screen?.picks_page === "addon";            // it holds one picture, not every page
   sheet(wakes ? "What it shows" : "Every page, as the panel has them", (node) => {
     const img = h("img", { class: "fullstrip", alt: wakes ? "The picture the screen got at its last wake." : "All the pages the panel is rotating through, stacked." });
     const meta = h("p", { class: "fnote" });
@@ -163,7 +165,7 @@ export function openFullStrip(app) {
 export function openAddScreen(app) {
   const kinds = app.kinds.filter((k) => k.displays.length);
   if (!kinds.length) { toast("This add-on doesn't know any kind of screen it can add."); return; }
-  const st = { kind: kinds[0], display: kinds[0].displays[0].id, orientation: 0, pages: "new", from: app.screen?.id || app.screens[0]?.id, quiet: true };
+  const st = { kind: kinds[0], display: kinds[0].displays[0].id, orientation: 0, pages: "new", from: app.screen?.id || app.screens[0]?.id, quiet: true, lowPower: false };
   sheet("Add a screen", (node, close) => {
     const body = h("div", { class: "sheet-body" });
     const name = h("input", { class: "inp", placeholder: "Kitchen", "aria-label": "Name", maxlength: "60", autocomplete: "off" });
@@ -200,6 +202,9 @@ export function openAddScreen(app) {
           choice("same", "Same pages as another screen", "Edits show on both. Each screen keeps its own layout.", st.pages === "same" ? fromSel() : null)),
         qh?.enabled ? group(grow(`Same quiet hours as ${st.pages === "new" ? (app.screen || src).name : src.name}`, `${qh.start} to ${qh.end}. Change them any time.`,
           toggle(st.quiet, (v) => { st.quiet = v; }, "Same quiet hours"))) : "",
+        // A screen that pairs sleeps anyway; one you install chooses (never assumed from its kind).
+        pairs() ? "" : group(grow("Low Power Mode", `${lowPowerNote(15)} Change it any time in Settings.`,
+          toggle(st.lowPower, (v) => { st.lowPower = v; }, "Low Power Mode"))),
         err);
     }
     async function submit() {
@@ -210,7 +215,7 @@ export function openAddScreen(app) {
       add.disabled = true;
       try {
         const r = (await api("api/devices", { method: "POST", body: { kind: st.kind.id, name: name.value.trim(), display: st.display, orientation: st.orientation,
-          pages: st.pages, from: st.from, quiet_hours_from: st.quiet && qsrc?.quiet?.enabled ? qsrc.id : null } })).body;
+          pages: st.pages, from: st.from, quiet_hours_from: st.quiet && qsrc?.quiet?.enabled ? qsrc.id : null, ...(pairs() ? {} : { low_power: st.lowPower }) } })).body;
         close();
         await app.doc.flush();
         app.screens = r.devices; app.kinds = r.kinds;
@@ -401,8 +406,19 @@ async function placeFor(app, display, orientation) {
   } catch (e) { toast(`Couldn't change it: ${e.message}`); return false; }
 }
 
-/* A screen that sleeps between wakes and asks for its pages (TRMNL). */
+/* Screens that sleep between wakes (a TRMNL; a CrowPanel in Low Power Mode) share one interval setting. */
 const signal = (dbm) => (dbm >= -60 ? "strong" : dbm >= -70 ? "good" : dbm >= -80 ? "weak" : "very weak");
+const span = (m) => (m < 60 ? `${m} minutes` : m === 60 ? "1 hour" : `${m / 60} hours`);
+const every = (m) => (m < 60 ? `every ${m} minutes` : m === 60 ? "every hour" : `every ${m / 60} hours`);
+const awakeText = (s, per) => (s == null ? null : `awake ${s.toLocaleString([], { maximumFractionDigits: 1 })} s ${per}`);
+function wakeSelect(app, scr, info, label, done) {
+  return select((info.wake_choices || [15]).map((m) => [m, span(m)]), info.wake_minutes || 15, async (v) => {
+    try {
+      app.applyScreens((await api(`api/devices/${encodeURIComponent(scr.id)}`, { method: "PATCH", body: { wake_minutes: Number(v) } })).body);
+      toast(done(Number(v)));
+    } catch (e) { toast(`Couldn't change it: ${e.message}`); }
+  }, { "aria-label": label });
+}
 function pairedPane(app, pane, show) {
   const doc = app.doc, spec = doc.spec, scr = app.screen || {}, info = scr.info || {};
   const name = input(scr.name || "", async (v) => {
@@ -411,18 +427,13 @@ function pairedPane(app, pane, show) {
   }, { "aria-label": "Name", maxlength: "60" });
   const seen = !info.paired ? "Not paired yet" : !info.last_seen ? "Paired. Waiting for its first wake."
     : [`Last seen at ${hm(info.last_seen)}`, info.battery != null ? `battery ${info.battery}%` : null,
-      info.rssi != null ? `Wi-Fi ${signal(info.rssi)}` : null].filter(Boolean).join(" · ");
+      info.rssi != null ? `Wi-Fi ${signal(info.rssi)}` : null, awakeText(info.awake_s, "a wake")].filter(Boolean).join(" · ");
   pane.append(group(grow("Name", null, name),
     grow("Connection", info.log?.length ? `It said: ${info.log[info.log.length - 1]}` : null, h("span", { class: "fnote", text: seen })),
     grow(info.paired ? "Pair again" : "Pair it", info.paired ? "After it was reset, or to give it a new key" : "Listens for ten minutes",
       h("button", { class: "btn tinted", onclick: () => openPairing(app, scr.id) }, info.paired ? "Pair again" : "Pair"))));
   const disp = DISPLAYS[spec.display] || {};
-  const wake = select((info.wake_choices || [15]).map((m) => [m, m < 60 ? `${m} minutes` : m === 60 ? "1 hour" : `${m / 60} hours`]), info.wake_minutes || 15, async (v) => {
-    try {
-      app.applyScreens((await api(`api/devices/${encodeURIComponent(scr.id)}`, { method: "PATCH", body: { wake_minutes: Number(v) } })).body);
-      toast(`It wakes every ${v < 60 ? `${v} minutes` : v == 60 ? "hour" : `${v / 60} hours`} from its next wake.`);
-    } catch (e) { toast(`Couldn't change it: ${e.message}`); }
-  }, { "aria-label": "Wakes every" });
+  const wake = wakeSelect(app, scr, info, "Wakes every", (v) => `It wakes ${every(v)} from its next wake.`);
   pane.append(h("h4", { class: "gtitle", text: "Display" }), group(
     grow("Size", "As it reports it", h("span", { class: "fnote", text: disp.w ? `${disp.name}, ${disp.w} × ${disp.h}` : "" })),
     grow("Mounted", "Which way up it stands", select([[0, "Landscape"], [180, "Landscape, upside down"], [90, "Portrait"], [270, "Portrait, flipped"]], spec.orientation || 0, async (v) => {
@@ -485,6 +496,7 @@ async function panelPane(app, pane, show) {
   }, { "aria-label": "Name", maxlength: "60" });
   pane.append(group(grow("Name", null, name), grow("Connection", null, conn),
     grow("Install or update", "Makes its ESPHome file and walks you through it", h("button", { class: "btn tinted", onclick: () => show("install") }, "Open"))));
+  const lowPower = !!scr.info?.low_power;
   const reflowNote = h("p", { class: "fnote" });
   pane.append(h("h4", { class: "gtitle", text: "Display" }), group(
     grow("Model", null, select(kind.displays.map((d) => [d.id, `${d.name}, ${d.w} × ${d.h}`]), spec.display, (v) => placeFor(app, v, spec.orientation || 0))),
@@ -500,12 +512,14 @@ async function panelPane(app, pane, show) {
           toast(r.ha_updated ? `The panel now checks every ${v} min.` : `Saved, but the panel didn't get it: ${r.error || "it isn't reachable right now"}.`);
         } catch (e) { toast(`Couldn't change it: ${e.message}`); }
       }); return s; })()) : null), reflowNote);
+  pane.append(h("h4", { class: "gtitle", text: "Power" }), powerBox(app, scr, () => show("panel")));
 
   sharedGroup(app, pane, scr, show);
   const ghost = h("div");
   pane.append(h("h4", { class: "gtitle", text: "Ghosting and sleep" }), ghost);
   const drawDevice = (dev) => {
     ghost.replaceChildren();
+    if (lowPower) { ghost.append(h("p", { class: "fnote", text: "These live on the panel, and it sleeps between checks. To change them, ask it to stay awake above, or turn off Low Power Mode." })); return; }
     if (!dev || !dev.available) { ghost.append(h("p", { class: "fnote", text: dev?.problem ? `These live on the panel, and it isn't reachable: ${dev.problem}.` : "These live on the panel, and it isn't reachable right now." })); return; }
     const rows = [];
     if (dev.ghost_mode !== null) rows.push(grow("Clear ghosting", "A full refresh flashes once and cleans the screen", select((dev.ghost_modes.length ? dev.ghost_modes : ["On automatic changes", "Every Nth refresh"]).map((o) => [o, o === "Every Nth refresh" ? "Every few refreshes" : o]), dev.ghost_mode, (v) => app.deviceSet({ ghost_mode: v }, "Saved on the panel."))));
@@ -518,11 +532,52 @@ async function panelPane(app, pane, show) {
   drawDevice(app.device);
   app.loadDevice().then(drawDevice);
   removeGroup(app, pane, scr);
+  if (lowPower) {
+    const info = scr.info || {};
+    conn.textContent = info.last_seen ? [`Last checked at ${hm(info.last_seen)}`, awakeText(info.awake_s, "a check")].filter(Boolean).join(" · ") : "It hasn't checked in since Low Power Mode went on.";
+    return;
+  }
   try {
     const r = (await api("api/panel-setup")).body;
     const p = r.panel || {};
     conn.textContent = p.connected ? `Connected${p.rssi ? `, Wi-Fi ${p.rssi} dBm` : ""}` : p.node ? "Found, but offline. It picks up changes when it's back." : "No panel yet";
   } catch (e) { conn.textContent = "Couldn't check"; }
+}
+
+/* Low Power Mode: the screen's own choice, never assumed from how it's powered. */
+const lowPowerNote = (m) => `Checks for new pages ${every(m)} and sleeps in between, so it lasts months on a battery. Alerts and changes show at its next check; a button press checks right away. Plugged in? Leave it off for instant updates.`;
+function powerBox(app, scr, redraw) {
+  const info = scr.info || {}, box = h("div");
+  const url = `api/devices/${encodeURIComponent(scr.id)}`;
+  const lp = toggle(!!info.low_power, async (v) => {
+    lp.disabled = true;
+    try {
+      const r = (await api(url, { method: "PATCH", body: { low_power: v } })).body;
+      app.applyScreens(r);
+      toast(`Low Power Mode is ${v ? "on" : "off"}. ${r.note || ""}`.trim());
+      redraw();
+    } catch (e) { lp.setAttribute("aria-checked", String(!v)); lp.disabled = false; toast(`Couldn't change it: ${e.message}`); }
+  }, "Low Power Mode");
+  const rows = [grow("Low Power Mode", lowPowerNote(info.wake_minutes || 15), lp)];
+  if (info.low_power) {
+    rows.push(grow("Checks every", "Sooner means fresher pages and a shorter battery life",
+      wakeSelect(app, scr, info, "Checks every", (v) => `It checks ${every(v)}, starting after its next check.`)));
+    const stay = info.stay_awake || {};
+    const awakeSub = stay.until ? `Awake until ${hm(stay.until)}, for an update over Wi-Fi.`
+      : stay.asked ? "It stays awake ten minutes from its next check. Press a button on it to start now."
+      : "Ten minutes, for an update over Wi-Fi. Starts at its next check.";
+    rows.push(grow("Stay awake", awakeSub, h("button", { class: "btn tinted", onclick: async () => {
+      try {
+        await api(`${url}/stay-awake`, { method: stay.asked || stay.until ? "DELETE" : "POST" });
+        await app.loadScreens(scr.id);
+        redraw();
+      } catch (e) { toast(`Couldn't ask it: ${e.message}`); }
+    } }, stay.asked || stay.until ? "Cancel" : "Stay awake")));
+  }
+  box.append(group(...rows));
+  if (info.low_power && !info.firmware_sleeps) box.append(h("p", { class: "note warn" }, icon("info", "sm"),
+    h("span", { text: "This panel's firmware can't sleep yet, so it stays connected and checks on its own timer. Install it again from Install or update and it starts sleeping." })));
+  return box;
 }
 
 async function installPane(app, pane) {
@@ -617,7 +672,7 @@ function quietPane(app, pane) {
   const body = h("div");
   const wakes = app.screen?.owns_interval === "addon";
   pane.append(h("p", { class: "fnote", text: wakes
-    ? "This screen's own. While quiet hours last it shows the sleep screen and sleeps until they end. A press of its button shows a page for two minutes. Sent with your pages."
+    ? `This screen's own. While quiet hours last it shows the sleep screen and sleeps until they end. ${app.screen?.setup === "pair" ? "A press of its button shows a page" : "A press of a button shows your pages"} for two minutes. Sent with your pages.`
     : "This screen's own. While quiet hours last, it doesn't flash or download, so a dark room stays dark. Its buttons still work. Sent with your pages." }), body);
   function draw() {
     body.replaceChildren(

@@ -137,7 +137,7 @@ the add-on itself lives in `addon/`.
 | Endpoint | Purpose |
 |---|---|
 | HA Sidebar (`:8080` via Ingress) | Drag-and-drop visual editor and JSON API. Answers only Home Assistant's Ingress proxy (`172.30.32.2`); any other app on the internal network gets 403 |
-| `<homeassistant>:8099` | The device port: what each device fetches, found by its key (`kinds.device_for`). For a CrowPanel: `/frames.epf`, `/frame.epf`, the PNG fallbacks, and a minimal `/status`. `POST /api/action/refresh|page` always need a key. The first panel's frames need it once that panel has used it (`frame_token.py`). Remappable in the add-on's network settings |
+| `<homeassistant>:8099` | The device port: what each device fetches, found by its key (`kinds.device_for`). For a CrowPanel: `/frames.epf` (`?cap=`, and from firmware that can sleep `wake=` and `awake_ms=`; in Low Power Mode every answer has `X-EPF-Sleep`), `/frame.epf`, the PNG fallbacks, and a minimal `/status`. `POST /api/action/refresh|page` always need a key. The first panel's frames need it once that panel has used it (`frame_token.py`). Remappable in the add-on's network settings |
 | `<homeassistant>:8099` for a TRMNL | Only while the add-on option `trmnl` is on: `GET /api/setup` (pairing, only in the editor's ten-minute window), `GET /api/display` (one wake), `POST /api/log`, `GET /api/image/<hash>`. All but setup need its key in `Access-Token` |
 | ESPHome node (`crowpanel-epaper`) | Exposes `refresh_now`, `show_page`, `page_step`, and `hold_toggle` actions over the encrypted ESPHome native API |
 
@@ -149,6 +149,18 @@ than a frame does.
 
 ## Conventions
 
+- **A request never draws.** The render cycle (`frames.refresh_frames` →
+  `kinds.<kind>.render`) draws everything a device can fetch; device-port
+  routes only hand over what's ready. The one exception is a device that asks
+  before anything was drawn for the size it has now, and it's logged.
+  `tests/test_draw_ahead.py` drives every kind's routes: add a new kind or
+  route there. A screen that sleeps (a TRMNL; a CrowPanel in Low Power Mode)
+  uses `paging.py` for what to show and how long to sleep; its kind keeps
+  only its protocol.
+- **How a screen is powered is never assumed.** Low Power Mode and the wake
+  interval are settings of each screen (`low_power`, `wake_minutes`), never
+  facts about a kind. A plugged-in panel may sleep; one on a battery may stay
+  connected.
 - **Everything in `theme.py` is in panel pixels** (792 × 272), so the numbers
   match the design directly. Do not introduce a scaling factor.
 - **Draw on an 8-bit canvas, threshold at the end** (`theme.to_1bit`). No
@@ -255,6 +267,15 @@ YAML comes only from `addon/app/firmware/panel.yaml`. After changing it, run
 - **Only the main loop touches the front buffer and the display.** The
   download task writes the back buffer; `EpfClient::poll()` swaps them on the
   main loop. Keep it that way, or a page can be drawn mid-swap.
+- **Only an answer from the add-on puts the panel to sleep** (`X-EPF-Sleep`,
+  `PowerPolicy` in `epf_core.h`, script `go_to_sleep`). `deep_sleep` has no
+  `run_duration` and must never get one: the same firmware stays connected
+  when Low Power Mode is off.
+- **Never sleep while the display is refreshing.** Deep sleep cuts its power
+  rail. The CrowPanel driver refreshes in the background, so the panel waits
+  for `id(epd).is_idle()` (`firmware_gen.display_settled`).
+- **Every button's `on_press` calls `PowerPolicy::note_press`**, or a press
+  doesn't keep the panel awake. A new button needs it too.
 - **Strokes under ~4 px are invisible on this panel** (145 dpi, so 3 px is
   0.5 mm). Icons drawn in the lambda need chunky geometry.
 
@@ -272,7 +293,7 @@ TRMNL's API docs. `tests/test_trmnl.py` pins each of these.
 - **`filename` is the picture's hash and at most 31 characters**, never
   `empty_state` or `screen_wiper.png` (both mean something to it). Anything
   that changes every wake (a clock) makes it download and flash every wake:
-  that's why "updated" is when the page last changed (`trmnl.steady`).
+  that's why "updated" is when the page last changed (`paging.steady`).
 - **The picture's address must start with the address the device was given**,
   or it doesn't send its key (`isSameOrigin` is a prefix check). Build it from
   the request (`trmnl.base_address`), never from a setting.
@@ -351,10 +372,10 @@ When touching display code, `it.image()` at a negative offset is a trap: see
   `health.fail()`. That's what the problem sensors in Home Assistant show.
 - **Only alerts, quiet hours and people wake the panel early.** Never push on
   a content or shape change: the panel's refresh interval is the user's. A
-  TRMNL can't be woken at all; its wake interval is a setting of that screen,
-  and the editor says alerts show at its next wake. A CrowPanel away from
-  home can't be woken either (that goes through Home Assistant's ESPHome
-  connection, which is home only).
+  TRMNL, or a CrowPanel in Low Power Mode, can't be woken at all; its wake
+  interval is a setting of that screen, and the editor says alerts show at
+  its next wake. A CrowPanel away from home can't be woken either (that goes
+  through Home Assistant's ESPHome connection, which is home only).
 
 - **Never guess an entity ID or an action name** from a device name. Find the
   panel through `panel_link.PanelLink` (service list, registry unique_ids).

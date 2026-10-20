@@ -49,6 +49,7 @@ Where things live in `addon/app/`:
 | `config.py` / `runtime.py` | Settings from the environment; what the running add-on holds. Always read as `config.X` / `runtime.X`, so changes are seen everywhere |
 | `devices.py` | The screens the add-on drives, the design each shows, the shared library; keys; the move in from one panel |
 | `kinds/` | Kinds of device (`crowpanel.py`, `trmnl.py`): their sizes, device-port and editor routes, how they're woken, and what they fetch; which kinds are on; the one key check (`device_for`) and the wrong-key slowdown |
+| `paging.py` | Screens that sleep between wakes (a TRMNL; a CrowPanel in Low Power Mode): pictures drawn ahead, the cursor, the sleep time, the awake time |
 | `render/arrange.py` | One design on several sizes: element IDs, automatic placement, each size's arrangement |
 | `reach.py` / `companion.py` / `companion/epaper_panel/` | Reaching home: how screens away from home get in, and the Home Assistant integration that passes them on |
 | `frames.py` | Per design: which pages are live, their values, alerts. Per device: quiet hours, then its kind renders it |
@@ -81,7 +82,20 @@ Every 60 seconds, and right away on a save or push, `frames.refresh_frames()`:
   show it (`frames.DesignState`).
 - Per device: evaluates its quiet hours, then its kind renders the pages at
   its size and mounting. For a CrowPanel that's one **frame file**
-  (`render/epf.py`), fitted to what that panel holds.
+  (`render/epf.py`), fitted to what that panel holds. For a screen that
+  sleeps, it's every picture it can fetch at its next wakes
+  ([Screens that sleep](#screens-that-sleep)).
+
+**A request never draws.** The cycle draws everything a device can fetch
+before the next cycle; the device port's routes only hand over what's ready.
+A device's radio is on while it waits for its answer, so drawing then costs
+battery, and two places that draw would sooner or later draw differently.
+The one exception: a device that asks before anything was drawn for the size
+it has now (just after a start, or it just said it has a new size) is drawn
+for there and then, and the log says so. `tests/test_draw_ahead.py` drives
+every kind's device routes after a cycle and fails if anything draws; a new
+kind or route has to be added there. Commands (`POST /api/action/refresh`)
+aren't fetches: they ask for a cycle, which is where drawing happens.
 
 ## Devices, designs and kinds
 
@@ -92,10 +106,10 @@ every design.
 
 | Belongs to | What | Stored in |
 |---|---|---|
-| The device | kind, name, size (`display`), orientation, seconds per page, quiet hours, key, its kind's setup (a CrowPanel's ESPHome settings) | `devices.json` (0600) |
+| The device | kind, name, size (`display`), orientation, seconds per page, quiet hours, key, Low Power Mode (`low_power`), wake interval (`wake_minutes`), its kind's setup (a CrowPanel's ESPHome settings) | `devices.json` (0600) |
 | The design | pages, rotation | `designs/<id>.json`; one never saved is the shipped starter pages |
 | The library | saved presets and places | `library.json` |
-| What a device reports | how much it holds | `state/<id>.json` |
+| What a device reports | how much it holds; for a screen that sleeps, its cursor, when each page last changed, recent awake times, a stay-awake request | `state/<id>.json` |
 
 - **One shape for the editor and the renderer.** A device's *view*
   (`devices.view`) is its design plus its own settings plus the library:
@@ -113,11 +127,14 @@ every design.
 - **Kinds** (`kinds/`) say what a device of that kind supports: its display
   profiles (`theme.DISPLAYS[*].kind`), the routes it adds to the device port
   and to the editor's API, whether the add-on can wake it (`link`), who picks
-  the page and who owns the refresh interval, how a new one is set up
-  (`setup_flow`: install or pair), what the editor shows about it
-  (`describe`), its own settings and the entities it publishes. The core names
-  no kind. `crowpanel` is the panel described in the rest of this file;
-  `trmnl` has [its own section](#trmnl).
+  the page and who owns the refresh interval, whether this screen sleeps
+  between wakes (`sleeps`), how a new one is set up (`setup_flow`: install or
+  pair), what the editor shows about it (`describe`), its own settings and the
+  entities it publishes. The core names no kind. `crowpanel` is the panel
+  described in the rest of this file; `trmnl` has [its own section](#trmnl).
+- **How a screen is powered is never assumed.** A CrowPanel on a big power
+  bank can stay connected; a plugged-in one can use Low Power Mode. Whether a
+  screen sleeps is its own setting, not its kind's.
 - **A kind can be optional.** `Kind.enabled()` is its add-on option. While
   it's off its routes aren't added (`web.make_apps`), its devices aren't drawn,
   and the editor lists none of them or their sizes (`kinds.shown`,
@@ -324,7 +341,8 @@ Assistant. Each CrowPanel device has its own link. It never guesses names:
   confirms it. This matters most when quiet hours end, because the panel
   doesn't fetch on its own until it's woken.
 - **The panel's own refresh interval is the one source of truth** for how
-  often it fetches. Pages coming and going (a match starting, planes
+  often a connected panel fetches (in Low Power Mode it's the screen's wake
+  interval, and the panel can't be woken early, so `link` is None). Pages coming and going (a match starting, planes
   overhead) wait for it: a panel on a battery may fetch once an hour, and the
   add-on must not override that. Only the reasons above wake it early
   (`PROACTIVE_TIMED_PUSH` is off).
@@ -333,6 +351,44 @@ Assistant. Each CrowPanel device has its own link. It never guesses names:
 - **Live widget pages linger** (`render/linger.py`). Once a widget page has
   appeared, it stays 5 minutes after its condition last held, so a plane at
   the edge of the radius doesn't reshape the rotation every minute.
+
+## Screens that sleep
+
+`paging.py`. A TRMNL always, and a CrowPanel in Low Power Mode, sleep between
+wakes and let the add-on pick the page. They share one mode; each kind keeps
+only its protocol (how a wake asks, how the answer is said).
+
+- **Drawn ahead** (`draw_ahead`, from the kind's `render`). Every item of
+  every live page, the empty page and the sleep screen, each as the kind's
+  picture (a TRMNL's PNG, a CrowPanel's one-page frame file), kept whole per
+  screen until the next cycle replaces it. All of them rather than just the
+  next one, so wakes close together (a press, then another) still find theirs.
+- **"updated" is when the page last changed** (`steady`). A page is drawn
+  again with the time it had; if it comes out the same, nothing changed and it
+  keeps its bytes, so its name or ETag stays the same and the screen neither
+  downloads nor flashes. Only on the day after does the day join the time.
+- **A wake only picks** (`wake`). The cursor (`step`, in `state/<id>.json`):
+  a timer wake moves through every item of every live page; a person goes to
+  the next page. Alerts show while they last; conditions and linger apply as
+  everywhere.
+- **The sleep time** (`sleep_seconds`): the wake interval (5 minutes to
+  4 hours, 15 by default; one setting, `wake_minutes`, for every kind), cut
+  short to wake just after quiet hours start. During quiet hours: the sleep
+  screen until they end, plus a minute. A press shows a page for two minutes.
+  Presence has no end, so it checks again at its interval.
+- **Quiet hours** come from the cycle, presence included. Their schedule is
+  checked again against the clock at the wake (only arithmetic), so a wake
+  just after they start or end never trusts a cycle from a minute before. A
+  stale "quiet" would otherwise sleep until the same time tomorrow.
+- **The awake time** (`awake_seconds`): how long the screen stays awake after
+  this wake before it sleeps. None after a timer wake, a minute after a press,
+  ten minutes when the editor asked it to stay awake for an update (counted
+  from the wake that delivered the request). A TRMNL's protocol has no such
+  field.
+- **How long it was awake** (`note_awake`): each screen's last twelve awake
+  times, as it reports them, and their average in the editor next to battery
+  and Wi-Fi. A TRMNL sends `Wake-Time` (its previous wake, in ms,
+  `sleep_session.cpp`); a CrowPanel will send `awake_ms`.
 
 ## TRMNL
 
@@ -358,21 +414,15 @@ requests and reads the answers the way that source does.
   the device's size becomes its size (`theme.sized_display`: the TRMNL OG's
   own profile, or `trmnl_<w>x<h>` made from it), and it renders at the new
   size at once.
-- **The page.** `render()` draws nothing: it keeps the cycle's design state.
-  The wake picks the page with the device's cursor (`step`: a timer wake moves
-  through every item of every live page; a button wake, or any other wake
-  reason, goes to the next page) and draws only that item
-  (`frames.draw_category(only=)`). Alerts show while they last; conditions
-  and linger apply as they do everywhere.
-- **"updated" is when the page last changed** (`steady`). The picture is
-  drawn again with the time it had; if it comes out the same, nothing changed
-  and it keeps its name. `filename` is the picture's hash, so an unchanged
-  page costs no download and no flash.
+- **The page** is the shared mode's ([Screens that sleep](#screens-that-sleep)):
+  drawn ahead in the cycle, picked at the wake. A timer wake moves through
+  the rotation; a button wake, or any other wake reason, goes to the next page.
+  `filename` is the picture's hash, so an unchanged page costs no download and
+  no flash.
 - **`refresh_rate` is always sent** (the firmware stores a missing one as 0):
-  the device's wake interval, cut short to wake just after quiet hours start.
-  During quiet hours: the sleep screen until they end, plus a minute; a button
-  press shows a page for two minutes. Presence-based quiet hours have no end,
-  so it checks again at its interval.
+  the shared mode's sleep time.
+- **`Wake-Time`** (how long it was awake at its previous wake) is kept for the
+  editor's average.
 - **The picture** (`image_url`) is a 1-bit PNG, `Content-Type: image/png`
   exactly (what `bl.cpp` decodes as PNG). Its address is built from the one
   the device called (`base_address`: the forwarded host and the companion's
@@ -491,34 +541,141 @@ table as unverified; the demo source is authoritative.
 
 ## Battery and deep sleep
 
-Not yet implemented. The measurements above decide how it should be:
+How a screen is powered is its owner's business, so it's a setting of each
+screen, never a property of a kind. Three setups make sense:
 
-| Approach | Awake per wake | Per day | 5000 mAh lasts |
-|---|---|---|---|
-| Fetch the strip every wake | ~8.5 s | ~61 mAh | ~2.5 months |
-| Single page on timer, strip only on a dial wake | ~3 s | ~22 mAh | ~7.5 months |
+| Setup | Low Power Mode | What you get |
+|---|---|---|
+| Plugged in | Off | Instant updates, alerts at once, remote control. The default. |
+| On a battery, always connected | Off | The same, for as long as the battery lasts. The 5.79" idles below about 0.25 W (brief 0.5 W redraws), so a 20,000 mAh power bank (about 74 Wh) lasts roughly ten days, a bigger one weeks. A long test on a power bank is under way. |
+| Low Power Mode | On | Months on a battery. Pages and alerts arrive at its next check; a button press checks right away. A plugged-in panel can use it too. |
 
-The second is barely more code: `esp_sleep_get_wakeup_cause()` distinguishes a
-timer wake from an `ext1` (button) wake. A timer wake fetches `frame.png` and
-sleeps in ~3 s; a dial wake pays the 6 s for the strip once, then every further
-click is instant. You only pay for paging when you actually page. The renderer
-already writes both files, so no server changes are needed.
+### Low Power Mode
 
-**Deep sleep and remote control are close to mutually exclusive.** The panel
-is unreachable ~290 s in every 300, so a Matter remote or dashboard button
-would land maybe 3% of the time. Its own buttons are fine — they wake it. If
-the panel ends up near a socket, staying mains-powered with a 60 s refresh and
-working remote control is arguably the better product than deep sleep.
+A switch per screen (Settings › Screen, and when adding one), off by
+default, with the shared wake interval (15 minutes by default, 5 minutes to
+4 hours). It makes a CrowPanel a [screen that sleeps](#screens-that-sleep).
 
-Caveats before enabling it:
-- Deep sleep makes OTA nearly impossible — awake ~30 s in every 300. Keep the
-  panel mains-powered while iterating.
-- `ext1` with `ANY_LOW` treats a floating pin as a press and will wake the panel
-  in a loop. Pull-ups are mandatory.
-- Measure the board's real sleep current before mounting it somewhere awkward.
-  The CH340 USB-serial chip is the usual reason these boards disappoint.
-- A USB powerbank will not work: it sees a deep-sleeping ESP32 as "nothing
-  plugged in" and cuts output after 10–30 s. Use a 1S LiPo on the JST.
+**One firmware for both modes; the add-on decides on every download.**
+
+- The panel says why it's awake when it fetches `/frames.epf`:
+  `wake=timer|button|boot`, and `awake_ms=` (how long it was awake last
+  time). Only firmware that can sleep sends `wake`, and the editor says when a
+  panel in Low Power Mode hasn't yet (`firmware_sleeps`).
+- With Low Power Mode on, every answer (200, 304 and 503 alike) carries
+  `X-EPF-Sleep: <seconds>; awake=<seconds>`: how long until it checks again,
+  counted from this answer, and how long to stay awake before sleeping. Off,
+  there's no such header, and the panel stays connected as it always has.
+  Older firmware ignores headers it doesn't know.
+- Why a header and not a field in the frame file: a frame file is drawn once
+  per cycle and served to every download, while the sleep time is worked out
+  per download (the clock, quiet hours, a stay-awake request), and a 304 has
+  no body at all. The frame file stays a picture of the pages.
+- **A timer wake** gets one page, picked by the shared mode, as a frame file
+  of its own (with the identity that page has among all of them, so a press
+  afterwards keeps its place). It shows it and sleeps (`awake=0`). An
+  unchanged page has the same ETag, so it's a 304: no download, and no
+  redraw if the display kept its picture.
+- **A button wake** (or a boot) gets every page, as always, and
+  `awake=60`: it stays awake a minute after the last press, then sleeps.
+- **Stay awake** (the editor, for an update over Wi-Fi) is the same field:
+  at its next check the answer says `awake=600`, and any download in those ten
+  minutes gets what's left. A press on the panel makes that check happen now.
+- **Switching** takes effect at its next download. Turned on, the add-on asks
+  a connected panel to fetch at once (a person did something); turned off,
+  the panel is asleep and finds out at its next check or press. The editor
+  says which.
+- In Low Power Mode the panel can't be woken early, so its kind gives no
+  link: alerts show at its next check and its Refresh button leaves Home
+  Assistant. Its ghosting and sleep settings live on the panel: change them
+  while it's asked to stay awake.
+
+### The firmware
+
+The same firmware for both modes (`PowerPolicy` in `epf_core.h`, tested on
+the host; the glue in `epf_client.h`; `go_to_sleep` in `firmware/panel.yaml`).
+
+- ESPHome `deep_sleep` is always compiled in, with no `run_duration`: it
+  never sleeps unless an answer says so, and `deep_sleep.enter` takes the
+  duration then. Wake sources: the timer, and the five buttons (`EXIT 1`,
+  `HOME 2`, `NEXT 4`, `OK 5`, `PRV 6`, all RTC-capable on the ESP32-S3) as
+  `ext1` `ANY_LOW`, set just before it sleeps.
+- `esp_sleep_get_wakeup_cause()` says timer, button or a fresh start; the
+  first download says which (`wake=`), with how long the last wake was awake
+  (`awake_ms=`, kept in RTC memory, `epf_power.cpp`).
+- **When it sleeps:** once the answer's awake time has passed (and a minute
+  after the last press), the download is done, and the display has finished
+  its refresh. Deep sleep cuts the display's power, so a refresh still
+  running would be cut short. The CrowPanel driver refreshes in the
+  background and says when it's done (`is_idle()`); the Waveshare driver used
+  for the other sizes can't, so the panel waits 6 s after its last redraw
+  (`firmware_gen.display_settled`). Never during an update over Wi-Fi.
+- **How long:** what the answer said, less the time it has been awake since.
+- **What's on screen survives the sleep.** The frames don't (they're in
+  PSRAM), but the picture does, and so does its ETag (RTC memory). A timer
+  wake sends it, so an unchanged page (the sleep screen through a long
+  absence, a one-page rotation) is a 304: no download, no redraw, no flash.
+  Anything more after that downloads the frames again.
+- **No answer at all** on a timer wake (no Wi-Fi, the add-on down): it was
+  told to sleep before, so it's on a battery; it sleeps and tries again after
+  60 s, doubling to 10 min, never longer than its interval. A press that
+  can't reach the add-on stays awake a minute first. A fresh start that can't
+  reach it stays connected, so its own Wi-Fi setup can open.
+- **Floating buttons.** If the button pins float in deep sleep, `ANY_LOW`
+  wakes the panel the moment it sleeps. Three button wakes in a row within
+  2 s of falling asleep turn the buttons off as a wake source until the next
+  timer wake, so a fault costs a few wakes per interval, not the battery.
+- **The Home Assistant connection stays, and a wake never waits for it.** It
+  connects if the panel is awake long enough (after a press, while asked to
+  stay awake). `api: reboot_timeout` is `0s`: by default ESPHome restarts a
+  panel that no client has connected to for 15 minutes, which helps nothing
+  here and would cut a stay-awake short.
+
+### Battery reading (designed, not built yet)
+
+Elecrow's staff say the stock 5.79" can't read its battery
+(forum.elecrow.com, discussion 1063); the board charges a LiPo through an
+LTC4054 and nothing connects the cell to an ADC pin. The option, per screen
+in Install or update, off by default: **Battery reading on GPIO n**, saying
+plainly "Needs a resistor divider from the battery to that pin, soldered on;
+the board has none." On, the generated YAML adds an `adc` sensor on that pin
+(with the divider's ratio), and the voltage goes to the add-on with each
+download, to the editor and to the same battery sensors a TRMNL has. Not
+built yet: it needs a board with the divider to check against, and until
+it's built the editor doesn't offer it, since it would do nothing.
+
+### What it costs
+
+At a 15-minute interval: 96 wakes a day. A timer wake fetches one page
+(about 0.8 s of decode instead of about 6 s for the strip, see
+[Measured numbers](#measured-numbers)) and is awake about 3 s, roughly
+10 mAh a day of wakes. Between wakes, the board's sleep current decides:
+anywhere from 0.24 mAh a day (10 µA) to 120 mAh a day (5 mA, a USB-serial
+chip or regulator that never sleeps). On 5,000 mAh that's somewhere between
+over a year and about five weeks: the sleep current is the number to
+measure.
+
+### To measure on a real board
+
+- **Sleep current**, with the USB cable out. The CH340 USB-serial chip and
+  the regulator's quiescent current are the usual reasons boards like this
+  disappoint.
+- **Whether the buttons' pull-ups work in deep sleep.** The demo reads them as
+  plain inputs, so the board has pull-ups of its own; if they hang off a rail
+  that's cut in sleep, the pins float and `ANY_LOW` wakes the panel in a
+  loop. The RTC's own pull-ups are the fallback.
+- **Whether the display needs a full, flashing refresh after every wake.**
+  As built, it does: the CrowPanel driver makes its first refresh after any
+  start a full one, and the display's power rail (`GPIO7`) is cut in deep
+  sleep, so the controller loses its picture memory anyway. An unchanged page
+  is a 304 and isn't redrawn at all. Holding the rail (`gpio_hold_en` on
+  GPIO7) and putting the controller into its memory-keeping sleep might allow
+  partial refreshes after a wake, at the controller's sleep current and a
+  change to the driver: worth trying once the sleep current is known.
+- **How long the first press takes**, from a deep-sleeping panel to the page
+  on screen: boot, Wi-Fi, the strip's download and decode.
+- A USB power bank may switch off when the panel sleeps, seeing "nothing
+  plugged in". Use a LiPo on the JST, or a bank with an always-on mode.
 
 ## Decisions
 
@@ -563,8 +720,9 @@ timer runs. When an `alert` page fires, the server replaces the strip with a
 single-page alert frame for `hold_minutes` and pushes a refresh to the panel.
 
 **The panel owns which page is shown; the server owns what the pages are.**
-(For a CrowPanel. A TRMNL can't page on its own, so the add-on picks its page:
-see [TRMNL](#trmnl).)
+(For a connected CrowPanel. A TRMNL can't page on its own, and a CrowPanel in
+Low Power Mode shows one page per timer wake, so for those the add-on picks:
+see [Screens that sleep](#screens-that-sleep).)
 Paging had to move onto the device to be quick, which means display state
 (current page, held or not) lives on the panel and is lost on reboot. The
 server still decides the rotation's contents and order. The cost is that the

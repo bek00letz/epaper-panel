@@ -122,6 +122,7 @@ class App {
     if ([90, 270].includes(d.orientation)) parts.push("portrait");
     if (d.shares_with.length) parts.push(`same pages as ${d.shares_with.map((x) => x.name).join(", ")}`);
     if (d.setup === "pair" && !d.info?.paired) parts.push("not paired yet");
+    if (d.sleeps && d.setup !== "pair") parts.push("Low Power Mode");
     return parts.join(" · ");
   }
   openScreens(anchor) {
