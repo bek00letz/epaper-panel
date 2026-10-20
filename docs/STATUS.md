@@ -19,8 +19,12 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 ## In flight
 
-Nothing. Every branch is merged into main; `low-power-mode` is kept until
-the user OKs deleting it.
+| Work | Where | State |
+|---|---|---|
+| What breaks 0.12.0 (session "break-it") | branch `break-it`, worktree `~/Documents/HA/epaper-worktrees/break-it` | Started 20 Oct; findings go to the coordinator |
+| Feature roadmap (session "roadmap") | no code; a draft for `docs/ROADMAP.md` | Started 20 Oct, with the user |
+
+`low-power-mode` is merged and kept until the user OKs deleting it.
 
 ## Backlog, most important first
 
