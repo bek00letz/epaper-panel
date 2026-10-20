@@ -398,10 +398,21 @@ class App {
     if (items.length < 2) return;
     if (kind === "dh" || kind === "dv") {
       if (items.length < 3) return;
-      const k = kind === "dh" ? "x" : "y";
-      const s = items.slice().sort((a, b) => a[k] - b[k]);
-      const first = s[0][k], last = s[s.length - 1][k], step = (last - first) / (s.length - 1);
-      s.forEach((it, i) => { it[k] = Math.round(first + i * step); });
+      // Equal gaps between them, the outermost two staying put (as Keynote
+      // does). Spacing left edges ignored widths and stacked a small icon
+      // inside a wide neighbour. If they're too wide to sit side by side,
+      // space their centres evenly instead.
+      const k = kind === "dh" ? "x" : "y", size = kind === "dh" ? "w" : "h";
+      const s = items.slice().sort((a, b) => (a[k] + a[size] / 2) - (b[k] + b[size] / 2));
+      const start = Math.min(...s.map((e) => e[k])), end = Math.max(...s.map((e) => e[k] + e[size]));
+      const gap = (end - start - s.reduce((t, e) => t + e[size], 0)) / (s.length - 1);
+      if (gap >= 0) {
+        let at = start;
+        s.forEach((it) => { it[k] = Math.round(at); at += it[size] + gap; });
+      } else {
+        const c0 = s[0][k] + s[0][size] / 2, c1 = s[s.length - 1][k] + s[s.length - 1][size] / 2;
+        s.forEach((it, i) => { it[k] = Math.round(c0 + (c1 - c0) * i / (s.length - 1) - it[size] / 2); });
+      }
     } else {
       const minX = Math.min(...items.map((e) => e.x)), maxR = Math.max(...items.map((e) => e.x + e.w));
       const minY = Math.min(...items.map((e) => e.y)), maxB = Math.max(...items.map((e) => e.y + e.h));
