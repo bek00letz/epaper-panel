@@ -286,6 +286,24 @@ class TestFirmwareYaml(unittest.TestCase):
         self.assertIn("\ncaptive_portal:", block, "a page for choosing a network")
         self.assertNotIn("ap:", firmware_gen.wifi_block([('"home"', '"pw"')]))
 
+    def test_a_blank_network_is_left_out(self):
+        # ESPHome refuses `ssid: ""` (break-it #5): with its own Wi-Fi on, a panel
+        # with no network yet gets only that, and chooses one from a phone.
+        hotspot = ('"Kitchen setup"', '"abcdefghjkmn"')
+        only = firmware_gen.wifi_block([('""', '""')], hotspot)
+        self.assertNotIn("ssid: \"\"", only)
+        self.assertNotIn("networks:", only)
+        self.assertNotIn("fast_connect", only)
+        self.assertIn('  ap:\n    ssid: "Kitchen setup"', only)
+        self.assertIn("\ncaptive_portal:", only)
+        rest = firmware_gen.wifi_block([('""', '""'), ('"work"', '"pw2"')], hotspot)
+        self.assertNotIn('ssid: ""', rest)
+        self.assertIn('  ssid: "work"\n  password: "pw2"\n  fast_connect: true', rest, "one network left: straight away")
+        text = firmware_gen.render(
+            disp=T.get_display(DISPLAY), version="1.2.3", device_name="kitchen", frames_url='"http://x/frames.epf"',
+            api_key='"k"', wifi_ssid='""', wifi_password='""', interval_min=5, orientation=0, hotspot=hotspot)
+        self.assertNotIn('ssid: ""', text)
+
     def test_panel_setup_turns_it_on_with_its_own_password(self):
         import devices
         import panel_setup

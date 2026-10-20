@@ -83,7 +83,16 @@ def wifi_block(networks: list[tuple[str, str]], hotspot: tuple[str, str] | None 
 
     `hotspot` (ssid, password): when it finds none of them, the panel opens
     its own Wi-Fi with a page for choosing a network from a phone. A network
-    chosen there replaces these until the panel is installed again (ESPHome)."""
+    chosen there replaces these until the panel is installed again (ESPHome).
+
+    A network with a blank name is left out (ESPHome refuses one). With none
+    left and its own Wi-Fi on, the block has only that: the network is chosen
+    from a phone. With neither, ESPHome says a network is needed; the editor
+    asks for one before it gets here."""
+    networks = [(s, p) for s, p in networks if not _blank(s)]
+    if not networks and hotspot:
+        lines = ["wifi:", "  # No network yet: it opens its own Wi-Fi to choose one from a phone."]
+        return "\n".join(lines + _hotspot_lines(hotspot))
     if len(networks) <= 1:
         ssid, password = networks[0] if networks else ('""', '""')
         lines = ["wifi:", f"  ssid: {ssid}", f"  password: {password}", "  fast_connect: true"]
@@ -92,10 +101,18 @@ def wifi_block(networks: list[tuple[str, str]], hotspot: tuple[str, str] | None 
         for ssid, password in networks:
             lines += [f"    - ssid: {ssid}", f"      password: {password}"]
     if hotspot:
-        lines += ["  # Finds none of them: its own Wi-Fi, to choose a network from a phone.",
-                  "  ap:", f"    ssid: {hotspot[0]}", f"    password: {hotspot[1]}",
-                  "", "captive_portal:"]
+        lines += ["  # Finds none of them: its own Wi-Fi, to choose a network from a phone."]
+        lines += _hotspot_lines(hotspot)
     return "\n".join(lines)
+
+
+def _blank(scalar: str) -> bool:
+    """A YAML scalar that is an empty string ('""', "''" or nothing)."""
+    return str(scalar or "").strip() in ("", '""', "''")
+
+
+def _hotspot_lines(hotspot: tuple[str, str]) -> list[str]:
+    return ["  ap:", f"    ssid: {hotspot[0]}", f"    password: {hotspot[1]}", "", "captive_portal:"]
 
 
 def render(*, disp: dict, version: str, device_name: str, frames_url: str, api_key: str,

@@ -26,6 +26,11 @@
   add-on's own answer keeps it connected now; anything else makes it sleep and
   try again later, as when the network is down.
 
+- **Fixed (firmware setup):** a screen with no Wi-Fi network filled in made
+  firmware ESPHome refused, even with "Its own Wi-Fi when it's lost" on. It
+  now gets only its own Wi-Fi, so you choose the network from a phone. A
+  blank network among several is left out.
+
 ## 0.12.0
 **Firmware change** (only needed for Low Power Mode, or if your panel has
 "Its own Wi-Fi when it's lost" switched off): install the panel again from
