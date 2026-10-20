@@ -2,7 +2,7 @@
 // now, the whole strip, saving a preset, and the rare question of which
 // version to keep.
 
-import { h, icon, api, clone, pageTitle, slug, nowHM, modKey, prefs, withDevice } from "./util.js";
+import { h, icon, api, clone, pageTitle, slug, modKey, prefs, withDevice } from "./util.js";
 import { sheet, popover, field, input, number, select, seg, toggle, toggleRow, section, linkButton, toast, closeAll } from "./ui.js";
 import { DISPLAYS, isWidget } from "./elements.js";
 import { describe, parseShowIf, syncDynamicGridShowIf } from "./conditions.js";
@@ -114,7 +114,7 @@ export function openStatus(app, anchor) {
     if (doc.saving === "error") lines.push(`Your changes couldn't be saved: ${doc.saveError} They're kept in this window, and it keeps trying.`);
     else if (doc.dirty) lines.push("Your changes are saved, but the panel doesn't have them until you send.");
     else if (wakes) lines.push(info.last_seen ? `It last woke at ${hm(info.last_seen)} and wakes every ${s.panel_interval || info.wake_minutes} min, taking the next page each time.` : info.paired ? "Paired. It hasn't woken since." : "Not paired yet. Pair it in Settings.");
-    else if (s.rendered_at) lines.push(`Pages rendered at ${nowHM(s.rendered_at)}. The panel looks for new ones every ${s.panel_interval || 5} min.`);
+    else if (s.rendered_at) lines.push(`Pages rendered at ${hm(s.rendered_at)}. The panel looks for new ones every ${s.panel_interval || 5} min.`);
     if (s.panel_link?.pending_refresh) lines.push(`The panel hasn't picked up the last change yet${s.panel_link.last_error ? `: ${s.panel_link.last_error}` : ""}. It keeps trying.`);
     if (s.panel_link?.problem && !s.panel_link?.node) lines.push(`No panel found: ${s.panel_link.problem}.`);
     if (s.error) lines.push(`The last render failed: ${s.error}`);

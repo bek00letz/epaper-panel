@@ -9,6 +9,8 @@
   editor and as Home Assistant sensors. Works through Reaching home too.
   Built from TRMNL's open-source firmware; not yet tried on a real one.
 - The Add a screen sheet no longer shows a stray "null" under the pages.
+- "Now on the panel" shows the time pages were rendered again, instead of
+  "Invalid Date".
 
 ## 0.11.0
 **Firmware change** (only needed for the new things below): install the panel
