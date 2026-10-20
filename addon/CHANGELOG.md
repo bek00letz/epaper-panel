@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.11.0
 **Firmware change** (only needed for the new things below): install the panel
 again from Panel setup when you want it to work away from home or join more
 than one Wi-Fi network. Until then it keeps working as before.
@@ -24,8 +24,6 @@ than one Wi-Fi network. Until then it keeps working as before.
 - **Wi-Fi setup from your phone.** Where a panel knows no network, it opens
   its own Wi-Fi and its screen says how to join it and choose one. On by
   default, per screen, with its own password in Install or update.
-- **Fixed:** on the 7.5" and 10.2" panels the footer clock ran into the page
-  pill.
 - **One style around several elements.** Select two or more, then choose an
   outline, a pill or an inverted area under Together. It follows them when
   they move. Dragging several at once now snaps to the guides too.
