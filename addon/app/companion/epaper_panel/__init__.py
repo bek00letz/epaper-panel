@@ -32,7 +32,8 @@ TARGET_FILE = Path(__file__).parent / "target.json"
 DROP_REQUEST = {"authorization", "cookie", "host", "connection", "keep-alive", "proxy-authorization",
                 "proxy-connection", "te", "trailer", "transfer-encoding", "upgrade", "content-length",
                 "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-forwarded-prefix"}
-KEEP_RESPONSE = {"content-type", "etag", "last-modified", "cache-control", "retry-after", "x-epf-version"}
+KEEP_RESPONSE = {"content-type", "etag", "last-modified", "cache-control", "retry-after", "x-epf-version",
+                 "x-epf-sleep"}               # Low Power Mode: how long the panel sleeps
 TIMEOUT = aiohttp.ClientTimeout(total=30)
 
 

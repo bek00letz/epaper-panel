@@ -5,6 +5,10 @@
 - **Fixed:** in Low Power Mode, a panel whose refresh interval is one minute
   never went back to sleep after a button press: every download it made while
   awake kept it awake another minute. Only a wake does that now.
+- **Fixed:** a panel in Low Power Mode that reaches home through Home
+  Assistant's address never slept: the e-Paper Panel integration dropped the
+  answer's sleep time on the way. Restart Home Assistant once after updating
+  the add-on so it loads the new integration.
 
 ## 0.12.0
 **Firmware change** (only needed for Low Power Mode, or if your panel has

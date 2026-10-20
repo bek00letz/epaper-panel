@@ -141,6 +141,17 @@ class TestCompanion(unittest.TestCase):
         self.assertFalse(companion.refresh("http://x:8099"))
         self.assertFalse((config.HA_CONFIG_DIR / "custom_components").exists())
 
+    def test_it_passes_on_every_header_a_screen_reads(self):
+        # Home Assistant isn't installed here, so read the integration's list from its source.
+        import ast
+        tree = ast.parse((companion.SOURCE / "__init__.py").read_text())
+        kept = next(ast.literal_eval(n.value) for n in ast.walk(tree)
+                    if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "KEEP_RESPONSE")
+        import paging
+        answered = {*crowpanel.sleep_header(paging.Wake(None, 900, 0)), "ETag", "Retry-After", "X-EPF-Version"}
+        for header in answered:
+            self.assertIn(header.lower(), kept, f"{header} must reach a screen away from home")
+
     def test_it_never_passes_home_assistant_logins_on(self):
         source = (companion.SOURCE / "__init__.py").read_text()
         for header in ('"authorization"', '"cookie"'):
