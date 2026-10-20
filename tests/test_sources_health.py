@@ -11,15 +11,13 @@
 import asyncio
 import contextlib
 import io
-import os
 import sys
-import tempfile
 import time
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import support  # noqa: E402,F401
+import support  # noqa: E402
 
 import aiohttp  # noqa: E402
 from aiohttp import web  # noqa: E402
@@ -96,7 +94,7 @@ class FakeHass:
 
 class TestSourcesStayOutOfTheWay(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        config.DATA_DIR = Path(tempfile.mkdtemp())
+        config.DATA_DIR = support.temp_dir()
         runtime.LIVE = type(runtime.LIVE)()
         health.reset()
 
@@ -125,7 +123,7 @@ class TestEntitiesSurviveOutages(unittest.IsolatedAsyncioTestCase):
     async def test_failing_source_keeps_its_entity_and_a_removed_one_goes(self):
         now = [1_000_000.0]
         t = FakeTransport()
-        pub = mqtt_bridge.EntityPublisher(t, FakeHass(), tempfile.mkdtemp(), "test", clock=lambda: now[0])
+        pub = mqtt_bridge.EntityPublisher(t, FakeHass(), support.temp_dir(), "test", clock=lambda: now[0])
         await pub._on_connect()
         for _ in range(120):                              # two healthy hours
             pub.set("sensor.epaper_watch", "Severance", {})
@@ -143,7 +141,7 @@ class TestEntitiesSurviveOutages(unittest.IsolatedAsyncioTestCase):
 
     async def test_problem_sensor_is_a_binary_sensor(self):
         t = FakeTransport()
-        pub = mqtt_bridge.EntityPublisher(t, FakeHass(), tempfile.mkdtemp(), "test")
+        pub = mqtt_bridge.EntityPublisher(t, FakeHass(), support.temp_dir(), "test")
         await pub._on_connect()
         pub.set_problem("espn", "ESPN", True, {"error": "HTTP 503"})
         await pub.sync()

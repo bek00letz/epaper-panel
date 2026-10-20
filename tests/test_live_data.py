@@ -1,15 +1,10 @@
 """Rendering never waits on outside services."""
 import asyncio
-import os
-import sys
 import time
 import unittest
-from pathlib import Path
 
-os.environ.setdefault("DATA_DIR", "/tmp/epaper-data")
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "addon" / "app"))
-
-import live_data  # noqa: E402
+import support  # noqa: F401
+import live_data
 
 
 class Clock:

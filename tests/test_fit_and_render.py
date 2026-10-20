@@ -5,12 +5,11 @@ From the audit of 2026-10-19 (findings 5, 8, 10, 15, 16).
 import asyncio
 import os
 import sys
-import tempfile
 import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import support  # noqa: E402,F401
+import support  # noqa: E402
 
 import aiohttp  # noqa: E402
 from aiohttp.test_utils import TestClient, TestServer  # noqa: E402
@@ -30,7 +29,7 @@ PAGE_579 = 99 * 272        # bytes per 5.79" page
 
 class Base(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        config.DATA_DIR = Path(tempfile.mkdtemp())
+        config.DATA_DIR = support.temp_dir()
         runtime.forget_devices_except([])
         self.dev_id = devices.primary()["id"]
         self.spec = sanitize_layouts(load_layouts())
@@ -155,7 +154,7 @@ class TestMatchOrder(unittest.TestCase):
 
 class TestSourceIds(unittest.TestCase):
     def test_renaming_a_source_keeps_its_key(self):
-        d = tempfile.mkdtemp()
+        d = support.temp_dir()
         feeds.save(d, [{"type": "jellyfin", "name": "jelly", "base": "http://nas", "key": "K"}])
         stored = feeds.load(d)
         shown = feeds.mask_secrets(stored)
