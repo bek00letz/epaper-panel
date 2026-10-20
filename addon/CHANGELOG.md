@@ -23,6 +23,12 @@
   zone in the MQTT broker. The add-on now clears it, which also removes that
   old, unused sensor (today's is sensor.epaper_panel_last_render), and every
   time it publishes carries a time zone.
+- **Send to ESPHome.** Install or update has a button that puts the panel's
+  file in Home Assistant's ESPHome folder and opens ESPHome in a new tab, so
+  you choose Install there. It says when ESPHome's copy is older than the
+  editor's. Saving the setup no longer writes the file by itself. As before,
+  the file there is kept as `.yaml.previous`, and a file ESPHome would
+  refuse is never sent.
 
 ## 0.13.0
 **Firmware change:** install the panel again from Install or update to get

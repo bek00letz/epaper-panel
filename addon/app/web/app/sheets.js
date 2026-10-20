@@ -584,7 +584,37 @@ async function installPane(app, pane) {
   const status = h("div");
   // What ESPHome would refuse (no way online, a Wi-Fi password it can't take), said before Install.
   const problems = h("div", { role: "status", "aria-live": "polite" });
-  const copyFile = h("button", { class: "btn primary", onclick: () => copy(yaml.value, "the file") }, "Copy");
+  const copyFile = h("button", { class: "btn tinted", onclick: () => copy(yaml.value, "the file") }, "Copy");
+  // Send to ESPHome: the file goes into Home Assistant's ESPHome folder and ESPHome opens, to Install there.
+  const esphomeBox = h("div");
+  let saving = Promise.resolve(), sending = false;
+  const sendToEsphome = async () => {
+    if (sending) return; sending = true; drawEsphome();
+    const dash = r.esphome?.dashboard;
+    // Opened now, while it's still the click: a tab opened after waiting is blocked as a pop-up.
+    const tab = dash ? window.open("about:blank", "_blank") : null;
+    try {
+      await saving;                       // a field changed just before the click is saved first
+      const x = (await api("api/panel-setup/esphome", { method: "POST" })).body;
+      r.esphome = x.esphome;
+      if (tab) { tab.location.href = new URL(dash, location.origin).href; toast(`Sent to ${x.esphome.file}. In ESPHome, choose Install on the panel.`); }
+      else toast(`Sent to ${x.esphome.file}. Open ESPHome in Home Assistant and choose Install on the panel.`);
+    } catch (e) { tab?.close(); toast(e.message); }
+    sending = false; drawEsphome();
+  };
+  function drawEsphome() {
+    const e = r.esphome || {}, blocked = (r.problems || []).length > 0;
+    if (e.state === "no_folder") {
+      esphomeBox.replaceChildren(group(grow("ESPHome", "Home Assistant has no ESPHome folder. Install the ESPHome add-on, or copy the file below into ESPHome yourself.", null)));
+      return;
+    }
+    const sub = blocked ? "Fix the above first."
+      : e.state === "same" ? `Up to date in ${e.file}.`
+      : e.state === "differs" ? `ESPHome has an older copy in ${e.file}. Send this one, then Install there.`
+      : `Not in ESPHome yet. It goes to ${e.file}.`;
+    esphomeBox.replaceChildren(group(grow("ESPHome", sub,
+      h("button", { class: "btn primary", disabled: blocked || sending, onclick: sendToEsphome }, sending ? "Sending…" : "Send to ESPHome"))));
+  }
   const downloadFile = h("button", { class: "btn tinted", onclick: () => {
     const a = h("a", { href: URL.createObjectURL(new Blob([yaml.value], { type: "text/yaml" })), download: (dev.value.trim() || "crowpanel-epaper") + ".yaml" });
     a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
@@ -594,9 +624,11 @@ async function installPane(app, pane) {
       const body = { ha_host: host.value.trim(), frame_port: parseInt(port.value, 10) || 8099,
         device_name: dev.value.trim() || "crowpanel-epaper", wifi_ssid: ssid.value.trim(), wifi_password: pw.value, api_encryption_key: key.value.trim(), use_secrets: useSecrets,
         wifi_networks: nets.filter((n) => n.ssid.trim()), hotspot: hotspotOn, ...extra };
-      r = (await api("api/panel-setup", { method: "POST", body })).body;
+      const p = api("api/panel-setup", { method: "POST", body });
+      saving = p.catch(() => {});
+      r = (await p).body;
       apply();
-      if (msg) toast(msg); else if (r.esphome_synced) toast("Saved, and written to Home Assistant's ESPHome folder.");
+      if (msg) toast(msg);
     } catch (e) { toast(`Couldn't save the setup: ${e.message}`); }
   };
   const host = input(c.ha_host, () => save(), { placeholder: "homeassistant.local" });
@@ -640,6 +672,7 @@ async function installPane(app, pane) {
     problems.replaceChildren(...issues.map((t) => h("p", { class: "note warn" }, icon("info", "sm"), h("span", { text: t }))),
       issues.length ? h("p", { class: "fnote", text: "ESPHome wouldn't install this file. Fix the above and it's ready; Home Assistant's ESPHome folder keeps the last good one until then." }) : "");
     copyFile.disabled = downloadFile.disabled = issues.length > 0;
+    drawEsphome();
     secretsWrap.hidden = !(cc.use_secrets || !cc.wifi_ssid);
     const p = r.panel || {};
     status.replaceChildren(...[
@@ -654,14 +687,19 @@ async function installPane(app, pane) {
     h("h4", { class: "gtitle", text: "Other networks" }), h("p", { class: "fnote", text: "Where else the screen goes, like work. It joins whichever it finds." }), netsBox, hotspotBox,
     group(grow("Encryption key", "Also protects updates over Wi-Fi", h("div", { class: "inline" }, key, h("button", { class: "btn tinted", onclick: () => copy(key.value, "the key") }, "Copy"))),
       grow("New key", "The panel then needs reinstalling and re-adding in Home Assistant", h("button", { class: "btn tinted danger", onclick: () => save({ regenerate_keys: true }, "New key made. Reinstall the panel and add it again in Home Assistant.") }, "Make a new key"))),
-    h("h4", { class: "gtitle", text: "The panel's file" }), problems, yaml,
+    h("h4", { class: "gtitle", text: "The panel's file" }), problems, esphomeBox, yaml,
     h("div", { class: "btnrow" }, copyFile, downloadFile),
     secretsWrap,
     h("h4", { class: "gtitle", text: "Installing" }),
-    h("ol", { class: "steps" },
-      h("li", { text: "In Home Assistant, open ESPHome, choose New device, name it, pick ESP32-S3, then Skip." }),
-      h("li", { text: "Edit the new device, replace everything with the file above, and Install. Use USB-C the first time; after that it updates over Wi-Fi." }),
-      h("li", { text: "When Home Assistant finds the panel under Settings, Devices, choose Configure and paste the encryption key." })));
+    r.esphome?.state === "no_folder"
+      ? h("ol", { class: "steps" },
+        h("li", { text: "In ESPHome, choose New device, name it, pick ESP32-S3, then Skip." }),
+        h("li", { text: "Edit the new device, replace everything with the file above, and Install. Use USB-C the first time; after that it updates over Wi-Fi." }),
+        h("li", { text: "When Home Assistant finds the panel under Settings, Devices, choose Configure and paste the encryption key." }))
+      : h("ol", { class: "steps" },
+        h("li", { text: "Send to ESPHome. ESPHome opens in a new tab, with this panel among its devices." }),
+        h("li", { text: "Choose Install on it. Use USB-C the first time; after that it updates over Wi-Fi." }),
+        h("li", { text: "When Home Assistant finds the panel under Settings, Devices, choose Configure and paste the encryption key." })));
   drawNets();
   secretsWrap.append(h("h4", { class: "gtitle", text: "Lines for secrets.yaml" }), secrets, h("div", { class: "btnrow" }, h("button", { class: "btn tinted", onclick: () => copy(secrets.value, "the lines") }, "Copy")));
   apply();

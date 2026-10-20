@@ -261,3 +261,80 @@ async def _detect_external_port(session: aiohttp.ClientSession | None = None) ->
     except Exception as exc:
         print(f"could not query supervisor for external port: {health.describe(exc)}", flush=True)
     return FRAME_PORT
+
+
+# ---------------------------------------------------------------- the file in ESPHome's folder
+
+# Before 0.13.1, saving the setup also wrote the file into ESPHome's folder. Now
+# only Send to ESPHome does (the user's call): True brings the old way back.
+WRITE_ON_SAVE = False
+
+# The ESPHome add-on, by its own slug (the repository's prefix varies): stable first.
+_ESPHOME_SLUG = re.compile(r"^(?:[0-9a-f]{8}_)?esphome(-beta|-dev)?$")
+_dashboard_cache: dict = {"at": 0.0, "url": None}
+
+
+def esphome_path(cfg: dict) -> Path:
+    """Where ESPHome finds this panel's file: named after its device name, as ESPHome would."""
+    slug = re.sub(r"[^a-z0-9_]+", "_", str(cfg.get("device_name") or "crowpanel-epaper").lower()).strip("_")
+    return config.ESPHOME_DIR / f"{slug or 'crowpanel_epaper'}.yaml"
+
+
+def esphome_state(cfg: dict, disk_yaml: str) -> dict:
+    """{state, file}: whether ESPHome's copy is what the editor would write now.
+
+    state: "same", "differs", "missing", or "no_folder" (no ESPHome folder in Home Assistant)."""
+    path = esphome_path(cfg)
+    out = {"file": f"esphome/{path.name}"}
+    if not config.ESPHOME_DIR.is_dir():
+        return {**out, "state": "no_folder"}
+    try:
+        current = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return {**out, "state": "missing"}
+    except (OSError, ValueError):
+        return {**out, "state": "differs"}
+    return {**out, "state": "same" if current == disk_yaml else "differs"}
+
+
+def write_to_esphome(dev: dict, cfg: dict, disk_yaml: str) -> Path:
+    """Put the file in ESPHome's folder, keeping the one there as `<name>.yaml.previous`.
+
+    The caller checks wifi_problems first: a file ESPHome would refuse is never written."""
+    if not config.ESPHOME_DIR.is_dir():
+        raise FileNotFoundError("Home Assistant has no ESPHome folder")
+    target = esphome_path(cfg)
+    previous = target.read_text(encoding="utf-8") if target.exists() else None
+    if previous != disk_yaml:
+        if previous is not None:
+            # A way back: ESPHome ignores this name, a rename restores it.
+            target.with_suffix(".yaml.previous").write_text(previous, encoding="utf-8")
+        tmp = target.with_suffix(".yaml.tmp")
+        tmp.write_text(disk_yaml, encoding="utf-8")
+        tmp.replace(target)
+    # The name Home Assistant will know this panel by once it's installed from this file.
+    devices.update(dev["id"], setup={**(devices.get(dev["id"]).get("setup") or {}), "installed_name": ha_name(dev)})
+    print(f"esphome: wrote {target}", flush=True)
+    return target
+
+
+async def esphome_dashboard(hass, clock=None) -> str | None:
+    """The ESPHome add-on's page in Home Assistant (its ingress), or None when it isn't installed.
+
+    Asked of the Supervisor through Home Assistant, so the add-on needs no Supervisor rights."""
+    import time
+    from hass import HassError
+    now = (clock or time.time)()
+    if now - _dashboard_cache["at"] < (600 if _dashboard_cache["url"] else 60):
+        return _dashboard_cache["url"]
+    url = None
+    try:
+        res = await hass.ws({"type": "supervisor/api", "endpoint": "/addons", "method": "get"})
+        found = [a for a in (res or {}).get("addons") or [] if _ESPHOME_SLUG.match(str(a.get("slug") or ""))]
+        found.sort(key=lambda a: (a.get("state") != "started", bool(_ESPHOME_SLUG.match(a["slug"]).group(1))))
+        if found:
+            url = f"/hassio/ingress/{found[0]['slug']}"
+    except HassError as exc:
+        print(f"esphome: couldn't look for its add-on: {exc}", flush=True)
+    _dashboard_cache.update(at=now, url=url)
+    return url
