@@ -95,6 +95,34 @@ class TestGeometry(unittest.TestCase):
         self.assertEqual(epf.decode_epf(data).geometry, geo)
 
 
+class TestFooterAtEverySize(unittest.TestCase):
+    def test_the_pill_clears_the_clock(self):
+        for display in T.DISPLAYS:
+            for deg in (0, 90, 180, 270):
+                for clock in ("00:00", "14:05", "23:59"):
+                    fg = T.footer_geometry(clock=clock, cat_label="1/1  HELLO", orientation=deg, display=display)
+                    img, draw = T.new_canvas(deg, display=display)
+                    T.footer(draw, clock=clock, orientation=deg, display=display)
+                    img = T.to_1bit(img)
+                    cw = fg["canvas"][0]
+                    rows = [y for y in range(fg["pill_y0"], fg["pill_y1"] + 1)
+                            if img.getpixel((cw // 2, y))]   # skip the hairline
+                    ink = [x for y in rows for x in range(cw) if img.getpixel((x, y)) == 0]
+                    self.assertTrue(ink, (display, deg, clock))
+                    self.assertGreaterEqual(fg["cat_x0"] - max(ink), 8, (display, deg, clock))
+
+    def test_the_pill_stays_put_as_the_minutes_change(self):
+        for display in T.DISPLAYS:
+            for deg in (0, 90):
+                xs = {T.footer_geometry(clock=c, orientation=deg, display=display)["cat_x0"]
+                      for c in ("00:00", "11:11", "14:05", "23:59")}
+                self.assertEqual(len(xs), 1, (display, deg, xs))
+
+    def test_the_5_79_footer_is_where_it_always_was(self):
+        for deg, x0 in ((0, 96), (90, 81), (180, 96), (270, 81)):
+            self.assertEqual(T.footer_geometry(clock=CLOCK, orientation=deg, display=DISPLAY)["cat_x0"], x0, deg)
+
+
 @unittest.skipUnless(shutil.which("c++"), "no C++ compiler")
 class TestFirmwareCore(unittest.TestCase):
     def test_core_against_real_frame_files(self):

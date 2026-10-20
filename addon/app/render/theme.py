@@ -341,7 +341,10 @@ def footer_geometry(*, clock, cat_label="", has_sub=False, battery_pct=None, ori
     f = font(footer_size, bold=False)
     cat_f = font(13, bold=True)
     pill_y0, pill_y1 = ch - 28, ch - 4
-    cat_x0 = 96 if cw >= 400 else (margin + text_width(clock, f) + 12)
+    # The pill starts after the clock's real width, with a gap that scales with the
+    # clock's size (11 px at 18, 12 at 20). Lato's digits all share one width, so
+    # the pill stays put as the minutes change.
+    cat_x0 = margin + text_width(clock, f) + round(footer_size * 0.6)
     bat_w = text_width(f"{battery_pct} %", f) + 12 if (battery_pct is not None and battery_pct > 0) else 0
     sub_w = 48
     sub_x1 = cw - margin - bat_w
