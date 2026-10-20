@@ -323,8 +323,9 @@ select.inp { appearance: none; -webkit-appearance: none; padding-right: 28px; cu
 .note { display: flex; align-items: center; gap: 7px; padding: 7px 10px; border-radius: var(--r-ctl); font-size: 12px; background: color-mix(in srgb, var(--green) 12%, transparent); margin: 0; }
 .note.warn { background: color-mix(in srgb, var(--orange) 14%, transparent); }
 .note.bad { background: color-mix(in srgb, var(--red) 12%, transparent); }
+.note.info { background: var(--fill); }
 .note .led { background: var(--green); } .note.warn .led { background: var(--orange); }
-.note .ic { color: var(--orange); } .note.bad .ic { color: var(--red); }
+.note .ic { color: var(--green); } .note.warn .ic { color: var(--orange); } .note.bad .ic { color: var(--red); } .note.info .ic { color: var(--fg-2); }
 
 details.more > summary { list-style: none; cursor: pointer; color: var(--accent); font-size: 12.5px; font-weight: 500; display: flex; align-items: center; gap: 4px; min-height: 28px; }
 details.more > summary::-webkit-details-marker { display: none; }
@@ -440,9 +441,17 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
 .navrow:hover { background: var(--fill); }
 .navrow[aria-current="page"] { background: var(--accent); color: var(--on-accent); }
 @media (pointer: coarse) { .navrow { min-height: 44px; } }
-.setpane { overflow-y: auto; padding: 0 20px 20px; overscroll-behavior: contain; }
+.setpane { overflow-y: auto; padding: 0 20px 8px; overscroll-behavior: contain; }
 .panetitle { font: 600 20px var(--font-display); letter-spacing: -0.015em; margin: 4px 0 12px; }
-.gtitle { font-size: 12px; font-weight: 600; color: var(--fg-2); margin: 18px 0 6px 4px; }
+.gtitle { font-size: 12px; font-weight: 600; color: var(--fg-2); margin: 16px 0 8px 4px; }
+/* A pane's blocks flow (no flex), so their margins collapse through the wrappers that panes
+   redraw: 16 between blocks, 24 above a section title and 8 below it. Rows inside a group,
+   card or button row keep their own spacing. */
+.setpane :is(p, .group, .choices, .srccard, .btnrow, .steps, textarea):not(:is(.group, .srccard, .btnrow, .cmp) *) { margin: 0 0 16px; }
+.setpane .gtitle { margin: 24px 0 8px 4px; }
+.setpane textarea { display: block; }
+/* What belongs together sits closer: a file and its buttons, warnings in a row. */
+.setpane textarea.inp:has(+ .btnrow), .setpane p.note:has(+ p.note) { margin-bottom: 8px; }
 .group { background: var(--surface-2); border-radius: var(--r-card); padding: 0 14px; margin: 0 0 12px; box-shadow: 0 0 0 0.5px var(--sep); transition: opacity var(--t-fast); }
 .group.off { opacity: 0.5; }
 .gr { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 8px 0; border-bottom: 0.5px solid var(--sep); }

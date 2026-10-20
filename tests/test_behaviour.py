@@ -6,6 +6,7 @@ from datetime import datetime as real_datetime
 from pathlib import Path
 from unittest import mock
 
+from aiohttp import web as web_exc
 from aiohttp.test_utils import make_mocked_request
 
 import support
@@ -122,11 +123,22 @@ class TestPanelSetupSave(unittest.IsolatedAsyncioTestCase):
         config.ESPHOME_DIR = self._esphome
         self.tmp.cleanup()
 
-    async def post(self, body):
+    async def post(self, body, send=True):
+        """Save the setup, then Send to ESPHome (what a person does before Install)."""
         req = make_mocked_request("POST", "/api/panel-setup")
         req.json = mock.AsyncMock(return_value=body)
         with mock.patch.object(web, "_detect_panel_connection", mock.AsyncMock(return_value={})):
-            return json.loads((await web.api_panel_setup_post(req)).text)
+            res = json.loads((await web.api_panel_setup_post(req)).text)
+        if send:
+            try:
+                res["sent"] = await self.send()
+            except web_exc.HTTPConflict as exc:
+                res["sent"] = exc.text
+        return res
+
+    async def send(self):
+        req = make_mocked_request("POST", "/api/panel-setup/esphome")
+        return json.loads((await web.api_panel_setup_esphome(req)).text)
 
     async def test_untouched_password_never_reaches_the_file_masked(self):
         await self.post({"device_name": "crowpanel-epaper", "wifi_ssid": "home", "wifi_password": "real-secret"})
@@ -151,7 +163,7 @@ class TestPanelSetupSave(unittest.IsolatedAsyncioTestCase):
         res = await self.post({"device_name": "crowpanel-epaper", "wifi_ssid": "", "wifi_networks": [], "hotspot": False})
         self.assertEqual(len(res["problems"]), 1)
         self.assertIn("no way online", res["problems"][0])
-        self.assertFalse(res["esphome_synced"])
+        self.assertIn("wouldn't install", res["sent"])
         self.assertEqual((folder / "crowpanel_epaper.yaml").read_text(), written, "the last good file stays")
         res = await self.post({"device_name": "crowpanel-epaper", "hotspot": True})
         self.assertEqual(res["problems"], [], "its own Wi-Fi is a way online: set up from a phone")
@@ -166,6 +178,57 @@ class TestPanelSetupSave(unittest.IsolatedAsyncioTestCase):
                                "wifi_networks": [{"ssid": "Work", "password": "abc"}]})
         self.assertEqual(len(res["problems"]), 1)
         self.assertIn("Work", res["problems"][0], "says which network")
+
+    async def test_its_own_wifi_password_can_be_changed(self):
+        folder = Path(self.tmp.name)
+        base = {"device_name": "crowpanel-epaper", "wifi_ssid": "home", "wifi_password": "long-enough",
+                "wifi_networks": [], "hotspot": True}
+        res = await self.post({**base, "hotspot_password": "kitchen-panel"})
+        self.assertEqual(res["problems"], [])
+        self.assertEqual(res["config"]["hotspot_password"], "kitchen-panel", "shown, for typing on a phone")
+        self.assertIn('password: "kitchen-panel"', (folder / "crowpanel_epaper.yaml").read_text())
+        for password in ("short", "x" * 64):
+            res = await self.post({**base, "hotspot_password": password})
+            self.assertEqual(len(res["problems"]), 1, f"{len(password)} characters")
+            self.assertIn("its own Wi-Fi", res["problems"][0])
+            self.assertIn("wouldn't install", res["sent"], "ESPHome would refuse it")
+            self.assertIn('password: "kitchen-panel"', (folder / "crowpanel_epaper.yaml").read_text())
+        res = await self.post({**base, "hotspot_password": "x" * 63})
+        self.assertEqual(res["problems"], [])
+        res = await self.post({**base, "hotspot_password": ""})
+        self.assertEqual(res["config"]["hotspot_password"], "x" * 63, "never open: an empty one keeps the old")
+        res = await self.post({**base, "hotspot": False, "hotspot_password": "short"})
+        self.assertEqual(res["problems"], [], "off, its password doesn't matter")
+        await self.post({**base, "hotspot_password": "abcdefghjkmn"})      # the next tests start from a good one
+
+    async def test_saving_alone_leaves_esphome_alone(self):
+        folder = Path(self.tmp.name)
+        res = await self.post({"device_name": "kitchen", "wifi_ssid": "home", "wifi_password": "long-enough", "wifi_networks": []}, send=False)
+        self.assertFalse((folder / "kitchen.yaml").exists())
+        self.assertEqual(res["esphome"]["state"], "missing")
+        self.assertEqual(res["esphome"]["file"], "esphome/kitchen.yaml")
+
+    async def test_send_to_esphome_says_when_its_copy_is_older(self):
+        folder = Path(self.tmp.name)
+        res = await self.post({"device_name": "kitchen", "wifi_ssid": "home", "wifi_password": "one-one-one", "wifi_networks": []})
+        self.assertEqual(res["sent"]["esphome"]["state"], "same")
+        self.assertIn('"one-one-one"', (folder / "kitchen.yaml").read_text())
+        res = await self.post({"device_name": "kitchen", "wifi_ssid": "home", "wifi_password": "two-two-two", "wifi_networks": []}, send=False)
+        self.assertEqual(res["esphome"]["state"], "differs", "the editor would write something else now")
+        req = make_mocked_request("GET", "/api/panel-setup")
+        with mock.patch.object(web, "_detect_panel_connection", mock.AsyncMock(return_value={})), \
+                mock.patch.object(web, "_detect_external_port", mock.AsyncMock(return_value=8099)):
+            got = json.loads((await web.api_panel_setup_get(req)).text)
+        self.assertEqual(got["esphome"]["state"], "differs", "said when the pane opens too")
+        sent = await self.send()
+        self.assertEqual(sent["esphome"]["state"], "same")
+        self.assertIn('"one-one-one"', (folder / "kitchen.yaml.previous").read_text())
+
+    async def test_without_an_esphome_folder(self):
+        config.ESPHOME_DIR = Path(self.tmp.name) / "nowhere"
+        res = await self.post({"device_name": "kitchen", "wifi_ssid": "home", "wifi_password": "long-enough", "wifi_networks": []})
+        self.assertEqual(res["esphome"]["state"], "no_folder")
+        self.assertIn("no ESPHome folder", res["sent"])
 
     async def test_no_first_network_but_others(self):
         # ESPHome refuses a blank network name; the first of the others leads instead.
@@ -190,3 +253,46 @@ class TestPanelSetupSave(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestEsphomeDashboard(unittest.IsolatedAsyncioTestCase):
+    """Send to ESPHome opens the ESPHome add-on's page, found by its slug, never assumed."""
+
+    def setUp(self):
+        import panel_setup
+        self.ps = panel_setup
+        panel_setup._dashboard_cache.update(at=0.0, url=None)
+
+    def hass(self, addons=None, fail=False):
+        from hass import HassError
+        calls = []
+
+        class H:
+            async def ws(self, payload, timeout=10):
+                calls.append(payload)
+                if fail:
+                    raise HassError("Unauthorized")
+                return {"addons": addons or []}
+        return H(), calls
+
+    async def test_finds_the_running_stable_one(self):
+        hass, calls = self.hass([{"slug": "a0d7b954_vscode", "state": "started"},
+                                 {"slug": "5c53de3b_esphome-beta", "state": "started"},
+                                 {"slug": "5c53de3b_esphome", "state": "started"},
+                                 {"slug": "1234abcd_not_esphome", "state": "started"}])
+        self.assertEqual(await self.ps.esphome_dashboard(hass, clock=lambda: 1000.0), "/hassio/ingress/5c53de3b_esphome")
+        self.assertEqual(calls[0], {"type": "supervisor/api", "endpoint": "/addons", "method": "get"})
+        await self.ps.esphome_dashboard(hass, clock=lambda: 1100.0)
+        self.assertEqual(len(calls), 1, "remembered for a while")
+
+    async def test_a_stopped_one_comes_after_a_running_one(self):
+        hass, _ = self.hass([{"slug": "5c53de3b_esphome", "state": "stopped"},
+                             {"slug": "5c53de3b_esphome-dev", "state": "started"}])
+        self.assertEqual(await self.ps.esphome_dashboard(hass, clock=lambda: 1000.0), "/hassio/ingress/5c53de3b_esphome-dev")
+
+    async def test_none_installed_or_no_answer(self):
+        hass, _ = self.hass([{"slug": "core_mosquitto", "state": "started"}])
+        self.assertIsNone(await self.ps.esphome_dashboard(hass, clock=lambda: 1000.0))
+        self.ps._dashboard_cache.update(at=0.0, url=None)
+        hass, _ = self.hass(fail=True)
+        self.assertIsNone(await self.ps.esphome_dashboard(hass, clock=lambda: 1000.0))

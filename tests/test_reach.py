@@ -1,4 +1,5 @@
 """Reaching home: who may come in which way, keys away from home, wrong keys, the companion integration."""
+import asyncio
 import json
 import unittest
 from unittest import mock
@@ -8,6 +9,7 @@ from aiohttp.test_utils import make_mocked_request
 
 import support
 import companion
+from hass import HassError
 import config
 import devices
 import frame_token
@@ -167,3 +169,147 @@ class TestCompanion(unittest.TestCase):
         source = (companion.SOURCE / "__init__.py").read_text()
         for header in ('"authorization"', '"cookie"'):
             self.assertIn(header, source)
+
+
+class CompanionHass:
+    """Home Assistant as the companion sees it: what it loaded at its last start, and its config entries."""
+    available = True
+
+    def __init__(self, loaded=None, entries=None, refuse=False):
+        self.loaded = loaded          # the manifest version Home Assistant read when it started, None if it hasn't
+        self.entries = list(entries or [])
+        self.refuse = refuse          # its flow refuses to create the entry
+        self.flows = 0
+
+    def restart(self):
+        self.loaded = companion.installed_version()
+        for e in self.entries:
+            e["state"] = "loaded"
+
+    async def ws(self, payload, timeout=10):
+        if payload["type"] == "manifest/get":
+            if self.loaded is None:
+                raise HassError("Integration not found", code="not_found")
+            return {"domain": companion.DOMAIN, "version": self.loaded}
+        if payload["type"] == "config_entries/get":
+            return [dict(e) for e in self.entries]
+        raise AssertionError(payload)
+
+    async def rest(self, method, path, json=None, timeout=15):
+        if (method, path) == ("POST", "/config/config_entries/flow") and json == {"handler": companion.DOMAIN}:
+            self.flows += 1
+            if self.loaded is None:
+                raise HassError("Invalid handler specified", 404)
+            if self.refuse:
+                return {"type": "abort", "reason": "unknown"}
+            self.entries.append({"domain": companion.DOMAIN, "state": "loaded", "disabled_by": None})
+            return {"type": "create_entry"}
+        raise AssertionError(f"unexpected call {method} {path}")
+
+
+class TestCompanionState(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self._dir, self._version = config.HA_CONFIG_DIR, config.ADDON_VERSION
+        config.HA_CONFIG_DIR = support.temp_dir()
+        config.ADDON_VERSION = "0.13.1"
+
+    def tearDown(self):
+        config.HA_CONFIG_DIR, config.ADDON_VERSION = self._dir, self._version
+
+    async def test_not_installed(self):
+        hass = CompanionHass()
+        self.assertEqual((await companion.ensure(hass))["state"], companion.ABSENT)
+        self.assertEqual(hass.flows, 0)
+
+    async def test_installed_but_not_loaded_needs_a_restart_and_nothing_is_tried(self):
+        companion.install("http://x:8099")
+        hass = CompanionHass()
+        self.assertEqual((await companion.ensure(hass))["state"], companion.RESTART)
+        self.assertEqual(hass.flows, 0, "Home Assistant doesn't know the integration yet")
+
+    async def test_after_the_restart_the_add_on_creates_the_entry_itself(self):
+        # The user's 0.13.0: loaded after a restart, but nobody created its entry, so /api/epaper was a 404.
+        companion.install("http://x:8099")
+        hass = CompanionHass()
+        hass.restart()
+        self.assertEqual((await companion.state(hass))["state"], companion.SET_UP, "loaded, entry missing")
+        self.assertEqual((await companion.ensure(hass))["state"], companion.RUNNING)
+        self.assertEqual(hass.flows, 1)
+        self.assertEqual((await companion.ensure(hass))["state"], companion.RUNNING)
+        self.assertEqual(hass.flows, 1, "one entry, made once")
+
+    async def test_the_check_loop_does_it_without_the_editor(self):
+        companion.install("http://x:8099")
+        hass = CompanionHass()
+        hass.restart()
+        sleeps = []
+
+        async def sleep(seconds):
+            sleeps.append(seconds)
+            if len(sleeps) == 2:
+                raise asyncio.CancelledError
+        with self.assertRaises(asyncio.CancelledError):
+            await companion.keep_set_up(hass, sleep=sleep)
+        self.assertEqual(hass.flows, 1)
+        self.assertEqual((await companion.state(hass))["state"], companion.RUNNING)
+
+    async def test_a_refusal_is_reported(self):
+        companion.install("http://x:8099")
+        hass = CompanionHass(refuse=True)
+        hass.restart()
+        s = await companion.ensure(hass)
+        self.assertEqual(s["state"], companion.SET_UP)
+        self.assertEqual(s["problem"], "unknown")
+
+    async def test_an_entry_that_is_off_or_failed_is_not_running(self):
+        companion.install("http://x:8099")
+        hass = CompanionHass(entries=[{"domain": companion.DOMAIN, "state": "not_loaded", "disabled_by": "user"}])
+        hass.loaded = companion.installed_version()
+        s = await companion.ensure(hass)
+        self.assertEqual((s["state"], s["disabled"]), (companion.STOPPED, True))
+        hass.entries = [{"domain": companion.DOMAIN, "state": "setup_error", "disabled_by": None}]
+        s = await companion.ensure(hass)
+        self.assertEqual((s["state"], s["disabled"]), (companion.STOPPED, False))
+
+    async def test_home_assistant_not_answering_is_unknown(self):
+        companion.install("http://x:8099")
+
+        class Down(CompanionHass):
+            async def ws(self, payload, timeout=10):
+                raise HassError("Cannot connect to host")
+        self.assertEqual((await companion.ensure(Down()))["state"], companion.UNKNOWN)
+
+    async def test_an_update_needs_a_restart_until_home_assistant_runs_the_new_copy(self):
+        companion.install("http://x:8099")
+        hass = CompanionHass()
+        hass.restart()
+        await companion.ensure(hass)
+        config.ADDON_VERSION = "0.13.2"
+        self.assertTrue(companion.refresh("http://x:8099"))
+        s = await companion.ensure(hass)
+        self.assertEqual((s["state"], s["loaded_version"], s["version"]), (companion.RESTART, "0.13.1", "0.13.2"))
+        hass.restart()
+        s = await companion.ensure(hass)
+        self.assertEqual((s["state"], s["loaded_version"]), (companion.RUNNING, "0.13.2"),
+                         "the add-on itself didn't restart, and the Restart row still goes")
+
+    async def test_the_editor_sees_each_state(self):
+        import runtime
+        import web as web_module
+        companion.install("http://x:8099")
+        hass = CompanionHass()
+        with mock.patch.object(runtime, "HASS", hass), mock.patch.object(web_module, "HA_TOKEN", "t"), \
+                mock.patch.object(reach, "addon_hostname", mock.AsyncMock(return_value="x")), \
+                mock.patch.object(reach, "ha_address", mock.AsyncMock(return_value="https://ha.example.com")):
+            c = (await web_module._reach_status())["companion"]
+            self.assertEqual((c["state"], c["restart_needed"], c["running"]), (companion.RESTART, True, False))
+            hass.restart()
+            c = (await web_module._reach_status())["companion"]
+            self.assertEqual((c["state"], c["restart_needed"], c["running"]), (companion.RUNNING, False, True))
+            config.ADDON_VERSION = "0.13.2"
+            companion.refresh("http://x:8099")
+            c = (await web_module._reach_status())["companion"]
+            self.assertEqual((c["state"], c["restart_needed"]), (companion.RESTART, True))
+            hass.restart()
+            c = (await web_module._reach_status())["companion"]
+            self.assertEqual((c["state"], c["restart_needed"]), (companion.RUNNING, False))

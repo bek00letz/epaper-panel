@@ -28,7 +28,8 @@ from frames import _png, as_int, enrich_page_values, refresh_frames, split_page_
 from ha import curve_series, ha_json, resolve_templates
 from layouts_store import clear_draft, layouts_etag, load_draft, load_layouts, load_sources, sanitize_layouts, save_draft, save_layouts
 from panel_ops import push_panel_update
-from panel_setup import _detect_external_port, _detect_panel_connection, _new_api_key, generate_esphome_yaml, ha_name, hotspot_name, load_panel_setup, more_networks, save_panel_setup, wifi_problems
+import panel_setup
+from panel_setup import _detect_external_port, _detect_panel_connection, _new_api_key, generate_esphome_yaml, hotspot_name, load_panel_setup, more_networks, save_panel_setup, wifi_problems
 from sources.flights import fetch_overhead_aircraft
 
 
@@ -652,14 +653,18 @@ async def _reach_status() -> dict:
     s = reach.settings()
     ha_addr = await reach.ha_address(runtime.HASS) if HA_TOKEN else ""
     installed = companion.installed_version()
-    running = await companion.loaded(runtime.HASS) if HA_TOKEN else False
+    # Set it up here too, so a visit right after the restart doesn't wait for the add-on's own check.
+    comp = await companion.ensure(runtime.HASS) if HA_TOKEN else {"state": companion.UNKNOWN}
+    running = comp["state"] == companion.RUNNING
     return {
         **s,
         "ha_address": ha_addr,
         # Where a tunnel app on Home Assistant points (Cloudflare Tunnel's "service").
         "service_address": reach.service_address(hostname),
         "companion": {"installed": installed is not None, "version": installed, "running": running,
-                      "restart_needed": installed is not None and (not running or runtime.COMPANION_UPDATED)},
+                      "state": comp["state"], "disabled": comp.get("disabled", False),
+                      "problem": comp.get("problem"),
+                      "restart_needed": comp["state"] == companion.RESTART},
         # A frame token someone chose can be short; away from home that matters.
         "token_short": bool(config.FRAME_TOKEN) and len(config.FRAME_TOKEN) < 16,
     }
@@ -679,29 +684,19 @@ async def api_reach_put(request):
 
 
 async def api_reach_companion(request):
-    """Install (or update) the companion integration, and set it up if Home Assistant already runs it."""
+    """Install (or update) the companion integration; the status sets it up if Home Assistant already has it."""
     hostname = await reach.addon_hostname(runtime.SESSION)
     try:
         companion.install(reach.service_address(hostname))
     except (OSError, ValueError) as exc:
         raise web.HTTPConflict(text=f"Couldn't install it: {health.describe(exc)}")
-    status = await _reach_status()
-    if status["companion"]["running"]:
-        ok, problem = await companion.set_up(runtime.HASS)
-        status["set_up"] = ok
-        status["problem"] = problem or None
-    return web.json_response(status)
+    return web.json_response(await _reach_status())
 
 
 async def api_reach_restart(request):
-    """Restart Home Assistant so it loads the companion integration. Set up happens on the next visit."""
+    """Restart Home Assistant so it loads the companion integration. The add-on sets it up once it's back."""
     ok, problem = await companion.restart_home_assistant(runtime.HASS)
     return web.json_response({"restarting": ok, "problem": problem or None})
-
-
-async def api_reach_setup(request):
-    ok, problem = await companion.set_up(runtime.HASS)
-    return web.json_response({"set_up": ok, "problem": problem or None, **await _reach_status()})
 
 
 async def api_sources_get(request):
@@ -755,17 +750,43 @@ async def api_panel_setup_get(request):
     masked_cfg = _masked_setup(cfg, dev)
     public = await reach.public_base(runtime.HASS)
     yaml_text, secrets_text = generate_esphome_yaml(masked_cfg, dev, public)
+    disk_yaml, _ = generate_esphome_yaml(cfg, dev, public)
     conn = await _detect_panel_connection(dev)
     return web.json_response({
         "config": masked_cfg,
         "yaml": yaml_text,
         "secrets_yaml": secrets_text,
         "problems": wifi_problems(cfg),
+        "esphome": await _esphome_status(cfg, disk_yaml),
         "frame_port": cfg.get("frame_port", detected_port),
         "has_frame_token": True,
         "frame_protection": frame_token.status(),
         "panel": conn,
     })
+
+
+async def _esphome_status(cfg: dict, disk_yaml: str) -> dict:
+    """Whether ESPHome's copy of the file is current, and where its dashboard is."""
+    dashboard = await panel_setup.esphome_dashboard(runtime.HASS) if HA_TOKEN else None
+    return {**panel_setup.esphome_state(cfg, disk_yaml), "dashboard": dashboard}
+
+
+async def api_panel_setup_esphome(request):
+    """Send to ESPHome: write the panel's file (as saved) into Home Assistant's ESPHome folder."""
+    dev = _device(request)
+    cfg = load_panel_setup(dev)
+    problems = wifi_problems(cfg)
+    if problems:
+        raise web.HTTPConflict(text=f"ESPHome wouldn't install this file. {problems[0]}")
+    disk_yaml, _ = generate_esphome_yaml(cfg, dev, await reach.public_base(runtime.HASS))
+    try:
+        panel_setup.write_to_esphome(dev, cfg, disk_yaml)
+    except FileNotFoundError:
+        raise web.HTTPConflict(text="Home Assistant has no ESPHome folder. Install the ESPHome add-on first, "
+                                    "or copy the file below.")
+    except (OSError, ValueError) as exc:
+        raise web.HTTPConflict(text=f"Couldn't write the file: {health.describe(exc)}")
+    return web.json_response({"written": True, "esphome": await _esphome_status(cfg, disk_yaml)})
 
 
 async def api_panel_setup_post(request):
@@ -792,6 +813,9 @@ async def api_panel_setup_post(request):
         cur["use_secrets"] = bool(body["use_secrets"])
     if "hotspot" in body:
         cur["hotspot"] = bool(body["hotspot"])
+    # Its own Wi-Fi is never open: an empty password keeps the one it has (wifi_problems says what's wrong).
+    if isinstance(body.get("hotspot_password"), str) and body["hotspot_password"]:
+        cur["hotspot_password"] = body["hotspot_password"][:64]
     if "wifi_password" in body and isinstance(body["wifi_password"], str):
         if body["wifi_password"] != feeds.SECRET_MASK:
             cur["wifi_password"] = body["wifi_password"]
@@ -813,28 +837,14 @@ async def api_panel_setup_post(request):
     public = await reach.public_base(runtime.HASS)
     disk_yaml, _ = generate_esphome_yaml(saved, dev, public)
     yaml_text, secrets_text = generate_esphome_yaml(masked_cfg, dev, public)
-    esphome_dir = config.ESPHOME_DIR
-    esphome_synced = False
-    # A file ESPHome would refuse isn't written: the one there stays until this one would install.
     problems = wifi_problems(saved)
-    if not problems and esphome_dir.exists() and esphome_dir.is_dir():
+    esphome_synced = False
+    if panel_setup.WRITE_ON_SAVE and not problems:
         try:
-            device_slug = re.sub(r"[^a-z0-9_]+", "_", saved.get("device_name", "crowpanel-epaper").lower()).strip("_") or "crowpanel_epaper"
-            target_yaml = esphome_dir / f"{device_slug}.yaml"
-            previous = target_yaml.read_text(encoding="utf-8") if target_yaml.exists() else None
-            if previous != disk_yaml:
-                if previous is not None:
-                    # A way back: ESPHome ignores this name, a rename restores it.
-                    target_yaml.with_suffix(".yaml.previous").write_text(previous, encoding="utf-8")
-                tmp = target_yaml.with_suffix(".yaml.tmp")
-                tmp.write_text(disk_yaml, encoding="utf-8")
-                tmp.replace(target_yaml)
+            panel_setup.write_to_esphome(dev, saved, disk_yaml)
             esphome_synced = True
-            # The name Home Assistant will know this panel by once it's installed from this file.
-            devices.update(dev["id"], setup={**(devices.get(dev["id"]).get("setup") or {}), "installed_name": ha_name(dev)})
-            print(f"Synced ESPHome config to {target_yaml}", flush=True)
-        except Exception as e:
-            print(f"Could not sync to {esphome_dir}: {e}", flush=True)
+        except (OSError, ValueError) as exc:
+            print(f"esphome: couldn't write the file: {health.describe(exc)}", flush=True)
     conn = await _detect_panel_connection(dev)
     return web.json_response({
         "saved": True,
@@ -843,6 +853,7 @@ async def api_panel_setup_post(request):
         "secrets_yaml": secrets_text,
         "problems": problems,
         "esphome_synced": esphome_synced,
+        "esphome": await _esphome_status(saved, disk_yaml),
         "frame_port": saved.get("frame_port", FRAME_PORT),
         "has_frame_token": True,
         "frame_protection": frame_token.status(),
@@ -954,10 +965,10 @@ def make_apps():
         web.get("/api/reach", api_reach_get),
         web.put("/api/reach", api_reach_put),
         web.post("/api/reach/companion", api_reach_companion),
-        web.post("/api/reach/setup", api_reach_setup),
         web.post("/api/reach/restart", api_reach_restart),
         web.get("/api/panel-setup", api_panel_setup_get),
         web.post("/api/panel-setup", api_panel_setup_post),
+        web.post("/api/panel-setup/esphome", api_panel_setup_esphome),
         web.get("/api/mdi/font", api_mdi_font),
         web.get("/api/mdi/list", api_mdi_list),
         web.get("/api/mdi/all", api_mdi_all),

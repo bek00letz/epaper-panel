@@ -135,11 +135,12 @@ async def main():
         runtime.SESSION = session
         # Keep the companion integration at this version (only if it's installed).
         if companion.refresh(reach.service_address(await reach.addon_hostname(session))):
-            runtime.COMPANION_UPDATED = True
             print("companion: updated; Home Assistant loads the new copy at its next restart", flush=True)
         start_entity_publisher()
         await start(runners)
         background = [asyncio.create_task(panel_link_loop()), asyncio.create_task(runtime.LIVE.run())]
+        if HA_TOKEN:
+            background.append(asyncio.create_task(companion.keep_set_up(runtime.HASS)))
         if runtime.PUBLISHER is not None:
             background.append(asyncio.create_task(runtime.PUBLISHER.run()))
         try:

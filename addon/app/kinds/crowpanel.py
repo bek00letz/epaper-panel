@@ -536,7 +536,7 @@ async def api_action_refresh(request):
         await frames.refresh_frames(runtime.SESSION)
         ha_pushed = await panel_ops.push_panel_update(dev["id"], "action endpoint")
         return web.json_response({"success": True, "action": "refresh", "ha_pushed": ha_pushed,
-                                  "timestamp": datetime.now().isoformat()})
+                                  "timestamp": datetime.now().astimezone().isoformat(timespec="seconds")})
     except Exception as exc:
         return web.json_response({"success": False, "error": health.describe(exc)}, status=500)
 

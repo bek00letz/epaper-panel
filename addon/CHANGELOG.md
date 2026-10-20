@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased
+
+- **Reaching home through Home Assistant's address now finishes setting
+  itself up.** After the restart, Home Assistant loaded the integration but
+  nobody turned it on, so screens away from home got "not found". The add-on
+  now does it within a minute of Home Assistant coming back, without opening
+  the editor. Settings › Reaching home says which step it's at: restart
+  needed, setting up, running, turned off, or not started.
+- **The Restart Home Assistant row goes away after the restart.** It used to
+  stay until the add-on itself restarted. Whether a restart is needed now
+  comes from the version Home Assistant actually runs, and the pane updates
+  by itself once Home Assistant is back.
+- **Settings breathes again.** Every pane now keeps the same space between
+  its parts, so text no longer runs into the cards below it, and the notes'
+  icons match their colour.
+- **You can change the password of the panel's own Wi-Fi** (Install or
+  update, "Its own Wi-Fi when it's lost"). It needs 8 to 63 characters, and
+  a change takes effect when you install the panel again.
+- **No more "last render" error in Home Assistant's log at every start.** A
+  "Last render" sensor from before 0.8.27 had left a time without a time
+  zone in the MQTT broker. The add-on now clears it, which also removes that
+  old, unused sensor (today's is sensor.epaper_panel_last_render), and every
+  time it publishes carries a time zone.
+- **Send to ESPHome.** Install or update has a button that puts the panel's
+  file in Home Assistant's ESPHome folder and opens ESPHome in a new tab, so
+  you choose Install there. It says when ESPHome's copy is older than the
+  editor's. Saving the setup no longer writes the file by itself. As before,
+  the file there is kept as `.yaml.previous`, and a file ESPHome would
+  refuse is never sent.
+
 ## 0.13.0
 **Firmware change:** install the panel again from Install or update to get
 the fixes below and, for a panel that sleeps between updates, no flash after

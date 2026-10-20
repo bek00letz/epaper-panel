@@ -27,6 +27,7 @@ import asyncio
 import json
 import re
 import time
+from datetime import datetime
 from pathlib import Path
 
 from hass import Hass, HassError
@@ -52,8 +53,23 @@ STALE_AFTER = 3600.0
 # binary sensors; everything else is a sensor.
 PROBLEM_PREFIX = "epaper_problem_"
 
+# What the add-on before 0.8.27 left retained and no longer owns: a "Last render" sensor
+# on a topic of its own, whose naive timestamp Home Assistant refuses at every start.
+# Its replacement is sensor.epaper_panel_last_render. Cleared at every connect.
+LEGACY_TOPICS = (f"{DISCOVERY_PREFIX}/sensor/{NODE}/last_render/config",
+                 f"{DISCOVERY_PREFIX}/{NODE}/last_render")
+
 # Attributes that are entity metadata, not data.
 META_ATTRS = ("friendly_name", "icon", "unit_of_measurement", "device_class", "source")
+
+
+def with_zone(state: str) -> str:
+    """A timestamp Home Assistant takes: one without a time zone is the add-on's local time."""
+    try:
+        dt = datetime.fromisoformat(state)
+    except ValueError:
+        return state
+    return state if dt.tzinfo else dt.astimezone().isoformat(timespec="seconds")
 
 
 def object_id(entity_id: str) -> str:
@@ -111,6 +127,8 @@ class EntityPublisher:
 
     def set(self, entity_id: str, state, attrs: dict | None) -> None:
         obj = object_id(entity_id)
+        if state is not None and (attrs or {}).get("device_class") == "timestamp":
+            state = with_zone(str(state))
         # "None" is how an MQTT sensor is told its value is unknown.
         self.desired[obj] = {"state": "None" if state is None else str(state)[:255], "attrs": dict(attrs or {})}
         self.last_seen[obj] = self._clock()
@@ -209,6 +227,8 @@ class EntityPublisher:
         await self.transport.publish(AVAILABILITY, "online")
         await self._load_registry()
         await self._migrate_once()
+        for topic in LEGACY_TOPICS:
+            await self.transport.publish(topic, "")
         if self._registry_ok:
             # A retired value Home Assistant no longer has needs no withdrawing.
             for obj, seen in list(self.last_seen.items()):

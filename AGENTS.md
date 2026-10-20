@@ -45,7 +45,7 @@ builds `components/epf` from the tag matching the add-on version.
 5. `docs/STATUS.md` is updated.
 6. Tag and push, then tell the user exactly what to do in Home Assistant:
    Rebuild the add-on; when the firmware changed, open the editor's
-   Settings › Install or update so it writes the new file, then Install in
+   Settings › Install or update and choose Send to ESPHome, then Install in
    the ESPHome add-on.
 
 ## Rule #1: this is a product, not a patch
