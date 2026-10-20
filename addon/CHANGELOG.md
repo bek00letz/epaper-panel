@@ -35,6 +35,11 @@
   outside the screen. Only a broken or forged file has one, and drawing it
   could freeze the panel for seconds.
 
+- **Fixed (firmware):** in Low Power Mode the panel's own refresh timer no
+  longer downloads while it's awake: the add-on's answer says when it next
+  checks. A 2.9" panel no longer stays awake 6 seconds after a wake that
+  didn't redraw anything.
+
 ## 0.12.0
 **Firmware change** (only needed for Low Power Mode, or if your panel has
 "Its own Wi-Fi when it's lost" switched off): install the panel again from

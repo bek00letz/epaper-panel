@@ -360,6 +360,8 @@ class TestFirmwareYaml(unittest.TestCase):
         self.assertEqual(firmware_gen.display_settled(T.get_display("crowpanel_579")), "id(epd).is_idle()")
         waveshare = T.get_display("crowpanel_750")
         self.assertIn("last_redraw_ms", firmware_gen.display_settled(waveshare))
+        self.assertTrue(firmware_gen.display_settled(waveshare).startswith("id(last_redraw_ms) == 0 ||"),
+                        "nothing redrawn since it woke: settled at once, not 6 s later (break-it #10)")
         for disp in ("crowpanel_579", "crowpanel_750"):
             text = firmware_gen.render(
                 disp=T.get_display(disp), version="1.2.3", device_name="kitchen", frames_url='"http://x/frames.epf"',

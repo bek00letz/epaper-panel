@@ -1040,4 +1040,10 @@ class PowerPolicy {
   uint32_t answer_ms_{0}, press_ms_{0};
 };
 
+// The panel's own download timer. Off while the add-on's answers decide when it
+// wakes (Low Power Mode): those downloads would only keep it awake longer.
+inline bool own_timer_fetch_due(const PanelController &panel, const PowerPolicy &power, int interval_sec) {
+  return !power.low_power() && panel.fetch_due(interval_sec);
+}
+
 }  // namespace epf

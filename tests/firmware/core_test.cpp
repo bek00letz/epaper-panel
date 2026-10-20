@@ -506,6 +506,18 @@ static void test_power() {
   p.on_answer(502, false, o, 0);
   CHECK(!p.sleep_due(59000, false) && p.sleep_due(60000, false), "a press during a restart: awake a minute, then sleeps");
 
+  // The panel's own refresh timer is off while the add-on decides when it wakes (break-it #1, #10).
+  auto &panel = epf::PanelController::instance();
+  panel.note_fetch(false);                            // owed, so it's due even if resting
+  panel.tick_seconds(900);
+  CHECK(panel.fetch_due(300), "a download is due");
+  p.begin(Wake::BOOT, mem, 0);
+  p.on_answer(200, false, o, 0);
+  CHECK(epf::own_timer_fetch_due(panel, p, 300), "connected: its own timer downloads");
+  p.on_answer(200, true, press, 0);
+  CHECK(!epf::own_timer_fetch_due(panel, p, 300), "Low Power Mode: its own timer is off");
+  panel.note_fetch(true);
+
   // A power cut or a reset is a fresh start.
   p.begin(Wake::BOOT, mem, 0);
   CHECK(mem.interval_sec == 0 && mem.magic == epf::REMEMBERED_MAGIC, "after a reset it stays connected until told");

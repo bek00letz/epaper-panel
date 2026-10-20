@@ -53,6 +53,7 @@ globals:
     type: uint32_t
     initial_value: '0'
   # When the display was last asked to redraw (Low Power Mode waits for it).
+  # 0: not since it woke.
   - id: last_redraw_ms
     type: uint32_t
     initial_value: '0'
@@ -474,9 +475,10 @@ interval:
           else if (panel.idle_clear_due()) id(redraw).execute();
           // The panel's own timer. Asleep or in quiet hours, it waits for
           // the add-on or a press instead (the add-on retries until
-          // delivered), except to retry a download that failed.
+          // delivered), except to retry a download that failed. Off in Low
+          // Power Mode: the add-on's answer says when it next checks.
           int every = std::max(30, (int) (id(panel_refresh_interval).state * 60.0f));
-          if (panel.fetch_due(every)) {
+          if (epf::own_timer_fetch_due(panel, epf::PowerPolicy::instance(), every)) {
             panel.reset_fetch_idle();
             id(request_refetch).execute();
           }

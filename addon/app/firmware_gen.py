@@ -35,10 +35,11 @@ def display_settled(disp: dict) -> str:
     """A C++ expression: the display has finished its last refresh, so the panel may sleep
     (deep sleep cuts the display's power). The CrowPanel driver refreshes in the
     background and parks its loop when done; the Waveshare driver can't say, so the
-    panel waits long enough for a full refresh after its last redraw."""
+    panel waits long enough for a full refresh after its last redraw, and not at all
+    when nothing was redrawn since it woke."""
     if disp["esphome_component"].startswith("github://"):
         return "id(epd).is_idle()"
-    return "millis() - id(last_redraw_ms) > 6000"
+    return "id(last_redraw_ms) == 0 || millis() - id(last_redraw_ms) > 6000"
 
 
 def display_blocks(disp: dict) -> tuple[str, str]:
