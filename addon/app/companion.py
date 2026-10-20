@@ -81,7 +81,7 @@ def refresh(service_url: str) -> bool:
 
 # What Home Assistant does with it, asked of Home Assistant itself (`state`).
 ABSENT = "absent"          # not in custom_components
-RESTART = "restart"        # installed, but Home Assistant hasn't loaded it: it needs a restart
+RESTART = "restart"        # installed, but Home Assistant hasn't loaded this copy: it needs a restart
 SET_UP = "set_up"          # loaded, with no config entry yet: the add-on creates it (`ensure`)
 RUNNING = "running"        # its config entry is loaded: /api/epaper answers
 STOPPED = "stopped"        # its entry exists but isn't loaded (turned off, or it failed to start)
@@ -92,20 +92,26 @@ CHECK_SECONDS = 60
 
 
 async def state(hass) -> dict:
-    """{state, version, entry_state, disabled}: what Home Assistant runs, never a guess from the add-on.
+    """{state, version, loaded_version, entry_state, disabled}: what Home Assistant runs, never a guess
+    from the add-on.
 
-    Home Assistant reads custom_components once, when it starts, so it only
-    knows the integration (its manifest) after a restart. Its view, and with
-    it /api/epaper, exists only once its config entry is set up.
+    Home Assistant reads custom_components once, when it starts, so the
+    manifest it answers with is the copy it runs: none before the first
+    restart, the old version after the add-on updated the files. Its view,
+    and with it /api/epaper, exists only once its config entry is set up.
     """
     installed = installed_version()
-    out = {"state": ABSENT, "version": installed, "entry_state": None, "disabled": False}
+    out = {"state": ABSENT, "version": installed, "loaded_version": None, "entry_state": None, "disabled": False}
     if installed is None:
         return out
     try:
-        await hass.ws({"type": "manifest/get", "integration": DOMAIN})
+        manifest = await hass.ws({"type": "manifest/get", "integration": DOMAIN}) or {}
     except HassError as exc:
         out["state"] = RESTART if exc.code == "not_found" else UNKNOWN
+        return out
+    out["loaded_version"] = manifest.get("version")
+    if out["loaded_version"] != installed:
+        out["state"] = RESTART
         return out
     try:
         entries = await hass.ws({"type": "config_entries/get", "domain": DOMAIN}) or []

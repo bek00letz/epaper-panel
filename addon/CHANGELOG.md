@@ -8,6 +8,10 @@
   now does it within a minute of Home Assistant coming back, without opening
   the editor. Settings › Reaching home says which step it's at: restart
   needed, setting up, running, turned off, or not started.
+- **The Restart Home Assistant row goes away after the restart.** It used to
+  stay until the add-on itself restarted. Whether a restart is needed now
+  comes from the version Home Assistant actually runs, and the pane updates
+  by itself once Home Assistant is back.
 
 ## 0.13.0
 **Firmware change:** install the panel again from Install or update to get

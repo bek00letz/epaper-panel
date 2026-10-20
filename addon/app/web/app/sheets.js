@@ -692,12 +692,38 @@ function quietPane(app, pane) {
 async function reachPane(app, pane) {
   const box = h("div", {}, h("p", { class: "fnote", text: "Checking…" }));
   pane.append(h("p", { class: "fnote", text: "Take a screen to work or on holiday and it keeps showing your pages. Away from home, every screen needs its own key, and wrong keys slow down." }), box);
-  let r = null, busy = false;
+  let r = null, busy = false, restarting = false;
   const call = async (path, method, body, done) => {
     if (busy) return; busy = true;
     try { r = (await api(path, { method, body })).body; if (done) toast(done); }
     catch (e) { toast(e.message); }
     busy = false; draw();
+  };
+  // While Home Assistant restarts, the editor can't reach the add-on either (it comes through
+  // Home Assistant), so keep asking quietly until Home Assistant runs the new copy.
+  const restart = async () => {
+    if (busy) return; busy = true;
+    try {
+      const x = (await api("api/reach/restart", { method: "POST" })).body;
+      if (!x.restarting) { toast(`Home Assistant didn't restart: ${x.problem}`); return; }
+      restarting = true; draw();
+      const until = Date.now() + 4 * 60000;
+      const tick = async () => {
+        if (!box.isConnected) return;
+        try { r = (await api("api/reach")).body; } catch (_) {}
+        const c = r.companion || {};
+        const settled = !c.restart_needed && c.state !== "unknown";
+        if (settled || Date.now() > until) {
+          restarting = false; draw();
+          if (c.state === "running") toast("Home Assistant is back, and the integration is running.");
+          else if (!settled) toast("Home Assistant hasn't come back yet. Check again in a minute.");
+          return;
+        }
+        setTimeout(tick, 5000);
+      };
+      setTimeout(tick, 5000);
+    } catch (e) { toast(e.message); }
+    finally { busy = false; }
   };
   const mode = (m, title, sub) => h("button", { class: "cmp choice", role: "radio", "aria-checked": String(r.mode === m),
     onclick: () => { if (r.mode !== m) call("api/reach", "PUT", { mode: m, address: r.address }, m === "home" ? "Screens reach the add-on at home only." : null); } },
@@ -715,14 +741,16 @@ async function reachPane(app, pane) {
           ? h("p", { class: "note good" }, icon("check", "sm"), h("span", { text: `Screens use ${r.ha_address}/api/epaper.` }))
           : h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: `Screens will use ${r.ha_address}/api/epaper once the integration runs.` })))
         : h("p", { class: "note warn" }, icon("info", "sm"), h("span", { text: "Home Assistant has no address outside your home yet. Set one in Home Assistant under Settings, System, Network, or turn on Home Assistant Cloud." })));
-      const restart = (title, sub) => grow(title, sub, h("button", { class: "btn primary", onclick: () => call("api/reach/restart", "POST", undefined, "Home Assistant is restarting. Come back here in a minute.") }, "Restart"));
+      const restartRow = (title, sub) => restarting
+        ? grow("Restarting Home Assistant", "This updates when it's back, in about a minute.", h("span", { class: "fnote", text: "Waiting…" }))
+        : grow(title, sub, h("button", { class: "btn primary", onclick: restart }, "Restart"));
       parts.push(group(
         !c.installed ? grow("A small integration", "Home Assistant needs it to pass screens on to the add-on. Nothing to fill in.", h("button", { class: "btn primary", onclick: () => call("api/reach/companion", "POST", undefined, "Installed. Restart Home Assistant to load it.") }, "Install"))
-        : c.restart_needed ? restart("Restart Home Assistant", "It loads the integration when it starts. Takes about a minute.")
+        : c.restart_needed || restarting ? restartRow("Restart Home Assistant", "It loads the integration when it starts. Takes about a minute.")
         : c.state === "running" ? grow("The integration", `Running, version ${c.version}.`, h("span", { class: "fnote", text: "Ready" }))
         : c.state === "set_up" ? grow("The integration", `Home Assistant didn't set it up: ${c.problem || "no answer"}.`, h("button", { class: "btn tinted", onclick: () => call("api/reach", "GET") }, "Try again"))
         : c.state === "stopped" && c.disabled ? grow("The integration is turned off", "Turn on e-Paper Panel in Home Assistant under Settings, Devices & services.", h("button", { class: "btn tinted", onclick: () => call("api/reach", "GET") }, "Check again"))
-        : c.state === "stopped" ? restart("The integration didn't start", "Restart Home Assistant to try again. If it still doesn't, Home Assistant's log says why.")
+        : c.state === "stopped" ? restartRow("The integration didn't start", "Restart Home Assistant to try again. If it still doesn't, Home Assistant's log says why.")
         : grow("The integration", "Home Assistant didn't answer. It may be restarting.", h("button", { class: "btn tinted", onclick: () => call("api/reach", "GET") }, "Check again"))));
     }
     if (r.mode === "own") {

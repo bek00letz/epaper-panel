@@ -663,7 +663,7 @@ async def _reach_status() -> dict:
         "companion": {"installed": installed is not None, "version": installed, "running": running,
                       "state": comp["state"], "disabled": comp.get("disabled", False),
                       "problem": comp.get("problem"),
-                      "restart_needed": comp["state"] == companion.RESTART or runtime.COMPANION_UPDATED},
+                      "restart_needed": comp["state"] == companion.RESTART},
         # A frame token someone chose can be short; away from home that matters.
         "token_short": bool(config.FRAME_TOKEN) and len(config.FRAME_TOKEN) < 16,
     }

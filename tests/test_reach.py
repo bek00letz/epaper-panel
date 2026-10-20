@@ -279,6 +279,20 @@ class TestCompanionState(unittest.IsolatedAsyncioTestCase):
                 raise HassError("Cannot connect to host")
         self.assertEqual((await companion.ensure(Down()))["state"], companion.UNKNOWN)
 
+    async def test_an_update_needs_a_restart_until_home_assistant_runs_the_new_copy(self):
+        companion.install("http://x:8099")
+        hass = CompanionHass()
+        hass.restart()
+        await companion.ensure(hass)
+        config.ADDON_VERSION = "0.13.2"
+        self.assertTrue(companion.refresh("http://x:8099"))
+        s = await companion.ensure(hass)
+        self.assertEqual((s["state"], s["loaded_version"], s["version"]), (companion.RESTART, "0.13.1", "0.13.2"))
+        hass.restart()
+        s = await companion.ensure(hass)
+        self.assertEqual((s["state"], s["loaded_version"]), (companion.RUNNING, "0.13.2"),
+                         "the add-on itself didn't restart, and the Restart row still goes")
+
     async def test_the_editor_sees_each_state(self):
         import runtime
         import web as web_module
@@ -292,3 +306,10 @@ class TestCompanionState(unittest.IsolatedAsyncioTestCase):
             hass.restart()
             c = (await web_module._reach_status())["companion"]
             self.assertEqual((c["state"], c["restart_needed"], c["running"]), (companion.RUNNING, False, True))
+            config.ADDON_VERSION = "0.13.2"
+            companion.refresh("http://x:8099")
+            c = (await web_module._reach_status())["companion"]
+            self.assertEqual((c["state"], c["restart_needed"]), (companion.RESTART, True))
+            hass.restart()
+            c = (await web_module._reach_status())["companion"]
+            self.assertEqual((c["state"], c["restart_needed"]), (companion.RUNNING, False))

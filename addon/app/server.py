@@ -135,7 +135,6 @@ async def main():
         runtime.SESSION = session
         # Keep the companion integration at this version (only if it's installed).
         if companion.refresh(reach.service_address(await reach.addon_hostname(session))):
-            runtime.COMPANION_UPDATED = True
             print("companion: updated; Home Assistant loads the new copy at its next restart", flush=True)
         start_entity_publisher()
         await start(runners)
