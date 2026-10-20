@@ -412,6 +412,7 @@ class PanelController {
  private:
   void handle_(NavAction action, int param, int param2, bool person) {
     person_ = person;
+    quiet_grace_sec_ = 0;                   // any input, a person's or Home Assistant's, restarts the quiet-hours grace
     ESP_LOGI(TAG, "Input: %s (%d, %d)%s", nav_name(action), param, param2, person ? "" : " from Home Assistant");
     if (action == NavAction::SLEEP || (action == NavAction::SLEEP_TOGGLE && !sleeping_)) {
       enter_sleep_(true);
@@ -588,12 +589,14 @@ class PanelController {
     idle_sec_ += s;
     fetch_idle_sec_ += s;
     if (user_cool_sec_ < 1000) user_cool_sec_ += s;
+    if (quiet_grace_sec_ < 1000) quiet_grace_sec_ += s;
   }
 
   bool check_auto_rotate() {
     if (sleeping_) return false;
-    // Quiet hours: someone woke the panel, then left. Back to sleep.
-    if (quiet_ && auto_sleep_ && !pinned_ && !cat_pinned_ && user_cool_sec_ >= SLEEP_RETURN_SEC) {
+    // Quiet hours: someone woke the panel (a press or Home Assistant), then
+    // left it. Back to sleep. Its own timer: user_cool_sec_ counts only people.
+    if (quiet_ && auto_sleep_ && !pinned_ && !cat_pinned_ && quiet_grace_sec_ >= SLEEP_RETURN_SEC) {
       ESP_LOGI(TAG, "Untouched for %d s during quiet hours: back to sleep", SLEEP_RETURN_SEC);
       enter_sleep_(false);
       return true;
@@ -866,6 +869,7 @@ class PanelController {
   uint32_t wake_sub_id_{0}, sleep_sub_id_{0};
   uint32_t pinned_cat_id_{0}, pinned_sub_id_{0}, cur_cat_id_{0}, cur_sub_id_{0};
   int rotate_sec_{30}, idle_sec_{0}, user_cool_sec_{999}, fetch_idle_sec_{0};
+  int quiet_grace_sec_{999};              // since the last input of any kind (quiet hours' way back to sleep)
   bool pending_redraw_{false}, pending_refetch_{false};
   bool redraw_forced_{false}, redraw_by_person_{false}, redraw_automatic_{false};
   bool person_{true}, asleep_before_alert_{false}, manual_before_alert_{false}, fetch_owed_{false};

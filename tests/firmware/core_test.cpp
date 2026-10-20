@@ -352,6 +352,20 @@ static void test_sleep() {
   pc.on_stream_loaded(day);
   CHECK(!pc.sleeping() && pc.page() == 2, "morning wakes it (page %d)", pc.page());
 
+  // Woken from Home Assistant during quiet hours: the same two minutes as a press.
+  pc.on_stream_loaded(night);
+  CHECK(pc.sleeping(), "quiet hours again");
+  for (int t = 0; t < 300; t += 5) pc.tick_seconds(5);     // nobody has touched it for a while
+  pc.remote(A::WAKE);
+  CHECK(!pc.sleeping(), "Home Assistant wakes it");
+  pc.tick_seconds(5);
+  CHECK(!pc.check_auto_rotate() && !pc.sleeping(), "not straight back to sleep");
+  for (int t = 5; t < epf::SLEEP_RETURN_SEC - 5; t += 5) pc.tick_seconds(5);
+  CHECK(!pc.check_auto_rotate() && !pc.sleeping(), "awake for nearly two minutes");
+  pc.tick_seconds(10);
+  CHECK(pc.check_auto_rotate() && pc.sleeping(), "then back to sleep");
+  pc.on_stream_loaded(day);
+
   // A manual sleep outlasts the night.
   pc.on_stream_loaded(night);
   pc.dispatch(A::WAKE);
