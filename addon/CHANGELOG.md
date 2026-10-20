@@ -23,6 +23,8 @@
 - **Fixed:** on another screen size, elements placed automatically could run
   into the footer on small panels, or leave a gap above it on others. They now
   stop exactly at the footer, whose height has one source.
+- **Fixed:** a panel set up without its own Wi-Fi ("Its own Wi-Fi when it's
+  lost" off) couldn't be installed: its firmware didn't compile.
 - The Add a screen sheet no longer shows a stray "null" under the pages.
 - "Now on the panel" shows the time pages were rendered again, instead of
   "Invalid Date".

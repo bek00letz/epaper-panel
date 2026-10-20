@@ -191,12 +191,15 @@ display:
       auto &client = epf::EpfClient::instance();
       if (client.blit(id(epd), panel.page())) {
         client.draw_overlays(id(epd), panel.overlay_state());
+      #ifdef USE_WIFI_AP
+      // Only with its own Wi-Fi turned on (Panel setup); without it, there's no get_ap().
       } else if (wifi::global_wifi_component->is_ap_active()) {
         // No Wi-Fi it knows: say how to give it one.
         it.print(40, 40, id(diag_big), "Not connected");
         it.printf(40, 130, id(diag_small), "On your phone, join the Wi-Fi \"%s\"",
                   wifi::global_wifi_component->get_ap().get_ssid().c_str());
         it.print(40, 170, id(diag_small), "and choose a network for this panel.");
+      #endif
       } else {
         it.print(40, 40, id(diag_big), "panel alive");
         it.printf(40, 130, id(diag_small), "ip: %s", id(wifi_ip).state.c_str());
