@@ -8,14 +8,17 @@
   Quiet hours let it sleep until they end. Battery and Wi-Fi show in the
   editor and as Home Assistant sensors. Works through Reaching home too.
   Built from TRMNL's open-source firmware; not yet tried on a real one.
+- **Fixed:** on another screen size, elements placed automatically could run
+  into the footer on small panels, or leave a gap above it on others. They now
+  stop exactly at the footer, whose height has one source.
 - The Add a screen sheet no longer shows a stray "null" under the pages.
 - "Now on the panel" shows the time pages were rendered again, instead of
   "Invalid Date".
 
 ## 0.11.0
 **Firmware change** (only needed for the new things below): install the panel
-again from Panel setup when you want it to work away from home or join more
-than one Wi-Fi network. Until then it keeps working as before.
+again from Install or update when you want it to work away from home or join
+more than one Wi-Fi network. Until then it keeps working as before.
 
 - **The footer fits every screen.** The clock, the page and item counts and
   the panel's padlocks no longer run into each other on small or upright

@@ -233,6 +233,9 @@ TRMNL's API docs. `tests/test_trmnl.py` pins each of these.
   the request (`trmnl.base_address`), never from a setting.
 - **`Content-Type: image/png` exactly**: anything else is read as a BMP.
 - **Its messages are ASCII.** Its font has nothing else.
+- **It doesn't check HTTPS certificates.** Treat its key as readable by
+  whoever can intercept its connection: a key must never unlock more than
+  that one screen's pictures, and pairing again must replace it.
 - **Nothing on the device port answers a TRMNL without its key**, except
   `/api/setup` in the window, and that gives a key only to a MAC address no
   other TRMNL has.
@@ -304,7 +307,9 @@ When touching display code, `it.image()` at a negative offset is a trap: see
 - **Only alerts, quiet hours and people wake the panel early.** Never push on
   a content or shape change: the panel's refresh interval is the user's. A
   TRMNL can't be woken at all; its wake interval is a setting of that screen,
-  and the editor says alerts show at its next wake.
+  and the editor says alerts show at its next wake. A CrowPanel away from
+  home can't be woken either (that goes through Home Assistant's ESPHome
+  connection, which is home only).
 
 - **Never guess an entity ID or an action name** from a device name. Find the
   panel through `panel_link.PanelLink` (service list, registry unique_ids).

@@ -231,8 +231,16 @@ machine) with no ESP-IDF in it, and is compiled and tested on the host by
   `esphome/crowpanel-epaper.yaml` is the same output for a reference setup,
   and a test keeps them identical. The component is pinned to the add-on's
   release tag, so panel and add-on always agree on the format.
-- **A way back**: `esphome/rollback/` holds the YAML of the previous
-  firmware, pinned to its tag.
+- **Wi-Fi**: one network connects straight away (`fast_connect`); several
+  are scanned for, so a panel that travels joins whichever it finds. Where it
+  finds none, it opens its own Wi-Fi with ESPHome's captive portal (a setting
+  per screen, on by default) and its screen says which to join. A network
+  chosen there replaces every network in the YAML until the next install:
+  ESPHome stores one, keyed to the build.
+- **HTTPS** addresses are checked against ESP-IDF's certificate bundle
+  (`esp_crt_bundle_attach`), like a browser would.
+- **A way back**: `esphome/rollback/` holds the YAML of earlier firmware
+  versions, each pinned to its tag.
 
 ## The add-on's own values
 
@@ -402,7 +410,10 @@ Assistant's address, or through the user's own address.
   can't be woken early: that goes through Home Assistant's ESPHome connection.
 - **TRMNLs** are given the address when they pair: the editor shows the home
   one and, with Reaching home on, the away one (`reach.public_base`). The
-  companion passes `Access-Token` on like any other header.
+  companion passes `Access-Token` on like any other header. Their firmware
+  encrypts but doesn't check certificates, so a server impersonating ours on
+  a hostile network could read a TRMNL's key; the key only fetches that
+  screen's pictures, and pairing again replaces it.
 
 ## Measured numbers
 

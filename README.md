@@ -204,8 +204,10 @@ Assistant entities for your automations. Everything else works without it.
 ### 2. Set up the panel
 
 1. In the editor, open **Settings** (the gear) › **Install or update**.
-2. Check Home Assistant's address and your Wi-Fi details. The add-on makes an
-   encryption key and a frame token for you.
+2. Check Home Assistant's address and your Wi-Fi details. Add any other
+   networks it will meet (work, say). The add-on makes an encryption key and
+   a frame token for you, and the password for the panel's own Wi-Fi, which
+   it opens where it knows no network.
 3. **Copy** or **Download** the panel's file. If Home Assistant's ESPHome
    folder is there, the add-on has already written it in.
 4. In the **ESPHome** add-on: **New device**, give it a name, pick
@@ -264,8 +266,8 @@ Select a value, and under **Units** choose **Step up**: 950 W stays watts,
 
 ### Quiet nights
 
-**Settings › Quiet hours** sets a nightly window, and optionally "while
-nobody's home". The panel stops flashing and downloading, and shows a sleep
+**Settings › Quiet hours** sets a nightly window for the screen you're
+editing, and optionally "while nobody's home". Each screen has its own. The panel stops flashing and downloading, and shows a sleep
 screen that says when it wakes. Its buttons still work. Sleep it any time by
 holding the dial's centre, from Now on the panel, or with its **Sleep**
 switch in Home Assistant.
@@ -319,7 +321,7 @@ time, where you are, and a padlock when something is locked.
 While you're pressing buttons, new pages wait until you've stopped for 15 s,
 so nothing changes under your finger. E-paper keeps faint traces of earlier
 pictures; the panel cleans them with one full flash, but only when nobody's
-looking, and you can set how often in **Settings › Panel**.
+looking, and you can set how often in **Settings › Screen**.
 
 ## Home Assistant
 
@@ -355,8 +357,8 @@ quiet hours, last render, pages and Refresh entities, named after it
 (`sensor.epaper_quiet_hours_kitchen`); the first keeps the names above. A
 TRMNL also gets `sensor.epaper_battery_<name>` (estimated percent),
 `sensor.epaper_battery_voltage_<name>`, `sensor.epaper_wifi_signal_<name>` and
-`sensor.epaper_last_seen_<name>`, and no Refresh button: it can't be woken. They show as unavailable
-while the add-on is stopped. An entity stays while its source is down; it's
+`sensor.epaper_last_seen_<name>`, and no Refresh button, since it can't be
+woken. All of them show as unavailable while the add-on is stopped. An entity stays while its source is down; it's
 removed only once nothing produces it any more.
 
 ## Privacy and security
@@ -364,10 +366,10 @@ removed only once nothing produces it any more.
 - **The editor is behind your Home Assistant login** and answers only Home
   Assistant's own proxy.
 - **The panel's port (8099) serves pictures of pages and nothing else**: no
-  layouts, entity names or places. A TRMNL pairs only in the ten minutes after
-  you ask it to, and then gets its own key like any other screen. Every screen has its own key, made for
-  you. At home only (the default), it refuses anything that came through a
-  tunnel. Away from home, nothing gets in without a key, and a sender that
+  layouts, entity names or places. Every screen has its own key, made for
+  you; a TRMNL is given its key only in the ten minutes after you ask to pair
+  it. At home only (the default), the port refuses anything that came through
+  a tunnel. Away from home, nothing gets in without a key, and a sender that
   keeps getting keys wrong is refused for a while.
 - **No accounts, no analytics.** The add-on reaches outside services only for
   the widgets you put on a page and the data sources you set up. Airport codes
@@ -392,6 +394,14 @@ measurements behind each decision.
 - **Away from home, a CrowPanel can't be woken early.** Alerts and the
   Refresh button reach it through Home Assistant's own connection to it,
   which only exists at home. Away, it picks up changes on its own timer.
+- **A network chosen on a CrowPanel's own Wi-Fi replaces the ones in its
+  file** until you install it again (ESPHome remembers only one). List the
+  places it goes often in **Install or update** instead.
+- **A TRMNL doesn't check HTTPS certificates.** Its firmware encrypts the
+  connection but doesn't check who it's talking to, so on a network you don't
+  trust, something pretending to be your server could read its key. That key
+  only fetches that screen's pictures, and pairing it again replaces it. A
+  CrowPanel does check, against the usual public certificate authorities.
 - **TRMNL support is built from its open-source firmware, not tried on one
   yet.** Pairing end to end, which pictures its decoder takes in practice,
   HTTPS through Cloudflare or Home Assistant Cloud, and real battery life are
@@ -407,8 +417,9 @@ measurements behind each decision.
   `sensor.epaper_panel_pages`.
 - **No battery reading on a CrowPanel.** The board's battery pin isn't
   documented. (A TRMNL reports its own.)
-- **It expects mains power.** Deep sleep would cost instant updates, remote
-  control and alerts; quiet hours give you still, dark nights without that.
+- **A CrowPanel expects mains power.** Deep sleep would cost instant
+  updates, remote control and alerts; quiet hours give you still, dark nights
+  without that. For a screen on a battery, use a TRMNL.
 
 ## Development
 

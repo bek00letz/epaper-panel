@@ -1,6 +1,8 @@
 # Several screens, any kind: the design
 
-Agreed 2026-10-20, before any code. This is the plan the work is built from;
+Agreed 2026-10-20, before any code. **All three steps are built** (0.11.0,
+and TRMNL on main after it); what follows is the plan as agreed, with notes
+on what changed while building. This is the plan the work is built from;
 [ARCHITECTURE.md](../ARCHITECTURE.md) describes what exists, and changes to it
 as each step lands. Rule #1 in [AGENTS.md](../AGENTS.md) applies throughout:
 this is a framework for every device of every supported kind, not support for
@@ -168,14 +170,14 @@ inside the add-on and versioned with it):
 
 **Away from home:**
 
-- **TRMNL** works over HTTPS today. Its firmware encrypts but doesn't check
-  certificates. That's acceptable behind Cloudflare or Nabu Casa, and the first
-  thing to confirm on a real device.
-- **CrowPanel** can't fetch over HTTPS yet. `epf_client.h` gives ESP-IDF no
-  certificates to check against. Fixing it means attaching ESP-IDF's
-  certificate bundle, and a panel that travels also needs more than one Wi-Fi
-  network in its YAML. Both are firmware changes, so they need the user's OK
-  before any work starts.
+- **TRMNL** works over HTTPS. Its firmware encrypts but doesn't check
+  certificates, so its key is only as private as the network it's on; a key
+  unlocks one screen's pictures and pairing again replaces it. Still to
+  confirm on a real device.
+- **CrowPanel** fetches over HTTPS since 0.11.0, checked against ESP-IDF's
+  certificate bundle, and knows several Wi-Fi networks, plus its own hotspot
+  for choosing one from a phone. A network chosen on the hotspot replaces
+  the ones in its YAML until the next install.
 - **A CrowPanel away from home can't be woken early.** Push and its remote
   buttons go through Home Assistant's ESPHome connection, which only reaches
   the home network. Away, it runs on its own refresh interval, like a TRMNL,
