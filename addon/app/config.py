@@ -47,8 +47,9 @@ ADDON_VERSION = (os.environ.get("ADDON_VERSION") or "dev").strip()
 PUBLISH_VIA_STATES_API = False
 
 # 0.8.x pushed a refresh to the panel on a timer, on top of the panel's own
-# timer doing the same. The panel's own interval is the one source of truth now;
-# the add-on pushes only when there is something new. Switched off, not deleted.
+# timer doing the same. A screen's Update every (timing.py) is the one source of
+# truth now; the add-on pushes only when there is something new. Switched off,
+# not deleted.
 PROACTIVE_TIMED_PUSH = False
 
 # The sleep screen's name in the rotation; outside what PAGE_RE allows a user page to be called.

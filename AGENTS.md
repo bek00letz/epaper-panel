@@ -137,7 +137,7 @@ the add-on itself lives in `addon/`.
 | Endpoint | Purpose |
 |---|---|
 | HA Sidebar (`:8080` via Ingress) | Drag-and-drop visual editor and JSON API. Answers only Home Assistant's Ingress proxy (`172.30.32.2`); any other app on the internal network gets 403 |
-| `<homeassistant>:8099` | The device port: what each device fetches, found by its key (`kinds.device_for`). For a CrowPanel: `/frames.epf` (`?cap=`, and from firmware that can sleep `wake=` and `awake_ms=`; in Low Power Mode every answer has `X-EPF-Sleep`), `/frame.epf`, the PNG fallbacks, and a minimal `/status`. `POST /api/action/refresh|page` always need a key. The first panel's frames need it once that panel has used it (`frame_token.py`). Remappable in the add-on's network settings |
+| `<homeassistant>:8099` | The device port: what each device fetches, found by its key (`kinds.device_for`). For a CrowPanel: `/frames.epf` (`?cap=`, and from firmware that can sleep `wake=` and `awake_ms=`; while it sleeps between updates every answer has `X-EPF-Sleep`), `/frame.epf`, the PNG fallbacks, and a minimal `/status`. `POST /api/action/refresh|page` always need a key. The first panel's frames need it once that panel has used it (`frame_token.py`). Remappable in the add-on's network settings |
 | `<homeassistant>:8099` for a TRMNL | Only while the add-on option `trmnl` is on: `GET /api/setup` (pairing, only in the editor's ten-minute window), `GET /api/display` (one wake), `POST /api/log`, `GET /api/image/<hash>`. All but setup need its key in `Access-Token` |
 | ESPHome node (`crowpanel-epaper`) | Exposes `refresh_now`, `show_page`, `page_step`, and `hold_toggle` actions over the encrypted ESPHome native API |
 
@@ -154,13 +154,24 @@ than a frame does.
   routes only hand over what's ready. The one exception is a device that asks
   before anything was drawn for the size it has now, and it's logged.
   `tests/test_draw_ahead.py` drives every kind's routes: add a new kind or
-  route there. A screen that sleeps (a TRMNL; a CrowPanel in Low Power Mode)
-  uses `paging.py` for what to show and how long to sleep; its kind keeps
-  only its protocol.
-- **How a screen is powered is never assumed.** Low Power Mode and the wake
-  interval are settings of each screen (`low_power`, `wake_minutes`), never
-  facts about a kind. A plugged-in panel may sleep; one on a battery may stay
-  connected.
+  route there. A screen that sleeps (a TRMNL; a CrowPanel updating every 2
+  minutes or more) uses `paging.py` for what to show and how long to sleep;
+  its kind keeps only its protocol.
+- **Two timers per screen are the one source of truth** for when it fetches
+  and whether it sleeps (`timing.py`): **Update every** (`update_minutes`;
+  1 minute is always on, 2 or more sleeps between updates) and **Rotate
+  every** (always on: `rotate_seconds`; asleep: `rotate_updates`, a whole
+  number of updates). Set in the editor's Settings › Screen (and the cards
+  when adding a screen), applied at once, never sent with the pages. Read
+  them through the kind (`Kind.update_minutes`, `Kind.sleeps`) or `timing`,
+  never from a device's fields or a panel's own setup. A CrowPanel's own
+  "Refresh interval" in Home Assistant is kept at Update every by the add-on
+  (`crowpanel.keep_its_timer`). Whether a screen sleeps is never assumed from
+  its kind, except that a kind that can't stay connected (`Kind.stays_on`
+  false: a TRMNL) has no always-on choice. Before 0.13, `low_power`,
+  `wake_minutes` and Panel setup's `refresh_interval` did this; they're read
+  only as what an unset screen means and never written, so 0.12 still finds
+  them.
 - **Everything in `theme.py` is in panel pixels** (792 × 272), so the numbers
   match the design directly. Do not introduce a scaling factor.
 - **Draw on an 8-bit canvas, threshold at the end** (`theme.to_1bit`). No
@@ -172,7 +183,7 @@ than a frame does.
   algorithm, because the editor produces absolute positions.
 - **Never assume one screen.** Every render, push, link, entity, setup and key
   belongs to a device (`devices.py`), and a design can be shown by several.
-  Size, orientation, seconds per page and quiet hours are the device's; pages
+  Size, orientation, quiet hours and its two timers are the device's; pages
   and rotation are the design's. Read and write them through `devices.view` /
   `save_view` (or `layouts_store`), never by file. A kind of device lives in
   `kinds/`; the core never names one. A kind can be optional (`Kind.enabled`):
@@ -270,7 +281,7 @@ YAML comes only from `addon/app/firmware/panel.yaml`. After changing it, run
 - **Only an answer from the add-on puts the panel to sleep** (`X-EPF-Sleep`,
   `PowerPolicy` in `epf_core.h`, script `go_to_sleep`). `deep_sleep` has no
   `run_duration` and must never get one: the same firmware stays connected
-  when Low Power Mode is off.
+  when it's always on.
 - **Never sleep while the display is refreshing.** Deep sleep cuts its power
   rail. The CrowPanel driver refreshes in the background, so the panel waits
   for `id(epd).is_idle()` (`firmware_gen.display_settled`).
@@ -310,9 +321,9 @@ TRMNL's API docs. `tests/test_trmnl.py` pins each of these.
 
 The editor is `addon/app/web/`: `index.html`, `editor.css` and plain ES
 modules in `app/` (no build step, nothing from the internet, the system font).
-The 0.9 editor stays at `?classic=1` (`web/classic.html`) until the new one has
-proven itself; ask the user before removing it. `docs/editor-redesign/` holds
-the inventory every change is checked against.
+It's the only editor: the 0.9 one was removed in 0.13 (the way back is any tag
+up to v0.12.0). `app/legacy.js` keeps the pieces of it this one still uses.
+`docs/editor-redesign/` holds the inventory every change is checked against.
 
 - **Five things, one place each.** The screen (its name is the toolbar's
   title and switches between screens; Settings for the rest), the panel's
@@ -371,10 +382,10 @@ When touching display code, `it.image()` at a negative offset is a trap: see
   `health.SERVICES`; anything else reports with `health.ok()` /
   `health.fail()`. That's what the problem sensors in Home Assistant show.
 - **Only alerts, quiet hours and people wake the panel early.** Never push on
-  a content or shape change: the panel's refresh interval is the user's. A
-  TRMNL, or a CrowPanel in Low Power Mode, can't be woken at all; its wake
-  interval is a setting of that screen, and the editor says alerts show at
-  its next wake. A CrowPanel away from home can't be woken either (that goes
+  a content or shape change: the screen's Update every is the user's. A
+  screen that sleeps between updates (a TRMNL; a CrowPanel updating every 2
+  minutes or more) can't be woken at all, and the editor says alerts show at
+  its next update. A CrowPanel away from home can't be woken either (that goes
   through Home Assistant's ESPHome connection, which is home only).
 
 - **Never guess an entity ID or an action name** from a device name. Find the

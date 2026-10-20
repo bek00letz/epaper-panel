@@ -108,10 +108,6 @@ def sanitize_layouts(spec: dict) -> dict:
         orient = 0
     if orient not in (0, 90, 180, 270):
         orient = 0
-    try:
-        rot_sec = max(5, min(3600, int(spec.get("rotate_seconds") or 30)))
-    except (TypeError, ValueError):
-        rot_sec = 30
     display = spec.get("display")
     disp_id = T.get_display(display)["id"]
 
@@ -168,7 +164,6 @@ def sanitize_layouts(spec: dict) -> dict:
         "display": disp_id,
         "location_presets": places,
         "orientation": orient,
-        "rotate_seconds": rot_sec,
         "quiet_hours": quiet_hours,
         "custom_presets": custom_presets,
         "rotation": rotation,

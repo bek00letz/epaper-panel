@@ -40,7 +40,6 @@ def load_panel_setup(dev: dict, default_host: str = "homeassistant.local") -> di
         "wifi_ssid": "",
         "wifi_password": "",
         "api_encryption_key": _new_api_key(),
-        "refresh_interval": "5min",
         "use_secrets": False,
         # Its own Wi-Fi when it finds no network it knows (wifi_block).
         "hotspot": True,
@@ -91,6 +90,31 @@ def more_networks(cfg: dict) -> list[dict]:
         if isinstance(n, dict) and str(n.get("ssid") or "").strip():
             out.append({"ssid": str(n["ssid"]).strip()[:32], "password": str(n.get("password") or "")[:64]})
     return out[:8]
+
+
+def _wpa_ok(password: str) -> bool:
+    """A Wi-Fi password ESPHome takes: none (an open network), 8 to 63 characters, or a 64-digit hex key."""
+    n = len(password)
+    return n == 0 or 8 <= n <= 63 or (n == 64 and all(c in "0123456789abcdefABCDEF" for c in password))
+
+
+def wifi_problems(cfg: dict) -> list[str]:
+    """What in a panel's Wi-Fi would make ESPHome refuse its file, said so it can be fixed before Install.
+    Mirrors what generate_esphome_yaml writes (a value from secrets.yaml can't be checked)."""
+    known = _inspect_existing_secrets()
+    use_secrets = bool(cfg.get("use_secrets"))
+    ssid = str(cfg.get("wifi_ssid") or "").strip()
+    pw = str(cfg.get("wifi_password") or "")
+    more = more_networks(cfg)
+    problems = []
+    if not ssid and "wifi_ssid" not in known and not more and not cfg.get("hotspot", True):
+        problems.append("It has no way online: add a Wi-Fi network, or turn on its own Wi-Fi when it's lost.")
+    first = [(ssid, pw)] if ssid and not ((use_secrets or not pw) and "wifi_password" in known) else []
+    for name, password in first + [(n["ssid"], n["password"]) for n in more]:
+        if not _wpa_ok(password):
+            problems.append(f"The password for {name} is {len(password)} characters. Wi-Fi passwords are 8 to 63; "
+                            "check it, or leave it empty for an open network.")
+    return problems
 
 
 def _yaml_str(s: str) -> str:
@@ -155,9 +179,8 @@ def generate_esphome_yaml(cfg: dict, dev: dict, public_base: str | None = None) 
     ssid = (cfg.get("wifi_ssid") or "").strip()
     pw = cfg.get("wifi_password") or ""
     api_key = (cfg.get("api_encryption_key") or "").strip() or _new_api_key()
-    raw_interval = cfg.get("refresh_interval") or "5min"
-    m_int = re.search(r"\d+", str(raw_interval))
-    initial_min = max(1, min(60, int(m_int.group(0)))) if m_int else 5
+    # Its own timer, which runs only while it's always on: Update every (timing.py), never a setting here.
+    initial_min = kinds.of(dev).update_minutes(dev)
     try:
         orient = int(cfg.get("orientation") if "orientation" in cfg else view.get("orientation", 0))
     except (TypeError, ValueError):
@@ -181,6 +204,9 @@ def generate_esphome_yaml(cfg: dict, dev: dict, public_base: str | None = None) 
         wifi_pw_line = _yaml_str(pw)
 
     more = [(_yaml_str(n.get("ssid")), _yaml_str(n.get("password") or "")) for n in more_networks(cfg)]
+    if wifi_ssid_line == '""' and more:
+        # No first network but others: the first of them leads (ESPHome refuses a blank name).
+        (wifi_ssid_line, wifi_pw_line), more = more[0], more[1:]
     yaml_text = firmware_gen.render(
         disp=disp, version=ADDON_VERSION, device_name=dev_name, frames_url=_yaml_str(frames_epf_url),
         api_key=api_key_line, wifi_ssid=wifi_ssid_line, wifi_password=wifi_pw_line,

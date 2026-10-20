@@ -37,8 +37,11 @@ import frame_token
 from render import arrange, theme as T
 
 # The view's top-level keys that belong to the device and to the library.
-# Everything else (pages, rotation) belongs to the design.
-DEVICE_KEYS = ("display", "orientation", "rotate_seconds", "quiet_hours")
+# Everything else (pages, rotation) belongs to the design. How often a screen
+# updates and turns its pages is the device's too, but set on its own, never
+# sent with the pages (timing.py).
+DEVICE_KEYS = ("display", "orientation", "quiet_hours")
+TIMER_KEYS = ("rotate_seconds",)                # what a single-panel install kept with its pages
 LIBRARY_KEYS = ("custom_presets", "location_presets")
 
 STORE = "devices.json"
@@ -96,7 +99,8 @@ def _migrate() -> dict:
     if saved:
         made_on = arrange.canvas_key(*T.canvas_dims(spec.get("orientation") or 0, spec.get("display")))
         _write(_path("designs", "1.json"),
-               {**{k: v for k, v in spec.items() if k not in DEVICE_KEYS + LIBRARY_KEYS}, "canvas": made_on})
+               {**{k: v for k, v in spec.items() if k not in DEVICE_KEYS + TIMER_KEYS + LIBRARY_KEYS},
+                "canvas": made_on})
     library = {k: spec[k] for k in LIBRARY_KEYS if k in spec}
     if library:
         _write(_path("library.json"), library)
@@ -123,7 +127,7 @@ def _migrate() -> dict:
         # Panel setup's copy of the size was kept in step with the pages'; the device's is the one now.
         "setup": {k: v for k, v in setup.items() if k != "display"},
     }
-    device.update({k: spec[k] for k in DEVICE_KEYS if k in spec})
+    device.update({k: spec[k] for k in DEVICE_KEYS + TIMER_KEYS if k in spec})
     store = {"version": VERSION, "next_device": 2, "next_design": 2, "devices": [device]}
     _write(_path(STORE), store, private=True)                 # written last: the move is done
     print("devices: this install's panel is now device 1", flush=True)
@@ -296,7 +300,7 @@ def design(design_id) -> dict:
     One that was never saved is the shipped starter pages."""
     found = _read(_path("designs", f"{_clean_id(design_id)}.json"), None)
     if not isinstance(found, dict):
-        found = {k: v for k, v in _defaults().items() if k not in DEVICE_KEYS + LIBRARY_KEYS}
+        found = {k: v for k, v in _defaults().items() if k not in DEVICE_KEYS + TIMER_KEYS + LIBRARY_KEYS}
         found["canvas"] = SHIPPED_CANVAS
     return found
 
@@ -330,7 +334,7 @@ def starter_design() -> dict:
     arranged by hand for each shipped size."""
     found = _read(STARTER_PATH, None)
     if not isinstance(found, dict):
-        found = {k: v for k, v in _defaults().items() if k not in DEVICE_KEYS + LIBRARY_KEYS}
+        found = {k: v for k, v in _defaults().items() if k not in DEVICE_KEYS + TIMER_KEYS + LIBRARY_KEYS}
         found["canvas"] = SHIPPED_CANVAS
     found["pages"] = arrange.ensure_ids(found.get("pages") or {})
     return found
@@ -388,7 +392,8 @@ def save_view(spec: dict, device_id=None) -> None:
     dev = update(dev["id"], **{k: spec[k] for k in DEVICE_KEYS if k in spec})
     found = design(dev["design"])
     base = design_canvas(dev["design"], found)
-    rest = {k: v for k, v in spec.items() if k not in DEVICE_KEYS + LIBRARY_KEYS + ("pages",) + DESIGN_KEYS}
+    rest = {k: v for k, v in spec.items()
+            if k not in DEVICE_KEYS + TIMER_KEYS + LIBRARY_KEYS + ("pages",) + DESIGN_KEYS}
     merged = arrange.merge_pages({**found, "pages": arrange.ensure_ids(found.get("pages") or {})},
                                  spec.get("pages") or {}, base, canvas_of(dev))
     merged.update(rest)

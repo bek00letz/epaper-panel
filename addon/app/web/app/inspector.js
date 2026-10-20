@@ -2,7 +2,7 @@
 // Most-used first (what it shows, how it looks), then arrangement, then
 // "More" for the rare things. Every setting 0.9 had is here.
 
-import { h, icon, api, clone, pageTitle, slug, modKey } from "./util.js";
+import { h, icon, api, clone, pageTitle, slug, modKey, turning } from "./util.js";
 import { field, input, number, select, seg, textarea, toggle, toggleRow, section, linkButton, toast } from "./ui.js";
 import { TYPES, BREAKABLE, isWidget, hasText, elName, normalizeLineParity, GROUP_STYLES, GROUP_PAD } from "./elements.js";
 import { OPS, parseShowIf, compileShowIf, evaluate, describe, syncWidgetShowIf, syncDynamicGridShowIf } from "./conditions.js";
@@ -521,9 +521,8 @@ function page(app, head, body) {
       h("div", { class: "btnrow" },
         h("button", { class: "btn tinted", onclick: () => { doc.spec.rotation.push(cur); doc.commit(); } }, times ? "Show again" : "Add to rotation"),
         times ? h("button", { class: "btn tinted", onclick: () => { doc.spec.rotation.splice(doc.spec.rotation.lastIndexOf(cur), 1); doc.commit(); } }, times > 1 ? "Show once less" : "Take out") : null),
-      app.screen?.picks_page === "addon"
-        ? h("p", { class: "fnote", text: `${app.screen.name} shows the next page each time it wakes. How often is in Settings.` })
-        : field("Each page shows for", select([[15, "15 seconds"], [30, "30 seconds"], [45, "45 seconds"], [60, "1 minute"], [120, "2 minutes"], [300, "5 minutes"]], doc.spec.rotate_seconds || 30, (v) => { doc.spec.rotate_seconds = Number(v); doc.commit(); }), { note: "For every page in the rotation." })));
+      // Rotate every is the screen's own (Settings › Screen), next to Update every.
+      h("p", { class: "fnote", text: `${app.screen?.name || "This screen"} shows ${turning(app.screen?.timing) || "your pages in turn"}. Change it in Settings › Screen.` })));
   }
   body.append(section(null, h("div", { class: "btnrow" },
     h("button", { class: "btn tinted", onclick: () => app.duplicatePage() }, icon("dup", "sm"), "Duplicate"),

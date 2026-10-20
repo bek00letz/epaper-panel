@@ -2,7 +2,7 @@
 // now, the whole strip, saving a preset, and the rare question of which
 // version to keep.
 
-import { h, icon, api, clone, pageTitle, slug, modKey, prefs, withDevice } from "./util.js";
+import { h, icon, api, clone, pageTitle, slug, modKey, prefs, withDevice, span, seconds, turning } from "./util.js";
 import { sheet, popover, field, input, number, select, seg, toggle, toggleRow, section, linkButton, toast, closeAll } from "./ui.js";
 import { DISPLAYS, isWidget } from "./elements.js";
 import { describe, parseShowIf, syncDynamicGridShowIf } from "./conditions.js";
@@ -107,23 +107,23 @@ export function openStatus(app, anchor) {
   popover(anchor, async (pop, close) => {
     pop.classList.add("status");
     const s = app.status || {}, doc = app.doc;
-    // A screen that sleeps between wakes (a TRMNL, a CrowPanel in Low Power Mode): its own rhythm, one page per wake.
-    const wakes = app.screen?.owns_interval === "addon", info = app.screen?.info || {};
-    const pairs = app.screen?.setup === "pair", wake = pairs ? "wake" : "check";
+    // A screen that sleeps between updates (a TRMNL; a CrowPanel updating every 2 minutes or more): its own rhythm.
+    const wakes = app.screen?.owns_interval === "addon", info = app.screen?.info || {}, t = app.screen?.timing;
+    const pairs = app.screen?.setup === "pair", wake = "update";
     const { tone, line1 } = statusSummary(app);
     const lines = [];
     if (doc.saving === "error") lines.push(`Your changes couldn't be saved: ${doc.saveError} They're kept in this window, and it keeps trying.`);
     else if (doc.dirty) lines.push("Your changes are saved, but the panel doesn't have them until you send.");
-    else if (wakes) lines.push(info.last_seen ? `It last ${pairs ? "woke" : "checked"} at ${hm(info.last_seen)} and ${pairs ? "wakes" : "checks"} every ${s.panel_interval || info.wake_minutes} min, taking the next page each time.`
-      : !pairs ? "It hasn't checked in since Low Power Mode went on." : info.paired ? "Paired. It hasn't woken since." : "Not paired yet. Pair it in Settings.");
-    else if (s.rendered_at) lines.push(`Pages rendered at ${hm(s.rendered_at)}. The panel looks for new ones every ${s.panel_interval || 5} min.`);
+    else if (wakes) lines.push(info.last_seen ? `It last updated at ${hm(info.last_seen)} and updates every ${span(t?.update_minutes || s.panel_interval || 15)}, showing ${turning(t)}.`
+      : !pairs ? "It hasn't updated since it started sleeping between updates." : info.paired ? "Paired. It hasn't woken since." : "Not paired yet. Pair it in Settings.");
+    else if (s.rendered_at) lines.push(`Pages rendered at ${hm(s.rendered_at)}. The panel is always on and looks for new ones every minute.`);
     if (s.panel_link?.pending_refresh) lines.push(`The panel hasn't picked up the last change yet${s.panel_link.last_error ? `: ${s.panel_link.last_error}` : ""}. It keeps trying.`);
     if (s.panel_link?.problem && !s.panel_link?.node) lines.push(`No panel found: ${s.panel_link.problem}.`);
     if (s.error) lines.push(`The last render failed: ${s.error}`);
     pop.append(h("div", { class: "sthead" }, h("span", { class: "led " + tone }), h("span", { text: line1 })), ...lines.map((l) => h("p", { class: "fnote", text: l })));
 
     const live = s.pages || [];
-    pop.append(h("div", { class: "poplab", text: "Rotating" }), h("p", { class: "fnote", text: live.length ? `${live.map(pageTitle).join(", ")}, ${wakes ? `one each ${wake}` : `${doc.live.rotate_seconds || 30} s each`}.` : "Nothing at the moment." }));
+    pop.append(h("div", { class: "poplab", text: "Rotating" }), h("p", { class: "fnote", text: live.length ? `${live.map(pageTitle).join(", ")}, ${turning(t)}.` : "Nothing at the moment." }));
     const hidden = [...new Set(doc.live.rotation)].filter((n) => doc.live.pages[n]?.tier === "when" && !live.includes(n));
     if (hidden.length) {
       pop.append(h("div", { class: "poplab", text: "Hidden right now" }));
@@ -165,7 +165,7 @@ export function openFullStrip(app) {
 export function openAddScreen(app) {
   const kinds = app.kinds.filter((k) => k.displays.length);
   if (!kinds.length) { toast("This add-on doesn't know any kind of screen it can add."); return; }
-  const st = { kind: kinds[0], display: kinds[0].displays[0].id, orientation: 0, pages: "new", from: app.screen?.id || app.screens[0]?.id, quiet: true, lowPower: false };
+  const st = { kind: kinds[0], display: kinds[0].displays[0].id, orientation: 0, pages: "new", from: app.screen?.id || app.screens[0]?.id, quiet: true, power: "on" };
   sheet("Add a screen", (node, close) => {
     const body = h("div", { class: "sheet-body" });
     const name = h("input", { class: "inp", placeholder: "Kitchen", "aria-label": "Name", maxlength: "60", autocomplete: "off" });
@@ -175,9 +175,9 @@ export function openAddScreen(app) {
     const source = () => app.screens.find((d) => d.id === st.from) || app.screens[0];
     const pick = (opts, value, onChange, label) => select(opts, value, onChange, { "aria-label": label });
 
-    function choice(mode, title, sub, extra) {
-      const on = st.pages === mode;
-      const b = h("button", { class: "cmp choice", role: "radio", "aria-checked": String(on), onclick: (e) => { if (e.target.closest("select")) return; st.pages = mode; draw(); } },
+    function choice(mode, title, sub, extra, key = "pages") {
+      const on = st[key] === mode;
+      const b = h("button", { class: "cmp choice", role: "radio", "aria-checked": String(on), onclick: (e) => { if (e.target.closest("select")) return; st[key] = mode; draw(); } },
         h("span", { class: "ct", text: title }), h("span", { class: "cs", text: sub }), extra || null);
       return b;
     }
@@ -202,9 +202,12 @@ export function openAddScreen(app) {
           choice("same", "Same pages as another screen", "Edits show on both. Each screen keeps its own layout.", st.pages === "same" ? fromSel() : null)),
         qh?.enabled ? group(grow(`Same quiet hours as ${st.pages === "new" ? (app.screen || src).name : src.name}`, `${qh.start} to ${qh.end}. Change them any time.`,
           toggle(st.quiet, (v) => { st.quiet = v; }, "Same quiet hours"))) : "",
-        // A screen that pairs sleeps anyway; one you install chooses (never assumed from its kind).
-        pairs() ? "" : group(grow("Low Power Mode", `${lowPowerNote(15)} Change it any time in Settings.`,
-          toggle(st.lowPower, (v) => { st.lowPower = v; }, "Low Power Mode"))),
+        // The choice every new screen makes, in plain sight (a TRMNL always sleeps). Always on is picked.
+        h("h4", { class: "gtitle", text: "Power" }),
+        pairs() ? h("p", { class: "fnote", text: "It sleeps between updates, every 15 minutes, so it lasts months on its battery. Change it any time in Settings." })
+          : h("div", { class: "choices", role: "radiogroup", "aria-label": "Power" },
+            choice("on", "Always on", "On a cable. Updates every minute; buttons and alerts answer at once.", null, "power"),
+            choice("sleep", "Sleeps between updates", "On a battery. Updates every 15 minutes and lasts months. Change it any time.", null, "power")),
         err);
     }
     async function submit() {
@@ -215,7 +218,7 @@ export function openAddScreen(app) {
       add.disabled = true;
       try {
         const r = (await api("api/devices", { method: "POST", body: { kind: st.kind.id, name: name.value.trim(), display: st.display, orientation: st.orientation,
-          pages: st.pages, from: st.from, quiet_hours_from: st.quiet && qsrc?.quiet?.enabled ? qsrc.id : null, ...(pairs() ? {} : { low_power: st.lowPower }) } })).body;
+          pages: st.pages, from: st.from, quiet_hours_from: st.quiet && qsrc?.quiet?.enabled ? qsrc.id : null, ...(pairs() ? {} : { update_minutes: st.power === "on" ? 1 : 15 }) } })).body;
         close();
         await app.doc.flush();
         app.screens = r.devices; app.kinds = r.kinds;
@@ -273,7 +276,7 @@ export function openPairing(app, id, listen = true) {
         stop();
         app.loadScreens(id).catch(() => {});
         body.replaceChildren(h("div", { class: "pairdone" }, icon("check"), h("h3", { text: `${scr().name} is paired` }),
-          h("p", { class: "fnote", text: `It shows your pages from now on, a new one every ${info.wake_minutes} minutes. On its own screen it calls itself ${info.friendly_id}.` })));
+          h("p", { class: "fnote", text: `It shows your pages from now on, updating every ${span(info.update_minutes || 15)}. On its own screen it calls itself ${info.friendly_id}.` })));
         foot.append(h("button", { class: "btn primary", onclick: () => close() }, "Done"));
         return;
       }
@@ -323,7 +326,7 @@ export function resolveClashes(app, clashes) {
           if (clashes.length > 1) body.append(h("h3", { class: "slab", text: pageTitle(c.name) }));
           body.append(h("div", { class: "cmpgrid", role: "radiogroup", "aria-label": pageTitle(c.name) }, mine, theirs));
         } else {
-          const label = c.kind === "rotation" ? "The rotation" : { quiet_hours: "Quiet hours", rotate_seconds: "How long each page shows", custom_presets: "Your presets", location_presets: "Saved places", display: "Panel model", orientation: "Mounting" }[c.name] || c.name;
+          const label = c.kind === "rotation" ? "The rotation" : { quiet_hours: "Quiet hours", custom_presets: "Your presets", location_presets: "Saved places", display: "Panel model", orientation: "Mounting" }[c.name] || c.name;
           body.append(h("h3", { class: "slab", text: label }), seg([["mine", "Keep yours"], ["theirs", "Use the other one"]], "mine", (v) => { choice[c.name] = v; }, label));
         }
       });
@@ -406,19 +409,8 @@ async function placeFor(app, display, orientation) {
   } catch (e) { toast(`Couldn't change it: ${e.message}`); return false; }
 }
 
-/* Screens that sleep between wakes (a TRMNL; a CrowPanel in Low Power Mode) share one interval setting. */
 const signal = (dbm) => (dbm >= -60 ? "strong" : dbm >= -70 ? "good" : dbm >= -80 ? "weak" : "very weak");
-const span = (m) => (m < 60 ? `${m} minutes` : m === 60 ? "1 hour" : `${m / 60} hours`);
-const every = (m) => (m < 60 ? `every ${m} minutes` : m === 60 ? "every hour" : `every ${m / 60} hours`);
 const awakeText = (s, per) => (s == null ? null : `awake ${s.toLocaleString([], { maximumFractionDigits: 1 })} s ${per}`);
-function wakeSelect(app, scr, info, label, done) {
-  return select((info.wake_choices || [15]).map((m) => [m, span(m)]), info.wake_minutes || 15, async (v) => {
-    try {
-      app.applyScreens((await api(`api/devices/${encodeURIComponent(scr.id)}`, { method: "PATCH", body: { wake_minutes: Number(v) } })).body);
-      toast(done(Number(v)));
-    } catch (e) { toast(`Couldn't change it: ${e.message}`); }
-  }, { "aria-label": label });
-}
 function pairedPane(app, pane, show) {
   const doc = app.doc, spec = doc.spec, scr = app.screen || {}, info = scr.info || {};
   const name = input(scr.name || "", async (v) => {
@@ -433,16 +425,14 @@ function pairedPane(app, pane, show) {
     grow(info.paired ? "Pair again" : "Pair it", info.paired ? "After it was reset, or to give it a new key" : "Listens for ten minutes",
       h("button", { class: "btn tinted", onclick: () => openPairing(app, scr.id) }, info.paired ? "Pair again" : "Pair"))));
   const disp = DISPLAYS[spec.display] || {};
-  const wake = wakeSelect(app, scr, info, "Wakes every", (v) => `It wakes ${every(v)} from its next wake.`);
   pane.append(h("h4", { class: "gtitle", text: "Display" }), group(
     grow("Size", "As it reports it", h("span", { class: "fnote", text: disp.w ? `${disp.name}, ${disp.w} × ${disp.h}` : "" })),
     grow("Mounted", "Which way up it stands", select([[0, "Landscape"], [180, "Landscape, upside down"], [90, "Portrait"], [270, "Portrait, flipped"]], spec.orientation || 0, async (v) => {
       const was = [90, 270].includes(Number(spec.orientation)), now = [90, 270].includes(Number(v));
       if (!(await placeFor(app, spec.display, v))) return;
       if (was !== now) toast(`The canvas is ${now ? "portrait" : "landscape"} now.`, { label: "Rearrange this page", run: () => { reflowPageElements(doc.page(), now, app.geometry().d); doc.commit(); } });
-    })),
-    grow("Wakes every", "Sooner means fresher pages and a shorter battery life", wake)),
-    h("p", { class: "fnote", text: "It sleeps between wakes, so nothing can wake it early: new pages and alerts show at its next wake. Its button shows the next page." }));
+    }))));
+  pane.append(h("h4", { class: "gtitle", text: "Power" }), timersBox(app, scr, () => show("panel")));
   sharedGroup(app, pane, scr, show);
   removeGroup(app, pane, scr);
 }
@@ -496,7 +486,7 @@ async function panelPane(app, pane, show) {
   }, { "aria-label": "Name", maxlength: "60" });
   pane.append(group(grow("Name", null, name), grow("Connection", null, conn),
     grow("Install or update", "Makes its ESPHome file and walks you through it", h("button", { class: "btn tinted", onclick: () => show("install") }, "Open"))));
-  const lowPower = !!scr.info?.low_power;
+  const sleeps = !!scr.sleeps;
   const reflowNote = h("p", { class: "fnote" });
   pane.append(h("h4", { class: "gtitle", text: "Display" }), group(
     grow("Model", null, select(kind.displays.map((d) => [d.id, `${d.name}, ${d.w} × ${d.h}`]), spec.display, (v) => placeFor(app, v, spec.orientation || 0))),
@@ -504,22 +494,15 @@ async function panelPane(app, pane, show) {
       const was = [90, 270].includes(Number(spec.orientation)), now = [90, 270].includes(Number(v));
       if (!(await placeFor(app, spec.display, v))) return;
       if (was !== now) toast(`The canvas is ${now ? "portrait" : "landscape"} now.`, { label: "Rearrange this page", run: () => { reflowPageElements(doc.page(), now, app.geometry().d); doc.commit(); } });
-    })),
-    scr.owns_interval !== "addon" ? grow("Check for new pages every", "The panel's own timer. Changes at once.", (() => {
-      const s = select([1, 2, 3, 5, 10, 15, 30, 60].map((m) => [m, m === 1 ? "minute" : `${m} minutes`]), app.status?.panel_interval || 5, async (v) => {
-        try {
-          const r = (await api("api/panel-refresh", { method: "POST", body: { interval: Number(v) } })).body;
-          toast(r.ha_updated ? `The panel now checks every ${v} min.` : `Saved, but the panel didn't get it: ${r.error || "it isn't reachable right now"}.`);
-        } catch (e) { toast(`Couldn't change it: ${e.message}`); }
-      }); return s; })()) : null), reflowNote);
-  pane.append(h("h4", { class: "gtitle", text: "Power" }), powerBox(app, scr, () => show("panel")));
+    }))), reflowNote);
+  pane.append(h("h4", { class: "gtitle", text: "Power" }), timersBox(app, scr, () => show("panel")));
 
   sharedGroup(app, pane, scr, show);
   const ghost = h("div");
   pane.append(h("h4", { class: "gtitle", text: "Ghosting and sleep" }), ghost);
   const drawDevice = (dev) => {
     ghost.replaceChildren();
-    if (lowPower) { ghost.append(h("p", { class: "fnote", text: "These live on the panel, and it sleeps between checks. To change them, ask it to stay awake above, or turn off Low Power Mode." })); return; }
+    if (sleeps) { ghost.append(h("p", { class: "fnote", text: "These live on the panel, and it sleeps between updates. To change them, ask it to stay awake above, or make it always on." })); return; }
     if (!dev || !dev.available) { ghost.append(h("p", { class: "fnote", text: dev?.problem ? `These live on the panel, and it isn't reachable: ${dev.problem}.` : "These live on the panel, and it isn't reachable right now." })); return; }
     const rows = [];
     if (dev.ghost_mode !== null) rows.push(grow("Clear ghosting", "A full refresh flashes once and cleans the screen", select((dev.ghost_modes.length ? dev.ghost_modes : ["On automatic changes", "Every Nth refresh"]).map((o) => [o, o === "Every Nth refresh" ? "Every few refreshes" : o]), dev.ghost_mode, (v) => app.deviceSet({ ghost_mode: v }, "Saved on the panel."))));
@@ -532,9 +515,9 @@ async function panelPane(app, pane, show) {
   drawDevice(app.device);
   app.loadDevice().then(drawDevice);
   removeGroup(app, pane, scr);
-  if (lowPower) {
+  if (sleeps) {
     const info = scr.info || {};
-    conn.textContent = info.last_seen ? [`Last checked at ${hm(info.last_seen)}`, awakeText(info.awake_s, "a check")].filter(Boolean).join(" · ") : "It hasn't checked in since Low Power Mode went on.";
+    conn.textContent = info.last_seen ? [`Last updated at ${hm(info.last_seen)}`, awakeText(info.awake_s, "an update")].filter(Boolean).join(" · ") : "It hasn't updated since it started sleeping between updates.";
     return;
   }
   try {
@@ -544,28 +527,34 @@ async function panelPane(app, pane, show) {
   } catch (e) { conn.textContent = "Couldn't check"; }
 }
 
-/* Low Power Mode: the screen's own choice, never assumed from how it's powered. */
-const lowPowerNote = (m) => `Checks for new pages ${every(m)} and sleeps in between, so it lasts months on a battery. Alerts and changes show at its next check; a button press checks right away. Plugged in? Leave it off for instant updates.`;
-function powerBox(app, scr, redraw) {
-  const info = scr.info || {}, box = h("div");
-  const url = `api/devices/${encodeURIComponent(scr.id)}`;
-  const lp = toggle(!!info.low_power, async (v) => {
-    lp.disabled = true;
+/* Update every and Rotate every (timing.py): how a screen is powered, and how its pages turn. They apply at once. */
+function timersBox(app, scr, redraw) {
+  const info = scr.info || {}, t = scr.timing || {}, box = h("div");
+  const url = `api/devices/${encodeURIComponent(scr.id)}`, pairs = scr.setup === "pair";
+  const change = async (body, said) => {
     try {
-      const r = (await api(url, { method: "PATCH", body: { low_power: v } })).body;
+      const r = (await api(url, { method: "PATCH", body })).body;
       app.applyScreens(r);
-      toast(`Low Power Mode is ${v ? "on" : "off"}. ${r.note || ""}`.trim());
+      app.refresh();                                   // the inspector and the strip say how pages turn
+      toast(r.note || said);
       redraw();
-    } catch (e) { lp.setAttribute("aria-checked", String(!v)); lp.disabled = false; toast(`Couldn't change it: ${e.message}`); }
-  }, "Low Power Mode");
-  const rows = [grow("Low Power Mode", lowPowerNote(info.wake_minutes || 15), lp)];
-  if (info.low_power) {
-    rows.push(grow("Checks every", "Sooner means fresher pages and a shorter battery life",
-      wakeSelect(app, scr, info, "Checks every", (v) => `It checks ${every(v)}, starting after its next check.`)));
+    } catch (e) { toast(`Couldn't change it: ${e.message}`); redraw(); }
+  };
+  const update = select(t.update_choices.map((m) => [m, m === 1 ? "1 minute · always on" : span(m)]), t.update_minutes,
+    (v) => change({ update_minutes: Number(v) }, Number(v) === 1 ? "It's always on." : `It updates every ${span(Number(v))} from its next update.`), { "aria-label": "Update every" });
+  const rotate = t.always_on
+    ? select([...new Set([...t.rotate_seconds_choices, t.rotate_seconds])].sort((a, b) => a - b).map((x) => [x, seconds(x)]), t.rotate_seconds,
+      (v) => change({ rotate_seconds: Number(v) }, `Each page shows for ${seconds(Number(v))}.`), { "aria-label": "Rotate every" })
+    : select(t.rotate_update_choices.map((n) => [n, n === 1 ? "Every update" : span(n * t.update_minutes)]), t.rotate_updates,
+      (v) => change({ rotate_updates: Number(v) }, `It moves to the next page every ${span(Number(v) * t.update_minutes)}.`), { "aria-label": "Rotate every" });
+  const rows = [
+    grow("Update every", t.always_on ? "Always on: for a panel on a cable" : t.can_stay_on ? "It sleeps in between. Longer lasts longer on a battery" : "Longer lasts longer on its battery", update),
+    grow("Rotate every", t.always_on ? "How long each page shows" : "Each update refreshes the page on screen; this moves to the next", rotate)];
+  if (!t.always_on && !pairs) {
     const stay = info.stay_awake || {};
     const awakeSub = stay.until ? `Awake until ${hm(stay.until)}, for an update over Wi-Fi.`
-      : stay.asked ? "It stays awake ten minutes from its next check. Press a button on it to start now."
-      : "Ten minutes, for an update over Wi-Fi. Starts at its next check.";
+      : stay.asked ? "It stays awake ten minutes from its next update. Press a button on it to start now."
+      : "Ten minutes, for an update over Wi-Fi. Starts at its next update.";
     rows.push(grow("Stay awake", awakeSub, h("button", { class: "btn tinted", onclick: async () => {
       try {
         await api(`${url}/stay-awake`, { method: stay.asked || stay.until ? "DELETE" : "POST" });
@@ -574,8 +563,11 @@ function powerBox(app, scr, redraw) {
       } catch (e) { toast(`Couldn't ask it: ${e.message}`); }
     } }, stay.asked || stay.until ? "Cancel" : "Stay awake")));
   }
-  box.append(group(...rows));
-  if (info.low_power && !info.firmware_sleeps) box.append(h("p", { class: "note warn" }, icon("info", "sm"),
+  box.append(group(...rows), h("p", { class: "fnote", text: t.always_on
+    ? "Buttons and alerts answer at once, and Home Assistant can wake it. On a battery, choose 2 minutes or more and it sleeps in between."
+    : pairs ? "It sleeps between updates, so nothing can wake it early: new pages and alerts show at its next update. Its button shows the next page."
+    : "It sleeps between updates, so new pages and alerts show at its next update. A button press updates it right away." }));
+  if (!t.always_on && !pairs && !info.firmware_sleeps) box.append(h("p", { class: "note warn" }, icon("info", "sm"),
     h("span", { text: "This panel's firmware can't sleep yet, so it stays connected and checks on its own timer. Install it again from Install or update and it starts sleeping." })));
   return box;
 }
@@ -585,15 +577,21 @@ async function installPane(app, pane) {
   pane.append(box);
   let r;
   try { r = (await api("api/panel-setup")).body; } catch (e) { box.replaceChildren(h("p", { class: "fnote bad", text: `Couldn't load the panel's setup: ${e.message}` })); return; }
-  const c = r.config || {};
-  if ((!c.ha_host || c.ha_host === "homeassistant.local") && location.hostname && !["localhost", "127.0.0.1"].includes(location.hostname)) c.ha_host = location.hostname;
+  const c = r.config || {};       // its address is Home Assistant's own, never this browser's (it may be a tunnel's)
   const yaml = h("textarea", { class: "inp code tall", readonly: true, "aria-label": "The panel's ESPHome file", spellcheck: "false" });
   const secrets = h("textarea", { class: "inp code", readonly: true, "aria-label": "secrets.yaml lines", spellcheck: "false" });
   const secretsWrap = h("div");
   const status = h("div");
+  // What ESPHome would refuse (no way online, a Wi-Fi password it can't take), said before Install.
+  const problems = h("div", { role: "status", "aria-live": "polite" });
+  const copyFile = h("button", { class: "btn primary", onclick: () => copy(yaml.value, "the file") }, "Copy");
+  const downloadFile = h("button", { class: "btn tinted", onclick: () => {
+    const a = h("a", { href: URL.createObjectURL(new Blob([yaml.value], { type: "text/yaml" })), download: (dev.value.trim() || "crowpanel-epaper") + ".yaml" });
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  } }, "Download");
   const save = async (extra = {}, msg) => {
     try {
-      const body = { ha_host: host.value.trim() || location.hostname || "homeassistant.local", frame_port: parseInt(port.value, 10) || 8099,
+      const body = { ha_host: host.value.trim(), frame_port: parseInt(port.value, 10) || 8099,
         device_name: dev.value.trim() || "crowpanel-epaper", wifi_ssid: ssid.value.trim(), wifi_password: pw.value, api_encryption_key: key.value.trim(), use_secrets: useSecrets,
         wifi_networks: nets.filter((n) => n.ssid.trim()), hotspot: hotspotOn, ...extra };
       r = (await api("api/panel-setup", { method: "POST", body })).body;
@@ -634,6 +632,10 @@ async function installPane(app, pane) {
     const cc = r.config || {};
     drawHotspot();
     yaml.value = r.yaml || ""; secrets.value = r.secrets_yaml || ""; key.value = cc.api_encryption_key || key.value;
+    const issues = r.problems || [];
+    problems.replaceChildren(...issues.map((t) => h("p", { class: "note warn" }, icon("info", "sm"), h("span", { text: t }))),
+      issues.length ? h("p", { class: "fnote", text: "ESPHome wouldn't install this file. Fix the above and it's ready; Home Assistant's ESPHome folder keeps the last good one until then." }) : "");
+    copyFile.disabled = downloadFile.disabled = issues.length > 0;
     secretsWrap.hidden = !(cc.use_secrets || !cc.wifi_ssid);
     const p = r.panel || {};
     status.replaceChildren(...[
@@ -648,12 +650,8 @@ async function installPane(app, pane) {
     h("h4", { class: "gtitle", text: "Other networks" }), h("p", { class: "fnote", text: "Where else the screen goes, like work. It joins whichever it finds." }), netsBox, hotspotBox,
     group(grow("Encryption key", "Also protects updates over Wi-Fi", h("div", { class: "inline" }, key, h("button", { class: "btn tinted", onclick: () => copy(key.value, "the key") }, "Copy"))),
       grow("New key", "The panel then needs reinstalling and re-adding in Home Assistant", h("button", { class: "btn tinted danger", onclick: () => save({ regenerate_keys: true }, "New key made. Reinstall the panel and add it again in Home Assistant.") }, "Make a new key"))),
-    h("h4", { class: "gtitle", text: "The panel's file" }), yaml,
-    h("div", { class: "btnrow" }, h("button", { class: "btn primary", onclick: () => copy(yaml.value, "the file") }, "Copy"),
-      h("button", { class: "btn tinted", onclick: () => {
-        const a = h("a", { href: URL.createObjectURL(new Blob([yaml.value], { type: "text/yaml" })), download: (dev.value.trim() || "crowpanel-epaper") + ".yaml" });
-        a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-      } }, "Download")),
+    h("h4", { class: "gtitle", text: "The panel's file" }), problems, yaml,
+    h("div", { class: "btnrow" }, copyFile, downloadFile),
     secretsWrap,
     h("h4", { class: "gtitle", text: "Installing" }),
     h("ol", { class: "steps" },
@@ -778,6 +776,5 @@ function editorPane(app, pane) {
     grow("Page strip", "Down the side becomes a row again in narrow windows", select([["top", "Above the canvas"], ["bottom", "Below the canvas"], ["side", "Down the side"]], app.prefs.get("strip_pos", "top"), (v) => { app.prefs.set("strip_pos", v); app.applyStripPos(); })),
     grow("Check legibility from", "The size note under text uses this distance", select([["0.8", "0.8 m, a desk"], ["1.5", "1.5 m, a bedside"], ["3.0", "3 m, a sofa"], ["5.0", "5 m, across a room"], ["0", "Don't check"]], app.prefs.get("view_dist", "3.0"), (v) => { app.prefs.set("view_dist", v); app.canvas.preview(true); })),
     grow("Guides", "Where the footer is, and a faint outline around every element", toggle(app.prefs.get("guides") === "1", (v) => { app.prefs.set("guides", v ? "1" : "0"); app.refresh(); }, "Guides"))),
-    group(grow("Keyboard shortcuts", null, h("button", { class: "btn tinted", onclick: () => openShortcuts() }, "Show")),
-      grow("The previous editor", "Still here while this one proves itself", h("a", { class: "btn tinted", href: "?classic=1" }, "Open"))));
+    group(grow("Keyboard shortcuts", null, h("button", { class: "btn tinted", onclick: () => openShortcuts() }, "Show"))));
 }

@@ -94,6 +94,8 @@ class EntityPublisher:
         self._ready = False
         self._ready_event = asyncio.Event()
         self._lock = asyncio.Lock()
+        self._sync_task: asyncio.Task | None = None
+        self._sync_again = False
         self._kept: set[str] = set()                  # object_ids the configuration still wants
         self.last_seen: dict[str, float] = self._load(self._state_path)
         self.problem = "" if transport is not None else (
@@ -157,6 +159,27 @@ class EntityPublisher:
                     if seen == 0.0:                     # explicitly retired
                         await self._withdraw(obj)
             self._save(self._state_path, self.last_seen)
+
+    def request_sync(self) -> None:
+        """Mirror the values in the background: a render never waits on the broker, which can
+        accept a connection and then stall (each publish waits for its acknowledgement). One
+        pass at a time; asked again while one runs, it runs once more after it."""
+        if self.transport is None:
+            return
+        if self._sync_task is not None and not self._sync_task.done():
+            self._sync_again = True
+            return
+        self._sync_task = asyncio.create_task(self._sync_in_background())
+
+    async def _sync_in_background(self) -> None:
+        while True:
+            self._sync_again = False
+            try:
+                await self.sync()
+            except Exception as exc:
+                print(f"mqtt sync failed: {health.describe(exc)}", flush=True)
+            if not self._sync_again:
+                return
 
     async def wait_ready(self, timeout: float) -> bool:
         """Wait until the entities are online in Home Assistant again.

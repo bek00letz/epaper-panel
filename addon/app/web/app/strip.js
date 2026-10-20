@@ -3,7 +3,7 @@
 // left out of the rotation and alert pages follow, set apart. At its head,
 // the panel's status, which opens "Now on the panel".
 
-import { h, icon, api, pageTitle } from "./util.js";
+import { h, icon, api, pageTitle, span, seconds } from "./util.js";
 import { describe, parseShowIf, evaluate } from "./conditions.js";
 
 /* Thumbnails come from the same renderer as everything else, one at a time,
@@ -48,8 +48,9 @@ export function statusSummary(app) {
   else if (s.panel_link?.pending_refresh) { tone = "wait"; line1 = "Panel not updated yet"; }
   if (s.active_alert) line1 = doc.dirty ? line1 : "Alert showing";
   if (app.device?.sleep && !doc.dirty) line1 = "Asleep";
-  const pace = app.screen?.owns_interval === "addon" ? `one per wake · ${app.screen.info?.wake_minutes || s.panel_interval || 15} min` : `${app.doc.live.rotate_seconds || 30} s`;
-  const line2 = !s.pages ? "Checking the panel…" : liveCount ? `${liveCount} rotating · ${pace}` : "No pages rotating";
+  const t = app.screen?.timing;
+  const pace = !t ? "" : t.always_on ? ` · ${seconds(t.rotate_seconds).replace(" seconds", " s")}` : ` · every ${span(t.update_minutes * t.rotate_updates).replace(/ minutes?/, " min")}`;
+  const line2 = !s.pages ? "Checking the panel…" : liveCount ? `${liveCount} rotating${pace}` : "No pages rotating";
   return { tone, line1, line2 };
 }
 

@@ -14,9 +14,11 @@ anything was drawn for the size it has now (just after a start, or it just
 said it has a new size) may be drawn for there and then, and the log says so.
 tests/test_draw_ahead.py drives every kind's device routes to pin this.
 
-A screen that sleeps between wakes, with the add-on picking its page (a
-TRMNL; a CrowPanel in Low Power Mode), uses the shared mode in paging.py: its
-kind keeps only the protocol.
+Every screen has two timers, Update every and Rotate every (timing.py), the
+same settings for every kind. Updating every minute is always on; anything
+longer, the screen sleeps between updates and uses the shared mode in
+paging.py, the add-on picking its page: its kind keeps only the protocol. A
+kind that can't stay connected (a TRMNL) has no always-on choice (`stays_on`).
 
 A kind can be optional (an add-on option turns it on). While it's off its
 routes don't exist, its devices aren't drawn and the editor shows none of
@@ -34,6 +36,7 @@ from aiohttp import web
 import devices
 import frame_token
 import reach
+import timing
 
 
 class Kind:
@@ -44,6 +47,8 @@ class Kind:
     owns_interval = "device"
     # How a new one is set up in the editor: "install" (Panel setup) or "pair".
     setup_flow = "install"
+    # Whether it can stay connected (Update every 1 minute, always on), or always sleeps between updates.
+    stays_on = True
 
     def enabled(self) -> bool:
         """Whether this kind is on (an optional kind has an add-on option)."""
@@ -65,9 +70,9 @@ class Kind:
         """How the add-on reaches the device to wake it early (a PanelLink), or None if it can't."""
         return None
 
-    def interval(self, dev: dict) -> int | None:
-        """Minutes between fetches, when the add-on knows them without asking the device."""
-        return None
+    def update_minutes(self, dev: dict) -> int:
+        """Update every: minutes between fetches (timing.py). 1 is always on."""
+        return timing.update_minutes(dev, self.stays_on)
 
     def describe(self, dev: dict) -> dict:
         """What the editor shows about the device beyond the core's fields. Never its key."""
@@ -84,13 +89,12 @@ class Kind:
         return set()
 
     def sleeps(self, dev: dict) -> bool:
-        """Whether this screen sleeps between wakes, the add-on picking its page and its
-        wake interval (paging.py). A setting of the screen, never assumed from its kind's
-        hardware: how a screen is powered is its owner's business."""
-        return False
+        """Whether this screen sleeps between updates, the add-on picking its page and when it
+        wakes (paging.py): anything but always on. Its Update every says, never its kind."""
+        return timing.sleeps(dev, self.stays_on)
 
     async def switched(self, old: dict, dev: dict) -> str | None:
-        """The screen started or stopped sleeping between wakes (`sleeps`). What the editor should
+        """The screen started or stopped sleeping between updates (`sleeps`). What the editor should
         say about when that takes effect, or None."""
         return None
 

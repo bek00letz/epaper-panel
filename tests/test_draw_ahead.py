@@ -67,9 +67,9 @@ class TestARequestNeverDraws(unittest.IsolatedAsyncioTestCase):
         trmnl._PAIRING.clear()
         self._on = config.TRMNL
         config.TRMNL = True
-        # Device 1 stays connected (as every install's first panel), a second CrowPanel is in
-        # Low Power Mode, and a TRMNL is paired. Several pages, so wakes move through them.
-        self.hall = devices.add("crowpanel", "Hall", "crowpanel_579", copy_from="1", low_power=True)
+        # Device 1 stays connected (as every install's first panel), a second CrowPanel sleeps
+        # between updates, and a TRMNL is paired. Several pages, so wakes move through them.
+        self.hall = devices.add("crowpanel", "Hall", "crowpanel_579", copy_from="1", update_minutes=15)
         self.desk = devices.add("trmnl", "Desk", "trmnl_og", copy_from="1")
         panel, editor = web.make_apps()
         self.lan = TestClient(TestServer(panel))

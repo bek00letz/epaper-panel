@@ -139,4 +139,12 @@ export const pageTitle = (n) => String(n || "").replace(/_/g, " ").replace(/^./,
 export const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 export const modKey = isMac ? "⌘" : "Ctrl+";
 export const nowHM = (t) => { const d = t ? new Date(t * 1000) : new Date(); return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }); };
+// A screen's timers in words (timing.py): minutes as people say them, and how its pages turn.
+export const span = (m) => (m === 1 ? "1 minute" : m < 60 ? `${m} minutes` : m === 60 ? "1 hour" : `${+(m / 60).toFixed(1)} hours`);
+export const seconds = (s) => (s < 60 ? `${s} seconds` : span(s / 60));
+export function turning(t) {
+  if (!t) return "";
+  if (t.always_on) return `each page for ${seconds(t.rotate_seconds)}`;
+  return `the next page every ${span(t.update_minutes * t.rotate_updates)}`;
+}
 export function uid() { return Math.random().toString(36).slice(2, 9); }

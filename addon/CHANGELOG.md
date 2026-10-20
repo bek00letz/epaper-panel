@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **Update every and Rotate every.** Every screen now has two settings, in
+  Settings › Screen under Power, and they replace Low Power Mode, its wake
+  interval and the panel's own "Check for new pages every". Update every
+  1 minute is always on: buttons and alerts answer at once. 2 minutes or more
+  (up to a day) and the screen sleeps in between, for a battery. Rotate every
+  is how long each page shows: seconds when always on, and when sleeping, a
+  number of updates (each update refreshes the page on screen, and every Nth
+  moves on; before, every update moved on). Both apply at once, no Send
+  needed. Adding a screen asks plainly: always on or sleeps between updates.
+  A TRMNL gets the same two, from 5 minutes. Nothing changes on upgrade: a
+  panel with Low Power Mode off is always on, one with it on keeps its
+  interval, and its rotation time comes along. An always-on panel now checks
+  every minute (the add-on sets its Refresh interval in Home Assistant to
+  match); before, it was 5 minutes unless you changed it. Going back to
+  0.12.0 finds your old settings as they were.
 - **Fixed:** in Low Power Mode, a panel whose refresh interval is one minute
   never went back to sleep after a button press: every download it made while
   awake kept it awake another minute. Only a wake does that now.
@@ -19,6 +34,30 @@
 - **Fixed:** the editor's API answered a request whose body wasn't JSON with
   an internal error and a stack trace in the log; it now says the request was
   wrong (400).
+- **Fixed:** Install or update made files ESPHome refuses. With no Wi-Fi
+  network and the panel's own Wi-Fi off, or a Wi-Fi password that isn't 8 to
+  63 characters, the editor now says what to fix above the file, and holds
+  back Copy, Download and writing it to Home Assistant's ESPHome folder (the
+  last good file stays there) until it's fixed. With no first network but
+  others, the first of them leads instead of a blank one.
+- **Fixed:** on the night the clocks change, a screen asleep until quiet hours
+  end woke an hour late (spring) or an hour early (autumn, then slept again).
+  It now wakes at the time on the clock.
+- **Fixed:** an MQTT broker that accepts the connection and then stops
+  answering could slow every render by many seconds. Values now go to Home
+  Assistant in the background, so pages are drawn on time whatever the broker
+  does.
+- **Fixed:** opened through a tunnel or Home Assistant Cloud, Install or
+  update told a new panel to fetch its pages from that public name over plain
+  HTTP (audit #9). A new panel's address is now Home Assistant's own on your
+  network (its internal URL, or its name there), never the browser's. The
+  TRMNL pairing address too. An address you've already saved is kept.
+- **Going back to 0.11.0 with a TRMNL:** 0.11.0 doesn't know TRMNL screens,
+  and one saved by a later version breaks its list of screens. Before going
+  back, remove your TRMNL screens (Settings › Screen › Remove), or restore a
+  whole backup from before you updated instead. CrowPanels go back fine.
+- **Removed:** the previous editor (`?classic=1`). It predates several
+  screens; an old bookmark to it now opens the editor.
 
 ## 0.12.0
 **Firmware change** (only needed for Low Power Mode, or if your panel has

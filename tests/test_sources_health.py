@@ -119,6 +119,45 @@ class TestSourcesStayOutOfTheWay(unittest.IsolatedAsyncioTestCase):
                 statistics.TIMEOUT = old
 
 
+class StallingTransport(FakeTransport):
+    """A broker that took the connection and then stopped answering: every publish waits."""
+
+    def __init__(self):
+        super().__init__()
+        self.answering = asyncio.Event()
+        self.answering.set()
+
+    async def publish(self, topic, payload, retain=True):
+        await self.answering.wait()
+        return await super().publish(topic, payload, retain)
+
+
+class TestAStalledBroker(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.t = StallingTransport()
+        self.pub = mqtt_bridge.EntityPublisher(self.t, FakeHass(), support.temp_dir(), "test")
+        await self.pub._on_connect()
+        self._was, runtime.PUBLISHER = runtime.PUBLISHER, self.pub
+
+    async def asyncTearDown(self):
+        runtime.PUBLISHER = self._was
+        self.t.answering.set()
+        if self.pub._sync_task is not None:
+            await self.pub._sync_task
+
+    async def test_it_cant_hold_up_a_render(self):
+        self.t.answering.clear()
+        self.pub.set("sensor.epaper_watch", "Severance", {})
+        await asyncio.wait_for(entities.sync_entities(), 1)          # a render's call: back at once
+        self.pub.set("sensor.epaper_watch", "Andor", {})
+        await asyncio.wait_for(entities.sync_entities(), 1)
+        self.assertFalse(self.pub._sync_task.done(), "the mirror waits in the background")
+        self.t.answering.set()                                        # the broker comes back
+        await asyncio.wait_for(self.pub._sync_task, 2)
+        states = [payload for topic, payload in self.t.log if topic == "epaper_panel/epaper_watch/state"]
+        self.assertEqual(states[-1], "Andor", "a change asked for while it waited is sent too")
+
+
 class TestEntitiesSurviveOutages(unittest.IsolatedAsyncioTestCase):
     async def test_failing_source_keeps_its_entity_and_a_removed_one_goes(self):
         now = [1_000_000.0]

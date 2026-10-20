@@ -21,13 +21,14 @@ import frame_token
 import kinds
 import reach
 import runtime
+import timing
 from config import ADDON_VERSION, FRAME_PORT, HA_BASE, HA_TOKEN, INGRESS_GATEWAY, REFRESH, SLEEP_PAGE, WEB_DIR, valid_entity_id
 from fixture import load_fixture
 from frames import _png, as_int, enrich_page_values, refresh_frames, split_page_values
 from ha import curve_series, ha_json, resolve_templates
 from layouts_store import clear_draft, layouts_etag, load_draft, load_layouts, load_sources, sanitize_layouts, save_draft, save_layouts
 from panel_ops import push_panel_update
-from panel_setup import _detect_external_port, _detect_panel_connection, _new_api_key, generate_esphome_yaml, ha_name, hotspot_name, load_panel_setup, more_networks, save_panel_setup
+from panel_setup import _detect_external_port, _detect_panel_connection, _new_api_key, generate_esphome_yaml, ha_name, hotspot_name, load_panel_setup, more_networks, save_panel_setup, wifi_problems
 from sources.flights import fetch_overhead_aircraft
 
 
@@ -125,7 +126,6 @@ async def status(request):
     f = rt.frames
     spec = load_layouts(dev["id"])
     link = _link(dev)
-    panel_int = (await link.refresh_interval() if link else None) or kinds.of(dev).interval(dev) or 5
     return web.json_response({
         "pages": [n for n in f.names if n != SLEEP_PAGE],
         "rendered_at": f.rendered_at,
@@ -140,7 +140,7 @@ async def status(request):
         "quiet_reason": f.quiet_reason,
         "error": f.error,
         "refresh_seconds": REFRESH,
-        "panel_interval": panel_int,
+        "panel_interval": kinds.of(dev).update_minutes(dev),          # Update every (timing.py)
         "device": {"id": dev["id"], "name": dev.get("name"), "kind": dev.get("kind")},
         "esphome_device": link.preferred_node() if link else None,
         "active_alert": runtime.alert(dev["design"]).get("name"),
@@ -157,48 +157,6 @@ async def status(request):
         "ha_entities": runtime.PUBLISHER.status() if runtime.PUBLISHER is not None else
                        {"mode": "off", "problem": "not started", "entities": 0},
         "version": ADDON_VERSION,
-    })
-
-
-async def api_panel_refresh(request):
-    """Update panel refresh rate both in saved panel setup and via HA service if online."""
-    try:
-        body = await request.json()
-    except Exception:
-        raise web.HTTPBadRequest(text="expected json body")
-    if not isinstance(body, dict):
-        raise web.HTTPBadRequest(text="expected a json object")
-    raw_val = body.get("interval")
-    try:
-        minutes = max(1, min(60, int(float(raw_val))))
-    except (TypeError, ValueError):
-        raise web.HTTPBadRequest(text="invalid interval")
-
-    dev = _device(request)
-    cfg = load_panel_setup(dev)
-    cfg["refresh_interval"] = f"{minutes}min"
-    save_panel_setup(dev["id"], cfg)
-
-    runtime.LAST_PANEL_PUSH_TIME = time.time()
-
-    # Pre-render latest frames immediately so the panel gets fresh data
-    try:
-        await refresh_frames(runtime.SESSION)
-    except Exception:
-        pass
-
-    # The panel's own interval entity is what it actually uses; set it there.
-    link = _link(dev)
-    ha_updated, err = await link.set_refresh_interval(minutes) if link else (False, "the add-on can't reach this screen")
-    if not ha_updated:
-        print(f"panel: couldn't set refresh interval: {err}", flush=True)
-    await push_panel_update(dev["id"], "refresh interval changed")
-
-    return web.json_response({
-        "saved": True,
-        "interval": minutes,
-        "ha_updated": ha_updated,
-        "error": err or None,
     })
 
 
@@ -257,7 +215,6 @@ async def api_layouts_put(request):
         "display": clean.get("display", T.DEFAULT_DISPLAY),
         "pages": list(clean["pages"]),
         "rotation": clean["rotation"],
-        "rotate_seconds": clean["rotate_seconds"],
         "orientation": clean["orientation"],
         "etag": tag,
     }, headers={"ETag": _quoted(tag)})
@@ -495,8 +452,9 @@ def _screen(dev: dict, everyone: list[dict]) -> dict:
         "shares_with": [{"id": d["id"], "name": d.get("name") or ""} for d in everyone
                         if d["design"] == dev["design"] and d["id"] != dev["id"]],
         "can_wake": kind.link(dev) is not None, "picks_page": kind.picks_page,
-        # A screen that sleeps between wakes (paging.py) wakes at the add-on's interval, whatever its kind.
+        # A screen that sleeps between updates (paging.py) wakes when the add-on says, whatever its kind.
         "owns_interval": "addon" if kind.sleeps(dev) else kind.owns_interval, "sleeps": kind.sleeps(dev),
+        "timing": timing.describe(dev, kind.stays_on),
         "setup": kind.setup_flow, "info": kind.describe(dev),
         "entity_suffix": dev.get("entity_suffix") or "",
         # Enough to offer "the same quiet hours as …" when adding a screen.
@@ -571,8 +529,8 @@ async def api_devices_add(request):
         orientation = 0
     mode = body.get("pages") or "new"
     try:
-        # Its kind's own settings (Low Power Mode, a wake interval), checked before it exists.
-        extra = kind.settings({"kind": kind.id}, body)
+        # Its timers (always on or sleeping, from the cards) and its kind's own settings, checked before it exists.
+        extra = {**timing.settings({"kind": kind.id}, body, kind.stays_on), **kind.settings({"kind": kind.id}, body)}
     except ValueError as exc:
         raise web.HTTPBadRequest(text=str(exc))
     try:
@@ -598,8 +556,8 @@ async def api_devices_add(request):
 
 
 async def api_devices_update(request):
-    """Rename a screen: {name}, or change its kind's own settings (a TRMNL's wake interval).
-    Its size and mounting go with its pages (Send)."""
+    """Rename a screen: {name}, or change its timers ({update_minutes, rotate_seconds, rotate_updates},
+    at once) or its kind's own settings. Its size and mounting go with its pages (Send)."""
     dev = _device_by_path(request)
     body = await _body(request)
     fields = {}
@@ -607,6 +565,7 @@ async def api_devices_update(request):
         fields["name"] = _clean_name(body["name"], exclude_id=dev["id"])
     kind = kinds.of(dev)
     try:
+        fields.update(timing.settings(dev, body, kind.stays_on))
         fields.update(kind.settings(dev, body))
     except ValueError as exc:
         raise web.HTTPBadRequest(text=str(exc))
@@ -616,6 +575,9 @@ async def api_devices_update(request):
     if kind.sleeps(old) != kind.sleeps(dev):
         await _rerender()                              # what it fetches next follows the new mode
         note = await kind.switched(old, dev)
+    elif "rotate_seconds" in fields and not kind.sleeps(dev):
+        await _rerender()                              # the panel turns its pages itself: tell it
+        await push_panel_update(dev["id"], "rotation changed")
     return web.json_response({"device": _screen(dev, devices.all_devices()), "note": note, **_screens()})
 
 
@@ -779,12 +741,10 @@ def _masked_setup(cfg: dict, dev: dict) -> dict:
 
 
 async def api_panel_setup_get(request):
-    fwd = request.headers.get("X-Forwarded-Host") or request.headers.get("Host") or ""
-    host_guess = fwd.split(",")[0].strip().split(":")[0]
-    if not host_guess or host_guess in ("localhost", "127.0.0.1", "0.0.0.0"):
-        host_guess = "homeassistant.local"
     dev = _device(request)
-    cfg = load_panel_setup(dev, default_host=host_guess)
+    # A new panel fetches from Home Assistant's own home address, never the browser's (audit #9).
+    home = None if (dev.get("setup") or {}).get("ha_host") else await reach.home_address(runtime.HASS, runtime.SESSION)
+    cfg = load_panel_setup(dev, default_host=home or reach.HOME_FALLBACK)
     detected_port = await _detect_external_port(runtime.SESSION)
     if "frame_port" not in cfg:
         cfg["frame_port"] = detected_port
@@ -796,6 +756,7 @@ async def api_panel_setup_get(request):
         "config": masked_cfg,
         "yaml": yaml_text,
         "secrets_yaml": secrets_text,
+        "problems": wifi_problems(cfg),
         "frame_port": cfg.get("frame_port", detected_port),
         "has_frame_token": True,
         "frame_protection": frame_token.status(),
@@ -811,9 +772,11 @@ async def api_panel_setup_post(request):
     cur = load_panel_setup(dev)
     if body.get("regenerate_keys"):
         cur["api_encryption_key"] = _new_api_key()
-    for k in ("device_name", "ha_host", "wifi_ssid", "refresh_interval"):
+    for k in ("device_name", "ha_host", "wifi_ssid"):
         if k in body and isinstance(body[k], str):
             cur[k] = body[k].strip()
+    if not cur.get("ha_host"):
+        cur["ha_host"] = await reach.home_address(runtime.HASS, runtime.SESSION)
     if "frame_port" in body:
         try:
             cur["frame_port"] = int(body["frame_port"])
@@ -848,7 +811,9 @@ async def api_panel_setup_post(request):
     yaml_text, secrets_text = generate_esphome_yaml(masked_cfg, dev, public)
     esphome_dir = config.ESPHOME_DIR
     esphome_synced = False
-    if esphome_dir.exists() and esphome_dir.is_dir():
+    # A file ESPHome would refuse isn't written: the one there stays until this one would install.
+    problems = wifi_problems(saved)
+    if not problems and esphome_dir.exists() and esphome_dir.is_dir():
         try:
             device_slug = re.sub(r"[^a-z0-9_]+", "_", saved.get("device_name", "crowpanel-epaper").lower()).strip("_") or "crowpanel_epaper"
             target_yaml = esphome_dir / f"{device_slug}.yaml"
@@ -872,6 +837,7 @@ async def api_panel_setup_post(request):
         "config": masked_cfg,
         "yaml": yaml_text,
         "secrets_yaml": secrets_text,
+        "problems": problems,
         "esphome_synced": esphome_synced,
         "frame_port": saved.get("frame_port", FRAME_PORT),
         "has_frame_token": True,
@@ -933,9 +899,7 @@ async def api_displays(request):
 
 
 async def editor_index(request):
-    # The editor before 0.10, kept reachable until the new one has proven itself.
-    name = "classic.html" if request.query.get("classic") in ("1", "true") else "index.html"
-    index = WEB_DIR / name
+    index = WEB_DIR / "index.html"
     if not index.exists():
         return web.Response(text="Editor not built yet.", content_type="text/plain")
     return web.FileResponse(index, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
@@ -990,7 +954,6 @@ def make_apps():
         web.post("/api/reach/restart", api_reach_restart),
         web.get("/api/panel-setup", api_panel_setup_get),
         web.post("/api/panel-setup", api_panel_setup_post),
-        web.post("/api/panel-refresh", api_panel_refresh),
         web.get("/api/mdi/font", api_mdi_font),
         web.get("/api/mdi/list", api_mdi_list),
         web.get("/api/mdi/all", api_mdi_all),

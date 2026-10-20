@@ -142,6 +142,36 @@ async def ha_address(hass) -> str:
     return ""
 
 
+HOME_FALLBACK = "homeassistant.local"
+HOST_RE = re.compile(r"[A-Za-z0-9.-]{1,253}|\[[0-9A-Fa-f:.]+\]")
+
+
+async def home_address(hass, session: aiohttp.ClientSession | None) -> str:
+    """Home Assistant's own name on the home network, where a new screen fetches from: its
+    internal URL's host if one is set, else its host's name (`<hostname>.local`). Never the
+    browser's: the editor may be opened through a tunnel, and a screen told that name would
+    fetch across the internet in plain HTTP, its key included."""
+    try:
+        if getattr(hass, "available", True):                 # without Home Assistant (a dev run): the usual name
+            cfg = await hass.rest("GET", "/config")
+            host = urllib.parse.urlsplit(str((cfg or {}).get("internal_url") or "")).hostname or ""
+            if HOST_RE.fullmatch(host) and host not in ("localhost", "127.0.0.1"):
+                return host
+    except Exception as exc:
+        print(f"reach: couldn't read Home Assistant's home address: {health.describe(exc)}", flush=True)
+    if config.HA_TOKEN and session is not None:
+        try:
+            async with session.get("http://supervisor/info", headers={"Authorization": f"Bearer {config.HA_TOKEN}"},
+                                   timeout=aiohttp.ClientTimeout(total=3)) as r:
+                if r.status == 200:
+                    name = str(((await r.json()).get("data") or {}).get("hostname") or "")
+                    if re.fullmatch(r"[A-Za-z0-9-]{1,63}", name):
+                        return f"{name}.local"
+        except Exception as exc:
+            print(f"reach: couldn't ask the Supervisor for Home Assistant's name: {health.describe(exc)}", flush=True)
+    return HOME_FALLBACK
+
+
 async def public_base(hass) -> str | None:
     """The base address screens use away from home, or None on the home network only."""
     s = settings()

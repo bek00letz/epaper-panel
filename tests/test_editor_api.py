@@ -2,6 +2,7 @@
 import asyncio
 import json
 import unittest
+from unittest import mock
 
 from aiohttp.test_utils import TestClient, TestServer
 
@@ -9,6 +10,7 @@ import support
 import frames
 import layouts_store
 import panel_link
+import runtime
 import web
 from test_panel_link_and_entities import PANEL_REGISTRY, FakeHass
 
@@ -40,7 +42,7 @@ class TestVersionCheck(EditorClient):
 
     async def test_save_with_the_current_version_goes_through(self):
         spec, tag = await self.spec_and_tag()
-        spec["rotate_seconds"] = 45
+        spec.setdefault("quiet_hours", {})["start"] = "21:45"
         r = await self.ed.put("/api/layouts", json=spec, headers={"If-Match": tag})
         self.assertEqual(r.status, 200)
         body = await r.json()
@@ -50,24 +52,24 @@ class TestVersionCheck(EditorClient):
     async def test_second_window_gets_409_and_what_is_there_now(self):
         spec, tag = await self.spec_and_tag()
         first = json.loads(json.dumps(spec))
-        first["rotate_seconds"] = 45
+        first.setdefault("quiet_hours", {})["start"] = "21:45"
         self.assertEqual((await self.ed.put("/api/layouts", json=first, headers={"If-Match": tag})).status, 200)
 
         second = json.loads(json.dumps(spec))
-        second["rotate_seconds"] = 120
+        second.setdefault("quiet_hours", {})["start"] = "22:00"
         r = await self.ed.put("/api/layouts", json=second, headers={"If-Match": tag})
         self.assertEqual(r.status, 409)
         body = await r.json()
-        self.assertEqual(body["current"]["rotate_seconds"], 45, "the 409 carries the other window's save")
+        self.assertEqual(body["current"]["quiet_hours"]["start"], "21:45", "the 409 carries the other window's save")
         self.assertEqual(f'"{body["etag"]}"', r.headers["ETag"])
-        self.assertEqual(layouts_store.load_layouts()["rotate_seconds"], 45, "nothing was overwritten")
+        self.assertEqual(layouts_store.load_layouts()["quiet_hours"]["start"], "21:45", "nothing was overwritten")
 
     async def test_save_without_if_match_still_works(self):
         spec, _ = await self.spec_and_tag()
-        spec["rotate_seconds"] = 60
+        spec.setdefault("quiet_hours", {})["start"] = "21:00"
         r = await self.ed.put("/api/layouts", json=spec)
         self.assertEqual(r.status, 200)
-        self.assertEqual(layouts_store.load_layouts()["rotate_seconds"], 60)
+        self.assertEqual(layouts_store.load_layouts()["quiet_hours"]["start"], "21:00")
 
     async def test_a_size_from_another_kind_of_screen_is_refused(self):
         # A CrowPanel given a TRMNL's size saved fine, then could never be drawn again.
@@ -79,7 +81,7 @@ class TestVersionCheck(EditorClient):
         await frames.refresh_frames(None)
         self.assertIsNone(support.first_frames().error, "it still draws")
         spec.pop("display")
-        spec["rotate_seconds"] = 50
+        spec.setdefault("quiet_hours", {})["start"] = "20:50"
         r = await self.ed.put("/api/layouts", json=spec, headers={"If-Match": tag})
         self.assertEqual(r.status, 200, "no size: it keeps its own")
         self.assertEqual(layouts_store.load_layouts()["display"], "crowpanel_579")
@@ -97,31 +99,69 @@ class TestVersionCheck(EditorClient):
         self.assertEqual(f'"{layouts_store.layouts_etag(json.loads(json.dumps(spec, indent=4)))}"', tag)
 
 
+class ConfigHass:
+    """Home Assistant's /api/config, with or without an internal URL."""
+
+    def __init__(self, internal_url):
+        self.internal_url = internal_url
+
+    async def rest(self, method, path, json=None, timeout=15):
+        assert (method, path) == ("GET", "/config")
+        return {"internal_url": self.internal_url}
+
+
+class TestTheirHomeAddress(EditorClient):
+    """Audit #9: opened through a tunnel, Panel setup took the browser's address, and the panel
+    was told to fetch from the tunnel's name over plain HTTP. It's Home Assistant's own now."""
+
+    async def setup_through_a_tunnel(self, internal_url):
+        with mock.patch.object(runtime, "HASS", ConfigHass(internal_url)):
+            r = await self.ed.get("/api/panel-setup", headers={"X-Forwarded-Host": "ha.example-tunnel.com",
+                                                                "Host": "ha.example-tunnel.com"})
+        self.assertEqual(r.status, 200)
+        return await r.json()
+
+    async def test_its_internal_url(self):
+        got = await self.setup_through_a_tunnel("http://192.168.1.5:8123")
+        self.assertEqual(got["config"]["ha_host"], "192.168.1.5")
+        self.assertNotIn("example-tunnel", got["yaml"])
+
+    async def test_never_the_browsers(self):
+        got = await self.setup_through_a_tunnel(None)
+        self.assertEqual(got["config"]["ha_host"], "homeassistant.local", "no internal URL, no Supervisor: the usual name")
+        self.assertNotIn("example-tunnel", got["yaml"])
+
+    async def test_a_blank_address_goes_back_to_it(self):
+        with mock.patch.object(runtime, "HASS", ConfigHass("http://ha.lan:8123")):
+            r = await self.ed.post("/api/panel-setup", json={"ha_host": "  "})
+        self.assertEqual((await r.json())["config"]["ha_host"], "ha.lan")
+
+
 class TestDrafts(EditorClient):
     async def test_draft_saves_without_going_live(self):
         spec, tag = await self.spec_and_tag()
         edited = json.loads(json.dumps(spec))
-        edited["rotate_seconds"] = 15
+        edited.setdefault("quiet_hours", {})["start"] = "20:15"
         r = await self.ed.put("/api/draft", json={"spec": edited, "base": spec, "base_etag": tag.strip('"')},
                               headers={"If-Match": "0"})
         self.assertEqual(r.status, 200)
         self.assertEqual((await r.json())["version"], 1)
-        self.assertNotEqual(layouts_store.load_layouts().get("rotate_seconds"), 15, "a draft never reaches the panel")
+        self.assertNotEqual(layouts_store.load_layouts().get("quiet_hours", {}).get("start"), "20:15", "a draft never reaches the panel")
         got = await (await self.ed.get("/api/draft")).json()
-        self.assertEqual(got["draft"]["spec"]["rotate_seconds"], 15)
+        self.assertEqual(got["draft"]["spec"]["quiet_hours"]["start"], "20:15")
         self.assertEqual(got["draft"]["base_etag"], tag.strip('"'))
         self.assertEqual(f'"{got["etag"]}"', tag)
 
     async def test_stale_draft_version_gets_409_with_both_copies(self):
         spec, tag = await self.spec_and_tag()
-        put = lambda v, ver: self.ed.put("/api/draft", json={"spec": dict(spec, rotate_seconds=v), "base": spec,
+        put = lambda v, ver: self.ed.put("/api/draft", json={"spec": dict(spec, location_presets=[{"label": v, "lat": 1, "lon": 2}]), "base": spec,
                                                              "base_etag": tag.strip('"')}, headers={"If-Match": ver})
-        self.assertEqual((await put(15, "0")).status, 200)
-        self.assertEqual((await put(20, "1")).status, 200)
-        r = await put(25, "1")                            # another window, one save behind
+        self.assertEqual((await put("one", "0")).status, 200)
+        self.assertEqual((await put("two", "1")).status, 200)
+        r = await put("three", "1")                            # another window, one save behind
         self.assertEqual(r.status, 409)
         body = await r.json()
-        self.assertEqual(body["draft"]["spec"]["rotate_seconds"], 20)
+        self.assertEqual(body["draft"]["spec"]["location_presets"][0]["label"], "two")
         self.assertIn("pages", body["live"])
         self.assertEqual(f'"{body["etag"]}"', tag)
 
@@ -152,11 +192,11 @@ class TestEditorFiles(EditorClient):
         self.assertEqual(r.status, 200)
         self.assertEqual((await self.ed.get("/fonts/..%2Fweb.py")).status, 404)
 
-    async def test_classic_editor_stays_reachable(self):
+    async def test_one_editor(self):
+        # The 0.9 editor (?classic=1) was removed in 0.13; an old bookmark opens this one.
         new = await (await self.ed.get("/")).text()
-        old = await (await self.ed.get("/?classic=1")).text()
-        self.assertIn("<html", old)
-        self.assertFalse(new == old, "the new editor is served by default, the classic one on request")
+        self.assertIn("<html", new)
+        self.assertEqual(await (await self.ed.get("/?classic=1")).text(), new)
 
 
 class TestPresets(unittest.TestCase):
