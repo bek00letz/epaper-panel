@@ -3,6 +3,69 @@
 Read [ARCHITECTURE.md](ARCHITECTURE.md) before changing how anything works.
 This file is about not stepping on rakes.
 
+## Rule #1: this is a product, not a patch
+
+**We are building a product other people install, not fixes that work "for
+now".** The bulk of the bugs and vulnerabilities have been cleaned out, and the
+code was refactored so it stays easy to work on. Keep it that way:
+
+- **Fix the cause, not the symptom.** A change that only makes one scenario
+  look right is not done. Say plainly when something is a mitigation.
+- **Build frameworks, not one-offs.** Support for a device, a size or a data
+  source must work for every device of that kind, every size and every user,
+  not the one on our desk. No hard-coded models, sizes, addresses or names.
+- **One source of truth.** No second path that does the same thing slightly
+  differently.
+- **Pin the behaviour with tests**, and keep what works disabled (not
+  deleted) until its replacement has proven itself.
+
+## Only ship it if Apple would ship it
+
+**Everything we make together — apps, sites, scripts with UI, artifacts,
+dashboards, even CLI output — has to look and feel like something Apple
+shipped.**
+
+This is not about a visual style (not "make it white", not "add Liquid
+Glass"). It's about the small details people never notice consciously but
+always feel. Before calling anything done, check it against this list:
+
+### Feel
+- Motion uses springs, not linear or default ease curves. Short (≈0.2–0.4s),
+  interruptible, and it respects Reduce Motion.
+- Every interaction answers back right away: press states, hover states,
+  focus rings, haptics where the platform has them.
+- Nothing jumps. Layout shifts, content popping in, and spinners that flash
+  for 50ms are bugs. Use skeletons or fade-ins, and hold back loading
+  indicators until a delay has passed.
+- Sensible defaults so the first run already feels right. Fewer settings, not
+  more.
+
+### Look
+- Typography does the hierarchy: the system font stack (SF Pro /
+  -apple-system), tight tracking on large titles, a real type scale, tabular
+  numbers where digits line up.
+- Spacing sits on a consistent grid (4/8pt). Optical alignment wins over
+  mathematical alignment when they disagree.
+- Concentric corner radii (inner radius = outer radius − padding),
+  continuous/squircle corners where possible.
+- Restrained color: one accent, semantic colors, real dark mode (not
+  inverted), hairline separators instead of heavy borders.
+- Icons are SF Symbols, or match their weight and optical size.
+
+### Care
+- Empty states, error states, and edge cases get designed too, not left as
+  defaults. Error messages are human, specific, and say what to do next.
+- Copy is short and plain, in sentence case. No jargon, no exclamation marks.
+- Accessibility is built in: Dynamic Type / scalable text, contrast,
+  VoiceOver labels, keyboard navigation, hit targets of 44pt or more.
+- Works at every size: phone width, narrow windows, huge screens. No
+  horizontal scroll, no clipped text.
+- Small touches nobody asked for: a correct app/tab icon, a sensible window
+  title, remembered state, natural keyboard shortcuts, smart truncation.
+
+When a tradeoff comes up between shipping fast and getting these details
+right, flag it instead of quietly dropping the detail.
+
 ## Deploying
 
 **The project is a Home Assistant add-on, installed from git.** No files get
