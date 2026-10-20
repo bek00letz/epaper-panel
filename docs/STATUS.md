@@ -21,7 +21,14 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 ## In flight
 
-Nothing. The 0.13 branches were merged and removed (user's OK, 20 Oct).
+| Work | Where | State |
+|---|---|---|
+| Editor: finding power and Add a screen, the Add a screen sheet, renaming, a screen overview (session "editor-polish") | branch `editor-polish`, worktree `~/Documents/HA/epaper-worktrees/editor-polish` | Started 21 Oct; designs with the user first |
+
+The 0.13.1 fixes (integration sets itself up, Restart row, Settings spacing,
+hotspot password, Send to ESPHome, the old Last render error) are merged into
+local main, not pushed; held to ship with the editor work (user, 21 Oct).
+The 0.13 branches were merged and removed (user's OK, 20 Oct).
 Findings and worker notes are in the coordinator's notes
 folder (`break-it-0.12.0.md`, `timers-addon.md`, `firmware-013.md`).
 
