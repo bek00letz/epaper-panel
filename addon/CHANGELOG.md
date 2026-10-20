@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Renaming the first panel no longer renames it in Home Assistant.** Its
+  name there stays "E-paper panel" when you install it again, as it always
+  has. Any other screen still takes its new name there at its next install.
 - **Add a screen is easier to find.** The screen's name in the toolbar now
   looks like the button it is, with a screen in front, and Settings ›
   Screen has an Add another screen row next to Remove.

@@ -50,6 +50,10 @@ VERSION = 1
 
 # ---------------------------------------------------------------- files
 
+# The first panel's name in Home Assistant, which never changes: renaming it in
+# the editor changes only what the editor calls it (panel_setup.ha_name).
+FIRST_PANEL_NAME = "E-paper panel"
+
 def _path(*parts) -> Path:
     return config.DATA_DIR.joinpath(*parts)
 
@@ -117,7 +121,7 @@ def _migrate() -> dict:
         "id": "1",
         "kind": "crowpanel",
         # What Home Assistant already calls the panel (its firmware's friendly name).
-        "name": "E-paper panel",
+        "name": FIRST_PANEL_NAME,
         "design": "1",
         # Its key is the install's frame token (frame_token.py), so the panel's
         # download address, and the option that sets it, keep working.

@@ -79,8 +79,11 @@ def hotspot_name(dev: dict) -> str:
 
 
 def ha_name(dev: dict) -> str:
-    """What Home Assistant calls the panel once it's installed from this file: the screen's name."""
-    return str(dev.get("name") or "E-paper panel")[:60]
+    """What Home Assistant calls the panel once it's installed from this file: the screen's name.
+    The first panel keeps the name it always had there, whatever the editor calls it."""
+    if dev.get("install_token"):
+        return devices.FIRST_PANEL_NAME
+    return str(dev.get("name") or devices.FIRST_PANEL_NAME)[:60]
 
 
 def more_networks(cfg: dict) -> list[dict]:

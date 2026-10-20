@@ -168,6 +168,15 @@ class TestSeveralScreens(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len([n for n in self.frames_of(desk).names if n != config.SLEEP_PAGE]), 1)
         self.assertGreater(len([n for n in self.frames_of(self.first).names if n != config.SLEEP_PAGE]), 1)
 
+    def test_renaming_the_first_panel_keeps_its_home_assistant_name(self):
+        # AGENTS.md: the first panel keeps its legacy names. A new name is the editor's only.
+        import panel_setup
+        devices.update(self.first["id"], name="CrowPanel")
+        self.assertEqual(panel_setup.ha_name(devices.get(self.first["id"])), "E-paper panel")
+        devices.update(self.kitchen["id"], name="Kitchen wall")
+        self.assertEqual(panel_setup.ha_name(devices.get(self.kitchen["id"])), "Kitchen wall",
+                         "any other screen takes its name to Home Assistant at its next install")
+
     async def test_quiet_hours_are_per_screen(self):
         spec = sanitize_layouts(load_layouts(self.kitchen["id"]))
         spec["quiet_hours"] = {"enabled": True, "start": "13:00", "end": "15:00"}

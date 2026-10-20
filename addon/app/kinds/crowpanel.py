@@ -147,7 +147,7 @@ class CrowPanel(Kind):
                     return ""
                 setup = dev_now.get("setup") or {}
                 # Installed from a file that named it, or the name every panel had before that.
-                return setup.get("installed_name") or ("E-paper panel" if dev_now.get("install_token") else "")
+                return setup.get("installed_name") or (devices.FIRST_PANEL_NAME if dev_now.get("install_token") else "")
 
             rt.link = PanelLink(runtime.HASS, preferred, sole=only_panel, ha_name=ha_name)
         return rt.link
