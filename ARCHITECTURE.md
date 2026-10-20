@@ -151,8 +151,9 @@ every design.
   switch (`low_power`), a wake interval (`wake_minutes`) and, for a CrowPanel,
   its own refresh interval in Panel setup (`refresh_interval`). A screen not
   set since means what they meant: Low Power Mode off is always on, on keeps
-  its wake interval, and the rotation time it kept with its pages is its own. They're
-  never written or removed, so going back to 0.12 finds them as they were.
+  its wake interval, and the rotation time it kept with its pages is its own.
+  They're never written or removed, so going back to 0.12 finds them as they
+  were.
 - **A kind can be optional.** `Kind.enabled()` is its add-on option. While
   it's off its routes aren't added (`web.make_apps`), its devices aren't drawn,
   and the editor lists none of them or their sizes (`kinds.shown`,
