@@ -10,51 +10,35 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Version | Date | What |
 |---|---|---|
+| 0.12.0 | 20 Oct | Low Power Mode for CrowPanels (untried on a real panel), TRMNL screens (untried on one), screens drawn ahead, footer and editor fixes, and the no-own-Wi-Fi compile fix. Firmware change. |
 | 0.11.0 | 20 Oct | Several screens, away from home, Wi-Fi setup from a phone, a footer that fits every size, group styles. Firmware change. |
 | 0.10.3 | 20 Oct | "Space evenly" spaces around the panel, not between left edges. |
 | 0.10.2 | 20 Oct | A stepped-up unit can be left off after the number. |
 | 0.10.1 | 19 Oct | Audit fixes: no secrets in the log, slow services hold nothing up, a problem sensor per service, 2 MB of pages. Firmware change. |
 | 0.10.0 | 19 Oct | The redesigned editor (canvas and page strip, drafts, Send to panel). |
 
-**On GitHub's main but not yet a version** (a Rebuild in Home Assistant
-already picks these up, still labelled 0.11.0): TRMNL screens, the footer
-band's single source, a data folder per test run, two editor fixes, docs.
-No firmware change since v0.11.0.
-
-**Known bug in the released firmware:** a panel set up with "Its own Wi-Fi
-when it's lost" switched off doesn't compile (since 0.11.0). The fix is
-926b861 on `low-power-mode`; it reaches panels only with the next tag.
-
 ## In flight
 
-| Work | Branch | State | What's left |
-|---|---|---|---|
-| Low Power Mode (session "Server-paged screens and Low Power Mode") | `low-power-mode` (3 commits) | Add-on and firmware done; 278 tests pass; compiles for the ESP32-S3 | Release decision; then trying it on the real panel (below) |
-| README note | local `main` (be34157) | Not pushed | Push. Low Power Mode rewrites the same lines |
-
-Nothing else is open: the editor redesign, Jellyfin details, icon and logo,
-bug hunt, TRMNL, footer and test-folder work are all merged into main.
+Nothing. Every branch is merged into main; `low-power-mode` is kept until
+the user OKs deleting it.
 
 ## Backlog, most important first
 
-1. **Release Low Power Mode and the Wi-Fi compile fix** (decision pending).
-2. **Low Power Mode on the real 5.79" panel:** sleep current (a month or a
+1. **Low Power Mode on the real 5.79" panel:** sleep current (a month or a
    year on 5,000 mAh), buttons waking it, first-press delay, and the full
    flash on every wake (avoiding it means keeping the display powered).
-3. **The 5.79" away from home** (built in 0.11.0, never tried): fetching
+2. **The 5.79" away from home** (built in 0.11.0, never tried): fetching
    over HTTPS through the tunnel, and joining a second Wi-Fi network.
-4. **Audit #9, still open:** with no Reaching home set, a fresh Panel setup
+3. **Audit #9, still open:** with no Reaching home set, a fresh Panel setup
    takes its address from the browser. Opened through a tunnel, the panel is
    told to fetch from the tunnel's name over plain HTTP. Fix: default to
    Home Assistant's own home address and ignore the browser's.
-5. **Audit #14, still open:** the firmware doesn't check the footer
+4. **Audit #14, still open:** the firmware doesn't check the footer
    positions in a frame file against the screen. Memory-safe, but a forged
    or broken file can freeze the panel for seconds. Fix: reject positions
    outside the screen when reading the file; keep the fuzzer as a test.
-6. **Remove the classic editor** (`?classic=1`, decided 20 Oct): it predates
+5. **Remove the classic editor** (`?classic=1`, decided 20 Oct): it predates
    several screens. The way back is any tag up to v0.11.0.
-7. **Changelog tidy:** the "0.10.1 (unreleased)" heading is wrong; it was
-   released. Fix with the next release.
 
 **Waiting on hardware:** a TRMNL (pairing, pictures, HTTPS, battery); a
 second CrowPanel side by side; a battery reading on a CrowPanel (needs a

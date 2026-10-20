@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.12.0
+**Firmware change** (only needed for Low Power Mode, or if your panel has
+"Its own Wi-Fi when it's lost" switched off): install the panel again from
+Install or update. Until then it keeps working as before.
+
 - **Low Power Mode.** A switch per screen in Settings › Screen, and when
   adding one: the panel checks for new pages at an interval you choose and
   deep-sleeps in between, for months on a battery. Each check shows the next
@@ -82,7 +86,7 @@ Add-on only; no firmware change.
   new switch, **Unit after the number**, leaves it off; adding a label that
   follows the unit turns it off for you.
 
-## 0.10.1 (unreleased)
+## 0.10.1
 **Firmware change:** after updating, install the panel again from Panel
 setup (Install in the ESPHome Device Builder). Until then the old firmware
 keeps working as before.
