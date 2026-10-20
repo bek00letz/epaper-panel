@@ -21,7 +21,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Work | Where | State |
 |---|---|---|
-| What breaks 0.12.0 (session "break-it") | branch `break-it` (5 commits), worktree `~/Documents/HA/epaper-worktrees/break-it` | Done: 5 add-on fixes, each with a test, ready for a 0.12.1. Findings in the coordinator's notes (`break-it-0.12.0.md`) |
+| What breaks 0.12.0 (session "break-it") | branch `break-it` (5 commits), worktree `~/Documents/HA/epaper-worktrees/break-it` | Done: 5 add-on fixes, each with a test, held for 0.13.0 (user, 20 Oct). Findings in the coordinator's notes (`break-it-0.12.0.md`) |
 | Feature roadmap (session "roadmap") | no code; a draft for `docs/ROADMAP.md` | Started 20 Oct, with the user |
 
 `low-power-mode` was merged in 0.12.0 and deleted.
@@ -32,6 +32,8 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
    found 20 Oct). 4.2": wrong model name. 2.9", 7.5", 10.2": no `spi:` block,
    and a full-refresh call only the CrowPanel driver has. 10.2": no ESPHome
    driver at all. Needs a test that checks every size, and hardware answers.
+   Decided 20 Oct: fix the sizes that can be made to compile (marked untried
+   on hardware), hide the 10.2" until a driver exists.
 2. **Low Power Mode stops sleeping while the add-on is down.** Any answer
    without the sleep header (a 502 during a restart) keeps the panel
    connected until the add-on is back. Firmware fix: only a 200 or 304
