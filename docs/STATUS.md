@@ -91,6 +91,9 @@ The editor was checked by eye in Home Assistant on 19 Oct.
   moves on. Replaces "the panel's own refresh interval is the one source of
   truth" and, for CrowPanels, "how a screen is powered is never assumed"
   (AGENTS.md changes when it's built).
+  Defaults: always on. New screens start at 1 minute and on upgrade a panel
+  with Low Power Mode off goes to 1 minute; first-time users must see plainly
+  that there's a choice to make (how: the user decides on a design).
 - **Sleeping panels avoid the full flash TRMNL's way** (20 Oct, not built
   yet): the display stays powered in its memory-keeping sleep, the first
   change after a wake is a partial refresh, a full one every 8th change and
