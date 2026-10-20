@@ -84,7 +84,7 @@ The editor was checked by eye in Home Assistant on 19 Oct.
 - **Only an answer from the add-on puts a panel to sleep.** One firmware for
   both modes.
 - **Two timers per screen, "Update every" and "Rotate every"** (20 Oct,
-  not built yet). They replace the Low Power Mode switch, the wake interval
+  for 0.13). They replace the Low Power Mode switch, the wake interval
   and the panel's own refresh interval. Update every 1 minute = always on
   (rotation in seconds, instant buttons, alerts at once). 2 minutes or more =
   it sleeps between updates, and longer is lower power. Asleep, Rotate every
@@ -95,8 +95,7 @@ The editor was checked by eye in Home Assistant on 19 Oct.
   Defaults: always on. New screens start at 1 minute and on upgrade a panel
   with Low Power Mode off goes to 1 minute; first-time users must see plainly
   that there's a choice to make (how: the user decides on a design).
-- **Sleeping panels avoid the full flash TRMNL's way** (20 Oct, not built
-  yet): the display stays powered in its memory-keeping sleep, the first
+- **Sleeping panels avoid the full flash TRMNL's way** (20 Oct, for 0.13): the display stays powered in its memory-keeping sleep, the first
   change after a wake is a partial refresh, a full one every 8th change and
   a fast full one at intervals of 30 minutes or more. Needs the real 5.79" to
   confirm and measure. The always-on panel's ghost clearing stays as it is.

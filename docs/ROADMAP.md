@@ -41,6 +41,8 @@ account. That's the position to grow from.
 | Low Power Mode keeps sleeping when the add-on is down (break-it #4) | An update or restart no longer drains a panel away from home; only a 200 or 304 without the sleep header means "stay connected" | small | yes | – |
 | No firmware ESPHome refuses (break-it #5) | No network plus its own Wi-Fi gives a setup-only Wi-Fi; no network and no own Wi-Fi is caught in the editor, as are short Wi-Fi passwords | small | yes (generated YAML) | – |
 | break-it's smaller items (#9, #10) | The panel's own refresh timer is off in Low Power Mode; the right wake time on the night the clocks change; a stalled MQTT broker can't hold up a render; a note on going back to 0.11 with a TRMNL saved | small | yes (the timer) | – |
+| Update every / Rotate every | Two timers per screen replace the Low Power Mode switch and its wake interval. 1 minute is always on; 2 minutes or more sleeps between updates, and rotation is every Nth update. Always on by default, and first-time users see plainly that there's a choice | medium | yes | – |
+| No flash after a wake (TRMNL's way) | The display stays powered in its memory-keeping sleep, so the first change after a wake is a partial refresh; a full one every 8th change | medium | yes | confirmed and measured on the user's 5.79" |
 | Low Power Mode on the real 5.79" | Real numbers in the README, not estimates; buttons that wake it reliably; how long the first press takes | medium (mostly measuring) | likely small fixes | the user's panel and a USB power meter (ordered). Through USB the reading is an upper bound (the USB-serial chip stays powered, and the meter can't read below about 1 mA); a LiPo reading follows when the user has one |
 | The 5.79" away from home | HTTPS through the tunnel and a second Wi-Fi network, tried | small | maybe | the user's panel and tunnel |
 | Audit #9: setup address | A panel set up through a tunnel is never told to fetch over plain HTTP | small | no | – |
@@ -68,7 +70,6 @@ browser setup stands on: a ready-made firmware per model has to build.
 |---|---|---|---|---|
 | Grey for screens that have it | Real grey on a TRMNL X (16 levels) or OG, softer charts, larger text with a grey tone | large | no (TRMNL), n/a (CrowPanel is 1-bit) | a TRMNL to try; the "no grey" rule becomes per screen |
 | Screens you already own | A Kindle, Boox or old tablet as a screen, through a page it opens in its browser | medium | no | the user's Boox Go 6 to try; the lessons in Paperhub |
-| No flash after each wake | In Low Power Mode, a quiet partial refresh instead of a full flash | medium | yes | Low Power Mode measured first |
 | Battery reading on a CrowPanel | Battery sensors like a TRMNL's | small | yes | a board with a resistor divider soldered on |
 | Colour e-paper | Red or yellow accents on colour panels | large | depends | a colour panel |
 | 1.0 | Tested on what it claims, set up in minutes without YAML, in more than one language | – | – | the above |
@@ -76,7 +77,9 @@ browser setup stands on: a ready-made firmware per model has to build.
 ## Decided with the user (20 Oct)
 
 - **0.13 only proves and hardens.** Nothing new until what shipped has met
-  real hardware.
+  real hardware. Low Power Mode is reshaped in 0.13 (two timers, no flash
+  after a wake) so the measuring is of the design that stays, and the panel
+  is installed once.
 - **Setup moves to the browser**: a ready-made firmware, installed from the
   editor, paired like a TRMNL. The YAML path stays as the way back.
 - **Sizes: fix what builds, hide the rest.** A size the firmware can't
