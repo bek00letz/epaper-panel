@@ -16,6 +16,9 @@
   size on a CrowPanel) was accepted, and that screen then couldn't be drawn at
   all. It's refused now, and a send that leaves the size out keeps the
   screen's own.
+- **Fixed:** the editor's API answered a request whose body wasn't JSON with
+  an internal error and a stack trace in the log; it now says the request was
+  wrong (400).
 
 ## 0.12.0
 **Firmware change** (only needed for Low Power Mode, or if your panel has

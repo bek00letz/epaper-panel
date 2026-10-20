@@ -84,6 +84,14 @@ class TestVersionCheck(EditorClient):
         self.assertEqual(r.status, 200, "no size: it keeps its own")
         self.assertEqual(layouts_store.load_layouts()["display"], "crowpanel_579")
 
+    async def test_a_body_that_isnt_json_is_the_senders_mistake(self):
+        for method, path in (("put", "/api/layouts"), ("put", "/api/draft"), ("post", "/api/panel-setup"),
+                             ("post", "/api/preview"), ("put", "/api/sources"), ("post", "/api/sources/test"),
+                             ("post", "/api/panel-device"), ("post", "/api/devices")):
+            for body in (b"{nope", b""):
+                r = await getattr(self.ed, method)(path, data=body, headers={"Content-Type": "application/json"})
+                self.assertEqual(r.status, 400, f"{method.upper()} {path} with {body!r}")
+
     async def test_version_ignores_file_formatting(self):
         spec, tag = await self.spec_and_tag()
         self.assertEqual(f'"{layouts_store.layouts_etag(json.loads(json.dumps(spec, indent=4)))}"', tag)
