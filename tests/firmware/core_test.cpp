@@ -96,6 +96,95 @@ static void test_rejects_bad_files(const std::string &dir) {
         "legacy geometry from the 180 flag");
 }
 
+static void put16(std::vector<uint8_t> &b, size_t at, uint16_t v) {
+  b[at] = (uint8_t) (v >> 8);
+  b[at + 1] = (uint8_t) v;
+}
+
+static void fix_crc(std::vector<uint8_t> &b) {
+  uint32_t crc = epf::compute_crc32(b.data(), b.size() - 4);
+  for (int i = 0; i < 4; i++) b[b.size() - 4 + i] = (uint8_t) (crc >> (24 - 8 * i));
+}
+
+// Footer positions off the screen are refused when the file is read (audit #14).
+// Offsets: the geometry block starts at byte 44, the first category record at 64.
+static void test_footer_inside_the_screen(const std::string &dir) {
+  auto good = read_file(dir + "/orient0.epf");
+  epf::Stream s;
+  CHECK(epf::parse_stream(good.data(), good.size(), 792, 272, s) == epf::FetchResult::OK, "the server's own file");
+  struct Case { const char *what; size_t at; uint16_t value; };
+  const Case cases[] = {
+      {"pill bottom below the screen", 52, 272},       {"pill bottom far below (the audit's file)", 52, 65535},
+      {"pill top below its bottom", 50, 300},          {"category pill starts past the edge", 54, 792},
+      {"item pill ends past the edge", 58, 65534},     {"item pill starts after it ends", 56, 791},
+      {"category pill wider than the screen", 64 + 8, 790},
+  };
+  for (const auto &c : cases) {
+    auto bad = good;
+    put16(bad, c.at, c.value);
+    fix_crc(bad);
+    CHECK(epf::parse_stream(bad.data(), bad.size(), 792, 272, s) == epf::FetchResult::ERROR_LAYOUT, "refused: %s",
+          c.what);
+  }
+  auto both = good;                                   // the audit's 25-second overlay
+  put16(both, 52, 65535);
+  put16(both, 58, 65534);
+  fix_crc(both);
+  CHECK(epf::parse_stream(both.data(), both.size(), 792, 272, s) == epf::FetchResult::ERROR_LAYOUT,
+        "pill_y1=65535, sub_x1=65534 refused");
+}
+
+// The frame parser against mutated files (bounded, fixed seed, so it's the same
+// run every time). Built with AddressSanitizer and UndefinedBehaviorSanitizer
+// where the compiler has them (tests/test_firmware.py). Whatever parses must
+// keep its footer on the screen and draw its overlays quickly.
+static void test_fuzz_parser(const std::string &dir) {
+  uint32_t seed = 0x2545F491u;
+  auto rnd = [&]() { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return seed; };
+  std::vector<std::vector<uint8_t>> bases;
+  for (const char *name : {"orient0", "orient1", "orient2", "orient3", "nav_a", "nav_b", "legacy180", "nav_alert"})
+    bases.push_back(read_file(dir + "/" + name + ".epf"));
+  std::vector<uint8_t> screen((size_t) 99 * 272);
+  int parsed = 0;
+  double slowest_ms = 0;
+  for (int i = 0; i < 6000; i++) {
+    auto buf = bases[rnd() % bases.size()];
+    int edits = 1 + (int) (rnd() % 4);
+    for (int e = 0; e < edits; e++) {
+      // Mostly the header, geometry and directory, where the numbers are.
+      size_t span = (rnd() % 4) ? std::min<size_t>(buf.size() - 4, 64 + 16 * 8) : buf.size() - 4;
+      size_t at = rnd() % span;
+      switch (rnd() % 3) {
+        case 0: buf[at] = (uint8_t) rnd(); break;
+        case 1: buf[at] ^= (uint8_t) (1u << (rnd() % 8)); break;
+        default: buf[at] = (rnd() & 1) ? 0xFF : 0x00; break;
+      }
+    }
+    if (rnd() % 8) fix_crc(buf);                      // most get past the checksum
+    if (rnd() % 16 == 0) buf.resize(rnd() % buf.size());
+    epf::Stream s;
+    if (epf::parse_stream(buf.data(), buf.size(), 792, 272, s) != epf::FetchResult::OK) continue;
+    parsed++;
+    const auto &g = s.geometry;
+    CHECK(g.pill_y1 < g.logical_h && g.sub_x1 < g.logical_w && g.cat_x0 < g.logical_w, "fuzz %d: footer inside", i);
+    for (const auto &c : s.categories) {
+      epf::OverlayState st;
+      st.cat_pill_w = c.pill_width;
+      st.has_sub = true;
+      st.cat_locked = st.panel_locked = true;
+      for (bool sub : {false, true}) {
+        st.highlight_sub = sub;
+        auto t0 = std::chrono::steady_clock::now();
+        epf::draw_overlays(screen.data(), 792, 272, g, st);
+        double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+        if (ms > slowest_ms) slowest_ms = ms;
+      }
+    }
+  }
+  CHECK(parsed > 100, "the fuzzer reached the overlays (%d files parsed)", parsed);
+  CHECK(slowest_ms < 250, "the slowest overlay took %.1f ms", slowest_ms);
+}
+
 // Navigation keeps the reader's place and locks across new frame files.
 static void test_controller(const std::string &dir) {
   auto &pc = epf::PanelController::instance();
@@ -442,6 +531,8 @@ int main(int argc, char **argv) {
   }
   test_streams_and_mapping(argv[1]);
   test_rejects_bad_files(argv[1]);
+  test_footer_inside_the_screen(argv[1]);
+  test_fuzz_parser(argv[1]);
   test_controller(argv[1]);
   test_waveform();
   test_sleep();

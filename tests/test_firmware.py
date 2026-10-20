@@ -240,9 +240,14 @@ class TestFirmwareCore(unittest.TestCase):
                 blank(1), [900], [0], [1], [110], [90], display_model=DISPLAY, alert_interrupt=True))
 
             exe = tmp / "core_test"
-            build = subprocess.run(["c++", "-std=c++17", "-O1", "-Wall", "-Wextra", "-o", str(exe),
-                                    str(ROOT / "tests" / "firmware" / "core_test.cpp")],
-                                   capture_output=True, text=True)
+            # With AddressSanitizer and UndefinedBehaviorSanitizer where the compiler has them,
+            # so the parser fuzzer in core_test catches memory errors, not only wrong answers.
+            source = str(ROOT / "tests" / "firmware" / "core_test.cpp")
+            flags = ["c++", "-std=c++17", "-O1", "-Wall", "-Wextra", "-o", str(exe), source]
+            build = subprocess.run(flags[:1] + ["-fsanitize=address,undefined", "-fno-sanitize-recover=all",
+                                                "-fno-omit-frame-pointer"] + flags[1:], capture_output=True, text=True)
+            if build.returncode != 0:
+                build = subprocess.run(flags, capture_output=True, text=True)
             self.assertEqual(build.returncode, 0, build.stderr)
             run = subprocess.run([str(exe), str(tmp)], capture_output=True, text=True)
             self.assertEqual(run.returncode, 0, run.stdout + run.stderr)

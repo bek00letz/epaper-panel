@@ -203,6 +203,15 @@ inline FetchResult parse_stream(const uint8_t *buf, size_t len, int native_w, in
   } else {
     s.geometry = legacy_geometry(h);
   }
+  // The footer the panel draws over must sit inside the screen: a broken or
+  // forged file with pills off the edge could keep the panel busy drawing them
+  // for seconds (audit #14).
+  const Geometry &g = s.geometry;
+  if (g.pill_y0 > g.pill_y1 || g.pill_y1 >= g.logical_h || g.cat_x0 >= g.logical_w || g.sub_x0 > g.sub_x1 ||
+      g.sub_x1 >= g.logical_w)
+    return FetchResult::ERROR_LAYOUT;
+  for (const auto &c : s.categories)
+    if ((uint32_t) g.cat_x0 + c.pill_width >= g.logical_w) return FetchResult::ERROR_LAYOUT;
   out = std::move(s);
   return FetchResult::OK;
 }

@@ -31,6 +31,10 @@
   now gets only its own Wi-Fi, so you choose the network from a phone. A
   blank network among several is left out.
 
+- **Fixed (firmware):** the panel now refuses a frame file whose footer sits
+  outside the screen. Only a broken or forged file has one, and drawing it
+  could freeze the panel for seconds.
+
 ## 0.12.0
 **Firmware change** (only needed for Low Power Mode, or if your panel has
 "Its own Wi-Fi when it's lost" switched off): install the panel again from
