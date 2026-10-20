@@ -5,10 +5,9 @@ Add-on only; no firmware change.
 
 - **Fixed:** "Space evenly" spread the elements' left edges between the outer
   two and ignored their widths, so a small icon between two wide numbers ended
-  up inside one of them. Now it spreads them across the panel: the outer two
-  go to the margins (or from the top to just above the footer) and the gaps
-  between them are equal. It works for two elements too. If they're too wide
-  to sit side by side, their centres are spaced evenly instead.
+  up inside one of them. Now it spaces them around the panel: the same gap
+  between each of them and at both edges (across the whole width, or from the
+  top to the footer). It works for two elements too.
 
 ## 0.10.2
 Add-on only; no firmware change.

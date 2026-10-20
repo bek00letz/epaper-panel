@@ -397,20 +397,20 @@ class App {
     const doc = this.doc, items = doc.selected();
     if (items.length < 2) return;
     if (kind === "dh" || kind === "dv") {
-      // Across the panel: the outer two go to the margins (or just under the
-      // top and above the footer) and the gaps between them are equal. If
-      // they're too wide to sit side by side, their centres are spaced evenly.
+      // Space around, across the panel: the same gap between the elements and
+      // at both ends (the whole width, or from the top to the footer). If
+      // they're too wide for any gap, their centres are spaced evenly.
       const g = this.geometry();
       const k = kind === "dh" ? "x" : "y", size = kind === "dh" ? "w" : "h";
       const s = items.slice().sort((a, b) => (a[k] + a[size] / 2) - (b[k] + b[size] / 2));
-      const start = kind === "dh" ? g.margin : 16, end = kind === "dh" ? g.W - g.margin : g.safeH - 8;
-      const gap = (end - start - s.reduce((t, e) => t + e[size], 0)) / (s.length - 1);
+      const start = 0, end = kind === "dh" ? g.W : g.safeH;
+      const gap = (end - start - s.reduce((t, e) => t + e[size], 0)) / (s.length + 1);
       if (gap >= 0) {
-        let at = start;
+        let at = start + gap;
         s.forEach((it) => { it[k] = Math.round(at); at += it[size] + gap; });
       } else {
-        const c0 = start + s[0][size] / 2, c1 = end - s[s.length - 1][size] / 2;
-        s.forEach((it, i) => { it[k] = Math.round(c0 + (c1 - c0) * i / (s.length - 1) - it[size] / 2); });
+        const step = (end - start) / s.length;
+        s.forEach((it, i) => { it[k] = Math.round(start + step * (i + 0.5) - it[size] / 2); });
       }
     } else {
       const minX = Math.min(...items.map((e) => e.x)), maxR = Math.max(...items.map((e) => e.x + e.w));
