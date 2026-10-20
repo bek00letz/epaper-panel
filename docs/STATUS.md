@@ -37,8 +37,10 @@ folder (`break-it-0.12.0.md`, `timers-addon.md`, `firmware-013.md`).
    readout isn't reliable at this draw).
 2. **The editor's new parts by eye:** the always-on or sleeps choice when
    adding a screen, and Power in Settings › Screen. Tested, never seen.
-3. **The 5.79" away from home** (built in 0.11.0, never tried): fetching
-   over HTTPS through the tunnel, and joining a second Wi-Fi network.
+3. **The 5.79" away from home:** fetching over HTTPS through Home
+   Assistant's address and a Cloudflare tunnel works (20 Oct, once the
+   integration's entry existed). Still untried: a second Wi-Fi network, and
+   "Through your own address".
 4. **Setup from the browser** (next month, large, firmware): a design pass
    with the user first on how the panel keeps its Home Assistant actions and
    entities without a per-panel key (ROADMAP, open question).
