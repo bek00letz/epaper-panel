@@ -21,7 +21,7 @@ import secrets
 ARRANGE_KEYS = ("x", "y", "w", "h", "size", "font_scale")
 AUTO = "_auto"
 
-# The footer's band at the bottom of every canvas (theme.footer_geometry: pills at ch-28..ch-4).
+# The footer's band at the bottom of every canvas (theme.footer_band(): 25 to 36 px by screen height).
 FOOTER_BAND = 36
 
 

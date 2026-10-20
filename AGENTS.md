@@ -171,7 +171,7 @@ YAML comes only from `addon/app/firmware/panel.yaml`. After changing it, run
   for it. `invert_colors: true` is required.
 - **`GPIO7` is the display's power rail.** Nothing renders until it is high.
 - The panel draws overlays from the geometry in the frame file. **Never
-  hard-code footer positions in firmware**; change `theme.footer_geometry()`.
+  hard-code footer positions in firmware**; change `theme.footer_plan()`.
 - ESPHome leaves ESP-IDF's HTTP client out unless a component asks for it;
   `components/epf/__init__.py` does (`include_builtin_idf_component`).
 - This is an **esp-idf** build: no Arduino APIs. Use the `wifi_info` text sensor

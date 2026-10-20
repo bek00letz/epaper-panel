@@ -2054,9 +2054,12 @@ def _hidden(vals, i) -> bool:
     return str(vals.get(vis_key) or "").strip().lower() in ("false", "0", "no", "off", "none", "unavailable", "unknown", "")
 
 
-def render_page(page, vals, *, clock="", label="", cat_label="", sub_label="", battery_pct=None, series=None,
+def render_page(page, vals, *, clock="", label="", footer=None, page_no=None, item_no=0, items=1, series=None,
                 metrics=None, orientation=0, distance_m=3.0, display=None):
-    """Draw one page. `vals` maps element index -> resolved template result."""
+    """Draw one page. `vals` maps element index -> resolved template result.
+
+    `footer` is the screen's theme.footer_plan(); page_no/item_no/items say
+    which pills this page shows. Without one, the footer has the clock and `label`."""
     img, d = T.new_canvas(orientation=orientation, display=display)
     els = page.get("elements", [])
     # Groups: a style around several elements, shaped by the ones showing now.
@@ -2111,8 +2114,9 @@ def render_page(page, vals, *, clock="", label="", cat_label="", sub_label="", b
         mask = Image.new("L", img.size, 0)
         ImageDraw.Draw(mask).rounded_rectangle([(x, y), (x + w, y + h)], radius=rad, fill=255)
         img.paste(ImageOps.invert(img), (0, 0), mask)
-    T.footer(d, clock=clock, label=label, cat_label=cat_label, sub_label=sub_label,
-             battery_pct=battery_pct, orientation=orientation, display=display)
+    if footer is None:
+        footer = T.footer_plan(clock=clock, orientation=orientation, display=display)
+    T.footer(d, footer, page=page_no, item=item_no, items=items, label=label)
     return img
 
 

@@ -106,7 +106,7 @@ class CrowPanel(Kind):
             cat_ids = [stripmeta.identity("empty")]
             sub_ids = [stripmeta.identity("empty:0")]
             # No pills on the empty page: width 0 tells the panel to draw no highlight.
-            fg = T.footer_geometry(clock=datetime.now().strftime("%H:%M"), orientation=orient, display=display)
+            fg = T.footer_plan(clock=datetime.now().strftime("%H:%M"), orientation=orient, display=display)
             epf_data = epf.encode_epf(
                 pages=[one], cat_ids=cat_ids, cat_offsets=[0], cat_sizes=[1], cat_pill_widths=[0], sub_ids=sub_ids,
                 display_model=display, width=dw, height=dh, rotate_sec=rot_sec, quiet_hours=quiet_active,
@@ -128,28 +128,25 @@ class CrowPanel(Kind):
         imgs = []
         cat_offsets, cat_sizes, cat_names, cat_pill_widths, cat_sub_keys = [], [], [], [], []
         clock = datetime.now().strftime("%H:%M")       # one clock for the whole strip
-        geo = None
         kept = [(p, c) for p, c in zip(plans, counts) if c > 0]
+        # One footer for the whole strip, drawn with the same numbers the panel
+        # draws its highlight and padlocks with, in every orientation.
+        fg = T.footer_plan(clock=clock, pages=[(p["name"], c) for p, c in kept], orientation=orient, display=display)
+        geo = frames.panel_geometry(fg, orient, display)
 
         for cat_i, (plan, sub_count) in enumerate(kept):
             cat_name = plan["name"]
-            cat_label = f"{cat_i + 1}/{len(kept)}  {cat_name.replace('_', ' ').upper()}"
-            # The same numbers the footer is drawn with, so the panel's highlight
-            # lands exactly on the pill in every orientation.
-            fg = T.footer_geometry(clock=clock, cat_label=cat_label, has_sub=sub_count > 1,
-                                   orientation=orient, display=display)
             try:
-                page_imgs = await frames.draw_category(plan, sub_count, cat_label, page_def=spec["pages"][cat_name],
-                                                       clock=clock, orient=orient, display=display)
+                page_imgs = await frames.draw_category(plan, sub_count, cat_i, footer=fg,
+                                                       page_def=spec["pages"][cat_name], orient=orient,
+                                                       display=display)
             except Exception as exc:
                 print(f"page {cat_name} left out: {health.describe(exc)}", flush=True)
                 continue
-            if geo is None:
-                geo = frames.panel_geometry(fg, orient, display)
             cat_offsets.append(len(imgs))
             cat_sizes.append(sub_count)
             cat_names.append(cat_name)
-            cat_pill_widths.append(fg["cat_w"])
+            cat_pill_widths.append(fg["pages"][cat_i]["w"])
             cat_sub_keys.append(plan["sub_keys"][:sub_count])
             imgs.extend(page_imgs)
         live = cat_names

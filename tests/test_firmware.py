@@ -60,11 +60,12 @@ def in_rounded_box(px, py, x0, y0, x1, y1, r=4):
     return (px - cx) ** 2 + (py - cy) ** 2 <= r * r
 
 
-def footer_page(deg, label="1/3  SOLAR"):
-    fg = T.footer_geometry(clock=CLOCK, cat_label=label, orientation=deg, display=DISPLAY)
+def footer_page(deg, pages=(("solar", 1), ("cat", 1), ("watch", 1))):
+    plan = T.footer_plan(clock=CLOCK, pages=list(pages), orientation=deg, display=DISPLAY)
     img, draw = T.new_canvas(deg, display=DISPLAY)
-    T.footer(draw, clock=CLOCK, cat_label=label, orientation=deg, display=DISPLAY)
-    return img, fg
+    T.footer(draw, plan, page=0)
+    w = plan["pages"][0]["w"]
+    return img, {**plan, "cat_w": w, "cat_x1": plan["cat_x0"] + w}
 
 
 def blank(n):
@@ -75,7 +76,7 @@ class TestGeometry(unittest.TestCase):
     def test_server_mapping_matches_its_own_pipeline(self):
         for q, deg in enumerate((0, 90, 180, 270)):
             cw, ch = T.canvas_dims(deg, display=DISPLAY)
-            geo = panel_geometry(T.footer_geometry(clock=CLOCK, orientation=deg, display=DISPLAY), deg, DISPLAY)
+            geo = panel_geometry(T.footer_plan(clock=CLOCK, orientation=deg, display=DISPLAY), deg, DISPLAY)
             pts = [(0, 0), (cw - 1, 0), (0, ch - 1), (cw - 1, ch - 1), (cw // 3, ch // 5)]
             self.assertEqual([epf.to_physical(geo, x, y) for x, y in pts], physical_of(pts, deg), deg)
 
@@ -93,6 +94,115 @@ class TestGeometry(unittest.TestCase):
         data = epf.encode_epf([pipeline(img, 90)], [1], [0], [1], [fg["cat_w"]], [7], display_model=DISPLAY,
                               geometry=geo)
         self.assertEqual(epf.decode_epf(data).geometry, geo)
+
+
+STRIPS = {
+    "one page": [("solar", 1)],
+    "long names": [("solar", 1), ("weather_forecast", 3), ("cat", 1), ("energy", 2), ("calendar", 1)],
+    "two-digit counts": [(f"page_{i}", 12 if i == 3 else 1) for i in range(12)],
+}
+ORIENTATIONS = (0, 90, 180, 270)
+
+
+def every_footer():
+    for display in T.DISPLAYS:
+        for deg in ORIENTATIONS:
+            for strip, pages in STRIPS.items():
+                yield display, deg, strip, pages, T.footer_plan(clock=CLOCK, pages=pages, orientation=deg,
+                                                                display=display)
+
+
+def overlays(plan, page, items):
+    """What the panel draws over the footer, as (x0, x1) column ranges (components/epf/epf_core.h)."""
+    cat_x1 = plan["cat_x0"] + plan["pages"][page]["w"]
+    boxes = {"page pill": (plan["cat_x0"], cat_x1), "page padlock": (cat_x1 + 8, cat_x1 + 29),
+             "screen padlock": ((plan["sub_x0"] - 30, plan["sub_x0"] - 9) if items > 1
+                                else (plan["sub_x1"] - 22, plan["sub_x1"] - 1))}
+    if items > 1:
+        boxes["item pill"] = (plan["sub_x0"], plan["sub_x1"])
+    return boxes
+
+
+def ink_columns(img, plan, x0=0, x1=None):
+    img = T.to_1bit(img)
+    x1 = plan["canvas"][0] - 1 if x1 is None else x1
+    return [x for y in range(plan["pill_y0"], plan["pill_y1"] + 1) for x in range(x0, x1 + 1)
+            if img.getpixel((x, y)) == 0]
+
+
+class TestFooterAtEverySize(unittest.TestCase):
+    def test_nothing_the_footer_or_the_panel_draws_collides(self):
+        for display, deg, strip, pages, plan in every_footer():
+            at = (display, deg, strip)
+            cw, ch = plan["canvas"]
+            self.assertLess(plan["rule_y"], plan["pill_y0"], at)
+            self.assertLessEqual(plan["pill_y0"] + 2 + 20 - 1, plan["pill_y1"], at)   # the padlock's rows
+            self.assertLess(plan["pill_y1"], ch, at)
+            img, draw = T.new_canvas(deg, display=display)
+            T.footer(draw, plan)                                       # the clock alone
+            self.assertLessEqual(max(ink_columns(img, plan)), plan["cat_x0"] - 6, at)
+            pf = T.font(plan["pill_font"], bold=True)
+            for i, (_, items) in enumerate(pages):
+                boxes = sorted(overlays(plan, i, items).items(), key=lambda kv: kv[1])
+                self.assertGreaterEqual(boxes[0][1][0], 0, at)
+                self.assertLess(boxes[-1][1][1], cw, at)
+                for (a, (a0, a1)), (b, (b0, b1)) in zip(boxes, boxes[1:]):
+                    if {a, b} == {"page padlock", "screen padlock"} and (a0, a1) == (b0, b1):
+                        self.assertTrue(plan["shared_lock"], at)        # one spot for both, on purpose
+                        continue
+                    self.assertLess(a1, b0, (at, i, a, b))
+                self.assertLessEqual(T.text_width(plan["pages"][i]["label"], pf), plan["pages"][i]["w"] - 6, at)
+
+    def test_what_gives_way_and_in_which_order(self):
+        for display, deg, strip, pages, plan in every_footer():
+            at = (display, deg, strip)
+            labels = [p["label"] for p in plan["pages"]]
+            n = len(pages)
+            for i, label in enumerate(labels):              # every page always shows where it is
+                self.assertTrue(label.startswith(f"{i + 1}" if plan["short"] else f"{i + 1}/{n}"), (at, label))
+            if any(" " in label for label in labels):       # a name shows only while nothing else gave way
+                self.assertFalse(plan["short"] or plan["shared_lock"], at)
+            if plan["short"]:
+                self.assertTrue(plan["shared_lock"], at)    # the padlocks share before the counts shorten
+            if plan["pill_font"] < T.PILL_FONT:
+                self.assertTrue(plan["short"], at)
+            if plan["clock_size"] < T._footer_size(plan["canvas"][1]):
+                self.assertTrue(plan["short"], at)          # the clock is the last to give way
+
+    def test_names_fit_where_there_is_room(self):
+        plan = T.footer_plan(clock=CLOCK, pages=STRIPS["long names"], orientation=0, display="crowpanel_420")
+        self.assertEqual(plan["pages"][1]["label"], "2/5  WEATHER FORECAST")
+        plan = T.footer_plan(clock=CLOCK, pages=STRIPS["long names"], orientation=0, display="crowpanel_290")
+        self.assertEqual(plan["pages"][1]["label"], "2/5  WEATH\u2026")
+
+    def test_the_smallest_screen_keeps_one_row(self):
+        plan = T.footer_plan(clock=CLOCK, pages=STRIPS["long names"], orientation=90, display="crowpanel_290")
+        self.assertEqual([p["label"] for p in plan["pages"]], ["1", "2", "3", "4", "5"])
+        self.assertTrue(plan["shared_lock"])
+        self.assertEqual(plan["canvas"][1] - plan["rule_y"], 32)
+
+    def test_the_band_does_not_grow(self):
+        band = {(792, 272): 32, (272, 792): 36, (400, 300): 32, (300, 400): 36, (296, 128): 25, (128, 296): 32,
+                (800, 480): 36, (480, 800): 36, (960, 640): 36, (640, 960): 36}
+        for display, deg, strip, pages, plan in every_footer():
+            self.assertEqual(plan["canvas"][1] - plan["rule_y"], band[plan["canvas"]], (display, deg))
+            self.assertEqual(T.footer_band(deg, display), band[plan["canvas"]])
+
+    def test_the_pills_stay_put_as_the_minutes_change(self):
+        for display in T.DISPLAYS:
+            for deg in (0, 90):
+                plans = [T.footer_plan(clock=c, pages=STRIPS["long names"], orientation=deg, display=display)
+                         for c in ("00:00", "11:11", "14:05", "23:59")]
+                self.assertEqual(len({(p["cat_x0"], p["sub_x0"]) for p in plans}), 1, (display, deg))
+
+    def test_a_label_without_pills_stays_clear_of_the_clock(self):
+        for display in T.DISPLAYS:
+            for deg in ORIENTATIONS:
+                plan = T.footer_plan(clock=CLOCK, orientation=deg, display=display)
+                img, draw = T.new_canvas(deg, display=display)
+                T.footer(draw, plan, label="A preview label much longer than any footer")
+                self.assertEqual(ink_columns(img, plan, plan["clock_end"] + 1, plan["cat_x0"] - 1), [],
+                                 (display, deg))
 
 
 @unittest.skipUnless(shutil.which("c++"), "no C++ compiler")

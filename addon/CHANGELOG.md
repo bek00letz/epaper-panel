@@ -5,6 +5,11 @@
 again from Panel setup when you want it to work away from home or join more
 than one Wi-Fi network. Until then it keeps working as before.
 
+- **The footer fits every screen.** The clock, the page and item counts and
+  the panel's padlocks no longer run into each other on small or upright
+  screens. When room runs out, the page name gives way first, then the
+  counts shorten ("2" for "2/5"). The clock always stays. The highlighted
+  pill's corners are clean.
 - **More than one screen.** Add screens from the name at the top left of the
   editor: set up as new, copy another screen's pages, or show the same pages
   as another screen. A screen of another size keeps its own layout of shared

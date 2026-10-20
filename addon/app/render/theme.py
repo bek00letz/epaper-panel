@@ -327,7 +327,9 @@ def screen(img, box):
             px[x, y] = WHITE
 
 
-def footer_geometry(*, clock, cat_label="", has_sub=False, battery_pct=None, orientation=0, display=None):
+# The footer before footer_plan(). Disabled: nothing calls it. Kept until the
+# planned footer has run on real panels, then removed (ask first).
+def footer_geometry_v1(*, clock, cat_label="", has_sub=False, battery_pct=None, orientation=0, display=None):
     """Where the footer pills sit, in logical (pre-rotation) pixels.
 
     The one source for this geometry: footer() draws with it, build_frames sends
@@ -341,7 +343,10 @@ def footer_geometry(*, clock, cat_label="", has_sub=False, battery_pct=None, ori
     f = font(footer_size, bold=False)
     cat_f = font(13, bold=True)
     pill_y0, pill_y1 = ch - 28, ch - 4
-    cat_x0 = 96 if cw >= 400 else (margin + text_width(clock, f) + 12)
+    # The pill starts after the clock's real width, with a gap that scales with the
+    # clock's size (11 px at 18, 12 at 20). Lato's digits all share one width, so
+    # the pill stays put as the minutes change.
+    cat_x0 = margin + text_width(clock, f) + round(footer_size * 0.6)
     bat_w = text_width(f"{battery_pct} %", f) + 12 if (battery_pct is not None and battery_pct > 0) else 0
     sub_w = 48
     sub_x1 = cw - margin - bat_w
@@ -357,8 +362,8 @@ def footer_geometry(*, clock, cat_label="", has_sub=False, battery_pct=None, ori
     }
 
 
-def footer(draw, *, clock, label="", cat_label="", sub_label="", battery_pct=None, orientation=0, display=None):
-    g = footer_geometry(clock=clock, cat_label=cat_label, has_sub=bool(sub_label),
+def footer_v1(draw, *, clock, label="", cat_label="", sub_label="", battery_pct=None, orientation=0, display=None):
+    g = footer_geometry_v1(clock=clock, cat_label=cat_label, has_sub=bool(sub_label),
                         battery_pct=battery_pct, orientation=orientation, display=display)
     cw, ch = g["canvas"]
     margin, footer_size = g["margin"], g["footer_size"]
@@ -385,3 +390,180 @@ def footer(draw, *, clock, label="", cat_label="", sub_label="", battery_pct=Non
 
     if battery_pct is not None and battery_pct > 0:
         draw.text((cw - margin, base_y), f"{battery_pct} %", font=f, fill=BLACK, anchor="rs")
+
+
+# ---------------------------------------------------------------- the footer
+#
+# One plan per screen and strip of pages, from footer_plan(). footer() draws
+# with it, build_frames sends its numbers to the panel, and the panel draws its
+# highlight and padlocks on top of them (components/epf/epf_core.h):
+#   - the page pill's padlock at cat_x1 + 8, the screen's padlock at
+#     sub_x0 - 30 (or sub_x1 - 22 on a page with one item); both 22 x 20 at
+#     pill_y0 + 2;
+#   - the highlight inverts the page pill or the item pill.
+# What matters most keeps its place longest: the clock (it says when the panel
+# last heard from us), then the counts (they're how you find your way), then
+# room for the padlocks (they say why the panel isn't paging), then the name.
+
+PILL_FONT = 13
+LOCK_W, LOCK_GAP = 22, 8        # the panel's padlock badge, and its gap from the pill
+LOCK_SLOT = LOCK_GAP + LOCK_W + LOCK_GAP
+ELLIPSIS = "…"
+
+# What gives way, in order, when a footer doesn't fit. Each step keeps the
+# ones before it. The name gives way before all of these, page by page.
+FOOTER_STEPS = (
+    {},
+    {"pad": 6},                                  # tighter pills
+    {"pad": 6, "shared_lock": True},             # both padlocks in one spot between the pills
+    {"pad": 6, "shared_lock": True, "short": True},   # "2" for "2/5", "1" for "1/3"
+    {"pad": 4, "shared_lock": True, "short": True, "margin": 8},
+    {"pad": 4, "shared_lock": True, "short": True, "margin": 8, "pill_font": 11},   # smaller pill text
+)
+CLOCK_FLOOR = 11                 # smallest clock, the last thing to give way
+
+
+def footer_band(orientation=0, display=None):
+    """Height of the footer band at the bottom of the canvas, hairline included."""
+    _, ch = canvas_dims(orientation, display=display)
+    return round(_footer_size(ch) * 1.8)
+
+
+def _footer_size(ch):
+    return 14 if ch < 200 else (18 if ch < 400 else FOOTER_SIZE)
+
+
+def _ellipsize(s, f, max_w, min_chars=3):
+    """s, cut with an ellipsis to fit max_w; None if fewer than min_chars would show."""
+    if text_width(s, f) <= max_w:
+        return s
+    for k in range(len(s) - 1, min_chars - 1, -1):
+        t = s[:k].rstrip() + ELLIPSIS
+        if text_width(t, f) <= max_w:
+            return t
+    return None
+
+
+def _count(i, n, short):
+    return f"{i}" if short else f"{i}/{n}"
+
+
+def footer_plan(*, clock, pages=(), orientation=0, display=None):
+    """The footer for one screen: the same for every page in its strip.
+
+    `pages` is [(name, item_count), ...] in the order the panel shows them, or
+    empty for a page without pills (the editor's preview, the empty screen).
+    """
+    cw, ch = canvas_dims(orientation, display=display)
+    disp = get_display(display)
+    base_margin = disp["margin"] if cw >= 400 else min(disp["margin"], 16)
+    size = _footer_size(ch)
+    band = round(size * 1.8)
+    pill_h = min(24, band - 4)                       # the padlock needs 22: 2 above it, 20 of it
+    pill_y1 = ch - min(4, band - pill_h - 2)
+    pill_y0 = pill_y1 - pill_h
+    n = len(pages)
+    max_items = max([c for _, c in pages] + [1])
+
+    def attempt(step, clock_size):
+        margin = step.get("margin", base_margin)
+        pad, short, shared = step.get("pad", 10), step.get("short", False), step.get("shared_lock", False)
+        pf = font(step.get("pill_font", PILL_FONT), bold=True)
+        cf = font(clock_size, bold=False)
+        cat_x0 = margin + text_width(clock, cf) + round(clock_size * 0.6)
+        right = cw - margin
+        sub_w = (text_width(_count(max_items, max_items, short), pf) + 2 * pad) if max_items > 1 else 0
+        sub_x1, sub_x0 = right, right - sub_w
+        # Where the screen's padlock goes on a page with several items; it's
+        # further right on a page with one.
+        panel_lock = (sub_x0 - LOCK_GAP - LOCK_W) if sub_w else (sub_x1 - LOCK_W)
+        counts = [_count(i + 1, n, short) for i in range(n)]
+        need = max([text_width(c, pf) + 2 * pad for c in counts] + [0])
+        # The furthest right a page pill may end and still leave its padlock room.
+        cat_end = (panel_lock - LOCK_GAP) if shared else (panel_lock - LOCK_SLOT)
+        if n and cat_x0 + need > cat_end and step.get("fit", True):
+            return None
+        cats = []
+        for i, (name, _) in enumerate(pages):
+            if shared:                      # one width for all, so both padlocks land on the same spot
+                label, w = counts[i], cat_end - cat_x0
+            else:
+                name = str(name).replace("_", " ").upper()
+                head = counts[i] + "  "
+                fitted = _ellipsize(name, pf, cat_end - cat_x0 - 2 * pad - text_width(head, pf)) if name else None
+                label = head + fitted if fitted else counts[i]
+                w = text_width(label, pf) + 2 * pad
+            cats.append({"label": label, "w": w})
+        return {
+            "canvas": (cw, ch), "margin": margin, "band": band, "rule_y": ch - band,
+            "clock": clock, "clock_size": clock_size, "clock_end": margin + text_width(clock, cf),
+            "pill_y0": pill_y0, "pill_y1": pill_y1, "cat_x0": cat_x0, "sub_x0": sub_x0, "sub_x1": sub_x1,
+            "pages": cats, "short": short, "shared_lock": shared, "pill_font": step.get("pill_font", PILL_FONT),
+        }
+
+    for clock_size in range(size, CLOCK_FLOOR - 1, -1):
+        for step in (FOOTER_STEPS if clock_size == size else FOOTER_STEPS[-1:]):
+            plan = attempt(step, clock_size)
+            if plan:
+                return plan
+    # Narrower than any screen we make: the smallest version, even if it crowds.
+    return attempt({**FOOTER_STEPS[-1], "fit": False}, CLOCK_FLOOR)
+
+
+def item_label(plan, item, items):
+    """The item pill's text for item `item` (0-based) of `items`; '' with one item."""
+    return _count(item + 1, items, plan["short"]) if items > 1 else ""
+
+
+def _text_mid(draw, x, cy, s, f, anchor):
+    """Draw s with its capitals and digits centred on cy, which is what reads as centred."""
+    top = f.getbbox("0", anchor="ls")[1]
+    draw.text((x, round(cy - top / 2)), s, font=f, fill=BLACK, anchor=anchor)
+
+
+PILL_RADIUS = 4
+
+
+def in_pill(x, y, x0, y0, x1, y1, r=PILL_RADIUS):
+    """Whether (x, y) is inside the pill: the same shape the panel inverts (in_rounded_box in epf_core.h)."""
+    if x < x0 or x > x1 or y < y0 or y > y1:
+        return False
+    cx = x0 + r if x < x0 + r else (x1 - r if x > x1 - r else x)
+    cy = y0 + r if y < y0 + r else (y1 - r if y > y1 - r else y)
+    return (x - cx) ** 2 + (y - cy) ** 2 <= r * r
+
+
+def _pill(draw, x0, x1, y0, y1, s, f):
+    # The outline is the edge of the panel's own shape, so its highlight covers
+    # it exactly: no corner pixels left outside, no ring left inside.
+    edge = [(x, y) for y in range(y0, y1 + 1) for x in range(x0, x1 + 1)
+            if in_pill(x, y, x0, y0, x1, y1)
+            and not all(in_pill(x + dx, y + dy, x0, y0, x1, y1) for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)))]
+    draw.point(edge, fill=BLACK)
+    _text_mid(draw, (x0 + x1 + 1) // 2, (y0 + y1 + 1) / 2, s, f, "ms")
+
+
+def footer(draw, plan, *, page=None, item=0, items=1, label=""):
+    """Draw the footer from footer_plan().
+
+    page/item are 0-based; `items` is how many items this page has. `label`
+    stands in for the pills where there are none (the editor's preview)."""
+    cw, ch = plan["canvas"]
+    margin, y0, y1 = plan["margin"], plan["pill_y0"], plan["pill_y1"]
+    cy = (y0 + y1 + 1) / 2
+    draw.line([(margin, plan["rule_y"]), (cw - margin, plan["rule_y"])], fill=BLACK, width=1)
+    _text_mid(draw, margin, cy, plan["clock"], font(plan["clock_size"], bold=False), "ls")
+    pf = font(plan["pill_font"], bold=True)
+    if page is not None and 0 <= page < len(plan["pages"]):
+        p = plan["pages"][page]
+        _pill(draw, plan["cat_x0"], plan["cat_x0"] + p["w"], y0, y1, p["label"], pf)
+        sub = item_label(plan, item, items)
+        if sub:
+            _pill(draw, plan["sub_x0"], plan["sub_x1"], y0, y1, sub, pf)
+    elif label:
+        f = font(_footer_size(ch), bold=False)
+        # Centred on the screen, clear of the clock on both sides.
+        room = 2 * (cw // 2 - plan["cat_x0"])
+        fitted = _ellipsize(str(label), f, room)
+        if fitted:
+            _text_mid(draw, cw // 2, cy, fitted, f, "ms")
