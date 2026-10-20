@@ -3,11 +3,12 @@
 ## 0.10.3 (unreleased)
 Add-on only; no firmware change.
 
-- **Fixed:** "Space evenly" spread the elements' left edges and ignored their
-  widths, so a small icon between two wide numbers ended up inside one of
-  them. It now leaves equal gaps between them, the outer two staying put, as
-  Keynote does. If they're too wide to sit side by side, their centres are
-  spaced evenly instead.
+- **Fixed:** "Space evenly" spread the elements' left edges between the outer
+  two and ignored their widths, so a small icon between two wide numbers ended
+  up inside one of them. Now it spreads them across the panel: the outer two
+  go to the margins (or from the top to just above the footer) and the gaps
+  between them are equal. It works for two elements too. If they're too wide
+  to sit side by side, their centres are spaced evenly instead.
 
 ## 0.10.2
 Add-on only; no firmware change.

@@ -434,8 +434,8 @@ function multi(app, head, body) {
   body.append(section("Align",
     h("div", { class: "btnrow icons" }, btn("alignl", "Align left edges", () => app.align("l")), btn("centerh", "Align centres", () => app.align("cx")), btn("alignr", "Align right edges", () => app.align("r")),
       h("span", { class: "spacer" }), btn("alignt", "Align tops", () => app.align("t")), btn("centerv", "Align middles", () => app.align("cy")), btn("alignb", "Align bottoms", () => app.align("b"))),
-    h("div", { class: "btnrow icons" }, btn("disth", "Space evenly across", () => app.align("dh")), btn("distv", "Space evenly up and down", () => app.align("dv")),
-      h("span", { class: "fnote", text: doc.sel.length < 3 ? "Spacing needs three or more." : "" })),
+    h("div", { class: "btnrow icons" }, btn("disth", "Space evenly across the panel", () => app.align("dh")), btn("distv", "Space evenly from top to footer", () => app.align("dv")),
+      h("span", { class: "fnote", text: "Across the panel, inside its margins" })),
     h("p", { class: "fnote", text: "Drag any of them to move them together, or use the arrow keys." })));
   body.append(section(null, h("div", { class: "btnrow" },
     h("button", { class: "btn tinted", onclick: () => app.copy() }, icon("copy", "sm"), "Copy"),
