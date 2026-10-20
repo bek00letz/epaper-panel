@@ -43,6 +43,10 @@
 - **Fixed:** on the night the clocks change, a screen asleep until quiet hours
   end woke an hour late (spring) or an hour early (autumn, then slept again).
   It now wakes at the time on the clock.
+- **Fixed:** an MQTT broker that accepts the connection and then stops
+  answering could slow every render by many seconds. Values now go to Home
+  Assistant in the background, so pages are drawn on time whatever the broker
+  does.
 - **Removed:** the previous editor (`?classic=1`). It predates several
   screens; an old bookmark to it now opens the editor.
 

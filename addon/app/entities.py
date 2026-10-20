@@ -371,13 +371,10 @@ def retired_sensors_in_use(spec: dict) -> set[str]:
 
 
 async def sync_entities():
-    """Mirror the add-on's values into Home Assistant (no-op without a broker)."""
-    if runtime.PUBLISHER is None:
-        return
-    try:
-        await runtime.PUBLISHER.sync()
-    except Exception as exc:
-        print(f"mqtt sync failed: {health.describe(exc)}", flush=True)
+    """Mirror the add-on's values into Home Assistant (no-op without a broker). In the
+    background: a render never waits on the broker."""
+    if runtime.PUBLISHER is not None:
+        runtime.PUBLISHER.request_sync()
 
 
 async def publish_mqtt_discovery(session, frames):
