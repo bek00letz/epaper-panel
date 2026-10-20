@@ -22,8 +22,8 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Work | Where | State |
 |---|---|---|
-| 0.13 add-on and editor: two timers, audit #9, classic editor out, editor Wi-Fi checks (session "timers-addon") | branch `timers-addon`, worktree `~/Documents/HA/epaper-worktrees/timers-addon` | Proposed 20 Oct, waiting for the user to start it |
-| 0.13 firmware: every size builds, sleep while the add-on is down, blank Wi-Fi, audit #14, no flash after a wake (session "firmware-013") | branch `firmware-013`, worktree `~/Documents/HA/epaper-worktrees/firmware-013` | Proposed 20 Oct, waiting for the user to start it |
+| 0.13 add-on and editor: two timers, audit #9, classic editor out, editor Wi-Fi checks (session "timers-addon") | branch `timers-addon`, worktree `~/Documents/HA/epaper-worktrees/timers-addon` | Started 20 Oct |
+| 0.13 firmware: every size builds, sleep while the add-on is down, blank Wi-Fi, audit #14, no flash after a wake (session "firmware-013") | branch `firmware-013`, worktree `~/Documents/HA/epaper-worktrees/firmware-013` | Started 20 Oct |
 
 break-it's 5 fixes are merged into local main (not pushed) and ship with
 0.13.0. Its findings: `break-it-0.12.0.md` in the coordinator's notes.
@@ -35,8 +35,9 @@ break-it's 5 fixes are merged into local main (not pushed) and ship with
    found 20 Oct). 4.2": wrong model name. 2.9", 7.5", 10.2": no `spi:` block,
    and a full-refresh call only the CrowPanel driver has. 10.2": no ESPHome
    driver at all. Needs a test that checks every size, and hardware answers.
-   Decided 20 Oct: fix the sizes that can be made to compile (marked untried
-   on hardware), hide the 10.2" until a driver exists.
+   Decided 20 Oct: offer the 5.79", 4.2" and 2.9" (the last two "builds, not
+   tried"); hide the 7.5" and 10.2", which Elecrow doesn't make. Hidden sizes
+   still render for a screen already set to one.
 2. **Low Power Mode stops sleeping while the add-on is down.** Any answer
    without the sleep header (a 502 during a restart) keeps the panel
    connected until the add-on is back. Firmware fix: only a 200 or 304
@@ -102,6 +103,8 @@ The editor was checked by eye in Home Assistant on 19 Oct.
   change after a wake is a partial refresh, a full one every 8th change and
   a fast full one at intervals of 30 minutes or more. Needs the real 5.79" to
   confirm and measure. The always-on panel's ghost clearing stays as it is.
+  Done with small hooks on the pinned ESPBoards display driver: it has no
+  license, so no copy or fork.
 - Only alerts, quiet hours and people wake a panel early.
 - **Alerts show even over a panel put to sleep by hand** (the user's call, 0.10.1); no extra note in the editor (20 Oct).
 - **A Home Assistant restart blanks values on purpose** (audit #4): blank

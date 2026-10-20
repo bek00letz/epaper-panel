@@ -37,7 +37,7 @@ account. That's the position to grow from.
 | Item | You get | Size | Firmware | Depends on |
 |---|---|---|---|---|
 | break-it's fixes (#1, #2, #6, #7, #8) | Low Power Mode sleeps after a press and through Home Assistant's address; tighter wrong-key slowdown | done | no | merging the `break-it` branch |
-| Every offered size builds (break-it #3) | The 4.2", 2.9" and 7.5" get firmware that compiles, marked "builds, not tried". A size that still can't build (likely the 10.2") is hidden until someone has one. A test builds every size the editor offers | medium | yes | which 4.2" controller ships, and the other boards' SPI pins, from Elecrow's demo source |
+| Every offered size builds (break-it #3) | The 4.2" and 2.9" get firmware that compiles, marked "builds, not tried". The 7.5" and 10.2" are hidden: Elecrow doesn't make them. A test builds every size the editor offers | medium | yes | which 4.2" controller ships, and the other boards' SPI pins, from Elecrow's demo source |
 | Low Power Mode keeps sleeping when the add-on is down (break-it #4) | An update or restart no longer drains a panel away from home; only a 200 or 304 without the sleep header means "stay connected" | small | yes | – |
 | No firmware ESPHome refuses (break-it #5) | No network plus its own Wi-Fi gives a setup-only Wi-Fi; no network and no own Wi-Fi is caught in the editor, as are short Wi-Fi passwords | small | yes (generated YAML) | – |
 | break-it's smaller items (#9, #10) | The panel's own refresh timer is off in Low Power Mode; the right wake time on the night the clocks change; a stalled MQTT broker can't hold up a render; a note on going back to 0.11 with a TRMNL saved | small | yes (the timer) | – |
