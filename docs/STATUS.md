@@ -11,6 +11,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Version | Date | What |
 |---|---|---|
+| 0.13.0 | 20 Oct | Update every and Rotate every replace Low Power Mode; no flash after a wake (untried); the 4.2" and 2.9" build, the 7.5" and 10.2" aren't offered; sleep survives the add-on being down; audits #9 and #14; the classic editor removed. Firmware change. |
 | 0.12.0 | 20 Oct | Low Power Mode for CrowPanels (untried on a real panel), TRMNL screens (untried on one), screens drawn ahead, footer and editor fixes, and the no-own-Wi-Fi compile fix. Firmware change. |
 | 0.11.0 | 20 Oct | Several screens, away from home, Wi-Fi setup from a phone, a footer that fits every size, group styles. Firmware change. |
 | 0.10.3 | 20 Oct | "Space evenly" spaces around the panel, not between left edges. |
@@ -20,59 +21,35 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 ## In flight
 
-| Work | Where | State |
-|---|---|---|
-| 0.13 add-on and editor: two timers, audit #9, classic editor out, editor Wi-Fi checks (session "timers-addon") | branch `timers-addon`, worktree `~/Documents/HA/epaper-worktrees/timers-addon` | Started 20 Oct |
-| 0.13 firmware: every size builds, sleep while the add-on is down, blank Wi-Fi, audit #14, no flash after a wake (session "firmware-013") | branch `firmware-013`, worktree `~/Documents/HA/epaper-worktrees/firmware-013` | Started 20 Oct |
-
-break-it's 5 fixes are merged into local main (not pushed) and ship with
-0.13.0. Its findings: `break-it-0.12.0.md` in the coordinator's notes.
-`low-power-mode` was merged in 0.12.0 and deleted.
+Nothing. The 0.13 branches (`break-it`, `timers-addon`, `firmware-013`,
+`merge-013`) are merged; their branches and worktrees are kept until the user
+OKs removing them. Findings and worker notes are in the coordinator's notes
+folder (`break-it-0.12.0.md`, `timers-addon.md`, `firmware-013.md`).
 
 ## Backlog, most important first
 
-1. **Firmware for every size but the 5.79" doesn't build** (since 16 Oct,
-   found 20 Oct). 4.2": wrong model name. 2.9", 7.5", 10.2": no `spi:` block,
-   and a full-refresh call only the CrowPanel driver has. 10.2": no ESPHome
-   driver at all. Needs a test that checks every size, and hardware answers.
-   Decided 20 Oct: offer the 5.79", 4.2" and 2.9" (the last two "builds, not
-   tried"); hide the 7.5" and 10.2", which Elecrow doesn't make. Hidden sizes
-   still render for a screen already set to one.
-2. **Low Power Mode stops sleeping while the add-on is down.** Any answer
-   without the sleep header (a 502 during a restart) keeps the panel
-   connected until the add-on is back. Firmware fix: only a 200 or 304
-   without it means "stay connected".
-3. **A blank Wi-Fi name makes firmware ESPHome refuses**, even with the
-   panel's own Wi-Fi on. Fix: write a setup-only Wi-Fi block then; with
-   neither, the editor says a network is needed. Also check Wi-Fi password
-   length.
-4. **Smaller, from the same check:** Waveshare sizes stay awake 6 s per wake
-   for nothing; around clock changes a sleeping screen wakes an hour off;
-   a stalled MQTT broker could slow every render; going back to 0.11.0 with a
-   TRMNL breaks its screen list (say so in the changelog).
-5. **Update every / Rotate every, and no flash after sleep** (decided 20 Oct,
-   see Decisions). Editor, add-on and firmware.
-6. **Sleeping on the real 5.79" panel:** sleep current with the display left
-   powered, buttons waking it, first-press delay, the partial refresh after
-   a wake.
-7. **The 5.79" away from home** (built in 0.11.0, never tried): fetching
+1. **0.13 on the real 5.79".** Always on first (nothing should change), then
+   sleeping: sleep current through the USB meter (an upper bound), the
+   change after a wake without a flash, a full refresh every 8th change,
+   buttons waking it, a power cut. Steps in `firmware-013.md`. Way back if it
+   misbehaves: `firmware_gen.KEEP_DISPLAY_ASLEEP = False` and a release.
+2. **The editor's new parts by eye:** the always-on or sleeps choice when
+   adding a screen, and Power in Settings › Screen. Tested, never seen.
+3. **The 5.79" away from home** (built in 0.11.0, never tried): fetching
    over HTTPS through the tunnel, and joining a second Wi-Fi network.
-8. **Audit #9, still open:** with no Reaching home set, a fresh Panel setup
-   takes its address from the browser. Opened through a tunnel, the panel is
-   told to fetch from the tunnel's name over plain HTTP. Fix: default to
-   Home Assistant's own home address and ignore the browser's.
-9. **Audit #14, still open:** the firmware doesn't check the footer
-   positions in a frame file against the screen. Memory-safe, but a forged
-   or broken file can freeze the panel for seconds. Fix: reject positions
-   outside the screen when reading the file; keep the fuzzer as a test.
-10. **Remove the classic editor** (`?classic=1`, decided 20 Oct): it predates
-   several screens. The way back is any tag up to v0.11.0.
+4. **Setup from the browser** (next month, large, firmware): a design pass
+   with the user first on how the panel keeps its Home Assistant actions and
+   entities without a per-panel key (ROADMAP, open question).
+5. **The rest of next month** (ROADMAP): the screen's words in Home
+   Assistant's language (which languages first is open), share a page, to-do
+   lists, a "how it went" report, TRMNL-compatible screens.
 
 **Waiting on hardware:** a TRMNL (pairing, pictures, HTTPS, battery); a
-second CrowPanel side by side; a battery reading on a CrowPanel (needs a
-resistor divider soldered on).
+second CrowPanel side by side; a 4.2" or 2.9" CrowPanel (they build, untried;
+the 4.2"'s UC8276 revision isn't supported); a battery reading on a CrowPanel
+(needs a resistor divider soldered on).
 
-The editor was checked by eye in Home Assistant on 19 Oct.
+The editor was checked by eye in Home Assistant on 19 Oct, before 0.13.
 
 ## Decisions
 
@@ -87,7 +64,7 @@ The editor was checked by eye in Home Assistant on 19 Oct.
 - **Only an answer from the add-on puts a panel to sleep.** One firmware for
   both modes.
 - **Two timers per screen, "Update every" and "Rotate every"** (20 Oct,
-  for 0.13). They replace the Low Power Mode switch, the wake interval
+  shipped in 0.13.0). They replace the Low Power Mode switch, the wake interval
   and the panel's own refresh interval. Update every 1 minute = always on
   (rotation in seconds, instant buttons, alerts at once). 2 minutes or more =
   it sleeps between updates, and longer is lower power. Asleep, Rotate every
@@ -98,7 +75,8 @@ The editor was checked by eye in Home Assistant on 19 Oct.
   Defaults: always on. New screens start at 1 minute and on upgrade a panel
   with Low Power Mode off goes to 1 minute; first-time users must see plainly
   that there's a choice to make (how: the user decides on a design).
-- **Sleeping panels avoid the full flash TRMNL's way** (20 Oct, for 0.13):
+- **Sleeping panels avoid the full flash TRMNL's way** (20 Oct, shipped in
+  0.13.0, untried):
   the display stays powered in its memory-keeping sleep, the first
   change after a wake is a partial refresh, a full one every 8th change and
   a fast full one at intervals of 30 minutes or more. Needs the real 5.79" to
