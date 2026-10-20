@@ -458,6 +458,8 @@ def _screen(dev: dict, everyone: list[dict]) -> dict:
         "timing": timing.describe(dev, kind.stays_on),
         "setup": kind.setup_flow, "info": kind.describe(dev),
         "entity_suffix": dev.get("entity_suffix") or "",
+        # The first panel's name in Home Assistant, which never follows a rename (panel_setup.ha_name).
+        "keeps_ha_name": devices.FIRST_PANEL_NAME if dev.get("install_token") else "",
         # Enough to offer "the same quiet hours as …" when adding a screen.
         "quiet": {k: (dev.get("quiet_hours") or {}).get(k) for k in ("enabled", "start", "end")},
     }
@@ -489,8 +491,9 @@ def _clean_name(raw, exclude_id=None) -> str:
     name = re.sub(r"\s+", " ", str(raw or "")).strip()[:60]
     if not name:
         raise web.HTTPBadRequest(text="Give the screen a name.")
-    if any(d.get("name", "").casefold() == name.casefold() and d["id"] != exclude_id for d in devices.all_devices()):
-        raise web.HTTPBadRequest(text=f"There's already a screen called {name}.")
+    taken = next((d for d in devices.all_devices() if d.get("name", "").casefold() == name.casefold() and d["id"] != exclude_id), None)
+    if taken:
+        raise web.HTTPBadRequest(text=f"There's already a screen called {taken['name']}.")
     return name
 
 

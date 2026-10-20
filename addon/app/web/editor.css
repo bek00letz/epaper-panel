@@ -148,6 +148,9 @@ kbd { font: 12px var(--font); background: var(--surface); border-radius: 5px; pa
 .screenbtn .ic { color: var(--fg-2); flex: none; }
 .screenbtn:hover { background: var(--fill-2); }
 .screenbtn:active { transform: scale(0.97); }
+/* Renaming: the same size and type as the button it replaces, so nothing moves. */
+.inp.screenname { width: min(220px, 40vw); min-height: 32px; margin-right: 4px; padding: 0 8px; font: 600 15px var(--font-display); letter-spacing: -0.01em; }
+@media (pointer: coarse) { .inp.screenname { min-height: 44px; } }
 .screenbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 @media (pointer: coarse) { .screenbtn { min-height: 44px; } }
 .mi .ml.two { display: flex; flex-direction: column; line-height: 1.25; padding: 3px 0; }

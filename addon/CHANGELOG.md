@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Rename a screen right in the toolbar.** Choose Rename in the screen menu,
+  or double-click its name, and type: Enter or clicking away keeps it, Esc
+  puts it back. Settings › Screen still has its Name, now with a line on
+  what a new name changes in Home Assistant.
 - **The editor says why the add-on refused something.** A name that's taken
   or missing said "The add-on couldn't read that"; it now says, for example,
   "There's already a screen called Kitchen."

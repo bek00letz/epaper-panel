@@ -177,6 +177,11 @@ class TestSeveralScreens(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(panel_setup.ha_name(devices.get(self.kitchen["id"])), "Kitchen wall",
                          "any other screen takes its name to Home Assistant at its next install")
 
+    async def test_the_editor_knows_which_name_home_assistant_keeps(self):
+        screens = {d["id"]: d for d in web._screens()["devices"]}
+        self.assertEqual(screens[self.first["id"]]["keeps_ha_name"], "E-paper panel")
+        self.assertEqual(screens[self.kitchen["id"]]["keeps_ha_name"], "")
+
     async def test_quiet_hours_are_per_screen(self):
         spec = sanitize_layouts(load_layouts(self.kitchen["id"]))
         spec["quiet_hours"] = {"enabled": True, "start": "13:00", "end": "15:00"}

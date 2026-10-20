@@ -127,7 +127,43 @@ class App {
   }
   openScreens(anchor) {
     const items = this.screens.map((d) => ({ label: d.name, sub: this.screenLine(d), checked: d.id === this.screen?.id, run: () => this.switchScreen(d.id) }));
-    menu(anchor, [...items, "sep", { label: "Add a screen…", icon: "plus", run: () => openAddScreen(this) }], { label: "Screens" });
+    menu(anchor, [...items, "sep", { label: "Rename…", run: () => this.startRename() }, { label: "Add a screen…", icon: "plus", run: () => openAddScreen(this) }], { label: "Screens" });
+  }
+  /* The name in the toolbar turns into a field where it stands (names are edited in
+     place). Enter or clicking away keeps it; Esc puts it back. Settings › Screen has it too. */
+  startRename() {
+    if (!this.screen) return;
+    this.renaming = true;
+    this.renderToolbar();
+  }
+  renameField(scr) {
+    if (this.renameInput?.isConnected && this.renameInput.dataset.id === scr.id) return this.renameInput;
+    const i = h("input", { class: "inp screenname", value: scr.name, maxlength: "60", autocomplete: "off", spellcheck: "false", "aria-label": `Rename ${scr.name}`, data: { id: scr.id } });
+    let done = false;
+    const back = () => { this.renameInput = null; this.renaming = false; this.renderToolbar(); this.el.tb.querySelector(".screenbtn")?.focus({ preventScroll: true }); };
+    const finish = async (keep) => {
+      if (done) return;
+      done = true;
+      const v = i.value.replace(/\s+/g, " ").trim();
+      if (!keep || !v || v === scr.name) { back(); return; }
+      i.disabled = true;
+      try {
+        this.applyScreens((await api(`api/devices/${encodeURIComponent(scr.id)}`, { method: "PATCH", body: { name: v } })).body);
+        this.say(`Renamed to ${v}.`);
+        back();
+      } catch (e) {
+        // Taken, say: keep what was typed so it can be fixed.
+        toast(e.message); done = false; i.disabled = false; i.focus(); i.select();
+      }
+    };
+    i.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); finish(true); }
+      else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish(false); }
+    });
+    i.addEventListener("blur", () => { if (!i.disabled) finish(true); });
+    requestAnimationFrame(() => { i.focus({ preventScroll: true }); i.select(); });
+    this.renameInput = i;
+    return i;
   }
 
   /* ---------- data ---------- */
@@ -217,9 +253,12 @@ class App {
     const sendLabel = doc.dirty ? "Send to panel. Some changes aren't on it yet" : "Send to panel";
     const sel = doc.sel.length;
     const scr = this.screen;
-    tb.replaceChildren(...[
-      scr ? h("button", { class: "screenbtn", "aria-haspopup": "menu", "aria-label": `Editing ${scr.name}. Switch screen or add one`, title: this.screenLine(scr),
-        onclick: (e) => this.openScreens(e.currentTarget) }, icon("panel", "sm"), h("span", { class: "sn", text: scr.name }), icon("down", "sm")) : null,
+    const items = [
+      scr && this.renaming ? this.renameField(scr) : null,
+      // A double-click on the name renames it; the first click has opened the menu, which closes.
+      scr && !this.renaming ? h("button", { class: "screenbtn", "aria-haspopup": "menu", "aria-label": `Editing ${scr.name}. Switch screen, rename it or add one`, title: this.screenLine(scr),
+        onclick: (e) => { if (e.detail === 2) { closeAll(); this.startRename(); } else if (e.detail < 2) this.openScreens(e.currentTarget); } },
+        icon("panel", "sm"), h("span", { class: "sn", text: scr.name }), icon("down", "sm")) : null,
       ib("undo", "Undo", `${modKey}Z`, () => doc.undo(), { disabled: !doc.canUndo }),
       ib("redo", "Redo", `⇧${modKey}Z`, () => doc.redo(), { disabled: !doc.canRedo }),
       h("span", { class: "tbsep", role: "separator" }),
@@ -235,7 +274,11 @@ class App {
       save,
       ib("gear", "Settings", null, () => openSettings(this)),
       h("button", { class: "btn primary send", "aria-label": sendLabel, title: `${sendLabel}  ${modKey}S`, disabled: this.sending, onclick: () => this.send() },
-        doc.dirty ? h("span", { class: "dot", "aria-hidden": "true" }) : null, icon("send", "sm show-narrow"), h("span", { class: "hide-narrow", text: this.sending ? "Sending…" : "Send to panel" }))].filter(Boolean));
+        doc.dirty ? h("span", { class: "dot", "aria-hidden": "true" }) : null, icon("send", "sm show-narrow"), h("span", { class: "hide-narrow", text: this.sending ? "Sending…" : "Send to panel" }))].filter(Boolean);
+    // While a name is being typed, the toolbar redraws around the field, so it keeps its focus and text.
+    const field = this.renaming && this.renameInput?.isConnected && items[0] === this.renameInput ? this.renameInput : null;
+    if (field) { [...tb.children].forEach((c) => { if (c !== field) c.remove(); }); tb.append(...items.slice(1)); }
+    else tb.replaceChildren(...items);
   }
 
   renderBar() {

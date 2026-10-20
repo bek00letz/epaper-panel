@@ -88,5 +88,34 @@ class TestErrorsSayWhy(unittest.TestCase):
         self.assertIn("!/^\\d{3}: /.test(", api, "aiohttp's own '400: Bad Request' isn't a reason")
 
 
+
+class TestRenaming(unittest.TestCase):
+    def setUp(self):
+        self.main = js("main.js")
+
+    def test_the_screen_menu_renames_in_place(self):
+        self.assertIn('{ label: "Rename…", run: () => this.startRename() }', self.main)
+        self.assertIn("scr && this.renaming ? this.renameField(scr) : null", self.main)
+
+    def test_a_double_click_on_the_name_renames_it(self):
+        self.assertIn("if (e.detail === 2) { closeAll(); this.startRename(); }", self.main)
+
+    def test_enter_and_clicking_away_keep_it_and_esc_puts_it_back(self):
+        field = self.main[self.main.index("  renameField(scr) {"):self.main.index("  /* ---------- data")]
+        self.assertIn('if (e.key === "Enter") { e.preventDefault(); finish(true); }', field)
+        self.assertIn('else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish(false); }', field)
+        self.assertIn('i.addEventListener("blur", () => { if (!i.disabled) finish(true); });', field)
+
+    def test_a_redraw_while_typing_keeps_the_field(self):
+        self.assertIn("if (field) { [...tb.children].forEach((c) => { if (c !== field) c.remove(); }); tb.append(...items.slice(1)); }", self.main)
+
+    def test_the_field_is_the_buttons_size(self):
+        self.assertIn("min-height: 32px", rule(".inp.screenname"))
+        self.assertIn("font: 600 15px var(--font-display)", rule(".inp.screenname"))
+
+    def test_settings_says_what_a_new_name_changes(self):
+        self.assertIn("Home Assistant keeps calling it ${scr.keeps_ha_name}", js("sheets.js"))
+
+
 if __name__ == "__main__":
     unittest.main()
