@@ -21,9 +21,8 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 ## In flight
 
-Nothing. The 0.13 branches (`break-it`, `timers-addon`, `firmware-013`,
-`merge-013`) are merged; their branches and worktrees are kept until the user
-OKs removing them. Findings and worker notes are in the coordinator's notes
+Nothing. The 0.13 branches were merged and removed (user's OK, 20 Oct).
+Findings and worker notes are in the coordinator's notes
 folder (`break-it-0.12.0.md`, `timers-addon.md`, `firmware-013.md`).
 
 ## Backlog, most important first
