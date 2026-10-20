@@ -50,6 +50,9 @@ DISPLAYS = {
         "mm_h": 29.1,
         "margin": 16,
         "esphome_model": "2.90inv2-r2",
+        # Its display memory is upright (128 x 296): mounted at 0°, a page is
+        # turned a quarter (270°, as in Elecrow's 2.9" demo) into the panel.
+        "panel_turns": 3,
         "esphome_component": "waveshare_epaper",
     },
     "crowpanel_750": {
@@ -286,9 +289,21 @@ def to_1bit(img):
     return img.convert("1", dither=Image.Dither.NONE)
 
 
+def panel_turns(display=None):
+    """Quarter turns from a page at 0° to the panel's own memory: 0, except for a
+    panel whose memory runs the other way round from how it's mounted."""
+    return int(get_display(display).get("panel_turns", 0)) % 4
+
+
+def panel_dims(display=None):
+    """(width, height) of the panel's own memory, which the frame file carries."""
+    disp = get_display(display)
+    return (disp["h"], disp["w"]) if panel_turns(display) % 2 else (disp["w"], disp["h"])
+
+
 def orient_for_panel(img, orientation=0, display=None):
     """Rotate a rendered logical page into the physical panel buffer."""
-    deg = int(orientation or 0) % 360
+    deg = (int(orientation or 0) + 90 * panel_turns(display)) % 360
     if deg == 180:
         return img.transpose(Image.Transpose.ROTATE_180)
     if deg == 90:

@@ -84,6 +84,22 @@ class TestVersionCheck(EditorClient):
         self.assertEqual(r.status, 200, "no size: it keeps its own")
         self.assertEqual(layouts_store.load_layouts()["display"], "crowpanel_579")
 
+    async def test_a_size_elecrow_doesnt_make_isnt_offered(self):
+        # The 7.5" and 10.2" CrowPanels don't exist (Elecrow makes 1.54" to 5.79"): a new
+        # screen can't be one. A screen already set to one keeps sending and rendering.
+        from kinds import KINDS
+        self.assertEqual(KINDS["crowpanel"].displays(), ["crowpanel_579", "crowpanel_420", "crowpanel_290"])
+        for hidden in ("crowpanel_750", "crowpanel_102"):
+            r = await self.ed.post("/api/devices", json={"kind": "crowpanel", "name": "Hall", "display": hidden})
+            self.assertEqual(r.status, 400, hidden)
+            self.assertIn("CrowPanel sizes", await r.text())
+        spec, tag = await self.spec_and_tag()
+        spec["display"] = "crowpanel_750"
+        r = await self.ed.put("/api/layouts", json=spec, headers={"If-Match": tag})
+        self.assertEqual(r.status, 200, "a screen already on a hidden size isn't stranded")
+        await frames.refresh_frames(None)
+        self.assertIsNone(support.first_frames().error, "and it still draws")
+
     async def test_a_body_that_isnt_json_is_the_senders_mistake(self):
         for method, path in (("put", "/api/layouts"), ("put", "/api/draft"), ("post", "/api/panel-setup"),
                              ("post", "/api/preview"), ("put", "/api/sources"), ("post", "/api/sources/test"),

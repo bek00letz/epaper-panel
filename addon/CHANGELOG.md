@@ -42,8 +42,11 @@
 
 - **Fixed (firmware):** the firmware for the 4.2" and 2.9" CrowPanels
   didn't build. Both build now, with the pins and controllers from Elecrow's
-  own demo code; neither has been tried on a real panel yet. The 7.5" and
-  10.2" are no longer offered: Elecrow doesn't make them.
+  own demo code, and the 2.9" gets its pages the right way round for its
+  upright display. Neither has been tried on a real panel yet.
+- **Changed:** the sizes offered for a new CrowPanel are the 5.79", 4.2" and
+  2.9". The 7.5" and 10.2" are no longer offered, because Elecrow doesn't
+  make them; a screen already set to one keeps working.
 
 - **New (firmware), untried on a real panel:** in Low Power Mode the screen
   no longer has to flash after every wake. The display stays powered while

@@ -30,22 +30,22 @@ DISPLAY = "crowpanel_579"
 CLOCK = "12:34"
 
 
-def pipeline(logical: Image.Image, deg: int) -> Image.Image:
+def pipeline(logical: Image.Image, deg: int, display: str = DISPLAY) -> Image.Image:
     """Exactly what build_frames + encode_epf do to a page before packing."""
-    phys = T.orient_for_panel(T.to_1bit(logical), deg, display=DISPLAY)
-    if DISPLAY in epf.MIRRORED_MODELS:
+    phys = T.orient_for_panel(T.to_1bit(logical), deg, display=display)
+    if display in epf.MIRRORED_MODELS:
         phys = phys.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
     return phys
 
 
-def physical_of(points, deg):
+def physical_of(points, deg, display=DISPLAY):
     """Map logical points through the real pipeline, one Pillow image per point."""
-    cw, ch = T.canvas_dims(deg, display=DISPLAY)
+    cw, ch = T.canvas_dims(deg, display=display)
     out = []
     for x, y in points:
         img = Image.new("L", (cw, ch), 255)
         img.putpixel((x, y), 0)
-        phys = pipeline(img, deg)
+        phys = pipeline(img, deg, display)
         black = [(i % phys.width, i // phys.width) for i, v in enumerate(phys.convert("L").tobytes()) if v == 0]
         assert len(black) == 1, (deg, x, y, black)
         out.append(black[0])
@@ -87,6 +87,23 @@ class TestGeometry(unittest.TestCase):
             self.assertEqual(img.getpixel((fg["cat_x0"], mid)), 0, f"{deg}: left edge of the pill")
             self.assertEqual(img.getpixel((fg["cat_x1"], mid)), 0, f"{deg}: right edge of the pill")
             self.assertEqual(img.getpixel((fg["cat_x0"] + 2, fg["pill_y0"] - 2)), 255, f"{deg}: above the pill")
+
+    def test_an_upright_panel_gets_its_pages_turned(self):
+        # The 2.9"'s memory is upright (128 x 296; ESPHome's driver and Elecrow's demo):
+        # at 0° a page is turned 270° into it, and the overlays follow.
+        self.assertEqual(T.panel_dims("crowpanel_290"), (128, 296))
+        self.assertEqual(T.panel_dims(DISPLAY), (792, 272))
+        for deg in ORIENTATIONS:
+            cw, ch = T.canvas_dims(deg, display="crowpanel_290")
+            geo = panel_geometry(T.footer_plan(clock=CLOCK, orientation=deg, display="crowpanel_290"), deg,
+                                 "crowpanel_290")
+            self.assertEqual(pipeline(Image.new("L", (cw, ch), 255), deg, "crowpanel_290").size, (128, 296), deg)
+            pts = [(0, 0), (cw - 1, 0), (0, ch - 1), (cw - 1, ch - 1), (cw // 3, ch // 5)]
+            self.assertEqual([epf.to_physical(geo, x, y) for x, y in pts], physical_of(pts, deg, "crowpanel_290"),
+                             deg)
+        # Elecrow's landscape (USE_HORIZONTIAL 2): memory x = y, memory y = 295 - x.
+        geo = panel_geometry(T.footer_plan(clock=CLOCK, orientation=0, display="crowpanel_290"), 0, "crowpanel_290")
+        self.assertEqual(epf.to_physical(geo, 10, 3), (3, 285))
 
     def test_geometry_roundtrips_through_the_file(self):
         img, fg = footer_page(90)
@@ -228,6 +245,14 @@ class TestFirmwareCore(unittest.TestCase):
                 phys = pipeline(mask, deg)
                 (tmp / f"orient{q}.pill").write_text("".join(
                     f"{i % phys.width} {i // phys.width}\n" for i, v in enumerate(phys.convert("L").tobytes()) if v == 0))
+
+            plan = T.footer_plan(clock=CLOCK, pages=[("solar", 1)], orientation=0, display="crowpanel_290")
+            page, _ = T.new_canvas(0, display="crowpanel_290")
+            pw, ph = T.panel_dims("crowpanel_290")
+            (tmp / "upright.epf").write_bytes(epf.encode_epf(
+                [pipeline(page, 0, "crowpanel_290")], [1], [0], [1], [plan["pages"][0]["w"]], [2],
+                display_model="crowpanel_290", width=pw, height=ph,
+                geometry=panel_geometry(plan, 0, "crowpanel_290")))
 
             (tmp / "legacy180.epf").write_bytes(epf.encode_epf(
                 blank(1), [1], [0], [1], [110], [2], display_model=DISPLAY, orientation_180=True))

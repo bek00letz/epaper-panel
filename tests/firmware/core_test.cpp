@@ -106,6 +106,19 @@ static void fix_crc(std::vector<uint8_t> &b) {
   for (int i = 0; i < 4; i++) b[b.size() - 4 + i] = (uint8_t) (crc >> (24 - 8 * i));
 }
 
+// The 2.9"'s memory is upright (128 x 296): its frame file is, and its footer is
+// checked against the page as mounted (296 x 128).
+static void test_upright_panel(const std::string &dir) {
+  auto buf = read_file(dir + "/upright.epf");
+  epf::Stream s;
+  auto r = epf::parse_stream(buf.data(), buf.size(), 128, 296, s);
+  CHECK(r == epf::FetchResult::OK, "the 2.9\"'s frame file loads on its upright display: %s", epf::describe(r));
+  CHECK(s.geometry.quarter_turns == 3 && s.geometry.logical_w == 296 && s.geometry.logical_h == 128,
+        "turned 270 degrees, the page as mounted");
+  CHECK(epf::parse_stream(buf.data(), buf.size(), 296, 128, s) == epf::FetchResult::ERROR_WRONG_PANEL,
+        "a landscape display buffer refuses it");
+}
+
 // Footer positions off the screen are refused when the file is read (audit #14).
 // Offsets: the geometry block starts at byte 44, the first category record at 64.
 static void test_footer_inside_the_screen(const std::string &dir) {
@@ -594,6 +607,7 @@ int main(int argc, char **argv) {
   test_streams_and_mapping(argv[1]);
   test_rejects_bad_files(argv[1]);
   test_footer_inside_the_screen(argv[1]);
+  test_upright_panel(argv[1]);
   test_fuzz_parser(argv[1]);
   test_controller(argv[1]);
   test_waveform();
