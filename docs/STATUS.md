@@ -32,6 +32,9 @@ folder (`break-it-0.12.0.md`, `timers-addon.md`, `firmware-013.md`).
    change after a wake without a flash, a full refresh every 8th change,
    buttons waking it, a power cut. Steps in `firmware-013.md`. Way back if it
    misbehaves: `firmware_gen.KEEP_DISPLAY_ASLEEP = False` and a release.
+   First observation (20 Oct): always on, through Home Assistant's address,
+   on an Anker power bank for 5+ hours with no visible drop (its time-left
+   readout isn't reliable at this draw).
 2. **The editor's new parts by eye:** the always-on or sleeps choice when
    adding a screen, and Power in Settings › Screen. Tested, never seen.
 3. **The 5.79" away from home** (built in 0.11.0, never tried): fetching
