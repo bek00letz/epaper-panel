@@ -219,7 +219,7 @@ class App {
     const scr = this.screen;
     tb.replaceChildren(...[
       scr ? h("button", { class: "screenbtn", "aria-haspopup": "menu", "aria-label": `Editing ${scr.name}. Switch screen or add one`, title: this.screenLine(scr),
-        onclick: (e) => this.openScreens(e.currentTarget) }, h("span", { class: "sn", text: scr.name }), icon("down", "sm")) : null,
+        onclick: (e) => this.openScreens(e.currentTarget) }, icon("panel", "sm"), h("span", { class: "sn", text: scr.name }), icon("down", "sm")) : null,
       ib("undo", "Undo", `${modKey}Z`, () => doc.undo(), { disabled: !doc.canUndo }),
       ib("redo", "Redo", `⇧${modKey}Z`, () => doc.redo(), { disabled: !doc.canRedo }),
       h("span", { class: "tbsep", role: "separator" }),

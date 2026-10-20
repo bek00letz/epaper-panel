@@ -62,5 +62,19 @@ class TestAddAScreen(unittest.TestCase):
         self.assertIn("max-height: calc(100dvh - 48px)", rule(".sheet"))
 
 
+
+class TestFindingAddAScreen(unittest.TestCase):
+    def test_the_screen_name_looks_like_a_button(self):
+        # It read as a title, so nobody looked in it for Add a screen.
+        self.assertIn("background: var(--fill)", rule(".screenbtn"))
+        self.assertIn('icon("panel", "sm"), h("span", { class: "sn"', js("main.js"))
+
+    def test_settings_offers_it_next_to_remove(self):
+        src = js("sheets.js")
+        group = src[src.index("function removeGroup"):src.index("async function panelPane")]
+        self.assertLess(group.index('"Add another screen"'), group.index('"Remove this screen"'))
+        self.assertIn("openAddScreen(app)", group)
+
+
 if __name__ == "__main__":
     unittest.main()

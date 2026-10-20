@@ -464,9 +464,11 @@ function sharedGroup(app, pane, scr, show) {
     } }, "Stop sharing"))));
 }
 
+// Adding one sits with removing one: where people look for their screens in Settings.
 function removeGroup(app, pane, scr) {
   const doc = app.doc, only = app.screens.length < 2;
-  pane.append(group(grow("Remove this screen", only ? "It's the only one. Add another first." : "Its key stops working. Undo puts it back.",
+  pane.append(group(grow("Add another screen", "New, a copy of these pages, or the same ones",
+    h("button", { class: "btn tinted", onclick: () => openAddScreen(app) }, "Add…")), grow("Remove this screen", only ? "It's the only one. Add another first." : "Its key stops working. Undo puts it back.",
     h("button", { class: "btn tinted danger", disabled: only, onclick: async () => {
       const gone = scr;
       try {

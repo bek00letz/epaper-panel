@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Add a screen is easier to find.** The screen's name in the toolbar now
+  looks like the button it is, with a screen in front, and Settings ›
+  Screen has an Add another screen row next to Remove.
 - **Adding a screen asks about power before pages.** Always on or Sleeps
   between updates now comes right after the model, so it's never below the
   fold, and the sheet uses the window's height. Sleeps between updates has

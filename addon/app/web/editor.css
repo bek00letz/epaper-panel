@@ -139,11 +139,15 @@ kbd { font: 12px var(--font); background: var(--surface); border-radius: 5px; pa
 .savestate.bad { color: var(--red); }
 .send { min-width: 44px; }
 /* The screen being edited: the toolbar's title, and the way to the others. */
-.screenbtn { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; max-width: 220px; padding: 0 8px; margin-right: 4px;
-  border: 0; border-radius: var(--r-inner); background: none; color: var(--fg); font: 600 15px var(--font-display); letter-spacing: -0.01em; cursor: default; }
+/* Filled like a pop-up button, with a screen in front, so it reads as the way to the
+   other screens (and to adding one), not as a heading. */
+.screenbtn { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; max-width: 240px; padding: 0 8px; margin-right: 4px;
+  border: 0; border-radius: var(--r-inner); background: var(--fill); color: var(--fg); font: 600 15px var(--font-display); letter-spacing: -0.01em; cursor: default;
+  transition: background-color var(--t-fast), transform var(--t-fast); }
 .screenbtn .sn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .screenbtn .ic { color: var(--fg-2); flex: none; }
-.screenbtn:hover { background: var(--fill); }
+.screenbtn:hover { background: var(--fill-2); }
+.screenbtn:active { transform: scale(0.97); }
 .screenbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 @media (pointer: coarse) { .screenbtn { min-height: 44px; } }
 .mi .ml.two { display: flex; flex-direction: column; line-height: 1.25; padding: 3px 0; }
