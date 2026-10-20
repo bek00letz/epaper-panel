@@ -371,7 +371,7 @@ class TestFirmwareYaml(unittest.TestCase):
                       text, "all five buttons wake it, whichever way it's mounted")
         self.assertIn("reboot_timeout: 0s", text.split("\napi:\n", 1)[1].split("\n\n", 1)[0],
                       "Home Assistant being away never restarts it")
-        self.assertIn("epf::power_begin();", text, "the first download says why it's awake")
+        self.assertIn("epf::power_begin(7);", text, "the first download says why it's awake")
         self.assertIn("epf::power_note_download(millis(), result);", text)
         self.assertIn("on_begin:\n      - lambda: 'epf::PowerPolicy::instance().hold(true);'", text, "never asleep mid-update")
         self.assertEqual(text.count("epf::PowerPolicy::instance().note_press(millis());"), 5, "every button counts as a press")
@@ -460,6 +460,29 @@ class TestFirmwareYaml(unittest.TestCase):
             if T.get_display(display)["esphome_component"] == "waveshare_epaper":
                 self.assertIn("\nspi:\n  clk_pin: 12\n  mosi_pin: 11\n", text, "Elecrow's demo: SCK 12, MOSI 11")
                 self.assertNotIn("force_full_update", text, display)
+
+    def test_a_sleeping_panel_keeps_its_picture(self):
+        # TRMNL's way (0.13): the display stays powered through deep sleep, and its
+        # driver is told it still holds the picture, so the first change is partial.
+        for display in offered_sizes():
+            disp = T.get_display(display)
+            text = local_build(display)
+            boot = text.split("  on_boot:\n", 1)[1].split("\n\n", 1)[0]
+            self.assertIn("epf::power_begin(7);", boot, display)
+            self.assertIn(f"if (epf::PowerPolicy::instance().picture_kept()) {firmware_gen.keep_picture(disp)}", boot)
+            self.assertNotEqual(firmware_gen.keep_picture(disp), "{}", display)
+            self.assertIn("switch:\n  - platform: gpio\n    pin: 7\n", text, "the pin it holds is the display's power")
+
+    def test_the_way_back_switches_the_display_off_in_deep_sleep(self):
+        # Until it's proven on a real panel: KEEP_DISPLAY_ASLEEP = False is 0.12's way.
+        keep = firmware_gen.KEEP_DISPLAY_ASLEEP
+        try:
+            firmware_gen.KEEP_DISPLAY_ASLEEP = False
+            text = local_build(DISPLAY)
+        finally:
+            firmware_gen.KEEP_DISPLAY_ASLEEP = keep
+        self.assertIn("epf::power_begin(-1);", text)
+        self.assertIn("if (epf::PowerPolicy::instance().picture_kept()) {}", text)
 
     def test_mounting_upside_down_swaps_the_buttons(self):
         self.assertEqual(firmware_gen.button_pins(180)["NEXT_PIN"], 6)

@@ -242,6 +242,29 @@ static void test_waveform() {
   CHECK(fulls == 3, "classic: every 10th refresh is full, scrolling or not (%d)", fulls);
   CHECK(!c.idle_clear_due(999), "classic has no idle fallback");
 
+  // Asleep between updates, TRMNL's way: partial after a wake, every 8th change full,
+  // counted across wakes (in RTC memory).
+  epf::WaveformPolicy s;
+  uint32_t changes = 0;
+  s.sleep_between(&changes, 15 * 60);
+  int full_at = -1;
+  for (int i = 0; i < 8; i++)
+    if (s.decide(false, false, true, 999)) { full_at = i; break; }
+  CHECK(full_at == 7 && changes == 0, "asleep: the 8th change is full (at %d)", full_at);
+  epf::WaveformPolicy after_wake;                     // a new start: only the RTC count is left
+  after_wake.sleep_between(&changes, 15 * 60);
+  for (int i = 0; i < 5; i++) after_wake.decide(false, false, true, 999);
+  CHECK(changes == 5, "counted across wakes (%u)", (unsigned) changes);
+  for (int i = 0; i < 20; i++)
+    CHECK(!after_wake.decide(false, true, false, 0), "asleep: a press is still never a full refresh (#%d)", i);
+  CHECK(after_wake.decide(false, false, true, 999) && changes == 0, "the next change of its own carries the full one");
+  CHECK(after_wake.decide(true, true, false, 0), "asleep: a forced clear is full");
+  after_wake.sleep_between(&changes, 30 * 60);
+  CHECK(after_wake.decide(false, false, true, 999), "30 min or more between checks: every change of its own is full");
+  CHECK(!after_wake.decide(false, true, false, 0), "...but a press stays partial");
+  after_wake.sleep_between(nullptr, 0);
+  CHECK(!after_wake.sleeps_between(), "back to always on");
+
   // Through the controller: quiet hours starting forces one full refresh.
   auto &pc = epf::PanelController::instance();
   pc.waveform().set_classic(false);
@@ -517,6 +540,33 @@ static void test_power() {
   p.on_answer(200, true, press, 0);
   CHECK(!epf::own_timer_fetch_due(panel, p, 300), "Low Power Mode: its own timer is off");
   panel.note_fetch(true);
+
+  // The picture kept through deep sleep (TRMNL's way), and which refresh policy applies.
+  epf::WaveformPolicy wf;
+  mem.interval_sec = 900;
+  p.begin(Wake::TIMER, mem, 900000);
+  p.before_sleep(1000, true);
+  p.begin(Wake::TIMER, mem, 900000);
+  CHECK(p.picture_kept() && mem.picture_kept == 0, "slept with the display powered: the picture is kept");
+  epf::choose_waveform(wf, p, mem);
+  CHECK(wf.sleeps_between(), "woke from Low Power Mode: the sleeping policy before any answer");
+  p.on_answer(200, true, timer, 0);
+  epf::choose_waveform(wf, p, mem);
+  CHECK(wf.sleeps_between(), "told to sleep again: still the sleeping policy");
+  p.before_sleep(2000, false);
+  p.begin(Wake::BUTTON, mem, 900000);
+  CHECK(!p.picture_kept(), "slept with the display switched off: nothing kept");
+  p.before_sleep(3000, true);
+  p.begin(Wake::BOOT, mem, 0);
+  CHECK(!p.picture_kept(), "a power cut or reset never trusts the display's memory");
+  epf::choose_waveform(wf, p, mem);
+  CHECK(!wf.sleeps_between(), "a fresh start is always on until told to sleep");
+  p.on_answer(200, true, timer, 0);
+  epf::choose_waveform(wf, p, mem);
+  CHECK(wf.sleeps_between(), "told to sleep: the sleeping policy");
+  p.on_answer(200, false, o, 0);
+  epf::choose_waveform(wf, p, mem);
+  CHECK(!wf.sleeps_between(), "Low Power Mode turned off: the always-on policy, exactly as before");
 
   // A power cut or a reset is a fresh start.
   p.begin(Wake::BOOT, mem, 0);

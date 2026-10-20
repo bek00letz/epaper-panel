@@ -422,10 +422,19 @@ measurements behind each decision.
   battery; it would need a resistor divider soldered on. (A TRMNL reports its
   own.)
 - **Low Power Mode hasn't been tried on a real panel yet.** It's built from
-  end to end, but how long a battery lasts, whether the buttons wake it
-  reliably, and whether the screen flashes on every check are still to be
-  measured. A panel installed before Low Power Mode existed stays connected
-  until you install it again; the editor says so.
+  end to end, but how long a battery lasts and whether the buttons wake it
+  reliably are still to be measured. A panel installed before Low Power Mode
+  existed stays connected until you install it again; the editor says so.
+- **No flash after a wake is untried too.** Since 0.13 a sleeping panel keeps
+  its display powered, in the display's own memory-keeping sleep, the way a
+  TRMNL does. A change after a wake is then a quick partial refresh; every
+  8th change, and every change when it checks only every 30 minutes or more,
+  is a full one that clears ghosting. Until it's confirmed on a real panel,
+  the sleep current with the display powered is unknown.
+- **Measuring through USB gives an upper bound.** A USB power meter on the
+  panel's USB port also counts the USB-to-serial chip, which stays powered,
+  and most meters can't read below about 1 mA. The battery's own draw is
+  lower; a reading on the battery itself is still to come.
 
 ## Development
 

@@ -45,6 +45,13 @@
   own demo code; neither has been tried on a real panel yet. The 7.5" and
   10.2" are no longer offered: Elecrow doesn't make them.
 
+- **New (firmware), untried on a real panel:** in Low Power Mode the screen
+  no longer has to flash after every wake. The display stays powered while
+  the panel sleeps, keeping its picture, so a change is a quick partial
+  refresh; every 8th change is a full one that clears ghosting, and so is
+  every change when the panel checks only every 30 minutes or more. A panel
+  that stays connected clears ghosting exactly as before.
+
 ## 0.12.0
 **Firmware change** (only needed for Low Power Mode, or if your panel has
 "Its own Wi-Fi when it's lost" switched off): install the panel again from

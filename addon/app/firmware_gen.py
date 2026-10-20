@@ -59,6 +59,35 @@ FULL_REFRESH = {
 }
 
 
+# The display's power rail, the same on every board (Elecrow's demos).
+DISPLAY_POWER_PIN = 7
+
+# Low Power Mode, TRMNL's way (0.13): the display stays powered through deep
+# sleep, its controller in the sleep that keeps its memory, so the first change
+# after a wake is a partial refresh. Untried on a real panel; False is the way
+# back to 0.12's behaviour (the display switched off in deep sleep, a full
+# refresh after every wake that changes the picture).
+KEEP_DISPLAY_ASLEEP = True
+
+# After such a sleep, how each driver is told it still holds the picture, so it
+# doesn't start with a full refresh (epf_client.h), by ESPHome model.
+KEEP_PICTURE = {
+    "5.79in": "epf::crowpanel_picture_kept(id(epd));",
+    "4.20in": "epf::crowpanel_picture_kept(id(epd));",
+    "2.90inv2-r2": "epf::waveshare_picture_kept(id(epd));",
+}
+
+
+def keep_display_pin(disp: dict) -> int:
+    """The pin the firmware holds on through deep sleep, or -1 to switch the display off."""
+    return DISPLAY_POWER_PIN if KEEP_DISPLAY_ASLEEP and disp["esphome_model"] in KEEP_PICTURE else -1
+
+
+def keep_picture(disp: dict) -> str:
+    """The C++ statement run at start-up when the display kept its picture through sleep."""
+    return KEEP_PICTURE.get(disp["esphome_model"], "{}") if keep_display_pin(disp) >= 0 else "{}"
+
+
 def full_refresh(disp: dict) -> str:
     """The C++ statement that makes the display's next refresh a full one. A driver
     not listed (only sizes the editor doesn't offer) is left to refresh as it does."""
@@ -160,7 +189,8 @@ def render(*, disp: dict, version: str, device_name: str, frames_url: str, api_k
         "VERSION": version or "dev", "DEVICE_NAME": device_name, "FRAMES_URL": frames_url,
         "COMPONENT_REF": component_ref(version), "DISPLAY_COMPONENT": component,
         "DISPLAY_BLOCK": block, "DISPLAY_SETTLED": display_settled(disp), "FULL_REFRESH": full_refresh(disp),
-        "API_KEY": api_key,
+        "DISPLAY_POWER_PIN": str(DISPLAY_POWER_PIN), "KEEP_DISPLAY_PIN": str(keep_display_pin(disp)),
+        "KEEP_PICTURE": keep_picture(disp), "API_KEY": api_key,
         "WIFI_BLOCK": wifi_block([(wifi_ssid, wifi_password), *more_networks], hotspot),
         "FRIENDLY_NAME": friendly_name,
         "INTERVAL_MIN": str(max(1, min(60, int(interval_min)))),

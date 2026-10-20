@@ -23,7 +23,9 @@ esphome:
     priority: -100
     then:
       - lambda: |-
-          epf::power_begin();                   // why it's awake, for the first download
+          epf::power_begin(7);  // why it's awake, for the first download
+          // Slept with the display powered: it still shows its picture, so no full refresh first.
+          if (epf::PowerPolicy::instance().picture_kept()) epf::crowpanel_picture_kept(id(epd));
           auto &w = epf::PanelController::instance().waveform();
           w.set_threshold((int) id(ghost_clear_after).state);
           auto mode = id(ghost_mode).active_index();
@@ -149,7 +151,8 @@ wifi:
   password: !secret wifi_password
   fast_connect: true
 
-# GPIO7 powers the display; nothing renders until it is high.
+# GPIO7 powers the display; nothing renders until it is high. In Low
+# Power Mode it stays on through deep sleep (epf::power_prepare_sleep).
 switch:
   - platform: gpio
     pin: 7
@@ -420,6 +423,7 @@ script:
   # Low Power Mode: everything on screen is done, so sleep until the next
   # check or a press of any of the five buttons (GPIO 1, 2, 4, 5, 6, all
   # RTC-capable on the ESP32-S3; active-low, so any one pressed wakes it).
+  # The display sleeps too, powered, keeping its picture for the next wake.
   - id: go_to_sleep
     mode: single
     then:
