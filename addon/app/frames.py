@@ -425,10 +425,13 @@ async def design_state(session, design_id: str, spec: dict) -> DesignState:
     return DesignState(alert, live, plans)
 
 
-async def draw_category(plan: dict, sub_count: int, cat_label: str, *, clock: str, orient: int,
+async def draw_category(plan: dict, sub_count: int, cat_label: str, *, page_def: dict, clock: str, orient: int,
                         display: str) -> list:
-    """Every item of one page, drawn at a display's size and turned for its mounting."""
-    page_def, page_vals, elements = plan["page_def"], plan["vals"], plan["elements"]
+    """Every item of one page, drawn at a display's size and turned for its mounting.
+
+    `page_def` is the page as placed on this screen (devices.view); its
+    elements are the design's, in the same order as the plan's values."""
+    page_vals, elements = plan["vals"], page_def.get("elements", [])
     sub_type, feed_items, feed_entity = plan["sub_type"], plan["feed_items"], plan["feed_entity"]
     cat_display_name = plan["name"].replace("_", " ").upper()
     page_imgs = []

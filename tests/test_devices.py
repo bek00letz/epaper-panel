@@ -41,6 +41,14 @@ LEGACY_SETUP = {"device_name": "hallway-panel", "display": "crowpanel_579", "ha_
                 "refresh_interval": "10min", "use_secrets": False}
 
 
+def without_ids(spec):
+    out = json.loads(json.dumps(spec))
+    for page in out.get("pages", {}).values():
+        for el in page.get("elements", []):
+            el.pop("id", None)
+    return out
+
+
 def fresh_data_dir() -> Path:
     config.DATA_DIR = Path(tempfile.mkdtemp())
     runtime.forget_devices_except([])
@@ -77,8 +85,9 @@ class TestMoveIn(unittest.TestCase):
     def test_the_panel_becomes_device_1_and_nothing_changes(self):
         before = self.write_legacy()
         view = load_layouts()
-        self.assertEqual(view, LEGACY_SPEC, "the editor sees exactly what layouts.json held")
-        self.assertEqual(layouts_etag(view), layouts_etag(LEGACY_SPEC), "so an open editor's version still matches")
+        self.assertEqual(without_ids(view), LEGACY_SPEC, "the editor sees what layouts.json held")
+        self.assertEqual([e["id"] for e in view["pages"]["solar"]["elements"]], ["e0"],
+                         "plus an ID per element, the same every time until saved")
         dev = devices.primary()
         self.assertEqual((dev["id"], dev["kind"], dev["design"]), ("1", "crowpanel", "1"))
         self.assertTrue(dev["install_token"], "its key stays the install's frame token")
@@ -101,7 +110,7 @@ class TestMoveIn(unittest.TestCase):
 
     def test_a_new_install_shows_the_shipped_pages_until_it_saves(self):
         shipped = json.loads(config.DEFAULTS_PATH.read_text())
-        self.assertEqual(load_layouts(), shipped)
+        self.assertEqual(without_ids(load_layouts()), shipped)
         self.assertFalse((self.dir / "designs" / "1.json").exists(),
                          "an unsaved design follows the shipped pages, as layouts.json did")
 
@@ -112,7 +121,8 @@ class TestMoveIn(unittest.TestCase):
         spec["quiet_hours"]["enabled"] = False
         save_layouts(spec)
         design = json.loads((self.dir / "designs" / "1.json").read_text())
-        self.assertEqual(set(design), {"rotation", "pages"})
+        self.assertEqual(set(design), {"rotation", "pages", "canvas"})
+        self.assertEqual(design["canvas"], "792x272", "the size the pages were made for")
         self.assertEqual(design["rotation"], ["cat"])
         self.assertFalse(devices.primary()["quiet_hours"]["enabled"])
         self.assertEqual(devices.primary()["orientation"], 180)

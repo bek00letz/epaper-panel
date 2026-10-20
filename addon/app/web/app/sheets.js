@@ -2,7 +2,7 @@
 // now, the whole strip, saving a preset, and the rare question of which
 // version to keep.
 
-import { h, icon, api, clone, pageTitle, slug, nowHM, modKey, prefs } from "./util.js";
+import { h, icon, api, clone, pageTitle, slug, nowHM, modKey, prefs, withDevice } from "./util.js";
 import { sheet, popover, field, input, number, select, seg, toggle, toggleRow, section, linkButton, toast, closeAll } from "./ui.js";
 import { DISPLAYS, isWidget } from "./elements.js";
 import { describe, parseShowIf, syncDynamicGridShowIf } from "./conditions.js";
@@ -144,12 +144,76 @@ export function openFullStrip(app) {
   sheet("Every page, as the panel has them", (node) => {
     const img = h("img", { class: "fullstrip", alt: "All the pages the panel is rotating through, stacked." });
     const meta = h("p", { class: "fnote" });
-    const load = () => { img.src = "api/strip.png?t=" + Date.now(); const p = app.status?.pages || []; meta.textContent = p.length ? `In order: ${p.map(pageTitle).join(", ")}.` : ""; };
+    const load = () => { img.src = withDevice("api/strip.png?t=" + Date.now()); const p = app.status?.pages || []; meta.textContent = p.length ? `In order: ${p.map(pageTitle).join(", ")}.` : ""; };
     node.append(h("div", { class: "sheet-body" }, h("div", { class: "stripbox" }, img), meta,
       app.doc.dirty ? h("p", { class: "fnote", text: "This is what's been sent. Your unsent changes aren't in it yet." }) : null),
       h("div", { class: "sheet-foot" }, h("button", { class: "btn tinted", onclick: load }, "Reload")));
     load();
   }, { cls: "wide" });
+}
+
+/* ---------- adding a screen ---------- */
+// Like setting up a phone: new, a copy of another screen's pages, or the same
+// pages as another screen. Then on to installing it.
+export function openAddScreen(app) {
+  const kinds = app.kinds.filter((k) => k.displays.length);
+  if (!kinds.length) { toast("This add-on doesn't know any kind of screen it can add."); return; }
+  const st = { kind: kinds[0], display: kinds[0].displays[0].id, orientation: 0, pages: "new", from: app.screen?.id || app.screens[0]?.id, quiet: true };
+  sheet("Add a screen", (node, close) => {
+    const body = h("div", { class: "sheet-body" });
+    const name = h("input", { class: "inp", placeholder: "Kitchen", "aria-label": "Name", maxlength: "60", autocomplete: "off" });
+    const err = h("p", { class: "fnote bad", role: "status", "aria-live": "polite" });
+    const add = h("button", { class: "btn primary", onclick: () => submit() }, "Add screen");
+    const source = () => app.screens.find((d) => d.id === st.from) || app.screens[0];
+    const pick = (opts, value, onChange, label) => select(opts, value, onChange, { "aria-label": label });
+
+    function choice(mode, title, sub, extra) {
+      const on = st.pages === mode;
+      const b = h("button", { class: "cmp choice", role: "radio", "aria-checked": String(on), onclick: (e) => { if (e.target.closest("select")) return; st.pages = mode; draw(); } },
+        h("span", { class: "ct", text: title }), h("span", { class: "cs", text: sub }), extra || null);
+      return b;
+    }
+    function draw() {
+      const screensOpts = app.screens.map((d) => [d.id, d.name]);
+      const fromSel = () => pick(screensOpts, st.from, (v) => { st.from = v; draw(); }, "Which screen");
+      const src = source();
+      const qh = st.pages === "new" ? (app.screen || src)?.quiet : src?.quiet;
+      body.replaceChildren(
+        group(grow("Name", null, name),
+          kinds.length > 1 ? grow("Kind", null, pick(kinds.map((k) => [k.id, k.name]), st.kind.id, (v) => { st.kind = kinds.find((k) => k.id === v); st.display = st.kind.displays[0].id; draw(); }, "Kind")) : null,
+          grow("Model", null, pick(st.kind.displays.map((d) => [d.id, `${d.name}, ${d.w} × ${d.h}`]), st.display, (v) => { st.display = v; }, "Model")),
+          grow("Mounted", null, pick([[0, "Landscape"], [180, "Landscape, upside down"], [90, "Portrait"], [270, "Portrait, flipped"]], st.orientation, (v) => { st.orientation = Number(v); }, "Mounted"))),
+        h("h4", { class: "gtitle", text: "Pages" }),
+        h("div", { class: "choices", role: "radiogroup", "aria-label": "Pages" },
+          choice("new", "Set up as new", "One starter page to show it's working. Add your own from there."),
+          choice("copy", "Copy from another screen", "Its pages, fitted to this one, then yours to change.", st.pages === "copy" ? fromSel() : null),
+          choice("same", "Same pages as another screen", "Edits show on both. Each screen keeps its own layout.", st.pages === "same" ? fromSel() : null)),
+        qh?.enabled ? group(grow(`Same quiet hours as ${st.pages === "new" ? (app.screen || src).name : src.name}`, `${qh.start} to ${qh.end}. Change them any time.`,
+          toggle(st.quiet, (v) => { st.quiet = v; }, "Same quiet hours"))) : null,
+        err);
+    }
+    async function submit() {
+      err.textContent = "";
+      if (!name.value.trim()) { err.textContent = "Give the screen a name."; name.focus(); return; }
+      const src = source();
+      const qsrc = st.pages === "new" ? (app.screen || src) : src;
+      add.disabled = true;
+      try {
+        const r = (await api("api/devices", { method: "POST", body: { kind: st.kind.id, name: name.value.trim(), display: st.display, orientation: st.orientation,
+          pages: st.pages, from: st.from, quiet_hours_from: st.quiet && qsrc?.quiet?.enabled ? qsrc.id : null } })).body;
+        close();
+        await app.doc.flush();
+        app.screens = r.devices; app.kinds = r.kinds;
+        await app.switchScreen(r.device.id);
+        app.applyScreens(r, r.device.id);
+        toast(`Added ${r.device.name}. Install it from here when it's in your hands.`);
+        openSettings(app, "install");
+      } catch (e) { err.textContent = e.message; add.disabled = false; }
+    }
+    name.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); });
+    draw();
+    node.append(body, h("div", { class: "sheet-foot" }, h("button", { class: "btn tinted", onclick: () => close() }, "Cancel"), add));
+  }, { focus: "input" });
 }
 
 /* ---------- which version to keep ---------- */
@@ -203,15 +267,17 @@ export function openSettings(app, sectionName = "panel") {
     const nav = h("nav", { class: "setnav", "aria-label": "Settings" });
     const pane = h("div", { class: "setpane" });
     const sections = {
-      panel: ["Panel", "panel", () => panelPane(app, pane, show)],
+      panel: ["Screen", "panel", () => panelPane(app, pane, show)],
       install: ["Install or update", "key", () => installPane(app, pane)],
       quiet: ["Quiet hours", "moon", () => quietPane(app, pane)],
+      reach: ["Reaching home", "globe", () => reachPane(app, pane)],
       sources: ["Data sources", "plug", () => sourcesPane(app, pane)],
       editor: ["Editor", "gear", () => editorPane(app, pane)],
     };
     function show(k) {
       nav.querySelectorAll("button").forEach((b) => b.setAttribute("aria-current", b.dataset.k === k ? "page" : "false"));
-      pane.replaceChildren(h("h3", { class: "panetitle", text: sections[k][0] }));
+      const perScreen = ["panel", "install", "quiet"].includes(k) && app.screen;
+      pane.replaceChildren(h("h3", { class: "panetitle", text: perScreen ? `${sections[k][0]} · ${app.screen.name}` : sections[k][0] }));
       sections[k][2]();
       prefs.set("settings_section", k);
     }
@@ -221,32 +287,74 @@ export function openSettings(app, sectionName = "panel") {
   }, { cls: "wide tall" });
 }
 
+function copyText(text, what) {
+  const done = () => toast(`Copied ${what}.`);
+  if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done, () => fallback());
+  else fallback();
+  function fallback() {
+    const t = h("textarea", { style: { position: "fixed", left: "-9999px" } }); t.value = text; document.body.append(t); t.select();
+    let ok = false; try { ok = document.execCommand("copy"); } catch (_) {}
+    t.remove();
+    if (ok) done(); else toast("Your browser didn't allow copying. Select the text and copy it yourself.");
+  }
+}
+
 function group(...rows) { return h("div", { class: "group" }, ...rows); }
 function grow(label, sub, ctl) { return h("div", { class: "gr" }, h("span", { class: "gl" }, label, sub ? h("small", { text: sub }) : null), ctl); }
 
-async function panelPane(app, pane, show) {
+/* A new size or mounting: the pages come back placed for it (that size's own
+   layout, or an automatic fit), as one undoable change that's sent like any other. */
+async function placeFor(app, display, orientation) {
   const doc = app.doc, spec = doc.spec;
+  try {
+    const r = (await api("api/arrange", { method: "POST", body: { spec, display, orientation: Number(orientation) } })).body;
+    spec.pages = r.pages; spec.display = display; spec.orientation = Number(orientation);
+    doc.commit();
+    return true;
+  } catch (e) { toast(`Couldn't change it: ${e.message}`); return false; }
+}
+
+async function panelPane(app, pane, show) {
+  const doc = app.doc, spec = doc.spec, scr = app.screen || {};
+  const kind = app.kinds.find((k) => k.id === scr.kind) || { displays: Object.values(DISPLAYS) };
   const conn = h("span", { class: "fnote", text: "Checking…" });
-  pane.append(group(grow("Connection", null, conn), grow("Install or update the panel", "Makes its ESPHome file and walks you through it", h("button", { class: "btn tinted", onclick: () => show("install") }, "Open"))));
+  const name = input(scr.name || "", async (v) => {
+    try {
+      const r = (await api(`api/devices/${encodeURIComponent(scr.id)}`, { method: "PATCH", body: { name: v } })).body;
+      app.applyScreens(r);
+    } catch (e) { toast(e.message); name.value = scr.name; }
+  }, { "aria-label": "Name", maxlength: "60" });
+  pane.append(group(grow("Name", null, name), grow("Connection", null, conn),
+    grow("Install or update", "Makes its ESPHome file and walks you through it", h("button", { class: "btn tinted", onclick: () => show("install") }, "Open"))));
   const reflowNote = h("p", { class: "fnote" });
   pane.append(h("h4", { class: "gtitle", text: "Display" }), group(
-    grow("Model", null, select(Object.values(DISPLAYS).map((d) => [d.id, `${d.name}, ${d.w} × ${d.h}`]), spec.display, async (v) => {
-      spec.display = v; doc.commit();
-      try { await api("api/panel-setup", { method: "POST", body: { display: v } }); } catch (e) { toast(`The panel's install file wasn't updated: ${e.message}`); }
-    })),
-    grow("Mounted", "Which way up the panel hangs", select([[0, "Landscape"], [180, "Landscape, upside down"], [90, "Portrait"], [270, "Portrait, flipped"]], spec.orientation || 0, (v) => {
-      const was = [90, 270].includes(Number(spec.orientation)); spec.orientation = Number(v); const now = [90, 270].includes(spec.orientation);
-      doc.commit();
+    grow("Model", null, select(kind.displays.map((d) => [d.id, `${d.name}, ${d.w} × ${d.h}`]), spec.display, (v) => placeFor(app, v, spec.orientation || 0))),
+    grow("Mounted", "Which way up it hangs", select([[0, "Landscape"], [180, "Landscape, upside down"], [90, "Portrait"], [270, "Portrait, flipped"]], spec.orientation || 0, async (v) => {
+      const was = [90, 270].includes(Number(spec.orientation)), now = [90, 270].includes(Number(v));
+      if (!(await placeFor(app, spec.display, v))) return;
       if (was !== now) toast(`The canvas is ${now ? "portrait" : "landscape"} now.`, { label: "Rearrange this page", run: () => { reflowPageElements(doc.page(), now, app.geometry().d); doc.commit(); } });
     })),
-    grow("Check for new pages every", "The panel's own timer. Changes at once.", (() => {
+    scr.owns_interval !== "addon" ? grow("Check for new pages every", "The panel's own timer. Changes at once.", (() => {
       const s = select([1, 2, 3, 5, 10, 15, 30, 60].map((m) => [m, m === 1 ? "minute" : `${m} minutes`]), app.status?.panel_interval || 5, async (v) => {
         try {
           const r = (await api("api/panel-refresh", { method: "POST", body: { interval: Number(v) } })).body;
           toast(r.ha_updated ? `The panel now checks every ${v} min.` : `Saved, but the panel didn't get it: ${r.error || "it isn't reachable right now"}.`);
         } catch (e) { toast(`Couldn't change it: ${e.message}`); }
-      }); return s; })())), reflowNote);
+      }); return s; })()) : null), reflowNote);
 
+  if (scr.shares_with?.length) {
+    const others = scr.shares_with.map((x) => x.name).join(", ");
+    pane.append(h("h4", { class: "gtitle", text: "Pages" }), group(grow(`Same pages as ${others}`, "Edits show on both. Each screen keeps its own layout.",
+      h("button", { class: "btn tinted", onclick: async () => {
+        await doc.flush();
+        try {
+          const r = (await api(`api/devices/${encodeURIComponent(scr.id)}/unlink`, { method: "POST" })).body;
+          app.applyScreens(r); await doc.load(); app.refresh();
+          toast(`${scr.name} has its own pages now, as they were.`);
+          show("panel");
+        } catch (e) { toast(`Couldn't do that: ${e.message}`); }
+      } }, "Stop sharing"))));
+  }
   const ghost = h("div");
   pane.append(h("h4", { class: "gtitle", text: "Ghosting and sleep" }), ghost);
   const drawDevice = (dev) => {
@@ -262,6 +370,25 @@ async function panelPane(app, pane, show) {
   };
   drawDevice(app.device);
   app.loadDevice().then(drawDevice);
+  const only = app.screens.length < 2;
+  pane.append(group(grow("Remove this screen", only ? "It's the only one. Add another first." : "Its key stops working. Undo puts it back.",
+    h("button", { class: "btn tinted danger", disabled: only, onclick: async () => {
+      const gone = scr;
+      try {
+        await doc.flush();
+        const r = (await api(`api/devices/${encodeURIComponent(gone.id)}`, { method: "DELETE" })).body;
+        closeAll();
+        app.screens = r.devices;
+        await app.switchScreen(r.devices[0].id);
+        app.applyScreens(r, r.devices[0].id);
+        toast(`Removed ${gone.name}.`, { label: "Undo", run: async () => {
+          try {
+            const back = (await api(`api/devices/${encodeURIComponent(gone.id)}/restore`, { method: "POST" })).body;
+            app.screens = back.devices; await app.switchScreen(gone.id); app.applyScreens(back, gone.id);
+          } catch (e) { toast(`Couldn't put it back: ${e.message}`); }
+        } });
+      } catch (e) { toast(`Couldn't remove it: ${e.message}`); }
+    } }, "Remove"))));
   try {
     const r = (await api("api/panel-setup")).body;
     const p = r.panel || {};
@@ -282,8 +409,9 @@ async function installPane(app, pane) {
   const status = h("div");
   const save = async (extra = {}, msg) => {
     try {
-      const body = { display: app.doc.spec.display, ha_host: host.value.trim() || location.hostname || "homeassistant.local", frame_port: parseInt(port.value, 10) || 8099,
-        device_name: dev.value.trim() || "crowpanel-epaper", wifi_ssid: ssid.value.trim(), wifi_password: pw.value, api_encryption_key: key.value.trim(), use_secrets: useSecrets, ...extra };
+      const body = { ha_host: host.value.trim() || location.hostname || "homeassistant.local", frame_port: parseInt(port.value, 10) || 8099,
+        device_name: dev.value.trim() || "crowpanel-epaper", wifi_ssid: ssid.value.trim(), wifi_password: pw.value, api_encryption_key: key.value.trim(), use_secrets: useSecrets,
+        wifi_networks: nets.filter((n) => n.ssid.trim()), ...extra };
       r = (await api("api/panel-setup", { method: "POST", body })).body;
       apply();
       if (msg) toast(msg); else if (r.esphome_synced) toast("Saved, and written to Home Assistant's ESPHome folder.");
@@ -293,20 +421,18 @@ async function installPane(app, pane) {
   const port = number(c.frame_port || r.frame_port || 8099, () => save(), { min: "1", max: "65535", style: { width: "7em" } });
   const dev = input(c.device_name || "crowpanel-epaper", () => save());
   const ssid = input(c.wifi_ssid, () => save(), { placeholder: "From your secrets" });
+  // Other places the screen goes (work, a holiday home): it joins whichever it finds.
+  const nets = (c.wifi_networks || []).map((n) => ({ ...n }));
+  const netsBox = h("div");
+  const drawNets = () => netsBox.replaceChildren(...nets.map((n, i) => group(
+    grow("Also at", null, input(n.ssid, (v) => { n.ssid = v.trim(); save(); }, { placeholder: "Network name", "aria-label": `Network ${i + 2} name` })),
+    grow("Password", null, h("div", { class: "inline" }, input(n.password, (v) => { n.password = v; save(); }, { type: "password", "aria-label": `Network ${i + 2} password` }),
+      h("button", { class: "btn tinted danger", "aria-label": `Remove the network ${n.ssid || i + 2}`, onclick: () => { nets.splice(i, 1); drawNets(); save(); } }, "Remove"))))),
+    h("div", { class: "btnrow" }, h("button", { class: "btn tinted", disabled: nets.length >= 8, onclick: () => { nets.push({ ssid: "", password: "" }); drawNets(); netsBox.querySelector(`[aria-label="Network ${nets.length + 1} name"]`)?.focus(); } }, icon("plus", "sm"), "Add a network")));
   const pw = input(c.wifi_password, () => save(), { type: "password", placeholder: "From your secrets" });
   const key = h("input", { class: "inp code", readonly: true, value: c.api_encryption_key || "", "aria-label": "Encryption key" });
   let useSecrets = !!c.use_secrets;
-  const copy = (text, what) => {
-    const done = () => toast(`Copied ${what}.`);
-    if (navigator.clipboard && window.isSecureContext) navigator.clipboard.writeText(text).then(done, () => fallback());
-    else fallback();
-    function fallback() {
-      const t = h("textarea", { style: { position: "fixed", left: "-9999px" } }); t.value = text; document.body.append(t); t.select();
-      let ok = false; try { ok = document.execCommand("copy"); } catch (_) {}
-      t.remove();
-      if (ok) done(); else toast("Your browser didn't allow copying. Select the text and copy it yourself.");
-    }
-  };
+  const copy = copyText;
   function apply() {
     const cc = r.config || {};
     yaml.value = r.yaml || ""; secrets.value = r.secrets_yaml || ""; key.value = cc.api_encryption_key || key.value;
@@ -315,11 +441,13 @@ async function installPane(app, pane) {
     status.replaceChildren(...[
       h("p", { class: "note " + (p.connected ? "good" : "warn") }, h("span", { class: "led" }), h("span", { text: p.connected ? `Connected in Home Assistant${p.ip ? ` at ${p.ip}` : ""}.` : p.node ? "Found, but offline. It picks up changes when it reconnects." : "No panel yet. Install the file below with ESPHome, then add the device in Home Assistant." })),
       r.frame_protection && r.frame_protection !== "on" ? h("p", { class: "note warn" }, icon("info", "sm"), h("span", { text: "Pages on your network aren't protected yet. Installing the file below switches it on; nothing goes blank in between." })) : null,
-      app.status?.ha_entities?.problem ? h("p", { class: "note warn" }, icon("info", "sm"), h("span", { text: app.status.ha_entities.problem })) : null].filter(Boolean));
+      app.status?.ha_entities?.problem ? h("p", { class: "note warn" }, icon("info", "sm"), h("span", { text: app.status.ha_entities.problem })) : null,
+      app.doc.live.display !== app.doc.spec.display ? h("p", { class: "note warn" }, icon("info", "sm"), h("span", { text: "You changed the model but haven't sent it yet. This file is for the model the screen has now; send first, then install." })) : null].filter(Boolean));
   }
   box.replaceChildren(status,
     group(grow("Home Assistant's address", "Where the panel fetches pages from", host), grow("Port", null, port), grow("Device name", null, dev)),
     group(grow("Wi-Fi network", null, ssid), grow("Wi-Fi password", null, pw), grow("Use secrets.yaml", "Keep the Wi-Fi details out of the file", toggle(useSecrets, (v) => { useSecrets = v; save(); }, "Use secrets.yaml"))),
+    h("h4", { class: "gtitle", text: "Other networks" }), h("p", { class: "fnote", text: "Where else the screen goes, like work. It joins whichever it finds." }), netsBox,
     group(grow("Encryption key", "Also protects updates over Wi-Fi", h("div", { class: "inline" }, key, h("button", { class: "btn tinted", onclick: () => copy(key.value, "the key") }, "Copy"))),
       grow("New key", "The panel then needs reinstalling and re-adding in Home Assistant", h("button", { class: "btn tinted danger", onclick: () => save({ regenerate_keys: true }, "New key made. Reinstall the panel and add it again in Home Assistant.") }, "Make a new key"))),
     h("h4", { class: "gtitle", text: "The panel's file" }), yaml,
@@ -334,6 +462,7 @@ async function installPane(app, pane) {
       h("li", { text: "In Home Assistant, open ESPHome, choose New device, name it, pick ESP32-S3, then Skip." }),
       h("li", { text: "Edit the new device, replace everything with the file above, and Install. Use USB-C the first time; after that it updates over Wi-Fi." }),
       h("li", { text: "When Home Assistant finds the panel under Settings, Devices, choose Configure and paste the encryption key." })));
+  drawNets();
   secretsWrap.append(h("h4", { class: "gtitle", text: "Lines for secrets.yaml" }), secrets, h("div", { class: "btnrow" }, h("button", { class: "btn tinted", onclick: () => copy(secrets.value, "the lines") }, "Copy")));
   apply();
 }
@@ -343,7 +472,7 @@ function quietPane(app, pane) {
   const qh = doc.spec.quiet_hours;
   const set = (k, v) => { qh[k] = v; doc.commit(); draw(); };
   const body = h("div");
-  pane.append(h("p", { class: "fnote", text: "While quiet hours last, the panel doesn't flash or download, so a dark room stays dark. Its buttons still work. Sent with your pages." }), body);
+  pane.append(h("p", { class: "fnote", text: "This screen's own. While quiet hours last, it doesn't flash or download, so a dark room stays dark. Its buttons still work. Sent with your pages." }), body);
   function draw() {
     body.replaceChildren(
       group(grow("Quiet hours", null, toggle(qh.enabled, (v) => set("enabled", v), "Quiet hours"))),
@@ -352,10 +481,58 @@ function quietPane(app, pane) {
         const b = h("button", { class: "btn tinted", onclick: () => app.openEntityPicker(b, (id) => set("presence_entity", id), { domains: ["person", "zone", "group"], current: qh.presence_entity, allowNone: true }) }, qh.presence_entity ? "Change" : "Choose"); return b; })()),
         grow("Alerts can wake it", null, toggle(qh.allow_alerts !== false, (v) => set("allow_alerts", v), "Alerts can wake it")),
         grow("Sleep screen", "Closed eyes, and when it wakes. Off keeps a page on screen overnight.", toggle(qh.sleep_screen !== false, (v) => set("sleep_screen", v), "Sleep screen"))),
-      h("p", { class: "fnote" }, "Home Assistant gets ", h("code", { text: "sensor.epaper_quiet_hours" }), " for your own automations."));
+      h("p", { class: "fnote" }, "Home Assistant gets ", h("code", { text: "sensor.epaper_quiet_hours" + (app.screen?.entity_suffix || "") }), " for your own automations."));
     body.querySelectorAll(".group:not(:first-child)").forEach((g) => g.classList.toggle("off", !qh.enabled));
   }
   draw();
+}
+
+/* ---------- reaching home ---------- */
+// How screens away from home reach the add-on: not at all, through Home
+// Assistant's own address (the companion integration), or a tunnel of yours.
+async function reachPane(app, pane) {
+  const box = h("div", {}, h("p", { class: "fnote", text: "Checking…" }));
+  pane.append(h("p", { class: "fnote", text: "Take a screen to work or on holiday and it keeps showing your pages. Away from home, every screen needs its own key, and wrong keys slow down." }), box);
+  let r = null, busy = false;
+  const call = async (path, method, body, done) => {
+    if (busy) return; busy = true;
+    try { r = (await api(path, { method, body })).body; if (done) toast(done); }
+    catch (e) { toast(e.message); }
+    busy = false; draw();
+  };
+  const mode = (m, title, sub) => h("button", { class: "cmp choice", role: "radio", "aria-checked": String(r.mode === m),
+    onclick: () => { if (r.mode !== m) call("api/reach", "PUT", { mode: m, address: r.address }, m === "home" ? "Screens reach the add-on at home only." : null); } },
+    h("span", { class: "ct", text: title }), h("span", { class: "cs", text: sub }));
+  function draw() {
+    if (!r) return;
+    const parts = [h("div", { class: "choices", role: "radiogroup", "aria-label": "Reaching home" },
+      mode("home", "At home only", "Screens fetch from the add-on on your home network."),
+      mode("ha", "Through Home Assistant's address", "Wherever you reach Home Assistant from outside: Home Assistant Cloud, Cloudflare, your own domain."),
+      mode("own", "Through your own address", "A tunnel or proxy of yours, pointed at this add-on."))];
+    if (r.mode === "ha") {
+      const c = r.companion || {};
+      parts.push(r.ha_address
+        ? h("p", { class: "note good" }, icon("check", "sm"), h("span", { text: `Screens use ${r.ha_address}/api/epaper.` }))
+        : h("p", { class: "note warn" }, icon("info", "sm"), h("span", { text: "Home Assistant has no address outside your home yet. Set one in Home Assistant under Settings, System, Network, or turn on Home Assistant Cloud." })));
+      parts.push(group(
+        !c.installed ? grow("A small integration", "Home Assistant needs it to pass screens on to the add-on. Nothing to fill in.", h("button", { class: "btn primary", onclick: () => call("api/reach/companion", "POST", undefined, "Installed. Restart Home Assistant to load it.") }, "Install"))
+        : c.restart_needed ? grow("Restart Home Assistant", "It loads the integration when it starts. Takes about a minute.", h("button", { class: "btn primary", onclick: () => call("api/reach/restart", "POST", undefined, "Home Assistant is restarting. Come back here in a minute.") }, "Restart"))
+        : grow("The integration", `Running, version ${c.version}.`, h("span", { class: "fnote", text: "Ready" }))));
+      if (c.installed && c.running && !r.set_up_tried) { r.set_up_tried = true; api("api/reach/setup", { method: "POST" }).then((x) => { if (!x.body.set_up) toast(`Home Assistant didn't set it up: ${x.body.problem}`); }).catch(() => {}); }
+    }
+    if (r.mode === "own") {
+      const addr = input(r.address, (v) => call("api/reach", "PUT", { mode: "own", address: v }, "Saved."), { placeholder: "https://panel.example.com", "aria-label": "Your address", inputmode: "url", autocomplete: "off" });
+      parts.push(group(grow("Your address", "Where your tunnel answers. It must be https.", addr),
+        r.service_address ? grow("Point it at", "In the Cloudflared app, add a host with this as its service.", h("div", { class: "inline" }, h("input", { class: "inp code", readonly: true, value: r.service_address, "aria-label": "Point your tunnel at" }), h("button", { class: "btn tinted", onclick: () => copyText(r.service_address, "the address") }, "Copy"))) : null));
+    }
+    if (r.mode !== "home") {
+      if (r.token_short) parts.push(h("p", { class: "note warn" }, icon("warn", "sm"), h("span", { text: "The frame token in the add-on's options is short, so someone on the internet could guess it. Make it at least 16 characters, or clear it and the add-on makes a long one." })));
+      parts.push(h("p", { class: "fnote", text: "Install each CrowPanel again once (Install or update) so it uses this address. Until then it keeps working at home." }));
+    }
+    box.replaceChildren(...parts);
+  }
+  try { r = (await api("api/reach")).body; draw(); }
+  catch (e) { box.replaceChildren(h("p", { class: "fnote bad", text: `Couldn't check: ${e.message}` })); }
 }
 
 async function sourcesPane(app, pane) {

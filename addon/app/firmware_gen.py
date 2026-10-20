@@ -67,17 +67,34 @@ def display_blocks(disp: dict) -> tuple[str, str]:
     return component, block
 
 
+def wifi_block(networks: list[tuple[str, str]]) -> str:
+    """One network connects straight away; several are scanned for, so the panel
+    joins whichever it finds (at home, at work). Values are YAML scalars."""
+    if len(networks) <= 1:
+        ssid, password = networks[0] if networks else ('""', '""')
+        return f"wifi:\n  ssid: {ssid}\n  password: {password}\n  fast_connect: true"
+    lines = ["wifi:", "  # Joins whichever of these it finds.", "  networks:"]
+    for ssid, password in networks:
+        lines += [f"    - ssid: {ssid}", f"      password: {password}"]
+    return "\n".join(lines)
+
+
 def render(*, disp: dict, version: str, device_name: str, frames_url: str, api_key: str,
            wifi_ssid: str, wifi_password: str, interval_min: int,
-           orientation: int) -> str:
-    """The YAML text. Credential arguments are YAML scalars, e.g. '"abc"' or '!secret x'."""
+           orientation: int, friendly_name: str = '"E-paper panel"',
+           more_networks: list[tuple[str, str]] = ()) -> str:
+    """The YAML text. Credential and name arguments are YAML scalars, e.g. '"abc"' or '!secret x'.
+
+    `friendly_name` is what Home Assistant calls the panel (the screen's name).
+    `more_networks`: Wi-Fi networks besides the first, as (ssid, password)."""
     component, block = display_blocks(disp)
     values = {
         "DISPLAY_NAME": disp["name"], "SKU": disp["sku"], "W": str(disp["w"]), "H": str(disp["h"]),
         "VERSION": version or "dev", "DEVICE_NAME": device_name, "FRAMES_URL": frames_url,
         "COMPONENT_REF": component_ref(version), "DISPLAY_COMPONENT": component,
         "DISPLAY_BLOCK": block, "API_KEY": api_key,
-        "WIFI_SSID": wifi_ssid, "WIFI_PASSWORD": wifi_password,
+        "WIFI_BLOCK": wifi_block([(wifi_ssid, wifi_password), *more_networks]),
+        "FRIENDLY_NAME": friendly_name,
         "INTERVAL_MIN": str(max(1, min(60, int(interval_min)))),
         **{k: str(v) for k, v in button_pins(orientation).items()},
     }

@@ -2,14 +2,14 @@
 // the right. This file wires them together and holds the actions every part
 // can ask for (insert, copy, paste, send…).
 
-import { h, icon, api, prefs, clone, pageTitle, slug, modKey, isMac } from "./util.js";
+import { h, icon, api, prefs, clone, pageTitle, slug, modKey, isMac, setDevice } from "./util.js";
 import { menu, toast, closeAll, isOpen } from "./ui.js";
 import { Doc } from "./doc.js";
 import { Canvas } from "./canvas.js";
 import { renderStrip, statusSummary } from "./strip.js";
 import { renderInspector } from "./inspector.js";
 import { openEntityPicker, openAttributePicker, openIconPicker, openInsert } from "./pickers.js";
-import { openPresets, savePresetSheet, openStatus, openSettings, resolveClashes, openShortcuts } from "./sheets.js";
+import { openPresets, savePresetSheet, openStatus, openSettings, resolveClashes, openShortcuts, openAddScreen } from "./sheets.js";
 import { geometry, makeElement, makeEntityElement, elName, TYPES, pairByType, LAYOUT_KEYS, normalizeLineParity } from "./elements.js";
 import { syncDynamicGridShowIf, syncWidgetShowIf } from "./conditions.js";
 import { CATEGORY_TERMS } from "./legacy.js";
@@ -23,6 +23,7 @@ class App {
     this.prefs = prefs;
     this.ents = []; this.entMap = new Map();
     this.status = null; this.device = null;
+    this.screens = []; this.kinds = []; this.screen = null;
     this.el = {
       app: document.getElementById("app"), tb: document.getElementById("toolbar"), bar: document.getElementById("canvasbar"),
       area: document.getElementById("canvasarea"), strip: document.getElementById("strip"), insp: document.getElementById("inspector"),
@@ -51,6 +52,7 @@ class App {
     this.loadMdi();
     this.renderToolbar();
     try {
+      await this.loadScreens(prefs.get("device"));
       const note = await this.doc.load();
       const last = prefs.get("page");
       if (last && this.doc.spec.pages[last] && last !== this.doc.cur) { this.doc.cur = last; this.doc.emit("page"); }
@@ -82,6 +84,45 @@ class App {
   fatal(msg) {
     this.el.area.replaceChildren(h("div", { class: "fatal" }, icon("warn"), h("h2", { text: "The editor couldn't load your pages" }), h("p", { text: msg }),
       h("button", { class: "btn primary", onclick: () => location.reload() }, "Try again")));
+  }
+
+  /* ---------- screens ---------- */
+  /* The screens the add-on drives; the editor works on one at a time. */
+  async loadScreens(want) {
+    const r = (await api("api/devices")).body;
+    this.applyScreens(r, want);
+  }
+  applyScreens(r, want) {
+    this.screens = r.devices || []; this.kinds = r.kinds || [];
+    const id = want || this.screen?.id;
+    this.screen = this.screens.find((d) => d.id === id) || this.screens[0] || null;
+    setDevice(this.screen?.id);
+    if (this.screen) prefs.set("device", this.screen.id);
+    this.renderToolbar(); this.renderBar();
+  }
+  async switchScreen(id) {
+    if (!id || id === this.screen?.id) return;
+    await this.doc.flush();
+    const to = this.screens.find((d) => d.id === id);
+    if (!to) return;
+    this.screen = to; setDevice(id); prefs.set("device", id);
+    this.status = null; this.device = null; this.didScroll = false;
+    try {
+      const note = await this.doc.load();
+      if (note) toast(note);
+    } catch (e) { toast(`Couldn't open ${to.name}: ${e.message}`); return; }
+    this.say(`Editing ${to.name}.`);
+    this.poll(); this.loadDevice();
+  }
+  screenLine(d) {
+    const parts = [d.display_name];
+    if ([90, 270].includes(d.orientation)) parts.push("portrait");
+    if (d.shares_with.length) parts.push(`same pages as ${d.shares_with.map((x) => x.name).join(", ")}`);
+    return parts.join(" · ");
+  }
+  openScreens(anchor) {
+    const items = this.screens.map((d) => ({ label: d.name, sub: this.screenLine(d), checked: d.id === this.screen?.id, run: () => this.switchScreen(d.id) }));
+    menu(anchor, [...items, "sep", { label: "Add a screen…", icon: "plus", run: () => openAddScreen(this) }], { label: "Screens" });
   }
 
   /* ---------- data ---------- */
@@ -166,7 +207,10 @@ class App {
       : h("span", { class: "savestate", role: "status", "aria-live": "polite" }, h("span", { class: "hide-narrow", text: doc.saving === "saved" ? (doc.dirty ? "Saved, not sent" : "") : "Saving…" }));
     const sendLabel = doc.dirty ? "Send to panel. Some changes aren't on it yet" : "Send to panel";
     const sel = doc.sel.length;
+    const scr = this.screen;
     tb.replaceChildren(...[
+      scr ? h("button", { class: "screenbtn", "aria-haspopup": "menu", "aria-label": `Editing ${scr.name}. Switch screen or add one`, title: this.screenLine(scr),
+        onclick: (e) => this.openScreens(e.currentTarget) }, h("span", { class: "sn", text: scr.name }), icon("down", "sm")) : null,
       ib("undo", "Undo", `${modKey}Z`, () => doc.undo(), { disabled: !doc.canUndo }),
       ib("redo", "Redo", `⇧${modKey}Z`, () => doc.redo(), { disabled: !doc.canRedo }),
       h("span", { class: "tbsep", role: "separator" }),
@@ -192,11 +236,21 @@ class App {
     bar.replaceChildren(
       h("div", { class: "crumb" }, h("b", { text: p ? pageTitle(doc.cur) : "No page" }),
         p ? h("span", { class: "muted", text: p.tier === "alert" ? "Alert page" : p.tier === "when" ? "Shows only sometimes" : "Shows always" }) : null),
+      this.shareLine() || "",
       h("span", { class: "spacer" }),
       h("button", { class: "btn small", "aria-pressed": String(prefs.get("guides") === "1"), title: "Show where the footer is, and every element's box", onclick: () => { prefs.set("guides", prefs.get("guides") === "1" ? "0" : "1"); this.refresh(); } }, icon("guides", "sm"), h("span", { class: "hide-narrow", text: "Guides" })),
       h("button", { class: "btn small", "aria-pressed": String(prefs.get("layers") === "1"), "aria-controls": "layers", title: "Layers, front first", onclick: () => this.showLayers() }, icon("layers", "sm"), h("span", { text: "Layers" })),
       h("div", { class: "segc small hide-narrow", role: "radiogroup", "aria-label": "Zoom" },
         ...[["fit", "Fit"], ["actual", "Actual size"]].map(([v, l]) => h("button", { role: "radio", "aria-checked": String(zoom === v), onclick: () => { prefs.set("zoom", v); this.renderBar(); } }, l))));
+  }
+
+  /* Pages shared with other screens: say so quietly, and what an edit here reaches. */
+  shareLine() {
+    const s = this.screen;
+    if (!s || !s.shares_with.length) return null;
+    const others = s.shares_with.map((x) => x.name).join(", ");
+    const text = s.made_here ? `Shared with ${others}. Edits show on both.` : `Arranging for ${s.name}. What things show is shared with ${others}.`;
+    return h("span", { class: "share hide-narrow", text, title: text });
   }
 
   renderStrip() {
@@ -430,7 +484,7 @@ class App {
     const doc = this.doc;
     if (!doc.sel.length) return;
     const g = this.geometry(), els = doc.els();
-    const copies = doc.sel.slice().sort((a, b) => a - b).map((k) => { const c = clone(els[k]); c.x = Math.min(g.W - c.w, c.x + 12); c.y = Math.min(g.H - c.h, c.y + 12); return c; });
+    const copies = doc.sel.slice().sort((a, b) => a - b).map((k) => { const c = clone(els[k]); delete c.id; delete c._auto; c.x = Math.min(g.W - c.w, c.x + 12); c.y = Math.min(g.H - c.h, c.y + 12); return c; });
     els.push(...copies);
     doc.sel = copies.map((_, k) => els.length - copies.length + k);
     doc.commit();
@@ -464,7 +518,7 @@ class App {
     if (!doc.page()) return;
     const g = this.geometry(), els = doc.els();
     const onTop = c.items.every((it) => els.some((e) => e.type === it.type && e.x === it.x && e.y === it.y && e.w === it.w && e.h === it.h));
-    const items = c.items.map((it) => { const n = clone(it); if (onTop) { n.x = Math.min(g.W - n.w, n.x + 12); n.y = Math.min(g.H - n.h, n.y + 12); } return n; });
+    const items = c.items.map((it) => { const n = clone(it); delete n.id; delete n._auto; if (onTop) { n.x = Math.min(g.W - n.w, n.x + 12); n.y = Math.min(g.H - n.h, n.y + 12); } return n; });
     els.push(...items);
     doc.sel = items.map((_, k) => els.length - items.length + k);
     doc.commit();
@@ -505,6 +559,7 @@ class App {
       this.sending = false;
       this.renderToolbar();
       this.poll();
+      this.loadScreens().catch(() => {});             // its size may have changed with what was sent
     }
   }
 

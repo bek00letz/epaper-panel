@@ -28,7 +28,9 @@ def panel_setup_path() -> Path:
     return DATA_DIR / "panel_setup.json"
 
 
-# Home Assistant's ESPHome folder, where Panel setup writes the panel's YAML.
+# Home Assistant's configuration folder (mapped into the add-on), and its
+# ESPHome folder, where Panel setup writes the panel's YAML.
+HA_CONFIG_DIR = Path(os.environ.get("HA_CONFIG_DIR", "/config"))
 ESPHOME_DIR = Path(os.environ.get("ESPHOME_DIR", "/config/esphome"))
 
 DEFAULTS_PATH = Path(__file__).parent / "default_layouts.json"

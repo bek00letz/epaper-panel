@@ -65,6 +65,20 @@ def save_panel_setup(device_id, cfg: dict) -> dict:
     return dict(cfg)
 
 
+def ha_name(dev: dict) -> str:
+    """What Home Assistant calls the panel once it's installed from this file: the screen's name."""
+    return str(dev.get("name") or "E-paper panel")[:60]
+
+
+def more_networks(cfg: dict) -> list[dict]:
+    """Wi-Fi networks besides the first (somewhere the screen goes, like work)."""
+    out = []
+    for n in cfg.get("wifi_networks") or []:
+        if isinstance(n, dict) and str(n.get("ssid") or "").strip():
+            out.append({"ssid": str(n["ssid"]).strip()[:32], "password": str(n.get("password") or "")[:64]})
+    return out[:8]
+
+
 def _yaml_str(s: str) -> str:
     escaped = str(s or "").replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
@@ -89,8 +103,11 @@ def _inspect_existing_secrets() -> set[str]:
     return set()
 
 
-def generate_esphome_yaml(cfg: dict, dev: dict) -> tuple[str, str]:
-    """Build a panel's ready-to-flash ESPHome YAML and companion secrets.yaml."""
+def generate_esphome_yaml(cfg: dict, dev: dict, public_base: str | None = None) -> tuple[str, str]:
+    """Build a panel's ready-to-flash ESPHome YAML and companion secrets.yaml.
+
+    `public_base`: the address screens use away from home (reach.public_base),
+    or None to fetch on the home network."""
     view = load_layouts(dev["id"])
     display_id = cfg.get("display") or view.get("display", T.DEFAULT_DISPLAY)
     disp = T.get_display(display_id)
@@ -116,7 +133,7 @@ def generate_esphome_yaml(cfg: dict, dev: dict) -> tuple[str, str]:
             host_only = raw_host.split("/")[0] or "homeassistant.local"
         scheme = "http"
 
-    base_url = f"{scheme}://{host_only}:{port}"
+    base_url = public_base or f"{scheme}://{host_only}:{port}"
     token_q = f"?token={urllib.parse.quote(devices.key_of(dev))}"
     frames_epf_url = f"{base_url}/frames.epf{token_q}"
 
@@ -149,10 +166,12 @@ def generate_esphome_yaml(cfg: dict, dev: dict) -> tuple[str, str]:
     else:
         wifi_pw_line = _yaml_str(pw)
 
+    more = [(_yaml_str(n.get("ssid")), _yaml_str(n.get("password") or "")) for n in more_networks(cfg)]
     yaml_text = firmware_gen.render(
         disp=disp, version=ADDON_VERSION, device_name=dev_name, frames_url=_yaml_str(frames_epf_url),
         api_key=api_key_line, wifi_ssid=wifi_ssid_line, wifi_password=wifi_pw_line,
-        interval_min=initial_min, orientation=orient)
+        interval_min=initial_min, orientation=orient, friendly_name=_yaml_str(ha_name(dev)),
+        more_networks=more)
 
     secrets_text = f"""# Put these in your ESPHome secrets.yaml if using !secret references:
 wifi_ssid: {_yaml_str(ssid or "your-wifi-ssid")}

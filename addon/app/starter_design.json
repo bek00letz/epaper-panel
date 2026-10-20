@@ -1,0 +1,161 @@
+{
+  "canvas": "792x272",
+  "rotation": [
+    "hello"
+  ],
+  "pages": {
+    "hello": {
+      "tier": "rotate",
+      "elements": [
+        {
+          "id": "s_icon",
+          "type": "icon",
+          "icon": "mdi:weather-sunset",
+          "x": 40,
+          "y": 52,
+          "w": 128,
+          "h": 128
+        },
+        {
+          "id": "s_day",
+          "type": "text",
+          "value": "{{ now().strftime('%A %-d') }}",
+          "bold": true,
+          "align": "left",
+          "x": 196,
+          "y": 40,
+          "w": 380,
+          "h": 96
+        },
+        {
+          "id": "s_sun",
+          "type": "text",
+          "value": "{% set up = is_state('sun.sun', 'above_horizon') %}{% set t = state_attr('sun.sun', 'next_setting' if up else 'next_rising') %}{{ ('Sunset ' if up else 'Sunrise ') ~ (as_timestamp(t) | timestamp_custom('%H:%M') if t else '') }}",
+          "bold": false,
+          "align": "left",
+          "x": 200,
+          "y": 144,
+          "w": 360,
+          "h": 44
+        },
+        {
+          "id": "s_qr",
+          "type": "qr",
+          "value": "https://github.com/bek00letz/epaper-panel#3-your-first-page",
+          "title": "Make it yours",
+          "show_border": false,
+          "x": 604,
+          "y": 20,
+          "w": 148,
+          "h": 200
+        }
+      ]
+    }
+  },
+  "arrangements": {
+    "400x300": {
+      "s_icon": {
+        "x": 24,
+        "y": 40,
+        "w": 96,
+        "h": 96
+      },
+      "s_day": {
+        "x": 136,
+        "y": 36,
+        "w": 240,
+        "h": 64
+      },
+      "s_sun": {
+        "x": 138,
+        "y": 104,
+        "w": 240,
+        "h": 36
+      },
+      "s_qr": {
+        "x": 24,
+        "y": 150,
+        "w": 352,
+        "h": 108
+      }
+    },
+    "296x128": {
+      "s_icon": {
+        "x": 8,
+        "y": 12,
+        "w": 64,
+        "h": 64
+      },
+      "s_day": {
+        "x": 80,
+        "y": 8,
+        "w": 136,
+        "h": 44
+      },
+      "s_sun": {
+        "x": 82,
+        "y": 54,
+        "w": 134,
+        "h": 28
+      },
+      "s_qr": {
+        "x": 218,
+        "y": 4,
+        "w": 72,
+        "h": 88
+      }
+    },
+    "800x480": {
+      "s_icon": {
+        "x": 48,
+        "y": 80,
+        "w": 180,
+        "h": 180
+      },
+      "s_day": {
+        "x": 260,
+        "y": 70,
+        "w": 492,
+        "h": 140
+      },
+      "s_sun": {
+        "x": 266,
+        "y": 222,
+        "w": 460,
+        "h": 64
+      },
+      "s_qr": {
+        "x": 266,
+        "y": 300,
+        "w": 116,
+        "h": 140
+      }
+    },
+    "960x640": {
+      "s_icon": {
+        "x": 64,
+        "y": 110,
+        "w": 220,
+        "h": 220
+      },
+      "s_day": {
+        "x": 316,
+        "y": 96,
+        "w": 560,
+        "h": 170
+      },
+      "s_sun": {
+        "x": 322,
+        "y": 284,
+        "w": 560,
+        "h": 80
+      },
+      "s_qr": {
+        "x": 322,
+        "y": 388,
+        "w": 150,
+        "h": 190
+      }
+    }
+  }
+}

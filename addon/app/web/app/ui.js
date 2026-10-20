@@ -79,7 +79,8 @@ export function menu(anchor, items, opts = {}) {
       pop.append(h("button", { class: "mi" + (it.danger ? " danger" : ""), role: it.checked !== undefined ? "menuitemcheckbox" : "menuitem",
         "aria-checked": it.checked !== undefined ? String(!!it.checked) : null, disabled: !!it.disabled,
         onclick: () => { close(); it.run(); } },
-        it.icon ? icon(it.icon, "sm") : h("span", { class: "ic sm" }), h("span", { class: "ml", text: it.label }),
+        it.icon ? icon(it.icon, "sm") : h("span", { class: "ic sm" }),
+        it.sub ? h("span", { class: "ml two" }, h("span", { text: it.label }), h("small", { text: it.sub })) : h("span", { class: "ml", text: it.label }),
         it.checked ? icon("check", "sm") : null, it.kb ? h("span", { class: "kb", text: it.kb }) : null));
     }
   }, { cls: "menu", role: "menu", label: opts.label, align: opts.align || "left", at: opts.at });

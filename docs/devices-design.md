@@ -228,19 +228,25 @@ inside the add-on and versioned with it):
 2. **Adding devices.** New, Copy and Linked, arrangements per size, the device
    switcher, per-device quiet hours, and Reaching home with both ways (the
    companion integration included). A second CrowPanel works at this point.
-   Found in step 1, to do here:
-   - With two CrowPanels, `panel_link` can name each one's actions but not yet
-     find its entities (refresh interval, IP, Wi-Fi). Today it relies on there
-     being one panel; match the ESPHome node to its device through Home
-     Assistant's device registry instead.
-   - The "Refresh panel" button in Home Assistant now wakes every screen. Give
-     each screen its own button.
+   *Built 2026-10-20.* Decided along the way, with the user:
+   - The switcher is the toolbar's title. "Set up as new" starts with one
+     starter page that needs nothing a Home Assistant might lack (the date,
+     `sun.sun`, an icon, a QR code to the guide).
+   - A model or mounting change starts the pages from an automatic fit for the
+     new size; switching back restores the old layout (each size keeps its own).
+   - Firmware: HTTPS with the certificate bundle, several Wi-Fi networks, and
+     each panel named after its screen in Home Assistant, which is also how two
+     panels' entities are told apart (by device name, recorded when the file is
+     written). Needs a release tag to reach panels.
+   - Also built: group styles across selected elements (a real group, shaped
+     by its members on every size), snapping for several elements at once, a
+     Refresh button per screen.
 3. **The TRMNL kind**, as the module.
 
 ## Rules this changes
 
-These are updated in AGENTS.md and ARCHITECTURE.md in the step that changes
-them, not before:
+Updated in AGENTS.md and ARCHITECTURE.md (the first in step 2, the others in
+step 1):
 
 - "Never expose port 8099 to the internet" becomes "the device port is safe
   on the internet: per-device keys, nothing without a key, wrong keys slow

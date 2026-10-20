@@ -1,0 +1,7 @@
+{
+  "config": {
+    "abort": {
+      "already_configured": "e-Paper Panel is already set up."
+    }
+  }
+}

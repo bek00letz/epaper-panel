@@ -23,7 +23,7 @@ import math
 from functools import lru_cache
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from . import theme as T
 from . import binding
@@ -2016,20 +2016,73 @@ def element_text(el, vals, idx):
     return ""
 
 
+GROUP_STYLES = ("outline", "pill", "invert")
+GROUP_PAD = 10
+
+
+def group_box(group: dict, members: list[dict], canvas: tuple[int, int]) -> tuple[int, int, int, int] | None:
+    """A group's shape: around its members' boxes, `pad` out, kept on the canvas. None without members."""
+    boxes = [(e["x"], e["y"], e["x"] + e["w"], e["y"] + e["h"]) for e in members
+             if all(isinstance(e.get(k), (int, float)) for k in ("x", "y", "w", "h"))]
+    if not boxes:
+        return None
+    try:
+        pad = max(0, min(60, int(group.get("pad", GROUP_PAD))))
+    except (TypeError, ValueError):
+        pad = GROUP_PAD
+    cw, ch = canvas
+    x0 = max(0, min(b[0] for b in boxes) - pad)
+    y0 = max(0, min(b[1] for b in boxes) - pad)
+    x1 = min(cw - 1, max(b[2] for b in boxes) + pad)
+    y1 = min(ch - 1, max(b[3] for b in boxes) + pad)
+    return (int(x0), int(y0), int(x1 - x0), int(y1 - y0)) if x1 > x0 and y1 > y0 else None
+
+
+def _group_radius(group: dict, w: int, h: int) -> int:
+    if group.get("style") == "pill":
+        return min(w, h) // 2
+    try:
+        return max(0, min(min(w, h) // 2, int(group.get("radius", 14))))
+    except (TypeError, ValueError):
+        return 14
+
+
+def _hidden(vals, i) -> bool:
+    vis_key = f"__vis_{i}"
+    if vis_key not in (vals or {}):
+        return False
+    return str(vals.get(vis_key) or "").strip().lower() in ("false", "0", "no", "off", "none", "unavailable", "unknown", "")
+
+
 def render_page(page, vals, *, clock="", label="", cat_label="", sub_label="", battery_pct=None, series=None,
                 metrics=None, orientation=0, distance_m=3.0, display=None):
     """Draw one page. `vals` maps element index -> resolved template result."""
     img, d = T.new_canvas(orientation=orientation, display=display)
-    for i, el in enumerate(page.get("elements", [])):
+    els = page.get("elements", [])
+    # Groups: a style around several elements, shaped by the ones showing now.
+    shown = {e.get("id"): e for i, e in enumerate(els) if isinstance(e, dict) and e.get("id")
+             and e.get("type") != "group" and not _hidden(vals, i)}
+    inverts = []
+    for i, el in enumerate(els):
+        if el.get("type") == "group":
+            if el.get("style") not in GROUP_STYLES or _hidden(vals, i):
+                continue
+            box = group_box(el, [shown[m] for m in el.get("members") or [] if m in shown], img.size)
+            if box is None:
+                continue
+            x, y, w, h = box
+            rad = _group_radius(el, w, h)
+            if el["style"] == "invert":
+                inverts.append((x, y, w, h, rad))          # after everything inside is drawn
+            else:
+                d.rounded_rectangle([(x, y), (x + w, y + h)], radius=rad, outline=T.BLACK, width=2)
+            continue
         drawer = DRAWERS.get(el.get("type"))
         if drawer is None:
             continue
         # Per-element conditional visibility (show_if)
-        vis_key = f"__vis_{i}"
-        if vis_key in (vals or {}):
-            vis_res = str(vals.get(vis_key) or "").strip().lower()
-            if vis_res in ("false", "0", "no", "off", "none", "unavailable", "unknown", ""):
-                continue
+        if _hidden(vals, i):
+            continue
         try:
             if el["type"] in ("curve", "bar_chart"):
                 drawer(img, d, el, "", (series or {}).get(i), display=display)
@@ -2054,6 +2107,10 @@ def render_page(page, vals, *, clock="", label="", cat_label="", sub_label="", b
         except Exception:
             # One bad element must never cost the whole page.
             continue
+    for x, y, w, h, rad in inverts:
+        mask = Image.new("L", img.size, 0)
+        ImageDraw.Draw(mask).rounded_rectangle([(x, y), (x + w, y + h)], radius=rad, fill=255)
+        img.paste(ImageOps.invert(img), (0, 0), mask)
     T.footer(d, clock=clock, label=label, cat_label=cat_label, sub_label=sub_label,
              battery_pct=battery_pct, orientation=orientation, display=display)
     return img

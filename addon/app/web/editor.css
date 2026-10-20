@@ -138,6 +138,18 @@ kbd { font: 12px var(--font); background: var(--surface); border-radius: 5px; pa
 .savestate { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--fg-2); margin-right: 6px; font-variant-numeric: tabular-nums; }
 .savestate.bad { color: var(--red); }
 .send { min-width: 44px; }
+/* The screen being edited: the toolbar's title, and the way to the others. */
+.screenbtn { display: inline-flex; align-items: center; gap: 4px; min-height: 32px; max-width: 220px; padding: 0 8px; margin-right: 4px;
+  border: 0; border-radius: var(--r-inner); background: none; color: var(--fg); font: 600 15px var(--font-display); letter-spacing: -0.01em; cursor: default; }
+.screenbtn .sn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.screenbtn .ic { color: var(--fg-2); flex: none; }
+.screenbtn:hover { background: var(--fill); }
+.screenbtn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+@media (pointer: coarse) { .screenbtn { min-height: 44px; } }
+.mi .ml.two { display: flex; flex-direction: column; line-height: 1.25; padding: 3px 0; }
+.mi .ml.two small { color: var(--fg-2); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; }
+.mi:hover .ml.two small, .mi:focus-visible .ml.two small { color: inherit; opacity: 0.85; }
+.canvasbar .share { font-size: 12px; color: var(--fg-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @keyframes fadein { from { opacity: 0; } }
 
 .workspace { display: grid; grid-template-columns: minmax(0, 1fr) 320px; min-height: 0; }
@@ -160,6 +172,8 @@ kbd { font: 12px var(--font); background: var(--surface); border-radius: 5px; pa
 .ov { position: absolute; inset: 0; pointer-events: none; }
 .ob { position: absolute; border-radius: 2px; }
 .ob.all { outline: 1px dashed rgba(0, 0, 0, 0.28); outline-offset: -1px; }
+/* Placed automatically for this screen's size: quiet until someone places it. */
+.ob.auto { outline: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: -1px; }
 .ob.hov { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 75%, transparent); }
 .ob.sel { box-shadow: inset 0 0 0 2px var(--accent); }
 .ob.sel.multi { box-shadow: inset 0 0 0 1.5px var(--accent); background: color-mix(in srgb, var(--accent) 7%, transparent); }
@@ -456,6 +470,11 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
 .cmpgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
 .cmp { display: flex; flex-direction: column; gap: 2px; border: 0; padding: 8px; border-radius: var(--r-card); background: var(--surface-2); text-align: left; cursor: pointer; box-shadow: 0 0 0 0.5px var(--sep); transition: box-shadow var(--t-fast); }
 .cmp[aria-checked="true"] { box-shadow: 0 0 0 2.5px var(--accent); }
+.choices { display: grid; gap: 8px; margin-bottom: 16px; }
+.cmp.choice { padding: 12px; min-height: 44px; }
+.cmp.choice .ct { font-weight: 600; font-size: 14px; }
+.cmp.choice .cs { color: var(--fg-2); font-size: 12.5px; }
+.cmp.choice select { margin-top: 8px; align-self: flex-start; }
 .cmp .thumbwrap { margin-bottom: 6px; border-radius: 5px; }
 .cmp .ct { font-weight: 600; } .cmp .cs { font-size: 11.5px; color: var(--fg-2); }
 .keys { display: grid; grid-template-columns: 1fr auto; gap: 8px 16px; margin: 0; }

@@ -36,7 +36,21 @@ export const TYPES = {
   flight_tracker: { name: "Flights", icon: "plane" },
   sports_racing: { name: "Racing", icon: "flag" },
   sports_match: { name: "Match", icon: "ball" },
+  group: { name: "Group", icon: "layers" },
 };
+export const GROUP_STYLES = [["outline", "Outline"], ["pill", "Pill"], ["invert", "Inverted"]];
+export const GROUP_PAD = 10;
+
+/* A group's box: around its members, `pad` out (the renderer draws it the same way). */
+export function groupBox(group, els) {
+  const ids = new Set(group.members || []);
+  const ms = els.filter((e) => e.type !== "group" && ids.has(e.id));
+  if (!ms.length) return null;
+  const pad = Number.isFinite(Number(group.pad)) ? Math.max(0, Math.min(60, Number(group.pad))) : GROUP_PAD;
+  const x0 = Math.min(...ms.map((e) => e.x)) - pad, y0 = Math.min(...ms.map((e) => e.y)) - pad;
+  const x1 = Math.max(...ms.map((e) => e.x + e.w)) + pad, y1 = Math.max(...ms.map((e) => e.y + e.h)) + pad;
+  return { x: Math.max(0, Math.round(x0)), y: Math.max(0, Math.round(y0)), w: Math.round(x1 - Math.max(0, x0)), h: Math.round(y1 - Math.max(0, y0)) };
+}
 export const INSERT_GROUPS = [
   ["Basics", ["text", "number", "icon", "box", "line"]],
   ["Charts", ["bar", "curve", "bar_chart"]],
@@ -90,7 +104,8 @@ export function elName(el, entMap) {
   const t = TYPES[el.type]?.name || el.type;
   let d = "";
   const ent = el.entity && entMap ? entMap.get(el.entity) : null;
-  if (el.type === "dynamic_grid") d = el.header_title || "";
+  if (el.type === "group") d = `${(GROUP_STYLES.find(([v]) => v === el.style) || [, ""])[1]} around ${(el.members || []).length}`;
+  else if (el.type === "dynamic_grid") d = el.header_title || "";
   else if (ent) d = ent.name || el.entity;
   else if (el.entity) d = el.entity;
   else if (el.value && !/\{[{%]/.test(el.value)) d = "“" + String(el.value).slice(0, 40) + "”";

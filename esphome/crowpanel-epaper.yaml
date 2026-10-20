@@ -14,7 +14,7 @@ substitutions:
 
 esphome:
   name: ${name}
-  friendly_name: E-paper panel
+  friendly_name: "E-paper panel"
   on_boot:
     priority: -100
     then:

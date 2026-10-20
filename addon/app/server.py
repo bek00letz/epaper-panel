@@ -25,24 +25,29 @@ import aiohttp
 from aiohttp import web
 
 import mqtt_bridge
+import companion
 import config
 import devices
+import reach
 import runtime
 from config import ADDON_VERSION, FRAME_PORT, HA_TOKEN, INGRESS_PORT, PROACTIVE_TIMED_PUSH, REFRESH, RETIRED_SENSORS
 from entities import retired_sensors_in_use
 from frames import refresh_frames
 from layouts_store import load_layouts
-from panel_ops import panel_link_loop, push_all, push_panel_update
+from panel_ops import panel_link_loop, push_panel_update
 from web import make_apps
 
 
-async def on_refresh_button():
-    """The "Refresh panel" button in Home Assistant: every screen the add-on can wake."""
+async def on_refresh_button(suffix: str = ""):
+    """A screen's Refresh button in Home Assistant (its entity suffix; "" for the first)."""
+    dev = next((d for d in devices.all_devices() if (d.get("entity_suffix") or "") == suffix), None)
+    if dev is None:
+        return
     try:
         await refresh_frames(runtime.SESSION)
     except Exception as exc:
         print(f"render for refresh button failed: {health.describe(exc)}", flush=True)
-    await push_all("refresh button")
+    await push_panel_update(dev["id"], "refresh button")
 
 
 async def render_loop():
@@ -111,8 +116,9 @@ def start_entity_publisher():
         transport = mqtt_bridge.MqttTransport(
             host, int(os.environ.get("MQTT_PORT") or 1883),
             os.environ.get("MQTT_USERNAME") or "", os.environ.get("MQTT_PASSWORD") or "")
-    runtime.PUBLISHER = mqtt_bridge.EntityPublisher(transport, runtime.HASS, config.DATA_DIR, ADDON_VERSION,
-                                            on_button=on_refresh_button)
+    runtime.PUBLISHER = mqtt_bridge.EntityPublisher(
+        transport, runtime.HASS, config.DATA_DIR, ADDON_VERSION, on_button=on_refresh_button,
+        buttons=lambda: [(d.get("entity_suffix") or "", d.get("name") or "") for d in devices.all_devices()])
     in_use = retired_sensors_in_use(load_layouts(devices.primary()["id"]))
     for eid in RETIRED_SENSORS:
         if eid not in in_use:
@@ -126,6 +132,10 @@ async def main():
     runners = []
     async with aiohttp.ClientSession(trace_configs=[health.trace_config()]) as session:
         runtime.SESSION = session
+        # Keep the companion integration at this version (only if it's installed).
+        if companion.refresh(reach.service_address(await reach.addon_hostname(session))):
+            runtime.COMPANION_UPDATED = True
+            print("companion: updated; Home Assistant loads the new copy at its next restart", flush=True)
         start_entity_publisher()
         await start(runners)
         background = [asyncio.create_task(panel_link_loop()), asyncio.create_task(runtime.LIVE.run())]

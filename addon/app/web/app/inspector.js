@@ -4,7 +4,7 @@
 
 import { h, icon, api, clone, pageTitle, slug, modKey } from "./util.js";
 import { field, input, number, select, seg, textarea, toggle, toggleRow, section, linkButton, toast } from "./ui.js";
-import { TYPES, BREAKABLE, isWidget, hasText, elName, normalizeLineParity } from "./elements.js";
+import { TYPES, BREAKABLE, isWidget, hasText, elName, normalizeLineParity, GROUP_STYLES, GROUP_PAD } from "./elements.js";
 import { OPS, parseShowIf, compileShowIf, evaluate, describe, syncWidgetShowIf, syncDynamicGridShowIf } from "./conditions.js";
 import { explodeWidget, getWidgetSensorId, suggestIconForEntity } from "./legacy.js";
 
@@ -88,9 +88,17 @@ function styleRows(app, el, set) {
 /* ---------- element ---------- */
 function element(app, head, body, el, i) {
   const { t, d } = elName(el, app.entMap);
+  if (el.type === "group") {
+    head.append(h("div", { class: "ttl" }, h("span", { class: "kind" }, icon("layers", "xs"), t), h("span", { class: "tname", text: d })));
+    const members = app.doc.els().filter((e) => (el.members || []).includes(e.id));
+    body.append(together(app, members, el), section(null, h("div", { class: "btnrow" },
+      h("button", { class: "btn tinted", onclick: () => app.doc.select(app.canvas.withMembers([i])) }, "Select its elements"))));
+    return;
+  }
   head.append(h("div", { class: "ttl" }, h("span", { class: "kind" }, icon(TYPES[el.type]?.icon || "square", "xs"), t), h("span", { class: "tname", text: d || t })));
   const set = setter(app, el);
   const doc = app.doc, g = app.geometry();
+  if (el._auto) body.append(h("p", { class: "note" }, icon("info", "sm"), h("span", { text: `Placed automatically for ${app.screen?.name || "this screen"}. Move or resize it and this screen keeps its own place for it.` })));
 
   if (hasText(el)) {
     body.append(shows(app, el, set));
@@ -427,9 +435,48 @@ function gridSections(app, el, set) {
 }
 
 /* ---------- several selected ---------- */
+/* ---------- several together ---------- */
+// A style around several elements: an outline, a pill, or the whole area
+// inverted. It's a group that follows its members, on every screen size.
+function together(app, members, grp) {
+  const doc = app.doc;
+  const choose = (v) => {
+    const els = doc.els();
+    if (v === "none") {
+      if (!grp) return;
+      doc.page().elements = els.filter((e) => e !== grp);
+      doc.sel = members.map((e) => doc.els().indexOf(e)).filter((i) => i >= 0);
+      doc.commit();
+      app.toast("Ungrouped.", { label: "Undo", run: () => doc.undo() });
+      return;
+    }
+    if (grp) { grp.style = v; doc.commit(); return; }
+    const g = { type: "group", members: members.map((e) => e.id), style: v, pad: GROUP_PAD };
+    const first = Math.min(...members.map((e) => els.indexOf(e)));
+    els.splice(first, 0, g);                                   // behind its members
+    doc.sel = [g, ...members].map((e) => els.indexOf(e));
+    doc.commit();
+    app.say(`${GROUP_STYLES.find(([k]) => k === v)[1]} around ${members.length} elements.`);
+  };
+  const rows = [seg([["none", "None"], ...GROUP_STYLES], grp?.style || "none", choose, "Style around them")];
+  if (grp) {
+    rows.push(field("Space inside", number(grp.pad ?? GROUP_PAD, (v) => { grp.pad = Math.max(0, Math.min(60, Number(v) || 0)); doc.commit("pad"); }, { min: "0", max: "60", style: { width: "5em" } })));
+    rows.push(h("p", { class: "fnote", text: "It follows them when they move, and on every screen." }));
+  } else rows.push(h("p", { class: "fnote", text: "An outline, a pill or an inverted area around all of them." }));
+  return section("Together", ...rows);
+}
+
 function multi(app, head, body) {
   const doc = app.doc;
   head.append(h("div", { class: "ttl" }, h("span", { class: "kind", text: "Selection" }), h("span", { class: "tname", text: `${doc.sel.length} elements` })));
+  const picked = doc.sel.map((k) => doc.els()[k]).filter(Boolean);
+  const members = picked.filter((e) => e.type !== "group");
+  const ids = new Set(members.map((e) => e.id));
+  const groups = picked.filter((e) => e.type === "group");
+  // The group these exactly are, if there is one.
+  const grp = groups.find((g) => (g.members || []).length === ids.size && g.members.every((m) => ids.has(m)))
+    || doc.els().find((g) => g.type === "group" && (g.members || []).length === ids.size && g.members.every((m) => ids.has(m)));
+  if (members.length >= 2) body.append(together(app, members, grp));
   const btn = (ic, label, run) => h("button", { class: "btn icon tinted", "aria-label": label, title: label, onclick: run }, icon(ic));
   body.append(section("Align",
     h("div", { class: "btnrow icons" }, btn("alignl", "Align left edges", () => app.align("l")), btn("centerh", "Align centres", () => app.align("cx")), btn("alignr", "Align right edges", () => app.align("r")),

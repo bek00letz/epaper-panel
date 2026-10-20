@@ -9,10 +9,28 @@
 // Send writes the draft as the live pages, with a version check.
 
 import { api, clone, same } from "./util.js";
+import { groupBox } from "./elements.js";
 
 const HISTORY = 60;
 const AUTOSAVE_MS = 700;
 const TOP_KEYS = ["display", "orientation", "rotate_seconds", "quiet_hours", "custom_presets", "location_presets"];
+
+/* Every element has an ID, unique across the pages: a screen of another
+   size keeps its own place for each element by it. New, pasted and
+   duplicated elements get theirs here, in one place. */
+export const ARRANGE_KEYS = ["x", "y", "w", "h", "size", "font_scale"];
+const newId = (taken) => { let id; do { id = "e" + Math.random().toString(16).slice(2, 8); } while (taken.has(id)); return id; };
+export function ensureIds(spec) {
+  const seen = new Set();
+  for (const p of Object.values(spec.pages || {})) {
+    for (const el of p.elements || []) {
+      if (!el || typeof el !== "object") continue;
+      if (!el.id || seen.has(el.id)) el.id = newId(seen);
+      seen.add(el.id);
+    }
+  }
+  return spec;
+}
 
 export function normalize(spec) {
   spec = spec && typeof spec === "object" ? spec : {};
@@ -25,7 +43,37 @@ export function normalize(spec) {
   if (!Array.isArray(spec.custom_presets)) spec.custom_presets = [];
   if (!Array.isArray(spec.location_presets)) spec.location_presets = [];
   for (const p of Object.values(spec.pages)) if (!Array.isArray(p.elements)) p.elements = [];
-  return spec;
+  return ensureIds(spec);
+}
+
+/* Groups follow their members: their box is recomputed, members that are
+   gone leave, and a group with no members left goes too. */
+function syncGroups(spec) {
+  for (const p of Object.values(spec.pages)) {
+    const ids = new Set(p.elements.filter((e) => e.type !== "group").map((e) => e.id));
+    p.elements = p.elements.filter((g) => {
+      if (g.type !== "group") return true;
+      g.members = (g.members || []).filter((m) => ids.has(m));
+      const b = groupBox(g, p.elements);
+      if (!b) return false;
+      Object.assign(g, b);
+      return true;
+    });
+  }
+}
+
+/* An element placed automatically for this screen's size stays automatic
+   until someone moves or resizes it; then this size has its own place for it. */
+function settleAuto(spec, prevJson) {
+  let prev = null;
+  for (const [name, p] of Object.entries(spec.pages)) {
+    for (const el of p.elements) {
+      if (!el._auto) continue;
+      prev = prev || JSON.parse(prevJson);
+      const was = (prev.pages[name]?.elements || []).find((e) => e.id === el.id);
+      if (!was || ARRANGE_KEYS.some((k) => !same(was[k], el[k]))) delete el._auto;
+    }
+  }
 }
 
 /* Three-way merge: by page, then rotation, then each setting. A part changed
@@ -111,6 +159,11 @@ export class Doc {
 
   /* Record an edit. `kind` coalesces bursts (arrow nudges, typing) into one undo step. */
   commit(kind) {
+    ensureIds(this.spec);
+    const before = this.sel.map((i) => this.els()[i]);
+    syncGroups(this.spec);
+    if (before.length) this.sel = before.map((e) => this.els().indexOf(e)).filter((i) => i >= 0);
+    settleAuto(this.spec, this.hist[this.hpos]);
     const json = JSON.stringify(this.spec);
     if (json === this.hist[this.hpos]) { this.emit("change"); return; }
     const now = Date.now();

@@ -14,10 +14,12 @@ import feeds
 import live_data
 from render import binding, epf, layout, sleep, stripmeta, subitems, theme as T
 import airports
+import companion
 import config
 import devices
 import frame_token
 import kinds
+import reach
 import runtime
 from config import ADDON_VERSION, FRAME_PORT, HA_BASE, HA_TOKEN, INGRESS_GATEWAY, REFRESH, SLEEP_PAGE, WEB_DIR, valid_entity_id
 from fixture import load_fixture
@@ -25,7 +27,7 @@ from frames import _png, as_int, enrich_page_values, refresh_frames, split_page_
 from ha import curve_series, ha_json, resolve_templates
 from layouts_store import clear_draft, layouts_etag, load_draft, load_layouts, load_sources, sanitize_layouts, save_draft, save_layouts
 from panel_ops import push_panel_update
-from panel_setup import _detect_external_port, _detect_panel_connection, _new_api_key, generate_esphome_yaml, load_panel_setup, save_panel_setup
+from panel_setup import _detect_external_port, _detect_panel_connection, _new_api_key, generate_esphome_yaml, ha_name, load_panel_setup, more_networks, save_panel_setup
 from sources.flights import fetch_overhead_aircraft
 
 
@@ -469,6 +471,227 @@ async def api_push(request):
                                                                "the add-on can't reach this screen")})
 
 
+def _screen(dev: dict, everyone: list[dict]) -> dict:
+    """A device as the editor shows it. Never its key."""
+    kind = kinds.of(dev)
+    disp = T.get_display(dev.get("display"))
+    return {
+        "id": dev["id"], "name": dev.get("name") or "", "kind": kind.id, "kind_name": kind.name,
+        "display": disp["id"], "display_name": disp["name"], "orientation": int(dev.get("orientation") or 0),
+        "canvas": devices.canvas_of(dev), "design": dev["design"],
+        # On the design's own size, boxes are the design's; elsewhere they're this size's arrangement.
+        "made_here": devices.design_canvas(dev["design"]) == devices.canvas_of(dev),
+        "shares_with": [{"id": d["id"], "name": d.get("name") or ""} for d in everyone
+                        if d["design"] == dev["design"] and d["id"] != dev["id"]],
+        "can_wake": kind.link(dev) is not None, "picks_page": kind.picks_page, "owns_interval": kind.owns_interval,
+        "entity_suffix": dev.get("entity_suffix") or "",
+        # Enough to offer "the same quiet hours as …" when adding a screen.
+        "quiet": {k: (dev.get("quiet_hours") or {}).get(k) for k in ("enabled", "start", "end")},
+    }
+
+
+def _screens() -> dict:
+    everyone = devices.all_devices()
+    return {"devices": [_screen(d, everyone) for d in everyone],
+            "kinds": [{"id": k.id, "name": k.name,
+                       "displays": [{"id": d, "name": T.DISPLAYS[d]["name"], "w": T.DISPLAYS[d]["w"],
+                                     "h": T.DISPLAYS[d]["h"]} for d in k.displays()]}
+                      for k in kinds.KINDS.values()]}
+
+
+def _clean_name(raw, exclude_id=None) -> str:
+    name = re.sub(r"\s+", " ", str(raw or "")).strip()[:60]
+    if not name:
+        raise web.HTTPBadRequest(text="Give the screen a name.")
+    if any(d.get("name", "").casefold() == name.casefold() and d["id"] != exclude_id for d in devices.all_devices()):
+        raise web.HTTPBadRequest(text=f"There's already a screen called {name}.")
+    return name
+
+
+async def _body(request) -> dict:
+    try:
+        body = await request.json()
+    except Exception:
+        raise web.HTTPBadRequest(text="expected a JSON object")
+    if not isinstance(body, dict):
+        raise web.HTTPBadRequest(text="expected a JSON object")
+    return body
+
+
+async def _rerender():
+    try:
+        await refresh_frames(runtime.SESSION)
+    except Exception as exc:
+        print(f"render after a screen change failed: {health.describe(exc)}", flush=True)
+
+
+async def api_devices(request):
+    return web.json_response(_screens())
+
+
+async def api_devices_add(request):
+    """Add a screen: {kind, name, display, orientation, pages: new|copy|same, from, quiet_hours_from}."""
+    body = await _body(request)
+    kind = kinds.KINDS.get(str(body.get("kind") or ""))
+    if kind is None:
+        raise web.HTTPBadRequest(text="That isn't a kind of screen this add-on knows.")
+    display = str(body.get("display") or "")
+    if display not in kind.displays():
+        raise web.HTTPBadRequest(text=f"Pick one of the {kind.name} sizes.")
+    name = _clean_name(body.get("name"))
+    try:
+        orientation = int(body.get("orientation") or 0)
+    except (TypeError, ValueError):
+        orientation = 0
+    mode = body.get("pages") or "new"
+    extra = {}
+    try:
+        if body.get("quiet_hours_from"):
+            qh = devices.get(body["quiet_hours_from"]).get("quiet_hours")
+            if qh:
+                extra["quiet_hours"] = qh
+        if mode == "same":
+            dev = devices.add(kind.id, name, display, design=devices.get(body.get("from"))["design"],
+                              orientation=orientation, **extra)
+        elif mode == "copy":
+            dev = devices.add(kind.id, name, display, copy_from=devices.get(body.get("from"))["id"],
+                              orientation=orientation, **extra)
+        elif mode == "new":
+            dev = devices.add(kind.id, name, display, orientation=orientation, **extra)
+        else:
+            raise web.HTTPBadRequest(text="pages must be new, copy or same")
+    except KeyError:
+        raise web.HTTPBadRequest(text="The screen to copy from isn't there any more.")
+    print(f"devices: added {dev['name']} ({kind.name}, {mode})", flush=True)
+    await _rerender()
+    return web.json_response({"device": _screen(dev, devices.all_devices()), **_screens()})
+
+
+async def api_devices_update(request):
+    """Rename a screen: {name}. Its size and mounting go with its pages (Send)."""
+    dev = _device_by_path(request)
+    body = await _body(request)
+    fields = {}
+    if "name" in body:
+        fields["name"] = _clean_name(body["name"], exclude_id=dev["id"])
+    dev = devices.update(dev["id"], **fields) if fields else dev
+    return web.json_response({"device": _screen(dev, devices.all_devices()), **_screens()})
+
+
+async def api_devices_unlink(request):
+    """Stop sharing pages: the screen gets its own copy, as placed for it."""
+    dev = devices.unlink(_device_by_path(request)["id"])
+    clear_draft(dev["id"])
+    return web.json_response({"device": _screen(dev, devices.all_devices()), **_screens()})
+
+
+async def api_devices_remove(request):
+    dev = _device_by_path(request)
+    try:
+        devices.remove(dev["id"])
+    except ValueError as exc:
+        raise web.HTTPConflict(text=str(exc))
+    print(f"devices: removed {dev['name']}", flush=True)
+    await _rerender()
+    return web.json_response({"removed": {"id": dev["id"], "name": dev.get("name")}, **_screens()})
+
+
+async def api_devices_restore(request):
+    try:
+        dev = devices.restore(request.match_info["id"])
+    except (KeyError, ValueError) as exc:
+        raise web.HTTPConflict(text=str(exc).strip("'\""))
+    await _rerender()
+    return web.json_response({"device": _screen(dev, devices.all_devices()), **_screens()})
+
+
+def _device_by_path(request) -> dict:
+    try:
+        return devices.get(request.match_info["id"])
+    except KeyError:
+        raise web.HTTPNotFound(text="There's no such screen.")
+
+
+async def api_arrange(request):
+    """{spec, display, orientation}: the pages placed for another size or mounting, before it's sent."""
+    dev = _device(request)
+    body = await _body(request)
+    spec = body.get("spec")
+    if not isinstance(spec, dict) or not isinstance(spec.get("pages"), dict):
+        raise web.HTTPBadRequest(text="expected {spec, display, orientation}")
+    display = str(body.get("display") or "")
+    if display not in kinds.of(dev).displays():
+        raise web.HTTPBadRequest(text="That size isn't one this screen comes in.")
+    try:
+        orientation = int(body.get("orientation") or 0)
+    except (TypeError, ValueError):
+        orientation = 0
+    try:
+        clean = sanitize_layouts(spec)
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text=str(exc))
+    return web.json_response({"pages": devices.place(clean, dev["id"], display, orientation)})
+
+
+# ---------------------------------------------------------------- reaching home
+
+async def _reach_status() -> dict:
+    hostname = await reach.addon_hostname(runtime.SESSION)
+    s = reach.settings()
+    ha_addr = await reach.ha_address(runtime.HASS) if HA_TOKEN else ""
+    installed = companion.installed_version()
+    running = await companion.loaded(runtime.HASS) if HA_TOKEN else False
+    return {
+        **s,
+        "ha_address": ha_addr,
+        # Where a tunnel app on Home Assistant points (Cloudflare Tunnel's "service").
+        "service_address": reach.service_address(hostname),
+        "companion": {"installed": installed is not None, "version": installed, "running": running,
+                      "restart_needed": installed is not None and (not running or runtime.COMPANION_UPDATED)},
+        # A frame token someone chose can be short; away from home that matters.
+        "token_short": bool(config.FRAME_TOKEN) and len(config.FRAME_TOKEN) < 16,
+    }
+
+
+async def api_reach_get(request):
+    return web.json_response(await _reach_status())
+
+
+async def api_reach_put(request):
+    body = await _body(request)
+    try:
+        reach.save(str(body.get("mode") or ""), str(body.get("address") or ""))
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text=str(exc))
+    return web.json_response(await _reach_status())
+
+
+async def api_reach_companion(request):
+    """Install (or update) the companion integration, and set it up if Home Assistant already runs it."""
+    hostname = await reach.addon_hostname(runtime.SESSION)
+    try:
+        companion.install(reach.service_address(hostname))
+    except (OSError, ValueError) as exc:
+        raise web.HTTPConflict(text=f"Couldn't install it: {health.describe(exc)}")
+    status = await _reach_status()
+    if status["companion"]["running"]:
+        ok, problem = await companion.set_up(runtime.HASS)
+        status["set_up"] = ok
+        status["problem"] = problem or None
+    return web.json_response(status)
+
+
+async def api_reach_restart(request):
+    """Restart Home Assistant so it loads the companion integration. Set up happens on the next visit."""
+    ok, problem = await companion.restart_home_assistant(runtime.HASS)
+    return web.json_response({"restarting": ok, "problem": problem or None})
+
+
+async def api_reach_setup(request):
+    ok, problem = await companion.set_up(runtime.HASS)
+    return web.json_response({"set_up": ok, "problem": problem or None, **await _reach_status()})
+
+
 async def api_sources_get(request):
     return web.json_response(feeds.mask_secrets(load_sources()))
 
@@ -497,6 +720,16 @@ async def api_sources_test(request):
                               "error": errors[0] if errors else None})
 
 
+def _masked_setup(cfg: dict) -> dict:
+    """A panel's setup for the browser: passwords masked."""
+    out = dict(cfg)
+    if out.get("wifi_password"):
+        out["wifi_password"] = feeds.SECRET_MASK
+    out["wifi_networks"] = [{"ssid": n["ssid"], "password": feeds.SECRET_MASK if n["password"] else ""}
+                            for n in more_networks(cfg)]
+    return out
+
+
 async def api_panel_setup_get(request):
     fwd = request.headers.get("X-Forwarded-Host") or request.headers.get("Host") or ""
     host_guess = fwd.split(",")[0].strip().split(":")[0]
@@ -507,10 +740,9 @@ async def api_panel_setup_get(request):
     detected_port = await _detect_external_port(runtime.SESSION)
     if "frame_port" not in cfg:
         cfg["frame_port"] = detected_port
-    masked_cfg = dict(cfg)
-    if masked_cfg.get("wifi_password"):
-        masked_cfg["wifi_password"] = feeds.SECRET_MASK
-    yaml_text, secrets_text = generate_esphome_yaml(masked_cfg, dev)
+    masked_cfg = _masked_setup(cfg)
+    public = await reach.public_base(runtime.HASS)
+    yaml_text, secrets_text = generate_esphome_yaml(masked_cfg, dev, public)
     conn = await _detect_panel_connection(dev)
     return web.json_response({
         "config": masked_cfg,
@@ -531,7 +763,7 @@ async def api_panel_setup_post(request):
     cur = load_panel_setup(dev)
     if body.get("regenerate_keys"):
         cur["api_encryption_key"] = _new_api_key()
-    for k in ("device_name", "ha_host", "wifi_ssid", "refresh_interval", "display"):
+    for k in ("device_name", "ha_host", "wifi_ssid", "refresh_interval"):
         if k in body and isinstance(body[k], str):
             cur[k] = body[k].strip()
     if "frame_port" in body:
@@ -539,30 +771,31 @@ async def api_panel_setup_post(request):
             cur["frame_port"] = int(body["frame_port"])
         except (ValueError, TypeError):
             pass
-    if cur.get("display"):
-        # The size is the device's own; the form shows and changes it here too.
-        display = T.get_display(cur["display"])["id"]
-        if display in kinds.of(dev).displays() and display != dev.get("display"):
-            dev = devices.update(dev["id"], display=display)
+    # The size is the screen's own and goes with its pages (Send); the form only shows it.
+    cur.pop("display", None)
     if "use_secrets" in body:
         cur["use_secrets"] = bool(body["use_secrets"])
     if "wifi_password" in body and isinstance(body["wifi_password"], str):
         if body["wifi_password"] != feeds.SECRET_MASK:
             cur["wifi_password"] = body["wifi_password"]
+    if isinstance(body.get("wifi_networks"), list):
+        # A password shown masked and left alone stays what it was for that network.
+        before = {n["ssid"]: n["password"] for n in more_networks(cur)}
+        cur["wifi_networks"] = [{"ssid": n["ssid"], "password": before.get(n["ssid"], "") if n["password"] == feeds.SECRET_MASK
+                                 else n["password"]} for n in more_networks({"wifi_networks": body["wifi_networks"]})]
     for k in ("api_encryption_key",):
         if k in body and isinstance(body[k], str) and body[k].strip():
             if not body.get("regenerate_keys"):
                 cur[k] = body[k].strip()
     saved = save_panel_setup(dev["id"], cur)
     saved["display"] = T.get_display(load_layouts(dev["id"]).get("display"))["id"]
-    masked_cfg = dict(saved)
-    if masked_cfg.get("wifi_password"):
-        masked_cfg["wifi_password"] = feeds.SECRET_MASK
+    masked_cfg = _masked_setup(saved)
     # The file the panel is built from gets the real values; only the copy
     # shown in the browser is masked. (0.9.2 and earlier wrote the mask into
     # the file when the Wi-Fi password was left untouched.)
-    disk_yaml, _ = generate_esphome_yaml(saved, dev)
-    yaml_text, secrets_text = generate_esphome_yaml(masked_cfg, dev)
+    public = await reach.public_base(runtime.HASS)
+    disk_yaml, _ = generate_esphome_yaml(saved, dev, public)
+    yaml_text, secrets_text = generate_esphome_yaml(masked_cfg, dev, public)
     esphome_dir = config.ESPHOME_DIR
     esphome_synced = False
     if esphome_dir.exists() and esphome_dir.is_dir():
@@ -578,6 +811,8 @@ async def api_panel_setup_post(request):
                 tmp.write_text(disk_yaml, encoding="utf-8")
                 tmp.replace(target_yaml)
             esphome_synced = True
+            # The name Home Assistant will know this panel by once it's installed from this file.
+            devices.update(dev["id"], setup={**(devices.get(dev["id"]).get("setup") or {}), "installed_name": ha_name(dev)})
             print(f"Synced ESPHome config to {target_yaml}", flush=True)
         except Exception as e:
             print(f"Could not sync to {esphome_dir}: {e}", flush=True)
@@ -690,6 +925,18 @@ def make_apps():
         web.get("/api/sources", api_sources_get),
         web.put("/api/sources", api_sources_put),
         web.post("/api/sources/test", api_sources_test),
+        web.get("/api/devices", api_devices),
+        web.post("/api/devices", api_devices_add),
+        web.patch("/api/devices/{id}", api_devices_update),
+        web.post("/api/devices/{id}/unlink", api_devices_unlink),
+        web.delete("/api/devices/{id}", api_devices_remove),
+        web.post("/api/devices/{id}/restore", api_devices_restore),
+        web.post("/api/arrange", api_arrange),
+        web.get("/api/reach", api_reach_get),
+        web.put("/api/reach", api_reach_put),
+        web.post("/api/reach/companion", api_reach_companion),
+        web.post("/api/reach/setup", api_reach_setup),
+        web.post("/api/reach/restart", api_reach_restart),
         web.get("/api/panel-setup", api_panel_setup_get),
         web.post("/api/panel-setup", api_panel_setup_post),
         web.post("/api/panel-refresh", api_panel_refresh),

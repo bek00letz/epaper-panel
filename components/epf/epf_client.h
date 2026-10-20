@@ -8,6 +8,7 @@
 
 #include "epf_core.h"
 
+#include "esp_crt_bundle.h"
 #include "esp_heap_caps.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
@@ -137,7 +138,11 @@ class EpfClient {
     incoming_etag_.clear();
     esp_http_client_config_t config = {};
     config.url = url_.c_str();
-    config.timeout_ms = 10000;
+    // An https address (a screen away from home) is checked against ESP-IDF's
+    // bundle of public certificate authorities, like a browser would.
+    const bool https = url_.rfind("https://", 0) == 0;
+    if (https) config.crt_bundle_attach = esp_crt_bundle_attach;
+    config.timeout_ms = https ? 20000 : 10000;
     config.buffer_size = 4096;
     config.event_handler = epf_http_event_;
     config.user_data = &incoming_etag_;

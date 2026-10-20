@@ -154,7 +154,7 @@ export class Canvas {
       // when it sits underneath something else.
       const under = pr.hits.find((i) => this.doc.sel.includes(i));
       const i = under !== undefined ? under : pr.hits[0];
-      if (!this.doc.sel.includes(i)) this.doc.sel = pr.shift ? [...this.doc.sel, i] : [i];
+      if (!this.doc.sel.includes(i)) this.doc.sel = this.withMembers(pr.shift ? [...this.doc.sel, i] : [i]);
       pr.dragging = true; pr.lead = i;
       pr.orig = this.doc.sel.map((k) => ({ k, el: clone(this.els()[k]) }));
       this.stack = null;
@@ -163,11 +163,28 @@ export class Canvas {
     const els = this.els(), g = this.g;
     pr.moved = true;
     if (pr.orig.length > 1) {
+      // Several move as one: the box around them snaps like a single element would.
+      const moved = pr.orig.filter(({ el: o }) => o.type !== "group");
+      const box = (ox, oy) => {
+        const xs = moved.map(({ el: o }) => o.x + ox), ys = moved.map(({ el: o }) => o.y + oy);
+        const x0 = Math.min(...xs), y0 = Math.min(...ys);
+        return { x: x0, y: y0, w: Math.max(...moved.map(({ el: o }) => o.x + ox + o.w)) - x0, h: Math.max(...moved.map(({ el: o }) => o.y + oy + o.h)) - y0 };
+      };
+      let ox = dx, oy = dy, guides = null;
+      if (moved.length) {
+        const b = box(dx, dy);
+        ox -= Math.min(0, b.x); oy -= Math.min(0, b.y);                       // keep them on the panel
+        ox -= Math.max(0, b.x + b.w - g.W); oy -= Math.max(0, b.y + b.h - g.H);
+        if (!e.altKey) {
+          const snap = this.snapRect(box(ox, oy), (j) => this.doc.sel.includes(j));
+          ox += snap.dx; oy += snap.dy; guides = [snap.gx, snap.gy];
+        }
+      }
       pr.orig.forEach(({ k, el: o }) => {
-        els[k].x = Math.max(0, Math.min(g.W - o.w, Math.round(o.x + dx)));
-        els[k].y = Math.max(0, Math.min(g.H - o.h, Math.round(o.y + dy)));
+        els[k].x = Math.round(o.x + ox);
+        els[k].y = Math.round(o.y + oy);
       });
-      this.draw();
+      this.draw(guides);
     } else {
       const el = els[pr.lead], o = pr.orig[0].el;
       el.x = Math.max(0, Math.min(g.W - o.w, Math.round(o.x + dx)));
@@ -205,6 +222,7 @@ export class Canvas {
     let sel;
     if (pr.shift) sel = this.doc.sel.includes(picked) ? this.doc.sel.filter((k) => k !== picked) : [...this.doc.sel, picked];
     else sel = [picked];
+    sel = this.withMembers(sel);
     if (hits.length > 1) {
       this.stack = { hits, idx, p: pr.p, fresh: true };
       clearTimeout(this.stackT);
@@ -213,6 +231,16 @@ export class Canvas {
     this.doc.select(sel);
     const { t, d } = elName(this.els()[picked], this.app.entMap);
     this.app.say(`${t}${d ? ", " + d : ""} selected${hits.length > 1 ? `, ${idx + 1} of ${hits.length} under the pointer` : ""}.`);
+  }
+
+  /* A group comes with its members, so moving it moves them. */
+  withMembers(sel) {
+    const els = this.els(), out = new Set(sel);
+    for (const k of sel) {
+      const g = els[k];
+      if (g?.type === "group") els.forEach((e, j) => { if ((g.members || []).includes(e.id)) out.add(j); });
+    }
+    return [...out];
   }
 
   livePreview() {
@@ -231,6 +259,14 @@ export class Canvas {
       else { xs.push(o.x, o.x + o.w / 2, o.x + o.w); ys.push(o.y, o.y + o.h / 2, o.y + o.h); }
     });
     return { xs, ys };
+  }
+  /* How far to shift a box so one of its edges or centres meets a guide. */
+  snapRect(r, skip) {
+    const { xs, ys } = this.targets(skip);
+    let gx = null, gy = null, bx = SNAP + 0.01, by = SNAP + 0.01, dx = 0, dy = 0;
+    for (const v of [r.x + r.w / 2, r.x, r.x + r.w]) for (const t of xs) { const d = Math.abs(v - t); if (d < bx) { bx = d; gx = t; dx = t - v; } }
+    for (const v of [r.y + r.h / 2, r.y, r.y + r.h]) for (const t of ys) { const d = Math.abs(v - t); if (d < by) { by = d; gy = t; dy = t - v; } }
+    return { dx: Math.round(dx), dy: Math.round(dy), gx, gy };
   }
   snapMove(el, i) {
     const { xs, ys } = this.targets((j) => j === i || this.doc.sel.includes(j));
@@ -282,6 +318,7 @@ export class Canvas {
     const pct = (el) => ({ left: (el.x / g.W * 100) + "%", top: (el.y / g.H * 100) + "%", width: (el.w / g.W * 100) + "%", height: (el.h / g.H * 100) + "%" });
     const box = (el, cls) => { const b = h("div", { class: "ob " + cls, style: pct(el) }); this.ov.append(b); return b; };
     if (this.app.prefs.get("guides") === "1") els.forEach((el, i) => { if (!sel.includes(i)) box(el, "all"); });
+    els.forEach((el, i) => { if (el._auto && !sel.includes(i)) box(el, "auto"); });
     if (this.stack) this.stack.hits.forEach((k) => { if (!sel.includes(k) && els[k]) box(els[k], "stk"); });
     const hv = this.rowHover >= 0 ? this.rowHover : this.hover;
     if (hv >= 0 && els[hv] && !sel.includes(hv) && !this.press?.dragging) box(els[hv], "hov");

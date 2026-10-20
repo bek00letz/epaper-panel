@@ -163,6 +163,25 @@ class TestFirmwareYaml(unittest.TestCase):
                          "esphome/crowpanel-epaper.yaml is out of date; regenerate it with "
                          "`python tests/test_firmware.py --write-reference`")
 
+    def test_one_network_connects_straight_away_several_are_scanned_for(self):
+        one = firmware_gen.wifi_block([('"home"', '"pw"')])
+        self.assertIn("fast_connect: true", one)
+        several = firmware_gen.wifi_block([('"home"', '"pw"'), ('"work"', '"pw2"')])
+        self.assertNotIn("fast_connect", several, "a fast connect only ever tries the first network")
+        self.assertEqual(several.count("- ssid:"), 2)
+
+    def test_home_assistant_calls_the_panel_by_its_screens_name(self):
+        text = firmware_gen.render(
+            disp=T.get_display(DISPLAY), version="1.2.3", device_name="kitchen", frames_url='"https://x/frames.epf"',
+            api_key='"k"', wifi_ssid='"a"', wifi_password='"b"', interval_min=5, orientation=0,
+            friendly_name='"Kitchen"')
+        self.assertIn('friendly_name: "Kitchen"', text)
+
+    def test_the_client_checks_https_against_the_certificate_bundle(self):
+        client = (ROOT / "components" / "epf" / "epf_client.h").read_text()
+        self.assertIn("esp_crt_bundle_attach", client)
+        self.assertIn("CONFIG_MBEDTLS_CERTIFICATE_BUNDLE", (ROOT / "components" / "epf" / "__init__.py").read_text())
+
     def test_mounting_upside_down_swaps_the_buttons(self):
         self.assertEqual(firmware_gen.button_pins(180)["NEXT_PIN"], 6)
         self.assertEqual(firmware_gen.button_pins(0)["NEXT_PIN"], 4)

@@ -228,15 +228,32 @@ class TestEntityPublisher(unittest.TestCase):
     def test_button_press_calls_back(self):
         pressed = []
 
-        async def on_button():
-            pressed.append(True)
+        async def on_button(suffix=""):
+            pressed.append(suffix)
 
         pub, t = self.make(FakeHass(registry=[]))
         pub.on_button = on_button
         run(pub._on_connect())
         self.assertIn("homeassistant/button/epaper_panel/refresh/config", t.messages)
         run(pub._on_message(mqtt_bridge.BUTTON_COMMAND, b"PRESS"))
-        self.assertEqual(pressed, [True])
+        self.assertEqual(pressed, [""])
+
+    def test_each_screen_has_its_own_button_and_loses_it_when_removed(self):
+        pressed, screens = [], [("", "Living room"), ("_kitchen", "Kitchen")]
+
+        async def on_button(suffix=""):
+            pressed.append(suffix)
+
+        pub, t = self.make(FakeHass(registry=[]))
+        pub.on_button, pub.buttons = on_button, lambda: list(screens)
+        run(pub._on_connect())
+        cfg = json.loads(t.messages["homeassistant/button/epaper_panel/refresh_kitchen/config"])
+        self.assertEqual((cfg["name"], cfg["unique_id"]), ("Refresh Kitchen", "epaper_panel_refresh_button_kitchen"))
+        run(pub._on_message(cfg["command_topic"], b"PRESS"))
+        self.assertEqual(pressed, ["_kitchen"])
+        screens.pop()
+        run(pub.sync())
+        self.assertEqual(t.messages["homeassistant/button/epaper_panel/refresh_kitchen/config"], "")
 
     def test_first_render_waits_until_entities_are_back_online(self):
         async def scenario():

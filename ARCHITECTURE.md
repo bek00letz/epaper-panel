@@ -48,7 +48,9 @@ Where things live in `addon/app/`:
 | `server.py` | Entry point: starts the web apps and the background loops |
 | `config.py` / `runtime.py` | Settings from the environment; what the running add-on holds. Always read as `config.X` / `runtime.X`, so changes are seen everywhere |
 | `devices.py` | The screens the add-on drives, the design each shows, the shared library; keys; the move in from one panel |
-| `kinds/` | Kinds of device (`crowpanel.py`): their sizes, device-port routes, how they're woken, and packing what they fetch |
+| `kinds/` | Kinds of device (`crowpanel.py`): their sizes, device-port routes, how they're woken, and packing what they fetch; the one key check (`device_for`) and the wrong-key slowdown |
+| `render/arrange.py` | One design on several sizes: element IDs, automatic placement, each size's arrangement |
+| `reach.py` / `companion.py` / `companion/epaper_panel/` | Reaching home: how screens away from home get in, and the Home Assistant integration that passes them on |
 | `frames.py` | Per design: which pages are live, their values, alerts. Per device: quiet hours, then its kind renders it |
 | `entities.py` / `mqtt_bridge.py` | The add-on's own values, and mirroring them into Home Assistant |
 | `sources/` | Outside data (flights, sports, racing, weather, calendars), always through `live_data.py` |
@@ -116,6 +118,35 @@ every design.
   left out to fit, and the panel link. Alerts and lingering widget pages are
   per design (`runtime.alert`, `runtime.linger`), so an alert seizes every
   screen that shows its design.
+- **Adding a screen** (`devices.add`): new (the starter page,
+  `starter_design.json`, arranged by hand for every shipped size), a copy of
+  another screen's pages placed for the new size (`arrange.bake`), or the
+  same design (linked). Removing one is remembered with its key, so Undo puts
+  it back.
+
+### One design, several sizes
+
+A design is made on one canvas (`canvas`, like `792x272`, after turning for
+mounting). Every element has an ID, unique in the design, which the editor
+gives it. Any other canvas has an **arrangement**: per element ID, its box
+and text size there (`arrange.ARRANGE_KEYS`). Content and order belong to
+the design and are the same everywhere.
+
+- An element with no arrangement for a canvas is placed automatically: the
+  design's content area (above the footer band) scaled to fit and centred. The
+  view marks it `_auto`; the editor outlines it in dashes, and the first move
+  or resize gives that size its own place for it.
+- Saving a view (`arrange.merge_pages`) puts boxes into the design on its own
+  canvas, or into that canvas's arrangement elsewhere. A new element made on
+  another size gets a place on the design's canvas too. A deleted element
+  leaves every arrangement. Renaming a page keeps them: they're filed by ID.
+- A model or mounting change in the editor asks `/api/arrange` for the pages
+  placed on the new canvas, as one undoable change sent like any other.
+- **Groups** (`type: group`, `members`, `style`, `pad`) are a style around
+  several elements: outline, pill, or the area inverted. Their shape is worked
+  out at draw time from the members that are showing (`layout.group_box`), so
+  it follows them on every size. The editor keeps the group's own box in step
+  for picking, and a group comes with its members when selected.
 
 ### The frame file (EPF v3)
 
@@ -254,6 +285,10 @@ Assistant. Each CrowPanel device has its own link. It never guesses names:
   `show_page` is a panel. The device name from that panel's setup picks it.
   The only panel in Home Assistant is taken as ours only while the add-on
   drives a single CrowPanel.
+- **Several panels' entities**: each panel's firmware names it after its
+  screen (`friendly_name`), so Home Assistant's device has that name.
+  Panel setup records it (`setup.installed_name`) when it writes the file,
+  and the link takes the one device with that name, or reports.
 - **Entities** (refresh interval, IP, Wi-Fi) are found by registry
   `unique_id`, which ESPHome builds from the firmware's entity names
   (`<MAC>/0/number/Refresh interval`). It survives any rename of the entity ID.
@@ -273,6 +308,33 @@ Assistant. Each CrowPanel device has its own link. It never guesses names:
 - **Live widget pages linger** (`render/linger.py`). Once a widget page has
   appeared, it stays 5 minutes after its condition last held, so a plane at
   the edge of the radius doesn't reshape the rotation every minute.
+
+## Reaching home
+
+`reach.py`. Screens away from the home network reach the add-on one of
+three ways, chosen in Settings: at home only (the default), through Home
+Assistant's address, or through the user's own address.
+
+- **At home only**, requests that came through something on Home
+  Assistant's internal network with proxy headers (a tunnel app, the
+  companion) are refused, so a tunnel pointed at the add-on by mistake doesn't
+  open it up.
+- **Through Home Assistant's address**, the companion integration
+  (`companion/epaper_panel/`) registers one view, `/api/epaper/…`, with no
+  Home Assistant login, and passes requests to the device port on the internal
+  network. It drops Home Assistant's own `Authorization` and cookies and adds
+  `X-Forwarded-*`. All key checks stay in the add-on. The add-on installs it
+  into `/config/custom_components`, keeps it at its own version on every
+  start, asks for one restart, then creates its config entry (the flow asks
+  nothing). The address screens use is Home Assistant's external URL, or Home
+  Assistant Cloud's.
+- **Away from home, every request needs a key** (no switch-over), and a
+  sender with 10 wrong keys in 10 minutes is refused for 10 minutes
+  (`kinds.WrongKeys`). The sender is the proxy's word for it (`CF-Connecting-IP`,
+  `X-Forwarded-For`) only when the request came from the internal network.
+- **CrowPanels** fetch over HTTPS from the address in their YAML, checked
+  against ESP-IDF's certificate bundle (`epf_client.h`). Away from home they
+  can't be woken early: that goes through Home Assistant's ESPHome connection.
 
 ## Measured numbers
 

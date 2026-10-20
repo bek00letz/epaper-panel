@@ -71,6 +71,43 @@ them.
 | CrowPanel 7.5" | DIS08075E | 800 × 480 | Should work, not tested yet |
 | CrowPanel 10.2" | DIS08102E | 960 × 640 | Should work, not tested yet |
 
+## More than one screen
+
+Add as many screens as you like, of any size, from the screen's name at the
+top left of the editor (**Add a screen…**). Like setting up a phone, a new
+screen can:
+
+- **Set up as new**: start with one page that shows it's working (the date,
+  the next sunrise or sunset, and a QR code to the guide). Make it yours from
+  there.
+- **Copy from another screen**: take that screen's pages, fitted to this one,
+  and change them freely.
+- **Show the same pages as another screen**: an edit shows on both. A screen
+  of another size keeps its own layout: move something there and only that
+  screen changes. Things it hasn't been told where to go are placed
+  automatically, outlined in dashes until you move them.
+
+Each screen has its own name, quiet hours, key and **Refresh** button, and
+the switcher takes you between them. Change a screen's model and its pages
+start from an automatic fit for the new size; switching back brings your old
+layout back.
+
+## Away from home
+
+Take a screen to work and it keeps showing your pages. In **Settings ›
+Reaching home**, choose how it gets them:
+
+- **At home only** (the default): nothing changes.
+- **Through Home Assistant's address**: wherever you already reach Home
+  Assistant from outside (Home Assistant Cloud, Cloudflare, your own domain).
+  The editor installs a small integration for this and asks for one restart.
+- **Through your own address**: a tunnel or proxy of yours, such as
+  Cloudflare Tunnel, pointed at the add-on. The editor shows what to point it at.
+
+Away from home every screen needs its own key, and wrong keys slow down.
+Install each CrowPanel again once (**Install or update**) so it uses the new
+address over HTTPS; give it the other place's Wi-Fi there too.
+
 ## The editor
 
 ![The editor: page strip above the canvas, the selected value in the inspector](docs/editor.png)
@@ -87,6 +124,9 @@ what it's called.
   sensor straight onto the canvas.
 - **Copy, paste, and paste and match** move things between pages in the same
   place and size, or give one page the layout of another.
+- **Together**: select two or more elements and give them one outline, one
+  pill, or one inverted area. It follows them when they move and on every
+  screen size. Dragging several at once snaps to the same guides as one.
 - **Send to panel** puts your changes on the panel. Until then they're saved
   as drafts, and a dot shows something is waiting.
 - **Now on the panel**, at the front of the page strip, says whether the
@@ -267,7 +307,9 @@ data source, the live widgets' own (`sensor.epaper_flights_overhead`,
 `sensor.epaper_closest_aircraft`, `sensor.epaper_racing_<series>`,
 `sensor.epaper_sports_<league>`), `sensor.epaper_panel_pages` (how many pages
 the panel holds right now, and what was left out), a problem sensor per
-outside service, and a **Refresh panel** button. They show as unavailable
+outside service, and a **Refresh panel** button. A second screen gets its own
+quiet hours, last render, pages and Refresh entities, named after it
+(`sensor.epaper_quiet_hours_kitchen`); the first keeps the names above. They show as unavailable
 while the add-on is stopped. An entity stays while its source is down; it's
 removed only once nothing produces it any more.
 
@@ -276,8 +318,10 @@ removed only once nothing produces it any more.
 - **The editor is behind your Home Assistant login** and answers only Home
   Assistant's own proxy.
 - **The panel's port (8099) serves pictures of pages and nothing else**: no
-  layouts, entity names or places. Its frames are protected by a token the
-  add-on makes for you. Don't expose that port to the internet.
+  layouts, entity names or places. Every screen has its own key, made for
+  you. At home only (the default), it refuses anything that came through a
+  tunnel. Away from home, nothing gets in without a key, and a sender that
+  keeps getting keys wrong is refused for a while.
 - **No accounts, no analytics.** The add-on reaches outside services only for
   the widgets you put on a page and the data sources you set up. Airport codes
   are looked up from a copy bundled with the add-on.
@@ -295,7 +339,12 @@ measurements behind each decision.
 
 ## Honest limitations
 
-- **Only the 5.79" is tested on a device** (see above).
+- **Only the 5.79" is tested on a device** (see above), and only as the one
+  screen: two CrowPanels side by side, and HTTPS through Cloudflare or Home
+  Assistant Cloud, haven't been tried on real hardware yet.
+- **Away from home, a CrowPanel can't be woken early.** Alerts and the
+  Refresh button reach it through Home Assistant's own connection to it,
+  which only exists at home. Away, it picks up changes on its own timer.
 - **You choose the entities.** Presets and search help, but it doesn't guess
   what belongs on your screen.
 - **Up to about 77 pages at a time** on the 5.79" (the panel keeps 2 MB of them).

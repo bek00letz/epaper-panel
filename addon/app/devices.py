@@ -34,7 +34,7 @@ from pathlib import Path
 
 import config
 import frame_token
-from render import theme as T
+from render import arrange, theme as T
 
 # The view's top-level keys that belong to the device and to the library.
 # Everything else (pages, rotation) belongs to the design.
@@ -94,8 +94,9 @@ def _migrate() -> dict:
     setup = setup if isinstance(setup, dict) else {}
 
     if saved:
+        made_on = arrange.canvas_key(*T.canvas_dims(spec.get("orientation") or 0, spec.get("display")))
         _write(_path("designs", "1.json"),
-               {k: v for k, v in spec.items() if k not in DEVICE_KEYS + LIBRARY_KEYS})
+               {**{k: v for k, v in spec.items() if k not in DEVICE_KEYS + LIBRARY_KEYS}, "canvas": made_on})
     library = {k: spec[k] for k in LIBRARY_KEYS if k in spec}
     if library:
         _write(_path("library.json"), library)
@@ -111,7 +112,8 @@ def _migrate() -> dict:
     device = {
         "id": "1",
         "kind": "crowpanel",
-        "name": T.get_display(spec.get("display"))["name"],
+        # What Home Assistant already calls the panel (its firmware's friendly name).
+        "name": "E-paper panel",
         "design": "1",
         # Its key is the install's frame token (frame_token.py), so the panel's
         # download address, and the option that sets it, keep working.
@@ -179,14 +181,15 @@ def update(device_id, **fields) -> dict:
     raise KeyError(f"no device {device_id}")
 
 
-def add(kind: str, name: str, display: str, design: str | None = None, **fields) -> dict:
-    """A new device with its own key. It shows `design`, or a new design of the starter pages."""
+def add(kind: str, name: str, display: str, design: str | None = None, *, orientation: int = 0,
+        copy_from: str | None = None, **fields) -> dict:
+    """A new device with its own key.
+
+    Its pages, like setting up a phone: `design` shows another device's design
+    (linked); `copy_from` copies that device's pages, as placed for the new
+    screen; neither gives it a new design of the starter page.
+    """
     store = _load()
-    if design is None:
-        design = str(store["next_design"])
-        store["next_design"] += 1
-    elif _clean_id(design) not in designs_in_use(store):
-        raise KeyError(f"no design {design}")
     dev_id = str(store["next_device"])
     store["next_device"] += 1
     slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_") or f"screen_{dev_id}"
@@ -195,10 +198,71 @@ def add(kind: str, name: str, display: str, design: str | None = None, **fields)
     suffix, n = f"_{slug}", 2
     while suffix in taken:
         suffix, n = f"_{slug}_{n}", n + 1
-    dev = {"id": dev_id, "kind": kind, "name": name.strip()[:60] or f"Screen {dev_id}", "design": design,
+    dev = {"id": dev_id, "kind": kind, "name": name.strip()[:60] or f"Screen {dev_id}",
            "key": secrets.token_urlsafe(24), "entity_suffix": suffix, "display": T.get_display(display)["id"],
-           **fields}
+           "orientation": int(orientation) if int(orientation or 0) in (0, 90, 180, 270) else 0, **fields}
+    if design is not None:
+        if _clean_id(design) not in designs_in_use(store):
+            raise KeyError(f"no design {design}")
+        dev["design"] = design
+    else:
+        dev["design"] = str(store["next_design"])
+        store["next_design"] += 1
+        if copy_from is not None:
+            source = get(copy_from)
+            found = design_with_ids(source["design"])
+            new = arrange.bake(found, design_canvas(source["design"], found), canvas_of(dev))
+        else:
+            new = starter_design()
+        _save_design(dev["design"], new)
     store["devices"].append(dev)
+    _save(store)
+    return dev
+
+
+def unlink(device_id) -> dict:
+    """Give a device its own copy of the design it shares, as placed for it. A no-op if it doesn't share."""
+    dev = get(device_id)
+    store = _load()
+    if sum(1 for d in store["devices"] if d["design"] == dev["design"]) < 2:
+        return dev
+    found = design_with_ids(dev["design"])
+    new_id = str(store["next_design"])
+    store["next_design"] += 1
+    _save_design(new_id, arrange.bake(found, design_canvas(dev["design"], found), canvas_of(dev)))
+    for d in store["devices"]:
+        if d["id"] == dev["id"]:
+            d["design"] = new_id
+            dev = d
+    _save(store)
+    return dev
+
+
+REMEMBER_REMOVED = 10
+
+
+def remove(device_id) -> dict:
+    """Take a device out. It's remembered (with its key) so it can be put back; its design is kept."""
+    store = _load()
+    dev = get(device_id)
+    if len(store["devices"]) < 2:
+        raise ValueError("This is the only screen, so it can't be removed.")
+    store["devices"] = [d for d in store["devices"] if d["id"] != dev["id"]]
+    store["removed"] = ([dev] + [d for d in store.get("removed") or [] if d.get("id") != dev["id"]])[:REMEMBER_REMOVED]
+    _save(store)
+    return dev
+
+
+def restore(device_id) -> dict:
+    """Put back a device that `remove` took out (the undo)."""
+    store = _load()
+    device_id = _clean_id(device_id)
+    dev = next((d for d in store.get("removed") or [] if d.get("id") == device_id), None)
+    if dev is None or any(d["id"] == device_id for d in store["devices"]):
+        raise ValueError("That screen can't be put back any more.")
+    store["removed"] = [d for d in store["removed"] if d.get("id") != device_id]
+    store["devices"].append(dev)
+    store["devices"].sort(key=lambda d: int(d["id"]))
     _save(store)
     return dev
 
@@ -209,12 +273,71 @@ def designs_in_use(store: dict | None = None) -> set[str]:
 
 # ---------------------------------------------------------------- designs and the library
 
+# The shipped starter pages were made for the 5.79" panel, landscape.
+SHIPPED_CANVAS = arrange.canvas_key(*T.canvas_dims(0, T.DEFAULT_DISPLAY))
+DESIGN_KEYS = ("canvas", "arrangements")
+
+
 def design(design_id) -> dict:
-    """A design's pages and rotation. One that was never saved is the shipped starter pages."""
+    """A design: pages, rotation, the canvas it was made on, arrangements for other sizes.
+    One that was never saved is the shipped starter pages."""
     found = _read(_path("designs", f"{_clean_id(design_id)}.json"), None)
     if not isinstance(found, dict):
         found = {k: v for k, v in _defaults().items() if k not in DEVICE_KEYS + LIBRARY_KEYS}
+        found["canvas"] = SHIPPED_CANVAS
     return found
+
+
+def canvas_of(dev: dict) -> str:
+    """The canvas a device draws on: its size, turned for how it's mounted."""
+    return arrange.canvas_key(*T.canvas_dims(dev.get("orientation") or 0, dev.get("display")))
+
+
+def design_canvas(design_id, found: dict | None = None) -> str:
+    """The canvas a design's own boxes are for."""
+    found = found if found is not None else design(design_id)
+    if found.get("canvas"):
+        return str(found["canvas"])
+    for dev in all_devices():
+        if dev["design"] == str(design_id):
+            return canvas_of(dev)
+    return SHIPPED_CANVAS
+
+
+def design_with_ids(design_id) -> dict:
+    found = design(design_id)
+    return {**found, "pages": arrange.ensure_ids(found.get("pages") or {})}
+
+
+STARTER_PATH = Path(__file__).parent / "starter_design.json"
+
+
+def starter_design() -> dict:
+    """What "Set up as new" starts with: one page that works on any Home Assistant,
+    arranged by hand for each shipped size."""
+    found = _read(STARTER_PATH, None)
+    if not isinstance(found, dict):
+        found = {k: v for k, v in _defaults().items() if k not in DEVICE_KEYS + LIBRARY_KEYS}
+        found["canvas"] = SHIPPED_CANVAS
+    found["pages"] = arrange.ensure_ids(found.get("pages") or {})
+    return found
+
+
+def place(spec: dict, device_id, display, orientation) -> dict:
+    """The view's pages (as edited on the device's current canvas) placed for another
+    size or mounting: that size's arrangement, or automatically. For the editor,
+    before the change is sent."""
+    dev = resolve(device_id)
+    found = design_with_ids(dev["design"])
+    base = design_canvas(dev["design"], found)
+    here = arrange.canvas_key(*T.canvas_dims(spec.get("orientation") or 0, spec.get("display")))
+    there = arrange.canvas_key(*T.canvas_dims(orientation or 0, display))
+    scratch = arrange.merge_pages(found, spec.get("pages") or {}, base, here)
+    return arrange.pages_for(scratch, base, there)
+
+
+def _save_design(design_id, found: dict) -> None:
+    _write(_path("designs", f"{_clean_id(design_id)}.json"), found)
 
 
 def library() -> dict:
@@ -225,23 +348,42 @@ def library() -> dict:
 # ---------------------------------------------------------------- the view
 
 def view(device_id=None) -> dict:
-    """The device's pages and settings in the one shape the editor and renderer use."""
+    """The device's pages and settings in the one shape the editor and renderer use.
+
+    Pages are placed for the device's own canvas (render/arrange.py): on the
+    canvas the design was made on, as they are; elsewhere from that size's
+    arrangement, or automatically (marked `_auto`).
+    """
     dev = resolve(device_id)
-    out = dict(design(dev["design"]))
+    found = design(dev["design"])
+    base = design_canvas(dev["design"], found)
+    out = {k: v for k, v in found.items() if k not in ("pages",) + DESIGN_KEYS}
+    out["pages"] = arrange.pages_for({**found, "pages": arrange.ensure_ids(found.get("pages") or {})},
+                                     base, canvas_of(dev))
     out.update({k: dev[k] for k in DEVICE_KEYS if k in dev})
     out.update({k: v for k, v in library().items() if k in LIBRARY_KEYS})
     return out
 
 
 def save_view(spec: dict, device_id=None) -> None:
-    """Store a checked view (layouts_store.sanitize_layouts): its parts go to the design, device and library."""
+    """Store a checked view (layouts_store.sanitize_layouts): its parts go to the design, device and library.
+
+    Settings that change the device's canvas apply first, so the pages are
+    stored as placed on the canvas they were edited for.
+    """
     dev = resolve(device_id)
-    _write(_path("designs", f"{dev['design']}.json"),
-           {k: v for k, v in spec.items() if k not in DEVICE_KEYS + LIBRARY_KEYS})
+    dev = update(dev["id"], **{k: spec[k] for k in DEVICE_KEYS if k in spec})
+    found = design(dev["design"])
+    base = design_canvas(dev["design"], found)
+    rest = {k: v for k, v in spec.items() if k not in DEVICE_KEYS + LIBRARY_KEYS + ("pages",) + DESIGN_KEYS}
+    merged = arrange.merge_pages({**found, "pages": arrange.ensure_ids(found.get("pages") or {})},
+                                 spec.get("pages") or {}, base, canvas_of(dev))
+    merged.update(rest)
+    merged["canvas"] = base
+    _save_design(dev["design"], merged)
     lib = library()
     lib.update({k: spec[k] for k in LIBRARY_KEYS if k in spec})
     _write(_path("library.json"), lib)
-    update(dev["id"], **{k: spec[k] for k in DEVICE_KEYS if k in spec})
 
 
 def all_views() -> list[tuple[dict, dict]]:

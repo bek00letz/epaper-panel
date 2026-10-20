@@ -14,7 +14,7 @@ substitutions:
 
 esphome:
   name: ${name}
-  friendly_name: E-paper panel
+  friendly_name: @FRIENDLY_NAME@
   on_boot:
     priority: -100
     then:
@@ -120,10 +120,7 @@ ota:
   - platform: esphome
     encryption: {}
 
-wifi:
-  ssid: @WIFI_SSID@
-  password: @WIFI_PASSWORD@
-  fast_connect: true
+@WIFI_BLOCK@
 
 # GPIO7 powers the display; nothing renders until it is high.
 switch:

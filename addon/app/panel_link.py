@@ -61,12 +61,15 @@ def unique_id_is(uid: str, domain: str, name: str) -> bool:
 
 
 class PanelLink:
-    def __init__(self, hass: Hass, preferred_node=lambda: "", sole=lambda: True):
+    def __init__(self, hass: Hass, preferred_node=lambda: "", sole=lambda: True, ha_name=lambda: ""):
         """`preferred_node`: the panel's ESPHome node, if set up. `sole`: whether the
-        add-on drives only one panel, so the only one in Home Assistant must be it."""
+        add-on drives only one panel, so the only one in Home Assistant must be it.
+        `ha_name`: the name its firmware gives it in Home Assistant, which tells
+        several panels' entities apart."""
         self.hass = hass
         self._preferred = preferred_node
         self._sole = sole
+        self._ha_name = ha_name
         self.node: str | None = None
         self.entities: dict[str, str] = {}
         self.problem: str = "not looked for the panel yet"
@@ -142,12 +145,21 @@ class PanelLink:
             for key, (domain, name) in ENTITY_KEYS.items():
                 if unique_id_is(e.get("unique_id"), domain, name):
                     by_device.setdefault(e["device_id"], {})[key] = e["entity_id"]
-        panels = [ents for ents in by_device.values() if "refresh" in ents]
+        panels = {dev_id: ents for dev_id, ents in by_device.items() if "refresh" in ents}
         if len(panels) == 1 and single_panel:
-            return panels[0]
-        # Several panel devices: there is no reliable link from an ESPHome node
-        # name to its device, so report rather than guess.
-        return {}
+            return next(iter(panels.values()))
+        # Several panels: each one's firmware names it after its screen, and Home
+        # Assistant's device has that name. Exactly one match, or report rather than guess.
+        want = (self._ha_name() or "").strip()
+        if not want:
+            return {}
+        try:
+            registry = await self.hass.ws({"type": "config/device_registry/list"})
+        except HassError as exc:
+            print(f"panel: couldn't read the device registry: {exc}", flush=True)
+            return {}
+        named = [d.get("id") for d in registry or [] if d.get("name") == want and d.get("id") in panels]
+        return panels[named[0]] if len(named) == 1 else {}
 
     # ------------------------------------------------------------------ actions
     async def call(self, action: str, data: dict | None = None) -> tuple[bool, str]:

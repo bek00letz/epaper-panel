@@ -95,7 +95,9 @@ the add-on itself lives in `addon/`.
 | `<homeassistant>:8099` | The device port: what each device fetches, found by its key (`kinds.device_for`). For a CrowPanel: `/frames.epf`, `/frame.epf`, the PNG fallbacks, and a minimal `/status`. `POST /api/action/refresh|page` always need a key. The first panel's frames need it once that panel has used it (`frame_token.py`). Remappable in the add-on's network settings |
 | ESPHome node (`crowpanel-epaper`) | Exposes `refresh_now`, `show_page`, `page_step`, and `hold_toggle` actions over the encrypted ESPHome native API |
 
-Never expose port `8099` or the panel's endpoints to the public internet.
+The device port is built to be reachable from the internet (Settings ›
+Reaching home): never add anything to it that answers without a device's key
+through `kinds.device_for`, and never let it say more than a frame does.
 
 ## Conventions
 
@@ -115,8 +117,16 @@ Never expose port `8099` or the panel's endpoints to the public internet.
   `save_view` (or `layouts_store`), never by file. A kind of device lives in
   `kinds/`; the core never names one.
 - **The first device keeps its legacy names**: the install's frame token, its
-  download address, its entity IDs. Don't "tidy" them: that's what keeps an
-  upgraded panel working without a reflash.
+  download address, its entity IDs, its name in Home Assistant ("E-paper
+  panel"). Don't "tidy" them: that's what keeps an upgraded panel working
+  without a reflash.
+- **Elements have IDs, unique in the design, and the editor gives them**
+  (`doc.ensureIds`). Arrangements for other sizes are filed by them. Never
+  make an element's identity depend on its position or its page.
+- **Geometry is per size, content is shared.** `arrange.ARRANGE_KEYS` (box,
+  text size) may differ between screen sizes; everything else an element has
+  is the same on every screen showing the design. Don't add a per-size field
+  anywhere else.
 - **Prefer a structured binding over raw Jinja** (`render/binding.py`). An
   element says `{entity, show, format, prefix, suffix, replace}` and the engine
   builds the template. Supports `show: state`, `attribute`, `last_changed`, `last_updated`,
@@ -169,6 +179,11 @@ YAML comes only from `addon/app/firmware/panel.yaml`. After changing it, run
 - `psram: mode: octal` assumes an N8R8 board. Unconfirmed; if it will not boot,
   comment it out and read the boot log.
 - **Trust Elecrow's demo source over their wiki** for pin numbers.
+- **One Wi-Fi network uses `fast_connect`; several are scanned for.** A fast
+  connect only ever tries the first network (`firmware_gen.wifi_block`).
+- **HTTPS is checked against ESP-IDF's certificate bundle**
+  (`esp_crt_bundle_attach`, enabled in `components/epf/__init__.py`). Don't
+  turn checking off to make a tunnel work; fix the tunnel's certificate.
 - **`on_boot` fires before wifi is associated.** A fetch there races the
   network and loses. `refetch` waits on `wifi.connected` first; keep it that way.
 - **Changing navigation state does nothing on screen on its own.** Follow it
@@ -194,8 +209,9 @@ The 0.9 editor stays at `?classic=1` (`web/classic.html`) until the new one has
 proven itself; ask the user before removing it. `docs/editor-redesign/` holds
 the inventory every change is checked against.
 
-- **Four things, one place each.** The panel (status at the head of the page
-  strip, Settings for the rest), the rotation (the page strip, above the
+- **Five things, one place each.** The screen (its name is the toolbar's
+  title and switches between screens; Settings for the rest), the panel's
+  state (status at the head of the page strip), the rotation (the page strip, above the
   canvas by default so the window reads from general to specific (below or
   down the side is a setting), *is* the rotation: drag to reorder, a page can sit in it twice), a page (the
   inspector when nothing is selected), an element (canvas and inspector).

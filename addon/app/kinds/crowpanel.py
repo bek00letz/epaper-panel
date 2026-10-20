@@ -73,7 +73,16 @@ class CrowPanel(Kind):
                 # "The only panel in Home Assistant is ours" holds only while we drive one.
                 return sum(1 for d in devices.all_devices() if d.get("kind") == self.id) == 1
 
-            rt.link = PanelLink(runtime.HASS, preferred, sole=only_panel)
+            def ha_name():
+                try:
+                    dev_now = devices.get(dev_id)
+                except KeyError:
+                    return ""
+                setup = dev_now.get("setup") or {}
+                # Installed from a file that named it, or the name every panel had before that.
+                return setup.get("installed_name") or ("E-paper panel" if dev_now.get("install_token") else "")
+
+            rt.link = PanelLink(runtime.HASS, preferred, sole=only_panel, ha_name=ha_name)
         return rt.link
 
     async def render(self, session, dev, spec, st, quiet_active, quiet_reason) -> runtime.Frames:
@@ -130,8 +139,8 @@ class CrowPanel(Kind):
             fg = T.footer_geometry(clock=clock, cat_label=cat_label, has_sub=sub_count > 1,
                                    orientation=orient, display=display)
             try:
-                page_imgs = await frames.draw_category(plan, sub_count, cat_label, clock=clock,
-                                                       orient=orient, display=display)
+                page_imgs = await frames.draw_category(plan, sub_count, cat_label, page_def=spec["pages"][cat_name],
+                                                       clock=clock, orient=orient, display=display)
             except Exception as exc:
                 print(f"page {cat_name} left out: {health.describe(exc)}", flush=True)
                 continue

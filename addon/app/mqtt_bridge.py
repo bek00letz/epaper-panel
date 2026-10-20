@@ -14,7 +14,8 @@ Topics
   homeassistant/<component>/epaper_panel/<object_id>/config   discovery
   epaper_panel/<object_id>/state, .../attributes               values
   epaper_panel/status                                          online/offline (last will)
-  epaper_panel/refresh/press                                   the Refresh button
+  epaper_panel/refresh/press                                   the first screen's Refresh button
+  epaper_panel/refresh_<suffix>/press                          each other screen's
 
 Discovery topics and unique_ids are the ones 0.8.x used, so entities people
 already have carry over with their settings.
@@ -35,6 +36,8 @@ NODE = "epaper_panel"
 BASE = "epaper_panel"
 AVAILABILITY = f"{BASE}/status"
 BUTTON_COMMAND = f"{BASE}/refresh/press"
+BUTTON_COMMANDS = f"{BASE}/+/press"
+BUTTON_TOPIC = re.compile(rf"^{BASE}/refresh(_[a-z0-9_]+)?/press$")
 BIRTH_TOPIC = f"{DISCOVERY_PREFIX}/status"
 UID_PREFIX = "epaper_studio_"
 BUTTON_UID = "epaper_panel_refresh_button"
@@ -68,11 +71,15 @@ def entity_name(attrs: dict, obj: str) -> str:
 
 class EntityPublisher:
     def __init__(self, transport, hass: Hass, data_dir: Path, version: str, on_button=None,
-                 clock=time.time):
+                 clock=time.time, buttons=lambda: [("", "")]):
+        """`buttons`: (entity suffix, screen name) for each screen's Refresh button; the
+        first screen's suffix is "". `on_button(suffix)` runs when one is pressed."""
         self.transport = transport
         self.hass = hass
         self.version = version
         self.on_button = on_button
+        self.buttons = buttons
+        self._announced_buttons: dict[str, str] = {}
         self._clock = clock
         self._started = clock()
         self._state_path = Path(data_dir) / "mqtt_entities.json"
@@ -137,6 +144,7 @@ class EntityPublisher:
             return
         async with self._lock:
             now = self._clock()
+            await self._announce_button()                  # screens come and go
             for obj, want in list(self.desired.items()):
                 await self._announce(obj, want)
                 await self._send_state(obj, want)
@@ -174,7 +182,7 @@ class EntityPublisher:
         self._sent_state.clear()
         self._ready = False
         await self.transport.subscribe(BIRTH_TOPIC)
-        await self.transport.subscribe(BUTTON_COMMAND)
+        await self.transport.subscribe(BUTTON_COMMANDS)
         await self.transport.publish(AVAILABILITY, "online")
         await self._load_registry()
         await self._migrate_once()
@@ -199,8 +207,8 @@ class EntityPublisher:
             self._sent_state.clear()
             await self._announce_button(force=True)
             await self.sync()
-        elif topic == BUTTON_COMMAND and self.on_button is not None:
-            await self.on_button()
+        elif self.on_button is not None and (m := BUTTON_TOPIC.match(topic)):
+            await self.on_button(m.group(1) or "")
 
     # ------------------------------------------------------------------ entities
     def _config(self, obj: str, attrs: dict) -> dict:
@@ -270,17 +278,29 @@ class EntityPublisher:
         print(f"mqtt: withdrew {eid}", flush=True)
 
     async def _announce_button(self, force: bool = False):
-        cfg = {
-            "name": "Refresh panel",
-            "unique_id": BUTTON_UID,
-            "default_entity_id": "button.epaper_refresh_panel",
-            "command_topic": BUTTON_COMMAND,
-            "availability_topic": AVAILABILITY,
-            "icon": "mdi:refresh",
-            "device": self._device(),
-            "origin": {"name": "E-paper panel add-on", "sw_version": self.version},
-        }
-        await self.transport.publish(f"{DISCOVERY_PREFIX}/button/{NODE}/refresh/config", json.dumps(cfg))
+        """A Refresh button per screen; the first keeps the one 0.8.x made. A screen that's gone loses its button."""
+        if force:
+            self._announced_buttons.clear()
+        wanted = {}
+        for suffix, name in self.buttons():
+            obj = f"refresh{suffix}"
+            wanted[obj] = json.dumps({
+                "name": "Refresh panel" if not suffix else f"Refresh {name}",
+                "unique_id": BUTTON_UID + suffix,
+                "default_entity_id": f"button.epaper_refresh_panel{suffix}",
+                "command_topic": f"{BASE}/{obj}/press",
+                "availability_topic": AVAILABILITY,
+                "icon": "mdi:refresh",
+                "device": self._device(),
+                "origin": {"name": "E-paper panel add-on", "sw_version": self.version},
+            })
+        for obj, cfg in wanted.items():
+            if self._announced_buttons.get(obj) != cfg:
+                await self.transport.publish(f"{DISCOVERY_PREFIX}/button/{NODE}/{obj}/config", cfg)
+                self._announced_buttons[obj] = cfg
+        for obj in [o for o in self._announced_buttons if o not in wanted]:
+            await self.transport.publish(f"{DISCOVERY_PREFIX}/button/{NODE}/{obj}/config", "")
+            del self._announced_buttons[obj]
 
     # ------------------------------------------------------------------ registry hygiene
     async def _load_registry(self):

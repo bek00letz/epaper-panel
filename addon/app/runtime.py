@@ -106,6 +106,9 @@ FEED_ITEMS = {}
 
 MQTT_DISCOVERED: set[str] = set()
 
+# The companion integration was updated at this start: Home Assistant runs the old copy until it restarts.
+COMPANION_UPDATED = False
+
 
 LAST_PANEL_PUSH_TIME = time.time()
 

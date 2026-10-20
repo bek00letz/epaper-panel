@@ -1,9 +1,25 @@
 # Changelog
 
 ## Unreleased
-Add-on only; no firmware change. Nothing changes on your panel or in the editor.
+**Firmware change** (only needed for the new things below): install the panel
+again from Panel setup when you want it to work away from home or join more
+than one Wi-Fi network. Until then it keeps working as before.
 
-- **Ready for more than one screen.** The add-on now keeps track of
+- **More than one screen.** Add screens from the name at the top left of the
+  editor: set up as new, copy another screen's pages, or show the same pages
+  as another screen. A screen of another size keeps its own layout of shared
+  pages; anything it hasn't placed yet is fitted automatically and outlined
+  until you move it. Each screen has its own quiet hours, key and Refresh
+  button in Home Assistant.
+- **Away from home.** In Settings › Reaching home, a screen can fetch through
+  Home Assistant's own address (the editor installs a small integration and
+  asks for one restart) or through a tunnel of yours. Away from home every
+  screen needs its key, and wrong keys slow down. Panels fetch over HTTPS, can
+  know several Wi-Fi networks, and show the screen's name in Home Assistant.
+- **One style around several elements.** Select two or more, then choose an
+  outline, a pill or an inverted area under Together. It follows them when
+  they move. Dragging several at once now snaps to the guides too.
+- **Your panel becomes the first screen.** The add-on now keeps track of
   screens ("devices") and the pages each one shows ("designs"), so a later
   version can drive several panels of different sizes, each with its own
   pages, quiet hours and key. On the first start your panel becomes the

@@ -87,6 +87,7 @@ export const ICONS = {
   panel: P('<rect x="2" y="6" width="20" height="12" rx="2"/><path d="M5 15h14"/>'),
   plug: P('<path d="M9 2v5M15 2v5M6 7h12v4a6 6 0 0 1-12 0V7zM12 17v5"/>'),
   key: P('<circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M16 7l3 3"/>'),
+  globe: P('<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18"/>'),
 };
 export function icon(name, cls = "") {
   const s = document.createElement("span");
@@ -103,7 +104,18 @@ export const prefs = {
 };
 
 // JSON API. Errors carry the status and, for a 409, the body.
+/* Which screen the editor is working on. Every add-on request says so; the
+   ones that aren't about a screen ignore it. */
+let currentDevice = "";
+export function setDevice(id) { currentDevice = String(id || ""); }
+export function getDevice() { return currentDevice; }
+export function withDevice(path) {
+  if (!currentDevice || !path.startsWith("api/")) return path;
+  return path + (path.includes("?") ? "&" : "?") + "device=" + encodeURIComponent(currentDevice);
+}
+
 export async function api(path, opts = {}) {
+  path = withDevice(path);
   const init = { method: opts.method || "GET", headers: { ...(opts.headers || {}) } };
   if (opts.body !== undefined) { init.body = JSON.stringify(opts.body); init.headers["Content-Type"] = "application/json"; }
   let r;
