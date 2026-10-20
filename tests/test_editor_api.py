@@ -2,6 +2,7 @@
 import asyncio
 import json
 import unittest
+from unittest import mock
 
 from aiohttp.test_utils import TestClient, TestServer
 
@@ -9,6 +10,7 @@ import support
 import frames
 import layouts_store
 import panel_link
+import runtime
 import web
 from test_panel_link_and_entities import PANEL_REGISTRY, FakeHass
 
@@ -95,6 +97,44 @@ class TestVersionCheck(EditorClient):
     async def test_version_ignores_file_formatting(self):
         spec, tag = await self.spec_and_tag()
         self.assertEqual(f'"{layouts_store.layouts_etag(json.loads(json.dumps(spec, indent=4)))}"', tag)
+
+
+class ConfigHass:
+    """Home Assistant's /api/config, with or without an internal URL."""
+
+    def __init__(self, internal_url):
+        self.internal_url = internal_url
+
+    async def rest(self, method, path, json=None, timeout=15):
+        assert (method, path) == ("GET", "/config")
+        return {"internal_url": self.internal_url}
+
+
+class TestTheirHomeAddress(EditorClient):
+    """Audit #9: opened through a tunnel, Panel setup took the browser's address, and the panel
+    was told to fetch from the tunnel's name over plain HTTP. It's Home Assistant's own now."""
+
+    async def setup_through_a_tunnel(self, internal_url):
+        with mock.patch.object(runtime, "HASS", ConfigHass(internal_url)):
+            r = await self.ed.get("/api/panel-setup", headers={"X-Forwarded-Host": "ha.example-tunnel.com",
+                                                                "Host": "ha.example-tunnel.com"})
+        self.assertEqual(r.status, 200)
+        return await r.json()
+
+    async def test_its_internal_url(self):
+        got = await self.setup_through_a_tunnel("http://192.168.1.5:8123")
+        self.assertEqual(got["config"]["ha_host"], "192.168.1.5")
+        self.assertNotIn("example-tunnel", got["yaml"])
+
+    async def test_never_the_browsers(self):
+        got = await self.setup_through_a_tunnel(None)
+        self.assertEqual(got["config"]["ha_host"], "homeassistant.local", "no internal URL, no Supervisor: the usual name")
+        self.assertNotIn("example-tunnel", got["yaml"])
+
+    async def test_a_blank_address_goes_back_to_it(self):
+        with mock.patch.object(runtime, "HASS", ConfigHass("http://ha.lan:8123")):
+            r = await self.ed.post("/api/panel-setup", json={"ha_host": "  "})
+        self.assertEqual((await r.json())["config"]["ha_host"], "ha.lan")
 
 
 class TestDrafts(EditorClient):

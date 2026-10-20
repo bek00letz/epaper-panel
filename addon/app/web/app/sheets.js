@@ -577,8 +577,7 @@ async function installPane(app, pane) {
   pane.append(box);
   let r;
   try { r = (await api("api/panel-setup")).body; } catch (e) { box.replaceChildren(h("p", { class: "fnote bad", text: `Couldn't load the panel's setup: ${e.message}` })); return; }
-  const c = r.config || {};
-  if ((!c.ha_host || c.ha_host === "homeassistant.local") && location.hostname && !["localhost", "127.0.0.1"].includes(location.hostname)) c.ha_host = location.hostname;
+  const c = r.config || {};       // its address is Home Assistant's own, never this browser's (it may be a tunnel's)
   const yaml = h("textarea", { class: "inp code tall", readonly: true, "aria-label": "The panel's ESPHome file", spellcheck: "false" });
   const secrets = h("textarea", { class: "inp code", readonly: true, "aria-label": "secrets.yaml lines", spellcheck: "false" });
   const secretsWrap = h("div");
@@ -592,7 +591,7 @@ async function installPane(app, pane) {
   } }, "Download");
   const save = async (extra = {}, msg) => {
     try {
-      const body = { ha_host: host.value.trim() || location.hostname || "homeassistant.local", frame_port: parseInt(port.value, 10) || 8099,
+      const body = { ha_host: host.value.trim(), frame_port: parseInt(port.value, 10) || 8099,
         device_name: dev.value.trim() || "crowpanel-epaper", wifi_ssid: ssid.value.trim(), wifi_password: pw.value, api_encryption_key: key.value.trim(), use_secrets: useSecrets,
         wifi_networks: nets.filter((n) => n.ssid.trim()), hotspot: hotspotOn, ...extra };
       r = (await api("api/panel-setup", { method: "POST", body })).body;

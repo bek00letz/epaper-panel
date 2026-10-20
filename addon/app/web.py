@@ -741,12 +741,10 @@ def _masked_setup(cfg: dict, dev: dict) -> dict:
 
 
 async def api_panel_setup_get(request):
-    fwd = request.headers.get("X-Forwarded-Host") or request.headers.get("Host") or ""
-    host_guess = fwd.split(",")[0].strip().split(":")[0]
-    if not host_guess or host_guess in ("localhost", "127.0.0.1", "0.0.0.0"):
-        host_guess = "homeassistant.local"
     dev = _device(request)
-    cfg = load_panel_setup(dev, default_host=host_guess)
+    # A new panel fetches from Home Assistant's own home address, never the browser's (audit #9).
+    home = None if (dev.get("setup") or {}).get("ha_host") else await reach.home_address(runtime.HASS, runtime.SESSION)
+    cfg = load_panel_setup(dev, default_host=home or reach.HOME_FALLBACK)
     detected_port = await _detect_external_port(runtime.SESSION)
     if "frame_port" not in cfg:
         cfg["frame_port"] = detected_port
@@ -777,6 +775,8 @@ async def api_panel_setup_post(request):
     for k in ("device_name", "ha_host", "wifi_ssid"):
         if k in body and isinstance(body[k], str):
             cur[k] = body[k].strip()
+    if not cur.get("ha_host"):
+        cur["ha_host"] = await reach.home_address(runtime.HASS, runtime.SESSION)
     if "frame_port" in body:
         try:
             cur["frame_port"] = int(body["frame_port"])

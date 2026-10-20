@@ -33,6 +33,7 @@ import asyncio
 import re
 import secrets
 import time
+import urllib.parse
 from collections import OrderedDict, deque
 from datetime import datetime
 
@@ -428,21 +429,20 @@ def _trmnl_by_path(request) -> dict:
     return dev
 
 
-def _home_host(request) -> str:
-    """Home Assistant's name on the home network, as far as the editor can tell."""
+async def _home_host() -> str:
+    """Home Assistant's name on the home network: what a panel's setup was given, or its own home
+    address. Never the browser's, which may be a tunnel's (reach.home_address)."""
     for dev in devices.all_devices():
-        host = str((dev.get("setup") or {}).get("ha_host") or "").strip()
-        if host:
+        raw = str((dev.get("setup") or {}).get("ha_host") or "").strip()
+        host = urllib.parse.urlsplit(raw if "://" in raw else f"//{raw}").hostname or ""
+        if reach.HOST_RE.fullmatch(host):
             return host                                # what a panel's setup was given
-    fwd = (request.headers.get("X-Forwarded-Host") or request.host or "").split(",")[0].strip()
-    host = fwd.rsplit(":", 1)[0] if fwd.count(":") == 1 else fwd
-    local = re.fullmatch(r"[0-9.]+|[A-Za-z0-9-]+(\.local)?", host or "")
-    return host if local and host not in ("localhost", "127.0.0.1") else "homeassistant.local"
+    return await reach.home_address(runtime.HASS, runtime.SESSION)
 
 
 async def _pairing(request, dev: dict) -> dict:
     port = await panel_setup._detect_external_port(runtime.SESSION)
-    addresses = [{"where": "home", "url": f"http://{_home_host(request)}:{port}"}]
+    addresses = [{"where": "home", "url": f"http://{await _home_host()}:{port}"}]
     away = await reach.public_base(runtime.HASS)
     if away:
         addresses.append({"where": "away", "url": away})

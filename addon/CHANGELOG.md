@@ -47,6 +47,11 @@
   answering could slow every render by many seconds. Values now go to Home
   Assistant in the background, so pages are drawn on time whatever the broker
   does.
+- **Fixed:** opened through a tunnel or Home Assistant Cloud, Install or
+  update told a new panel to fetch its pages from that public name over plain
+  HTTP (audit #9). A new panel's address is now Home Assistant's own on your
+  network (its internal URL, or its name there), never the browser's. The
+  TRMNL pairing address too. An address you've already saved is kept.
 - **Removed:** the previous editor (`?classic=1`). It predates several
   screens; an old bookmark to it now opens the editor.
 
