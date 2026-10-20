@@ -4,14 +4,11 @@
 
 - **Rename a screen right in the toolbar.** Choose Rename in the screen menu,
   or double-click its name, and type: Enter or clicking away keeps it, Esc
-  puts it back. Settings › Screen still has its Name, now with a line on
-  what a new name changes in Home Assistant.
+  puts it back. Settings › Screen still has its Name, now saying that
+  Home Assistant takes a new name at the screen's next install.
 - **The editor says why the add-on refused something.** A name that's taken
   or missing said "The add-on couldn't read that"; it now says, for example,
   "There's already a screen called Kitchen."
-- **Renaming the first panel no longer renames it in Home Assistant.** Its
-  name there stays "E-paper panel" when you install it again, as it always
-  has. Any other screen still takes its new name there at its next install.
 - **Add a screen is easier to find.** The screen's name in the toolbar now
   looks like the button it is, with a screen in front, and Settings ›
   Screen has an Add another screen row next to Remove.

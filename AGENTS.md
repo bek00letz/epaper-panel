@@ -194,9 +194,11 @@ than a frame does.
   `theme.get_display` understands anywhere. Don't add one to `DISPLAYS` at
   runtime.
 - **The first device keeps its legacy names**: the install's frame token, its
-  download address, its entity IDs, its name in Home Assistant ("E-paper
-  panel"). Don't "tidy" them: that's what keeps an upgraded panel working
-  without a reflash.
+  download address, its ESPHome node name, its entity IDs. Don't "tidy" them:
+  that's what keeps an upgraded panel working without a reflash. Its name is
+  different: the add-on never changes it on its own, but a name the person
+  gives it in the editor reaches Home Assistant at its next install, as for
+  any screen (the user's call, 21 Oct). Home Assistant keeps the entity IDs.
 - **Elements have IDs, unique in the design, and the editor gives them**
   (`doc.ensureIds`). Arrangements for other sizes are filed by them. Never
   make an element's identity depend on its position or its page.

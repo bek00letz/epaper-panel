@@ -498,9 +498,8 @@ async function panelPane(app, pane, show) {
       app.applyScreens(r);
     } catch (e) { toast(e.message); name.value = scr.name; }
   }, { "aria-label": "Name", maxlength: "60" });
-  // What a new name changes: here at once; in Home Assistant at its next install, except the first panel's.
-  const nameSub = scr.keeps_ha_name ? `Only here. Home Assistant keeps calling it ${scr.keeps_ha_name}.` : "Home Assistant takes it at the next install.";
-  pane.append(group(grow("Name", nameSub, name), grow("Connection", null, conn),
+  // A new name shows here at once, and in Home Assistant once the panel is installed from a file that has it.
+  pane.append(group(grow("Name", "Home Assistant takes it at the next install.", name), grow("Connection", null, conn),
     grow("Install or update", "Makes its ESPHome file and walks you through it", h("button", { class: "btn tinted", onclick: () => show("install") }, "Open"))));
   const sleeps = !!scr.sleeps;
   const reflowNote = h("p", { class: "fnote" });

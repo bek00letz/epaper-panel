@@ -458,8 +458,6 @@ def _screen(dev: dict, everyone: list[dict]) -> dict:
         "timing": timing.describe(dev, kind.stays_on),
         "setup": kind.setup_flow, "info": kind.describe(dev),
         "entity_suffix": dev.get("entity_suffix") or "",
-        # The first panel's name in Home Assistant, which never follows a rename (panel_setup.ha_name).
-        "keeps_ha_name": devices.FIRST_PANEL_NAME if dev.get("install_token") else "",
         # Enough to offer "the same quiet hours as …" when adding a screen.
         "quiet": {k: (dev.get("quiet_hours") or {}).get(k) for k in ("enabled", "start", "end")},
     }

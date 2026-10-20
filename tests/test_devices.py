@@ -168,19 +168,17 @@ class TestSeveralScreens(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len([n for n in self.frames_of(desk).names if n != config.SLEEP_PAGE]), 1)
         self.assertGreater(len([n for n in self.frames_of(self.first).names if n != config.SLEEP_PAGE]), 1)
 
-    def test_renaming_the_first_panel_keeps_its_home_assistant_name(self):
-        # AGENTS.md: the first panel keeps its legacy names. A new name is the editor's only.
+    def test_a_rename_reaches_home_assistant_at_the_next_install(self):
+        # The first panel too (the user's call, 21 Oct): the add-on never renames it on
+        # its own, but a name given to it is the person's. Its node name stays, so the
+        # add-on still reaches it, and Home Assistant keeps its entity IDs.
         import panel_setup
         devices.update(self.first["id"], name="CrowPanel")
-        self.assertEqual(panel_setup.ha_name(devices.get(self.first["id"])), "E-paper panel")
+        first = devices.get(self.first["id"])
+        self.assertEqual(panel_setup.ha_name(first), "CrowPanel")
+        self.assertEqual(panel_setup.load_panel_setup(first)["device_name"], runtime.ESPHOME_DEVICE.replace("_", "-"))
         devices.update(self.kitchen["id"], name="Kitchen wall")
-        self.assertEqual(panel_setup.ha_name(devices.get(self.kitchen["id"])), "Kitchen wall",
-                         "any other screen takes its name to Home Assistant at its next install")
-
-    async def test_the_editor_knows_which_name_home_assistant_keeps(self):
-        screens = {d["id"]: d for d in web._screens()["devices"]}
-        self.assertEqual(screens[self.first["id"]]["keeps_ha_name"], "E-paper panel")
-        self.assertEqual(screens[self.kitchen["id"]]["keeps_ha_name"], "")
+        self.assertEqual(panel_setup.ha_name(devices.get(self.kitchen["id"])), "Kitchen wall")
 
     async def test_quiet_hours_are_per_screen(self):
         spec = sanitize_layouts(load_layouts(self.kitchen["id"]))

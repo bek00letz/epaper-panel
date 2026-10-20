@@ -114,7 +114,7 @@ class TestRenaming(unittest.TestCase):
         self.assertIn("font: 600 15px var(--font-display)", rule(".inp.screenname"))
 
     def test_settings_says_what_a_new_name_changes(self):
-        self.assertIn("Home Assistant keeps calling it ${scr.keeps_ha_name}", js("sheets.js"))
+        self.assertIn('grow("Name", "Home Assistant takes it at the next install.", name)', js("sheets.js"))
 
 
 if __name__ == "__main__":
