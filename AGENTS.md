@@ -3,6 +3,51 @@
 Read [ARCHITECTURE.md](ARCHITECTURE.md) before changing how anything works.
 This file is about not stepping on rakes.
 
+## Working on this project
+
+Many sessions work on this at once. One coordinator owns the project's state
+and its releases; everyone else builds. These rules apply to every session,
+including ones the coordinator didn't start. **Start by reading
+[docs/STATUS.md](docs/STATUS.md)**: what's released, what's in flight, the
+backlog and the decisions already made.
+
+**Workers**
+- Work on your own branch in your own git worktree, never in the shared
+  folder (`~/Documents/HA/epaper`). Never switch the shared folder's branch:
+  it stays on `main`.
+- Note each change under **Unreleased** at the top of `addon/CHANGELOG.md`,
+  in plain language.
+- Never bump the version, tag or push. When done, report to the coordinator:
+  your branch, what changed, what's tested, what isn't, and whether it touches
+  the firmware (`components/` or `addon/app/firmware/`).
+
+**The coordinator**
+- Is the only one who merges into `main`, bumps the version in
+  `addon/config.yaml`, turns "Unreleased" into the release's heading, tags
+  `vX.Y.Z` and pushes. Only after the user says yes to that specific release.
+- Updates `docs/STATUS.md` after every release and every finished piece of
+  work.
+
+**A release that touches the firmware** (`components/` or the firmware YAML)
+is tagged and pushed before the user installs the panel's firmware: the panel
+builds `components/epf` from the tag matching the add-on version.
+
+**Release checklist**
+1. The full test suite, once:
+   `./.venv/bin/python -m unittest discover -s tests`
+2. If the firmware changed, it compiles locally: a copy of the generated YAML
+   with the `epf` source as `type: local`, then
+   `.esphome-venv/bin/esphome compile <copy>`.
+3. The reference YAML is regenerated:
+   `python tests/test_firmware.py --write-reference`.
+4. The CHANGELOG entry is in plain language and says whether the firmware
+   changed.
+5. `docs/STATUS.md` is updated.
+6. Tag and push, then tell the user exactly what to do in Home Assistant:
+   Rebuild the add-on; when the firmware changed, open the editor's
+   Settings › Install or update so it writes the new file, then Install in
+   the ESPHome add-on.
+
 ## Rule #1: this is a product, not a patch
 
 **We are building a product other people install, not fixes that work "for
