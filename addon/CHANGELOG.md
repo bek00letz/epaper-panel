@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+- **"Through your own address" can be chosen again.** Picking it asked for
+  an address it hadn't shown you yet and said "The add-on couldn't read
+  that", so it could never be picked. Now the address field appears, and
+  until you save an https address there, screens keep reaching home the way
+  they did, as the pane says.
+- **How the screen runs is always in sight, under the canvas.** A small bar
+  says whether it's always on or sleeps, how often pages turn and its quiet
+  hours. Click it to change power, how often it updates, the next page, quiet
+  hours on or off, and which way up it's mounted, without opening Settings.
+  Settings › Screen still has all of these. The bar remembers whether you
+  left it open.
+- **Rename a screen right in the toolbar.** Choose Rename in the screen menu,
+  or double-click its name, and type: Enter or clicking away keeps it, Esc
+  puts it back. Settings › Screen still has its Name, now saying that
+  Home Assistant takes a new name at the screen's next install.
+- **The editor says why the add-on refused something.** A name that's taken
+  or missing said "The add-on couldn't read that"; it now says, for example,
+  "There's already a screen called Kitchen."
+- **Add a screen is easier to find.** The screen's name in the toolbar now
+  looks like the button it is, with a screen in front, and Settings ›
+  Screen has an Add another screen row next to Remove.
+- **Adding a screen asks about power before pages.** Always on or Sleeps
+  between updates now comes right after the model, so it's never below the
+  fold, and the sheet uses the window's height. Sleeps between updates has
+  its own menu for how often it updates (2 minutes to a day, as in
+  Settings), and so does a TRMNL.
+- **The panel fills the editor in Safari.** Fit stopped at the panel's
+  actual size, leaving most of a big window empty. It now uses the width it
+  has, as it already did in other browsers.
 - **Fixed (firmware):** during quiet hours, a panel woken from Home Assistant
   (its Sleep switch, or the editor) went straight back to sleep within
   seconds. Any wake now gets the same two minutes a button press does.

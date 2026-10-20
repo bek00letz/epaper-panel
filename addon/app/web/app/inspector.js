@@ -522,7 +522,7 @@ function page(app, head, body) {
         h("button", { class: "btn tinted", onclick: () => { doc.spec.rotation.push(cur); doc.commit(); } }, times ? "Show again" : "Add to rotation"),
         times ? h("button", { class: "btn tinted", onclick: () => { doc.spec.rotation.splice(doc.spec.rotation.lastIndexOf(cur), 1); doc.commit(); } }, times > 1 ? "Show once less" : "Take out") : null),
       // Rotate every is the screen's own (Settings › Screen), next to Update every.
-      h("p", { class: "fnote", text: `${app.screen?.name || "This screen"} shows ${turning(app.screen?.timing) || "your pages in turn"}. Change it in Settings › Screen.` })));
+      h("p", { class: "fnote", text: `${app.screen?.name || "This screen"} shows ${turning(app.screen?.timing) || "your pages in turn"}. Change it under the canvas.` })));
   }
   body.append(section(null, h("div", { class: "btnrow" },
     h("button", { class: "btn tinted", onclick: () => app.duplicatePage() }, icon("dup", "sm"), "Duplicate"),

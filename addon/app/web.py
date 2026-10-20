@@ -473,6 +473,8 @@ def _screens() -> dict:
                                 *(d for k in on for d in k.displays())]))
     return {"devices": [_screen(d, everyone) for d in everyone],
             "kinds": [{"id": k.id, "name": k.name, "setup": k.setup_flow,
+                       # What Update every offers a new screen of this kind, and where sleeping starts.
+                       "update_choices": timing.update_choices(k.stays_on), "asleep_default": timing.ASLEEP_DEFAULT,
                        "displays": [{"id": d, "name": T.get_display(d)["name"], "w": T.get_display(d)["w"],
                                      "h": T.get_display(d)["h"]} for d in k.displays()]}
                       for k in on],
@@ -487,8 +489,9 @@ def _clean_name(raw, exclude_id=None) -> str:
     name = re.sub(r"\s+", " ", str(raw or "")).strip()[:60]
     if not name:
         raise web.HTTPBadRequest(text="Give the screen a name.")
-    if any(d.get("name", "").casefold() == name.casefold() and d["id"] != exclude_id for d in devices.all_devices()):
-        raise web.HTTPBadRequest(text=f"There's already a screen called {name}.")
+    taken = next((d for d in devices.all_devices() if d.get("name", "").casefold() == name.casefold() and d["id"] != exclude_id), None)
+    if taken:
+        raise web.HTTPBadRequest(text=f"There's already a screen called {taken['name']}.")
     return name
 
 

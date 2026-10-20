@@ -194,9 +194,11 @@ than a frame does.
   `theme.get_display` understands anywhere. Don't add one to `DISPLAYS` at
   runtime.
 - **The first device keeps its legacy names**: the install's frame token, its
-  download address, its entity IDs, its name in Home Assistant ("E-paper
-  panel"). Don't "tidy" them: that's what keeps an upgraded panel working
-  without a reflash.
+  download address, its ESPHome node name, its entity IDs. Don't "tidy" them:
+  that's what keeps an upgraded panel working without a reflash. Its name is
+  different: the add-on never changes it on its own, but a name the person
+  gives it in the editor reaches Home Assistant at its next install, as for
+  any screen (the user's call, 21 Oct). Home Assistant keeps the entity IDs.
 - **Elements have IDs, unique in the design, and the editor gives them**
   (`doc.ensureIds`). Arrangements for other sizes are filed by them. Never
   make an element's identity depend on its position or its page.
@@ -331,7 +333,12 @@ up to v0.12.0). `app/legacy.js` keeps the pieces of it this one still uses.
   canvas by default so the window reads from general to specific (below or
   down the side is a setting), *is* the rotation: drag to reorder, a page can sit in it twice), a page (the
   inspector when nothing is selected), an element (canvas and inspector).
-  Don't give any of them a second home.
+  Don't give any of them a second home. The one exception, on purpose (the
+  user's call, 21 Oct): the screen bar under the canvas (`app/screenbar.js`)
+  keeps four everyday screen settings in sight and in reach — power and
+  Update every, Rotate every, quiet hours on or off, Mounted — like Control
+  Center next to Settings. Settings › Screen keeps them too and has the
+  rest; both change them through the same functions. Nothing else goes in it.
 - **The canvas is the task**, so the chrome is deliberately quiet and the panel
   sits in a dark frame that reads as the device. Do not add colour or weight
   that competes with it. The canvas shows only the add-on's own render

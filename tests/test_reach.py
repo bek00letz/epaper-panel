@@ -119,6 +119,42 @@ class TestAddresses(unittest.TestCase):
             reach.clean_address("")
         self.assertEqual(reach.clean_address("https://panel.example.com/"), "https://panel.example.com")
 
+    def test_your_own_address_can_be_picked_before_there_is_one(self):
+        # Picking it used to be refused ("Enter the address…"), and the address field only
+        # shows once it's picked, so it could never be chosen.
+        fresh_data_dir()
+        try:
+            reach.save("ha")
+            s = reach.save("own", "")
+            self.assertEqual((s["chosen"], s["mode"]), ("own", "ha"), "screens keep the way they had")
+            self.assertEqual(reach.settings()["chosen"], "own")
+            with self.assertRaises(ValueError):
+                reach.save("own", "http://panel.example.com")
+            self.assertEqual(reach.settings()["mode"], "ha", "a wrong address changes nothing")
+            s = reach.save("own", "panel.example.com")
+            self.assertEqual((s["chosen"], s["mode"], s["address"]), ("own", "own", "https://panel.example.com"))
+            s = reach.save("home")
+            self.assertEqual((s["chosen"], s["mode"]), ("home", "home"))
+            s = reach.save("own", "")
+            self.assertEqual((s["mode"], s["address"]), ("own", "https://panel.example.com"), "the saved one comes back")
+        finally:
+            support.use_test_data_dir()
+
+    def test_a_file_from_before_has_its_way_picked(self):
+        fresh_data_dir()
+        try:
+            (config.DATA_DIR / reach.FILE).write_text('{"mode": "ha", "address": ""}')
+            self.assertEqual(reach.settings()["chosen"], "ha")
+        finally:
+            support.use_test_data_dir()
+
+    def test_the_pane_shows_what_is_picked_and_what_screens_use(self):
+        pane = (support.APP / "web" / "app" / "sheets.js").read_text()
+        pane = pane[pane.index("async function reachPane"):pane.index("async function sourcesPane")]
+        self.assertIn('String(picked() === m)', pane)
+        self.assertIn('if (picked() === "own") {', pane)
+        self.assertIn("Until you save an https address here, screens keep reaching the add-on", pane)
+
     def test_the_panel_file_uses_the_outside_address(self):
         fresh_data_dir()
         try:

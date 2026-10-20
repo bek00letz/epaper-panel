@@ -337,6 +337,16 @@ class TestSleeping(LowPowerBase):
         r = await self.ed.post("/api/devices", json={"kind": "crowpanel", "name": "Shed", "display": "crowpanel_579"})
         self.assertEqual((await r.json())["device"]["timing"]["update_minutes"], 1, "always on by default")
 
+    async def test_adding_a_screen_offers_the_same_times_as_settings(self):
+        # The Add a screen sheet's picker on "Sleeps between updates".
+        body = await (await self.ed.get("/api/devices")).json()
+        offered = {k["id"]: k for k in body["kinds"]}["crowpanel"]
+        self.assertEqual(offered["update_choices"], body["devices"][0]["timing"]["update_choices"])
+        self.assertEqual(offered["asleep_default"], 15)
+        r = await self.ed.post("/api/devices", json={"kind": "crowpanel", "name": "Porch", "display": "crowpanel_579",
+                                                     "pages": "new", "update_minutes": 60})
+        self.assertEqual((await r.json())["device"]["timing"]["update_minutes"], 60)
+
 
 class TestTrmnlAwakeTime(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
