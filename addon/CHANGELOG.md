@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **"Through your own address" can be chosen again.** Picking it asked for
+  an address it hadn't shown you yet and said "The add-on couldn't read
+  that", so it could never be picked. Now the address field appears, and
+  until you save an https address there, screens keep reaching home the way
+  they did, as the pane says.
 - **How the screen runs is always in sight, under the canvas.** A small bar
   says whether it's always on or sleeps, how often pages turn and its quiet
   hours. Click it to change power, how often it updates, the next page, quiet

@@ -789,16 +789,23 @@ async function reachPane(app, pane) {
     } catch (e) { toast(e.message); }
     finally { busy = false; }
   };
-  const mode = (m, title, sub) => h("button", { class: "cmp choice", role: "radio", "aria-checked": String(r.mode === m),
-    onclick: () => { if (r.mode !== m) call("api/reach", "PUT", { mode: m, address: r.address }, m === "home" ? "Screens reach the add-on at home only." : null); } },
+  // What's picked here (`chosen`) can be ahead of what screens use (`mode`): "own" with no address yet.
+  const picked = () => r.chosen || r.mode;
+  const mode = (m, title, sub) => h("button", { class: "cmp choice", role: "radio", "aria-checked": String(picked() === m),
+    onclick: async () => {
+      if (picked() === m) return;
+      await call("api/reach", "PUT", { mode: m, address: r.address }, m === "home" ? "Screens reach the add-on at home only." : null);
+      if (m === "own" && !r.address) box.querySelector("input[data-own]")?.focus();
+    } },
     h("span", { class: "ct", text: title }), h("span", { class: "cs", text: sub }));
+  const NOW = { home: "on your home network only", ha: "through Home Assistant's address" };
   function draw() {
     if (!r) return;
     const parts = [h("div", { class: "choices", role: "radiogroup", "aria-label": "Reaching home" },
       mode("home", "At home only", "Screens fetch from the add-on on your home network."),
       mode("ha", "Through Home Assistant's address", "Wherever you reach Home Assistant from outside: Home Assistant Cloud, Cloudflare, your own domain."),
       mode("own", "Through your own address", "A tunnel or proxy of yours, pointed at this add-on."))];
-    if (r.mode === "ha") {
+    if (picked() === "ha") {
       const c = r.companion || {};
       parts.push(r.ha_address
         ? (c.state === "running" && !c.restart_needed
@@ -817,8 +824,9 @@ async function reachPane(app, pane) {
         : c.state === "stopped" ? restartRow("The integration didn't start", "Restart Home Assistant to try again. If it still doesn't, Home Assistant's log says why.")
         : grow("The integration", "Home Assistant didn't answer. It may be restarting.", h("button", { class: "btn tinted", onclick: () => call("api/reach", "GET") }, "Check again"))));
     }
-    if (r.mode === "own") {
-      const addr = input(r.address, (v) => call("api/reach", "PUT", { mode: "own", address: v }, "Saved."), { placeholder: "https://panel.example.com", "aria-label": "Your address", inputmode: "url", autocomplete: "off" });
+    if (picked() === "own") {
+      const addr = input(r.address, (v) => call("api/reach", "PUT", { mode: "own", address: v }, "Saved. Screens away from home use it."), { placeholder: "https://panel.example.com", "aria-label": "Your address", inputmode: "url", autocomplete: "off", data: { own: "" } });
+      if (r.mode !== "own") parts.push(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: `Until you save an https address here, screens keep reaching the add-on ${NOW[r.mode] || NOW.home}.` })));
       parts.push(group(grow("Your address", "Where your tunnel answers. It must be https.", addr),
         r.service_address ? grow("Point it at", "In the Cloudflared app, add a host with this as its service.", h("div", { class: "inline" }, h("input", { class: "inp code", readonly: true, value: r.service_address, "aria-label": "Point your tunnel at" }), h("button", { class: "btn tinted", onclick: () => copyText(r.service_address, "the address") }, "Copy"))) : null));
     }

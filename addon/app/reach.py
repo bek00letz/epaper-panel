@@ -39,7 +39,10 @@ def settings() -> dict:
     except (OSError, ValueError):
         found = {}
     mode = found.get("mode") if found.get("mode") in MODES else "home"
-    return {"mode": mode, "address": str(found.get("address") or "")}
+    # `mode` is the way screens reach home now; `chosen` is the one picked in the editor. They
+    # differ only while "own" is picked and has no address yet: screens keep the way they had.
+    chosen = found.get("chosen") if found.get("chosen") in MODES else mode
+    return {"mode": mode, "address": str(found.get("address") or ""), "chosen": chosen}
 
 
 def clean_address(raw: str) -> str:
@@ -59,12 +62,20 @@ def save(mode: str, address: str = "") -> dict:
     if mode not in MODES:
         raise ValueError("Pick one of the three ways.")
     current = settings()
-    out = {"mode": mode, "address": clean_address(address) if mode == "own" else current["address"]}
+    out = {"mode": mode, "address": current["address"], "chosen": mode}
+    if mode == "own":
+        if str(address or "").strip():
+            out["address"] = clean_address(address)        # a wrong one is refused, and nothing changes
+        elif not current["address"]:
+            # Picked before there's an address to use: the editor asks for one, and until it's
+            # saved, screens keep reaching home the way they did.
+            out["mode"] = current["mode"] if current["mode"] != "own" else "home"
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
     tmp = config.DATA_DIR / (FILE + ".tmp")
     tmp.write_text(json.dumps(out))
     tmp.replace(config.DATA_DIR / FILE)
-    print(f"reach: screens reach the add-on {describe(out['mode'])}", flush=True)
+    waiting = " until your own address is saved" if out["chosen"] != out["mode"] else ""
+    print(f"reach: screens reach the add-on {describe(out['mode'])}{waiting}", flush=True)
     return out
 
 
