@@ -28,6 +28,9 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 The 0.13.1 fixes (integration sets itself up, Restart row, Settings spacing,
 hotspot password, Send to ESPHome, the old Last render error) are merged into
 local main, not pushed; held to ship with the editor work (user, 21 Oct).
+Also merged locally: a firmware fix (a panel woken from Home Assistant in
+quiet hours went straight back to sleep), so the next release is a firmware
+change and the panel needs one reinstall.
 The 0.13 branches were merged and removed (user's OK, 20 Oct).
 Findings and worker notes are in the coordinator's notes
 folder (`break-it-0.12.0.md`, `timers-addon.md`, `firmware-013.md`).
