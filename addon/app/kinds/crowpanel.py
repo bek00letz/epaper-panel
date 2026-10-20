@@ -485,7 +485,6 @@ async def frames_epf(request):
     asleep = {}
     body, etag = f.epf_strip, f.epf_strip_etag
     if sleeps:
-        person = wake != "timer"
         if wake == "timer":
             got = await paging.wake(dev, person=False, art=ART)
             if got.picture is not None:
@@ -494,7 +493,12 @@ async def frames_epf(request):
                 # Keep what it shows (quiet hours without the sleep screen).
                 raise web.HTTPNotModified(headers={**_cache_headers(f), **sleep_header(got)})
         else:
-            got = paging.timing(dev, person=person)
+            got = paging.timing(dev, person=True)
+            if not wake:
+                # Not a wake: a later download while it's up (its own timer, a refresh after
+                # scrolling). The panel counts presses itself; another minute here would
+                # restart at every download, and with a one-minute refresh it never slept.
+                got.awake = paging.awake_seconds(dev, person=False)
         asleep = sleep_header(got)
     if not body:
         raise web.HTTPServiceUnavailable(text="no epf frame rendered yet", headers=asleep)

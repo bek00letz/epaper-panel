@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed:** in Low Power Mode, a panel whose refresh interval is one minute
+  never went back to sleep after a button press: every download it made while
+  awake kept it awake another minute. Only a wake does that now.
+- **Fixed:** a panel in Low Power Mode that reaches home through Home
+  Assistant's address never slept: the e-Paper Panel integration dropped the
+  answer's sleep time on the way. Restart Home Assistant once after updating
+  the add-on so it loads the new integration.
+- **Fixed:** through Home Assistant's address, a sender could claim a new
+  address with every request and so never be slowed down for wrong keys. Only
+  the address the integration itself passes on counts now.
+- **Fixed:** sending pages with a size from another kind of screen (a TRMNL's
+  size on a CrowPanel) was accepted, and that screen then couldn't be drawn at
+  all. It's refused now, and a send that leaves the size out keeps the
+  screen's own.
+- **Fixed:** the editor's API answered a request whose body wasn't JSON with
+  an internal error and a stack trace in the log; it now says the request was
+  wrong (400).
+
 ## 0.12.0
 **Firmware change** (only needed for Low Power Mode, or if your panel has
 "Its own Wi-Fi when it's lost" switched off): install the panel again from

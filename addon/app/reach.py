@@ -101,7 +101,10 @@ def sender(request) -> str:
     """Who sent a request, for slowing down wrong keys: the proxy's word for it when it came
     through one on the internal network, otherwise the address it came from."""
     if through_proxy(request):
-        for name in ("CF-Connecting-IP", "X-Real-IP", "X-Forwarded-For"):
+        # The companion overwrites X-Forwarded-For and passes every other header on as the
+        # screen sent it, so through it a CF-Connecting-IP is whatever the sender claims.
+        names = ("X-Forwarded-For",) if through_companion(request) else ("CF-Connecting-IP", "X-Real-IP", "X-Forwarded-For")
+        for name in names:
             value = (request.headers.get(name) or "").split(",")[0].strip()
             if value:
                 return value[:64]

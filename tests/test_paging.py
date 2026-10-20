@@ -227,6 +227,18 @@ class TestLowPowerOn(LowPowerBase):
         r = await self.fetch()
         self.assertIn("X-EPF-Sleep", r.headers, "firmware that can't sleep yet ignores it")
 
+    async def test_a_later_download_while_awake_adds_no_minute(self):
+        # Only the first download after a wake says wake=; later ones (the panel's own refresh
+        # timer, every minute on some panels) must not start another minute, or it never sleeps.
+        await self.low_power()
+        self.assertTrue((await self.fetch(wake="button")).headers["X-EPF-Sleep"].endswith(
+            f"awake={paging.PERSON_AWAKE_SECONDS}"))
+        self.assertEqual((await self.fetch()).headers["X-EPF-Sleep"], "900; awake=0")
+        await self.ed.post(f"/api/devices/{self.hall['id']}/stay-awake")
+        await self.fetch(wake="timer")
+        awake = int((await self.fetch()).headers["X-EPF-Sleep"].split("awake=")[1])
+        self.assertGreater(awake, paging.STAY_AWAKE_SECONDS - 5, "asked to stay awake: what's left of it")
+
     async def test_stay_awake_for_an_update(self):
         await self.low_power()
         r = await self.ed.post(f"/api/devices/{self.hall['id']}/stay-awake")

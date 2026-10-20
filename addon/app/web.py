@@ -220,10 +220,16 @@ async def api_layouts_get(request):
 
 
 async def api_layouts_put(request):
-    dev_id = _device(request)["id"]
-    spec = await request.json()
+    dev = _device(request)
+    dev_id = dev["id"]
+    spec = await _json(request)
     if not isinstance(spec, dict) or "pages" not in spec:
         raise web.HTTPBadRequest(text="expected {rotation, pages}")
+    # The size is the screen's own: one of its kind's, never another kind's (that one can't be drawn).
+    spec.setdefault("display", dev.get("display"))
+    kind = kinds.of(dev)
+    if T.get_display(spec.get("display")).get("kind") != kind.id:
+        raise web.HTTPBadRequest(text=f"Pick one of the {kind.name} sizes.")
     try:
         clean = sanitize_layouts(spec)
     except ValueError as exc:
@@ -272,7 +278,7 @@ async def api_draft_put(request):
     with the current draft and the live pages, so the client can merge.
     """
     dev_id = _device(request)["id"]
-    body = await request.json()
+    body = await _json(request)
     if not isinstance(body, dict) or not isinstance(body.get("spec"), dict):
         raise web.HTTPBadRequest(text="expected {spec, base, base_etag}")
     try:
@@ -303,7 +309,7 @@ async def api_panel_device_get(request):
 
 async def api_panel_device_post(request):
     """Change one panel setting: {sleep: bool} | {ghost_after: n} | {ghost_mode: s} | {clear_ghosting: true}."""
-    body = await request.json()
+    body = await _json(request)
     if not isinstance(body, dict) or len(body) != 1:
         raise web.HTTPBadRequest(text="expected one setting")
     key, value = next(iter(body.items()))
@@ -403,7 +409,7 @@ async def api_attributes(request):
 
 async def api_preview(request):
     """Render one page spec through the real engine, so WYSIWYG cannot lie."""
-    body = await request.json()
+    body = await _json(request)
     if not isinstance(body, dict) or not isinstance(body.get("page") or {}, dict):
         raise web.HTTPBadRequest(text="expected {page}")
     page = body.get("page") or {}
@@ -523,11 +529,16 @@ def _clean_name(raw, exclude_id=None) -> str:
     return name
 
 
-async def _body(request) -> dict:
+async def _json(request):
+    """The request's JSON body; a body that isn't JSON is the sender's mistake (400), not ours (500)."""
     try:
-        body = await request.json()
-    except Exception:
-        raise web.HTTPBadRequest(text="expected a JSON object")
+        return await request.json()
+    except ValueError:
+        raise web.HTTPBadRequest(text="That isn't JSON.")
+
+
+async def _body(request) -> dict:
+    body = await _json(request)
     if not isinstance(body, dict):
         raise web.HTTPBadRequest(text="expected a JSON object")
     return body
@@ -732,7 +743,7 @@ async def api_sources_get(request):
 
 
 async def api_sources_put(request):
-    body = await request.json()
+    body = await _json(request)
     if not isinstance(body, list):
         raise web.HTTPBadRequest(text="expected a list of sources")
     merged = feeds.unmask_secrets(body, load_sources())
@@ -743,7 +754,7 @@ async def api_sources_put(request):
 
 async def api_sources_test(request):
     """Run one source now and report what it would publish."""
-    src = await request.json()
+    src = await _json(request)
     if not isinstance(src, dict):
         raise web.HTTPBadRequest(text="expected a source object")
     unmasked = feeds.unmask_secrets([src], load_sources())
@@ -793,7 +804,7 @@ async def api_panel_setup_get(request):
 
 
 async def api_panel_setup_post(request):
-    body = await request.json()
+    body = await _json(request)
     if not isinstance(body, dict):
         raise web.HTTPBadRequest(text="expected a JSON object")
     dev = _device(request)
