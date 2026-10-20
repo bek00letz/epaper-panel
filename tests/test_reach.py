@@ -88,6 +88,17 @@ class TestWrongKeys(Base):
         self.assertEqual((await self.fetch(f"/frames.epf?token={self.key}", TUNNEL_PEER, friend)).status, 200,
                          "others behind the same tunnel aren't affected")
 
+    async def test_through_the_companion_a_sender_cant_say_who_it_is(self):
+        reach.save("ha")
+        for i in range(kinds.WrongKeys.LIMIT):
+            # Made-up addresses in headers the companion passes on untouched; it writes X-Forwarded-For itself.
+            spoof = {"X-Forwarded-For": "203.0.113.66", "X-Forwarded-Prefix": reach.COMPANION_PREFIX,
+                     "CF-Connecting-IP": f"198.51.100.{i}", "X-Real-IP": f"192.0.2.{i}"}
+            with self.assertRaises(web.HTTPUnauthorized):
+                await self.fetch("/frames.epf?token=guess", HA_PEER, spoof)
+        with self.assertRaises(web.HTTPTooManyRequests):
+            await self.fetch("/frames.epf?token=guess", HA_PEER, spoof)
+
     def test_it_lifts(self):
         now = [0.0]
         wk = kinds.WrongKeys(clock=lambda: now[0])

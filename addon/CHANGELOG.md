@@ -9,6 +9,9 @@
   Assistant's address never slept: the e-Paper Panel integration dropped the
   answer's sleep time on the way. Restart Home Assistant once after updating
   the add-on so it loads the new integration.
+- **Fixed:** through Home Assistant's address, a sender could claim a new
+  address with every request and so never be slowed down for wrong keys. Only
+  the address the integration itself passes on counts now.
 
 ## 0.12.0
 **Firmware change** (only needed for Low Power Mode, or if your panel has
