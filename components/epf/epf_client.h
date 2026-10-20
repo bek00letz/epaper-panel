@@ -83,8 +83,8 @@ class EpfClient {
     if (awake_ms) wake_query_ += "&awake_ms=" + std::to_string(awake_ms);
   }
 
-  // The last finished download: whether the add-on answered at all, and its X-EPF-Sleep ("" when none).
-  bool answered() const { return last_answered_; }
+  // The last finished download: its HTTP status (0: nothing answered), and its X-EPF-Sleep ("" when none).
+  int status() const { return last_status_; }
   const std::string &etag() const { return current_etag_; }
   // What's on screen, after a deep sleep: the frames are gone from memory, the picture isn't.
   void set_etag(const std::string &etag) { current_etag_ = etag; }
@@ -95,7 +95,7 @@ class EpfClient {
   bool poll(FetchResult &result) {
     if (state_.load(std::memory_order_acquire) != FINISHED) return false;
     result = task_result_;
-    last_answered_ = answered_;             // copies: the next download writes the originals
+    last_status_ = status_;                 // copies: the next download writes the originals
     last_sleep_ = answer_.sleep;
     if (result == FetchResult::OK) {
       std::swap(front_buf_, back_buf_);
@@ -166,7 +166,7 @@ class EpfClient {
   // Runs in the download task. Touches only the back buffer and pending_.
   FetchResult download_() {
     answer_ = AnswerHeaders{};
-    answered_ = false;
+    status_ = 0;
     esp_http_client_config_t config = {};
     config.url = url_.c_str();
     // An https address (a screen away from home) is checked against ESP-IDF's
@@ -186,7 +186,7 @@ class EpfClient {
     if (esp_http_client_open(client, 0) == ESP_OK) {
       esp_http_client_fetch_headers(client);
       int status = esp_http_client_get_status_code(client);
-      answered_ = status > 0;
+      status_ = status > 0 ? status : 0;
       if (status == 304) {
         result = FetchResult::NOT_MODIFIED;
       } else if (status == 200) {
@@ -223,7 +223,7 @@ class EpfClient {
   int native_w_{0}, native_h_{0};
   std::string url_, send_etag_, current_etag_, wake_query_, last_sleep_;
   AnswerHeaders answer_;                  // written by the download task
-  bool answered_{false}, last_answered_{false};
+  int status_{0}, last_status_{0};
   Stream stream_, pending_;
   bool has_stream_{false};
 };
@@ -275,7 +275,7 @@ inline void power_note_download(uint32_t now_ms, FetchResult result) {
   SleepOrder order;
   bool has = !c.sleep_header().empty() && parse_sleep_order(c.sleep_header().c_str(), order);
   if (!c.sleep_header().empty() && !has) ESP_LOGW(TAG, "Ignored an X-EPF-Sleep it can't read: %s", c.sleep_header().c_str());
-  PowerPolicy::instance().on_answer(c.answered(), has, order, now_ms);
+  PowerPolicy::instance().on_answer(c.status(), has, order, now_ms);
 }
 
 // Just before deep sleep: how long, and what wakes it. `buttons`: the button pins as a bit mask.

@@ -336,13 +336,13 @@ static void test_power() {
 
   // A fresh start that's never told to sleep stays connected, whatever happens.
   p.begin(Wake::BOOT, mem, 0);
-  p.on_answer(true, false, o, 1000);
+  p.on_answer(200, false, o, 1000);
   CHECK(!p.low_power() && !p.sleep_due(999999, false), "no header: stays connected");
-  p.on_answer(false, false, o, 2000);
+  p.on_answer(0, false, o, 2000);
   CHECK(!p.sleep_due(999999, false), "never told to sleep: a failed download doesn't make it sleep");
 
   // Told to sleep on a timer wake: draw, then sleep at once, for what's left.
-  p.on_answer(true, true, timer, 10000);
+  p.on_answer(200, true, timer, 10000);
   CHECK(p.sleep_due(10000, false), "awake=0: sleeps as soon as it's done");
   CHECK(!p.sleep_due(10000, true), "...not while it's still drawing");
   CHECK(p.sleep_ms(14000) == 896000, "counted from the answer (%u)", (unsigned) p.sleep_ms(14000));
@@ -352,20 +352,20 @@ static void test_power() {
   p.hold(false);
 
   // A press keeps it awake a minute after the last press.
-  p.on_answer(true, true, press, 0);
+  p.on_answer(200, true, press, 0);
   CHECK(!p.sleep_due(59000, false) && p.sleep_due(60000, false), "awake=60 after the download");
   p.note_press(50000);
   CHECK(!p.sleep_due(100000, false) && p.sleep_due(110000, false), "a minute after the last press");
   CHECK(p.sleep_ms(110000) == 790000, "less the time awake (%u)", (unsigned) p.sleep_ms(110000));
 
   // Asked to stay awake for an update: the same field.
-  p.on_answer(true, true, stay, 200000);
+  p.on_answer(200, true, stay, 200000);
   CHECK(!p.sleep_due(799000, false) && p.sleep_due(800000, false), "ten minutes awake");
   CHECK(p.sleep_ms(800000) == 300000, "then the rest of the interval");
   CHECK(p.sleep_ms(2000000) == epf::MIN_SLEEP_SEC * 1000u, "never less than the minimum");
 
   // Low Power Mode turned off in the editor: the next answer has no header.
-  p.on_answer(true, false, o, 900000);
+  p.on_answer(200, false, o, 900000);
   CHECK(!p.low_power() && !p.sleep_due(9000000, false) && mem.interval_sec == 0, "off: stays connected");
 
   // A timer wake that can't reach the add-on sleeps and tries again, backing off.
@@ -374,23 +374,48 @@ static void test_power() {
   uint32_t expect[] = {60, 120, 240, 480, 600, 600};
   for (uint32_t want : expect) {
     p.begin(Wake::TIMER, mem, 900000);
-    p.on_answer(false, false, o, 5000);
+    p.on_answer(0, false, o, 5000);
     CHECK(p.low_power() && p.sleep_due(5000, false), "no answer on a timer wake: sleeps");
     CHECK(p.sleep_ms(5000) == want * 1000u, "retry after %u s (got %u)", (unsigned) want, (unsigned) (p.sleep_ms(5000) / 1000));
   }
   mem.interval_sec = 300;
   p.begin(Wake::TIMER, mem, 900000);
-  p.on_answer(false, false, o, 0);
+  p.on_answer(0, false, o, 0);
   CHECK(p.sleep_ms(0) == 300000, "never longer than its interval");
-  p.on_answer(true, true, timer, 1000);
+  p.on_answer(200, true, timer, 1000);
   CHECK(mem.failures == 0, "an answer ends the backoff");
   p.begin(Wake::BUTTON, mem, 900000);
-  p.on_answer(false, false, o, 0);
+  p.on_answer(0, false, o, 0);
   CHECK(!p.sleep_due(59000, false) && p.sleep_due(60000, false), "a press that can't reach it: awake a minute");
   p.begin(Wake::TIMER, mem, 900000);
-  p.on_answer(true, true, timer, 0);
-  p.on_answer(false, false, o, 500);
+  p.on_answer(200, true, timer, 0);
+  p.on_answer(0, false, o, 500);
   CHECK(p.sleep_ms(500) == 899500, "a later failure in the same wake keeps the answer it had");
+
+  // Only the add-on's own answer (200 or 304) without the header means "stay connected".
+  // Home Assistant's 502 while the add-on restarts, a tunnel's 5xx, a 401 or a 429
+  // count as no answer: it sleeps and tries again (break-it #4).
+  for (int status : {502, 503, 500, 404, 401, 429, 302}) {
+    mem.interval_sec = 900;
+    mem.failures = 0;
+    p.begin(Wake::TIMER, mem, 900000);
+    p.on_answer(status, false, o, 5000);
+    CHECK(p.low_power() && p.sleep_due(5000, false) && p.sleep_ms(5000) == 60000u,
+          "HTTP %d without the header: sleeps and retries in 60 s", status);
+    CHECK(mem.interval_sec == 900 && mem.failures == 1, "HTTP %d: still in Low Power Mode, one failure", status);
+  }
+  mem.interval_sec = 900;
+  p.begin(Wake::TIMER, mem, 900000);
+  p.on_answer(304, false, o, 0);
+  CHECK(!p.low_power() && mem.interval_sec == 0, "a 304 without the header: Low Power Mode is off");
+  mem.interval_sec = 900;
+  p.begin(Wake::TIMER, mem, 900000);
+  p.on_answer(503, true, timer, 0);
+  CHECK(p.low_power() && p.sleep_ms(0) == 900000u && mem.failures == 0, "a sleep order is obeyed whatever the status");
+  mem.interval_sec = 900;
+  p.begin(Wake::BUTTON, mem, 900000);
+  p.on_answer(502, false, o, 0);
+  CHECK(!p.sleep_due(59000, false) && p.sleep_due(60000, false), "a press during a restart: awake a minute, then sleeps");
 
   // A power cut or a reset is a fresh start.
   p.begin(Wake::BOOT, mem, 0);

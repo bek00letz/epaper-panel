@@ -847,7 +847,7 @@ class PanelController {
 // One firmware for both modes: the add-on decides on every download. An answer
 // with `X-EPF-Sleep: <seconds>; awake=<seconds>` means "check again in that
 // many seconds (counted from this answer), and stay awake that long first";
-// an answer without it means "stay connected", as always. The panel never
+// a 200 or 304 without it means "stay connected", as always. The panel never
 // sleeps on its own say-so, except to retry later when a timer wake couldn't
 // reach the add-on at all (it was told to sleep before, so it's on a battery).
 
@@ -950,10 +950,14 @@ class PowerPolicy {
     }
   }
 
-  // After every download. `answered`: the add-on gave any HTTP answer at all.
-  void on_answer(bool answered, bool has_order, const SleepOrder &order, uint32_t now_ms) {
+  // After every download. `http_status`: the answer's HTTP status, 0 when nothing answered.
+  // A sleep order is obeyed whatever the status. Without one, only the add-on's own
+  // answer to a download (200 or 304) means "stay connected"; anything else (a 502
+  // from Home Assistant while the add-on restarts, a tunnel's 5xx, a 401 or 429)
+  // isn't the add-on speaking, so it counts as no answer.
+  void on_answer(int http_status, bool has_order, const SleepOrder &order, uint32_t now_ms) {
     if (!mem_) return;
-    if (answered) {
+    if (has_order || http_status == 200 || http_status == 304) {
       mem_->failures = 0;
       if (has_order) {
         order_ = order;
