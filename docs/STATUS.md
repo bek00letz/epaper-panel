@@ -24,7 +24,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 | What breaks 0.12.0 (session "break-it") | branch `break-it`, worktree `~/Documents/HA/epaper-worktrees/break-it` | Started 20 Oct; findings go to the coordinator |
 | Feature roadmap (session "roadmap") | no code; a draft for `docs/ROADMAP.md` | Started 20 Oct, with the user |
 
-`low-power-mode` is merged and kept until the user OKs deleting it.
+`low-power-mode` was merged in 0.12.0 and deleted.
 
 ## Backlog, most important first
 
