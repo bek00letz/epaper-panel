@@ -21,27 +21,43 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Work | Where | State |
 |---|---|---|
-| What breaks 0.12.0 (session "break-it") | branch `break-it`, worktree `~/Documents/HA/epaper-worktrees/break-it` | Started 20 Oct; findings go to the coordinator |
+| What breaks 0.12.0 (session "break-it") | branch `break-it` (5 commits), worktree `~/Documents/HA/epaper-worktrees/break-it` | Done: 5 add-on fixes, each with a test, ready for a 0.12.1. Findings in the coordinator's notes (`break-it-0.12.0.md`) |
 | Feature roadmap (session "roadmap") | no code; a draft for `docs/ROADMAP.md` | Started 20 Oct, with the user |
 
 `low-power-mode` was merged in 0.12.0 and deleted.
 
 ## Backlog, most important first
 
-1. **Low Power Mode on the real 5.79" panel:** sleep current (a month or a
+1. **Firmware for every size but the 5.79" doesn't build** (since 16 Oct,
+   found 20 Oct). 4.2": wrong model name. 2.9", 7.5", 10.2": no `spi:` block,
+   and a full-refresh call only the CrowPanel driver has. 10.2": no ESPHome
+   driver at all. Needs a test that checks every size, and hardware answers.
+2. **Low Power Mode stops sleeping while the add-on is down.** Any answer
+   without the sleep header (a 502 during a restart) keeps the panel
+   connected until the add-on is back. Firmware fix: only a 200 or 304
+   without it means "stay connected".
+3. **A blank Wi-Fi name makes firmware ESPHome refuses**, even with the
+   panel's own Wi-Fi on. Fix: write a setup-only Wi-Fi block then; with
+   neither, the editor says a network is needed. Also check Wi-Fi password
+   length.
+4. **Smaller, from the same check:** Waveshare sizes stay awake 6 s per wake
+   for nothing; around clock changes a sleeping screen wakes an hour off;
+   a stalled MQTT broker could slow every render; going back to 0.11.0 with a
+   TRMNL breaks its screen list (say so in the changelog).
+5. **Low Power Mode on the real 5.79" panel:** sleep current (a month or a
    year on 5,000 mAh), buttons waking it, first-press delay, and the full
    flash on every wake (avoiding it means keeping the display powered).
-2. **The 5.79" away from home** (built in 0.11.0, never tried): fetching
+6. **The 5.79" away from home** (built in 0.11.0, never tried): fetching
    over HTTPS through the tunnel, and joining a second Wi-Fi network.
-3. **Audit #9, still open:** with no Reaching home set, a fresh Panel setup
+7. **Audit #9, still open:** with no Reaching home set, a fresh Panel setup
    takes its address from the browser. Opened through a tunnel, the panel is
    told to fetch from the tunnel's name over plain HTTP. Fix: default to
    Home Assistant's own home address and ignore the browser's.
-4. **Audit #14, still open:** the firmware doesn't check the footer
+8. **Audit #14, still open:** the firmware doesn't check the footer
    positions in a frame file against the screen. Memory-safe, but a forged
    or broken file can freeze the panel for seconds. Fix: reject positions
    outside the screen when reading the file; keep the fuzzer as a test.
-5. **Remove the classic editor** (`?classic=1`, decided 20 Oct): it predates
+9. **Remove the classic editor** (`?classic=1`, decided 20 Oct): it predates
    several screens. The way back is any tag up to v0.11.0.
 
 **Waiting on hardware:** a TRMNL (pairing, pictures, HTTPS, battery); a
