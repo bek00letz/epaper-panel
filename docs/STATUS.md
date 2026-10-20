@@ -22,9 +22,11 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Work | Where | State |
 |---|---|---|
-| What breaks 0.12.0 (session "break-it") | branch `break-it` (5 commits), worktree `~/Documents/HA/epaper-worktrees/break-it` | Done: 5 add-on fixes, each with a test, held for 0.13.0 (user, 20 Oct). Findings in the coordinator's notes (`break-it-0.12.0.md`) |
-| Feature roadmap (session "roadmap") | `docs/ROADMAP.md` | Done 20 Oct, agreed with the user |
+| 0.13 add-on and editor: two timers, audit #9, classic editor out, editor Wi-Fi checks (session "timers-addon") | branch `timers-addon`, worktree `~/Documents/HA/epaper-worktrees/timers-addon` | Proposed 20 Oct, waiting for the user to start it |
+| 0.13 firmware: every size builds, sleep while the add-on is down, blank Wi-Fi, audit #14, no flash after a wake (session "firmware-013") | branch `firmware-013`, worktree `~/Documents/HA/epaper-worktrees/firmware-013` | Proposed 20 Oct, waiting for the user to start it |
 
+break-it's 5 fixes are merged into local main (not pushed) and ship with
+0.13.0. Its findings: `break-it-0.12.0.md` in the coordinator's notes.
 `low-power-mode` was merged in 0.12.0 and deleted.
 
 ## Backlog, most important first
@@ -95,7 +97,8 @@ The editor was checked by eye in Home Assistant on 19 Oct.
   Defaults: always on. New screens start at 1 minute and on upgrade a panel
   with Low Power Mode off goes to 1 minute; first-time users must see plainly
   that there's a choice to make (how: the user decides on a design).
-- **Sleeping panels avoid the full flash TRMNL's way** (20 Oct, for 0.13): the display stays powered in its memory-keeping sleep, the first
+- **Sleeping panels avoid the full flash TRMNL's way** (20 Oct, for 0.13):
+  the display stays powered in its memory-keeping sleep, the first
   change after a wake is a partial refresh, a full one every 8th change and
   a fast full one at intervals of 30 minutes or more. Needs the real 5.79" to
   confirm and measure. The always-on panel's ghost clearing stays as it is.
