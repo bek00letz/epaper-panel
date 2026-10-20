@@ -333,7 +333,7 @@ changes. It's entered by holding the dial centre, the panel's **Sleep**
 switch, or quiet hours (`CAT_FLAG_SLEEP_AUTO`, sent while they last if
 "Sleep screen" is on). Any input first only wakes the panel, back to the page
 it was on, and fetches fresh frames. During quiet hours it goes back to sleep
-after 120 s untouched, and morning wakes it; a manual sleep lasts until
+after 120 s with no input of any kind (a press, or Home Assistant waking it), and morning wakes it; a manual sleep lasts until
 someone wakes it. A page or category lock wins over quiet hours, and an alert
 wins over everything.
 

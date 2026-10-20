@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **Fixed (firmware):** during quiet hours, a panel woken from Home Assistant
+  (its Sleep switch, or the editor) went straight back to sleep within
+  seconds. Any wake now gets the same two minutes a button press does.
 - **Reaching home through Home Assistant's address now finishes setting
   itself up.** After the restart, Home Assistant loaded the integration but
   nobody turned it on, so screens away from home got "not found". The add-on
