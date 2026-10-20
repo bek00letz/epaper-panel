@@ -933,9 +933,7 @@ async def api_displays(request):
 
 
 async def editor_index(request):
-    # The editor before 0.10, kept reachable until the new one has proven itself.
-    name = "classic.html" if request.query.get("classic") in ("1", "true") else "index.html"
-    index = WEB_DIR / name
+    index = WEB_DIR / "index.html"
     if not index.exists():
         return web.Response(text="Editor not built yet.", content_type="text/plain")
     return web.FileResponse(index, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})

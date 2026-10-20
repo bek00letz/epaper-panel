@@ -310,9 +310,9 @@ TRMNL's API docs. `tests/test_trmnl.py` pins each of these.
 
 The editor is `addon/app/web/`: `index.html`, `editor.css` and plain ES
 modules in `app/` (no build step, nothing from the internet, the system font).
-The 0.9 editor stays at `?classic=1` (`web/classic.html`) until the new one has
-proven itself; ask the user before removing it. `docs/editor-redesign/` holds
-the inventory every change is checked against.
+It's the only editor: the 0.9 one was removed in 0.13 (the way back is any tag
+up to v0.12.0). `app/legacy.js` keeps the pieces of it this one still uses.
+`docs/editor-redesign/` holds the inventory every change is checked against.
 
 - **Five things, one place each.** The screen (its name is the toolbar's
   title and switches between screens; Settings for the rest), the panel's

@@ -152,11 +152,11 @@ class TestEditorFiles(EditorClient):
         self.assertEqual(r.status, 200)
         self.assertEqual((await self.ed.get("/fonts/..%2Fweb.py")).status, 404)
 
-    async def test_classic_editor_stays_reachable(self):
+    async def test_one_editor(self):
+        # The 0.9 editor (?classic=1) was removed in 0.13; an old bookmark opens this one.
         new = await (await self.ed.get("/")).text()
-        old = await (await self.ed.get("/?classic=1")).text()
-        self.assertIn("<html", old)
-        self.assertFalse(new == old, "the new editor is served by default, the classic one on request")
+        self.assertIn("<html", new)
+        self.assertEqual(await (await self.ed.get("/?classic=1")).text(), new)
 
 
 class TestPresets(unittest.TestCase):

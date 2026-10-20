@@ -302,8 +302,6 @@ Meanwhile its entities stay in Home Assistant instead of disappearing.
 - Widgets have a **Text size** slider, and **Break apart** turns weather,
   flights, agenda, racing and match widgets into pieces you can move.
 - Nothing asks "are you sure?": everything has **Undo**.
-- The previous editor is still there for now: add `?classic=1` to the
-  editor's address.
 
 ## On the panel
 

@@ -19,6 +19,8 @@
 - **Fixed:** the editor's API answered a request whose body wasn't JSON with
   an internal error and a stack trace in the log; it now says the request was
   wrong (400).
+- **Removed:** the previous editor (`?classic=1`). It predates several
+  screens; an old bookmark to it now opens the editor.
 
 ## 0.12.0
 **Firmware change** (only needed for Low Power Mode, or if your panel has
