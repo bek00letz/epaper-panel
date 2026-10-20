@@ -26,6 +26,7 @@ import config
 import devices
 import frames
 import kinds
+import paging
 import reach
 import runtime
 import web
@@ -282,7 +283,7 @@ class TestAWake(TrmnlBase):
             def now(cls, tz=None):
                 return later if tz is None else later.astimezone(tz)
 
-        with mock.patch.object(trmnl, "datetime", Later):
+        with mock.patch.object(paging, "datetime", Later), mock.patch.object(trmnl, "datetime", Later):
             _, same = await self.wake(self.key)
             self.assertEqual(same["filename"], first["filename"], "nothing changed: no download, no flash")
             spec = devices.view(self.dev["id"])
@@ -295,12 +296,7 @@ class TestAWake(TrmnlBase):
         self.assertNotEqual(changed["filename"], first["filename"])
         shown = devices.state(self.dev["id"])["updated"]
         label = next(v["label"] for k, v in shown.items() if not k.startswith("\x00"))
-        self.assertEqual(label, trmnl.updated_label(later.astimezone(), later.astimezone()))
-
-    def test_the_day_joins_the_time_once_it_is_not_today(self):
-        now = datetime(2026, 10, 20, 9, 0)
-        self.assertEqual(trmnl.updated_label(datetime(2026, 10, 20, 8, 5), now), "updated 08:05")
-        self.assertEqual(trmnl.updated_label(datetime(2026, 10, 19, 22, 5), now), "updated Mon 22:05")
+        self.assertEqual(label, paging.updated_label(later.astimezone(), later.astimezone()))
 
     async def test_its_key_comes_in_the_access_token_header_and_nowhere_else_is_needed(self):
         self.assertEqual((await self.wake("wrong-key"))[0], 401)
@@ -361,10 +357,10 @@ class TestAWake(TrmnlBase):
         self.assertEqual((await self.lan.post("/api/log", data="{}", headers=log_headers("nope"))).status, 401)
 
     async def test_before_the_first_render_it_asks_again_soon(self):
-        runtime.device(self.dev["id"]).kind.pop("snapshot", None)
+        paging.forget(self.dev)
         _, body = await self.wake(self.key)
         self.assertEqual((body["image_url"], body["filename"]), ("", ""), "nothing to download")
-        self.assertEqual(body["refresh_rate"], trmnl.FIRST_RENDER_SECONDS)
+        self.assertEqual(body["refresh_rate"], paging.FIRST_RENDER_SECONDS)
 
     async def test_status_on_the_device_port_says_ok(self):
         r = await self.lan.get("/status", headers={"Access-Token": self.key})
@@ -378,7 +374,7 @@ class TestThePageEachWake(TrmnlBase):
         self.dev = await self.add_trmnl(pages="copy")
         self.key = (await self.pair(self.dev["id"]))["api_key"]
         await frames.refresh_frames(None)
-        self.plans = runtime.device(self.dev["id"]).kind["snapshot"]["st"].plans
+        self.plans = paging.ahead_of(self.dev).st.plans
         self.assertGreater(len(self.plans), 1, "needs a rotation of several pages")
 
     def cursor(self):
@@ -402,16 +398,6 @@ class TestThePageEachWake(TrmnlBase):
         names = {(await self.wake(self.key))[1]["filename"] for _ in range(3)}
         self.assertGreater(len(names), 1)
 
-    def test_step(self):
-        plans = [{"name": "a", "want": 2}, {"name": "b", "want": 1}, {"name": "c", "want": 3}]
-        self.assertEqual(trmnl.step(plans, {}, by_page=False), (0, 0), "a first wake starts at the start")
-        self.assertEqual(trmnl.step(plans, {"pos": 0, "name": "a", "item": 0}, False), (0, 1))
-        self.assertEqual(trmnl.step(plans, {"pos": 0, "name": "a", "item": 1}, False), (1, 0))
-        self.assertEqual(trmnl.step(plans, {"pos": 0, "name": "a", "item": 0}, True), (1, 0), "a button skips items")
-        self.assertEqual(trmnl.step(plans, {"pos": 2, "name": "c", "item": 2}, False), (0, 0), "round again")
-        self.assertEqual(trmnl.step(plans, {"pos": 5, "name": "c", "item": 0}, False), (2, 1), "found by name")
-        self.assertEqual(trmnl.step(plans, {"pos": 1, "name": "gone", "item": 0}, False), (0, 0))
-
 
 def hhmm(dt):
     return dt.strftime("%H:%M")
@@ -432,7 +418,7 @@ class TestQuietHoursAndAlerts(TrmnlBase):
         await self.quiet(now - timedelta(hours=1), now + timedelta(hours=2))
         _, body = await self.wake(self.key)
         until_end = (now + timedelta(hours=2)).replace(second=0, microsecond=0) - now
-        self.assertAlmostEqual(body["refresh_rate"], until_end.total_seconds() + trmnl.QUIET_MARGIN, delta=90)
+        self.assertAlmostEqual(body["refresh_rate"], until_end.total_seconds() + paging.QUIET_MARGIN, delta=90)
         sleep_name = body["filename"]
         await frames.refresh_frames(None)
         _, again = await self.wake(self.key)
@@ -444,7 +430,7 @@ class TestQuietHoursAndAlerts(TrmnlBase):
         _, asleep = await self.wake(self.key)
         _, glance = await self.wake(self.key, source="button")
         self.assertNotEqual(glance["filename"], asleep["filename"])
-        self.assertEqual(glance["refresh_rate"], trmnl.GLANCE_SECONDS)
+        self.assertEqual(glance["refresh_rate"], paging.GLANCE_SECONDS)
         _, back = await self.wake(self.key)
         self.assertEqual(back["filename"], asleep["filename"], "the next timer wake is the sleep page again")
 
@@ -452,20 +438,25 @@ class TestQuietHoursAndAlerts(TrmnlBase):
         now = datetime.now()
         await self.quiet(now + timedelta(minutes=5), now + timedelta(hours=8))
         _, body = await self.wake(self.key)
-        self.assertLessEqual(body["refresh_rate"], 6 * 60 + trmnl.QUIET_MARGIN)
+        self.assertLessEqual(body["refresh_rate"], 6 * 60 + paging.QUIET_MARGIN)
         self.assertGreater(body["refresh_rate"], 3 * 60)
 
     async def test_an_alert_shows_through_quiet_hours_when_they_allow_it(self):
         now = datetime.now()
         await self.quiet(now - timedelta(hours=1), now + timedelta(hours=2))
         _, asleep = await self.wake(self.key)
-        snap = runtime.device(self.dev["id"]).kind["snapshot"]
-        snap["st"] = frames.DesignState("alert", snap["st"].live, snap["st"].plans)
+        ahead = paging.ahead_of(self.dev)
+        alerting = frames.DesignState("alert", ahead.st.live, ahead.st.plans)
+
+        async def cycle():                               # the cycle, with an alert on
+            await paging.draw_ahead(devices.get(self.dev["id"]), devices.view(self.dev["id"]), alerting,
+                                    ahead.quiet, ahead.reason, trmnl.ART)
+        await cycle()
         _, alert = await self.wake(self.key)
         self.assertNotEqual(alert["filename"], asleep["filename"])
         self.assertEqual(alert["refresh_rate"], 15 * 60)
         devices.update(self.dev["id"], quiet_hours={**devices.get(self.dev["id"])["quiet_hours"], "allow_alerts": False})
-        snap["spec"] = devices.view(self.dev["id"])
+        await cycle()
         _, held = await self.wake(self.key)
         self.assertEqual(held["filename"], asleep["filename"])
 

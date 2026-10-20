@@ -1,6 +1,16 @@
 # Changelog
 
 ## Unreleased
+- **Low Power Mode (add-on side).** A switch per screen in Settings › Screen,
+  and when adding one: the panel checks for new pages at an interval you
+  choose and sleeps in between, for months on a battery. The add-on picks the
+  page for each check and says how long to sleep; a button press shows every
+  page. The panel's firmware that sleeps comes next; until then a panel in
+  Low Power Mode stays connected, and the editor says so.
+- TRMNL screens show how long they're awake per wake, next to battery and
+  Wi-Fi.
+- Screens that sleep get pictures drawn ahead in every render, so a wake is
+  answered at once instead of waiting for drawing.
 - **TRMNL screens.** Turn on TRMNL screens in the add-on's configuration, then
   add one in the editor (Add a screen, TRMNL). It pairs within ten minutes of
   you asking, gets its own key and shows your pages: one per wake, at an

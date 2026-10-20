@@ -488,7 +488,9 @@ def _screen(dev: dict, everyone: list[dict]) -> dict:
         "made_here": devices.design_canvas(dev["design"]) == devices.canvas_of(dev),
         "shares_with": [{"id": d["id"], "name": d.get("name") or ""} for d in everyone
                         if d["design"] == dev["design"] and d["id"] != dev["id"]],
-        "can_wake": kind.link(dev) is not None, "picks_page": kind.picks_page, "owns_interval": kind.owns_interval,
+        "can_wake": kind.link(dev) is not None, "picks_page": kind.picks_page,
+        # A screen that sleeps between wakes (paging.py) wakes at the add-on's interval, whatever its kind.
+        "owns_interval": "addon" if kind.sleeps(dev) else kind.owns_interval, "sleeps": kind.sleeps(dev),
         "setup": kind.setup_flow, "info": kind.describe(dev),
         "entity_suffix": dev.get("entity_suffix") or "",
         # Enough to offer "the same quiet hours as …" when adding a screen.
@@ -557,7 +559,11 @@ async def api_devices_add(request):
     except (TypeError, ValueError):
         orientation = 0
     mode = body.get("pages") or "new"
-    extra = {}
+    try:
+        # Its kind's own settings (Low Power Mode, a wake interval), checked before it exists.
+        extra = kind.settings({"kind": kind.id}, body)
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text=str(exc))
     try:
         if body.get("quiet_hours_from"):
             qh = devices.get(body["quiet_hours_from"]).get("quiet_hours")
@@ -588,12 +594,18 @@ async def api_devices_update(request):
     fields = {}
     if "name" in body:
         fields["name"] = _clean_name(body["name"], exclude_id=dev["id"])
+    kind = kinds.of(dev)
     try:
-        fields.update(kinds.of(dev).settings(dev, body))
+        fields.update(kind.settings(dev, body))
     except ValueError as exc:
         raise web.HTTPBadRequest(text=str(exc))
+    old = dict(dev)
     dev = devices.update(dev["id"], **fields) if fields else dev
-    return web.json_response({"device": _screen(dev, devices.all_devices()), **_screens()})
+    note = None
+    if kind.sleeps(old) != kind.sleeps(dev):
+        await _rerender()                              # what it fetches next follows the new mode
+        note = await kind.switched(old, dev)
+    return web.json_response({"device": _screen(dev, devices.all_devices()), "note": note, **_screens()})
 
 
 async def api_devices_unlink(request):

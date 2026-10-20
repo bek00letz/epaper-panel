@@ -5,6 +5,19 @@ port, whether the add-on can wake it early, and how a device of that kind gets
 its pages: `render` turns a design's pages for this cycle (frames.DesignState)
 into what the device fetches.
 
+**The rule: a request never draws.** The render cycle (frames.refresh_frames,
+which calls `render`) draws everything a device can fetch before the next
+cycle; the device port's routes only hand over what's ready. A device's radio
+is on while it waits for an answer, so drawing then is paid for in battery,
+and it's the cycle's job anyway. The one exception: a device that asks before
+anything was drawn for the size it has now (just after a start, or it just
+said it has a new size) may be drawn for there and then, and the log says so.
+tests/test_draw_ahead.py drives every kind's device routes to pin this.
+
+A screen that sleeps between wakes, with the add-on picking its page (a
+TRMNL; a CrowPanel in Low Power Mode), uses the shared mode in paging.py: its
+kind keeps only the protocol.
+
 A kind can be optional (an add-on option turns it on). While it's off its
 routes don't exist, its devices aren't drawn and the editor shows none of
 them (`enabled`, `shown`).
@@ -70,8 +83,20 @@ class Kind:
         kept while the device is quiet, however long it sleeps."""
         return set()
 
+    def sleeps(self, dev: dict) -> bool:
+        """Whether this screen sleeps between wakes, the add-on picking its page and its
+        wake interval (paging.py). A setting of the screen, never assumed from its kind's
+        hardware: how a screen is powered is its owner's business."""
+        return False
+
+    async def switched(self, old: dict, dev: dict) -> str | None:
+        """The screen started or stopped sleeping between wakes (`sleeps`). What the editor should
+        say about when that takes effect, or None."""
+        return None
+
     async def render(self, session, dev: dict, spec: dict, st, quiet_active: bool, quiet_reason: str):
-        """The device's new runtime.Frames from its design's state this cycle."""
+        """The device's new runtime.Frames from its design's state this cycle: everything it can
+        fetch until the next cycle, drawn now (the rule above). Its routes only hand it over."""
         raise NotImplementedError
 
 

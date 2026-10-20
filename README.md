@@ -415,11 +415,13 @@ measurements behind each decision.
   If the rotation needs more, every page keeps its first item and the extra
   items are shared out; what was left out shows in
   `sensor.epaper_panel_pages`.
-- **No battery reading on a CrowPanel.** The board's battery pin isn't
-  documented. (A TRMNL reports its own.)
-- **CrowPanels run plugged in for now.** A battery mode, where the panel sleeps
-  between updates, isn't built yet. It would trade instant updates, remote
-  control and alerts for months on a battery. A TRMNL already works that way.
+- **No battery reading on a CrowPanel.** The stock 5.79" can't read its
+  battery; it would need a resistor divider soldered on. (A TRMNL reports its
+  own.)
+- **Low Power Mode is half built.** The switch is in Settings › Screen and the
+  add-on already answers a panel that sleeps, but the panel's firmware can't
+  sleep yet, so a panel in Low Power Mode stays connected and checks on its
+  own timer. The editor says so. Leave it off until the firmware comes.
 
 ## Development
 

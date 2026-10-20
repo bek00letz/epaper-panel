@@ -25,32 +25,42 @@ from sources.sports import compute_sports_active_window, fetch_sports_match
 from runtime import Frames
 
 
+def quiet_window(qh: dict) -> tuple[str, str]:
+    """Quiet hours' start and end, as HH:MM."""
+    return str(qh.get("start") or "23:00").strip()[:5], str(qh.get("end") or "07:00").strip()[:5]
+
+
+def in_quiet_schedule(qh: dict, now: datetime) -> bool:
+    """Whether the clock is inside quiet hours' schedule. Only the clock: no presence, no network."""
+    if not qh.get("enabled"):
+        return False
+    start_str, end_str = quiet_window(qh)
+    cur_mins = now.hour * 60 + now.minute
+    try:
+        sh, sm = [int(x) for x in start_str.split(":")]
+        eh, em = [int(x) for x in end_str.split(":")]
+    except (TypeError, ValueError):
+        return False
+    s_mins, e_mins = sh * 60 + sm, eh * 60 + em
+    if s_mins == e_mins:
+        return False
+    return (cur_mins >= s_mins or cur_mins < e_mins) if s_mins > e_mins else (s_mins <= cur_mins < e_mins)
+
+
 async def evaluate_quiet_hours(session, spec: dict, dev: dict | None = None) -> tuple[bool, str]:
     """Whether a device's quiet hours are on now, and why. `dev` names its entity (the first device's when None)."""
     qh = spec.get("quiet_hours") if isinstance(spec.get("quiet_hours"), dict) else {}
     enabled = bool(qh.get("enabled", False))
-    start_str = str(qh.get("start") or "23:00").strip()[:5]
-    end_str = str(qh.get("end") or "07:00").strip()[:5]
+    start_str, end_str = quiet_window(qh)
     pres_ent = str(qh.get("presence_entity") or "").strip()
     allow_alerts = bool(qh.get("allow_alerts", True))
 
     active = False
     reason = "disabled"
     if enabled:
-        now_t = datetime.now()
-        cur_mins = now_t.hour * 60 + now_t.minute
-        try:
-            sh, sm = [int(x) for x in start_str.split(":")]
-            eh, em = [int(x) for x in end_str.split(":")]
-            s_mins = sh * 60 + sm
-            e_mins = eh * 60 + em
-            if s_mins != e_mins:
-                in_window = (cur_mins >= s_mins or cur_mins < e_mins) if s_mins > e_mins else (s_mins <= cur_mins < e_mins)
-                if in_window:
-                    active = True
-                    reason = f"schedule ({start_str}–{end_str})"
-        except Exception:
-            pass
+        if in_quiet_schedule(qh, datetime.now()):
+            active = True
+            reason = f"schedule ({start_str}–{end_str})"
 
         if not active and pres_ent and valid_entity_id(pres_ent):
             try:
