@@ -205,7 +205,7 @@ export function openAddScreen(app) {
           pairs() && st.kind.displays.length < 2
             ? grow("Size", "Another size is picked up when it pairs", h("span", { class: "fnote", text: `${disp.name}, ${disp.w} × ${disp.h}` }))
             : grow("Model", null, pick(st.kind.displays.map((d) => [d.id, `${d.name}, ${d.w} × ${d.h}`]), st.display, (v) => { st.display = v; }, "Model")),
-          grow("Mounted", null, pick([[0, "Landscape"], [180, "Landscape, upside down"], [90, "Portrait"], [270, "Portrait, flipped"]], st.orientation, (v) => { st.orientation = Number(v); }, "Mounted"))),
+          grow("Mounted", null, pick(ORIENTATIONS, st.orientation, (v) => { st.orientation = Number(v); }, "Mounted"))),
         // Power comes first after the hardware: like the model and how it's mounted, it's about the screen
         // itself (on a cable or a battery), and it's the choice every new screen makes. A TRMNL always sleeps.
         h("h4", { class: "gtitle", text: "Power" }),
@@ -411,7 +411,15 @@ function grow(label, sub, ctl) { return h("div", { class: "gr" }, h("span", { cl
 
 /* A new size or mounting: the pages come back placed for it (that size's own
    layout, or an automatic fit), as one undoable change that's sent like any other. */
-async function placeFor(app, display, orientation) {
+/* Which way up it's mounted: Settings › Screen and the screen bar. Turning it a quarter
+   offers to rearrange the page on screen. */
+export async function setMounted(app, v) {
+  const doc = app.doc, spec = doc.spec;
+  const was = [90, 270].includes(Number(spec.orientation)), now = [90, 270].includes(Number(v));
+  if (!(await placeFor(app, spec.display, v))) return;
+  if (was !== now) toast(`The canvas is ${now ? "portrait" : "landscape"} now.`, { label: "Rearrange this page", run: () => { reflowPageElements(doc.page(), now, app.geometry().d); doc.commit(); } });
+}
+export async function placeFor(app, display, orientation) {
   const doc = app.doc, spec = doc.spec;
   try {
     const r = (await api("api/arrange", { method: "POST", body: { spec, display, orientation: Number(orientation) } })).body;
@@ -439,11 +447,7 @@ function pairedPane(app, pane, show) {
   const disp = DISPLAYS[spec.display] || {};
   pane.append(h("h4", { class: "gtitle", text: "Display" }), group(
     grow("Size", "As it reports it", h("span", { class: "fnote", text: disp.w ? `${disp.name}, ${disp.w} × ${disp.h}` : "" })),
-    grow("Mounted", "Which way up it stands", select([[0, "Landscape"], [180, "Landscape, upside down"], [90, "Portrait"], [270, "Portrait, flipped"]], spec.orientation || 0, async (v) => {
-      const was = [90, 270].includes(Number(spec.orientation)), now = [90, 270].includes(Number(v));
-      if (!(await placeFor(app, spec.display, v))) return;
-      if (was !== now) toast(`The canvas is ${now ? "portrait" : "landscape"} now.`, { label: "Rearrange this page", run: () => { reflowPageElements(doc.page(), now, app.geometry().d); doc.commit(); } });
-    }))));
+    grow("Mounted", "Which way up it stands", select(ORIENTATIONS, spec.orientation || 0, (v) => setMounted(app, v)))));
   pane.append(h("h4", { class: "gtitle", text: "Power" }), timersBox(app, scr, () => show("panel")));
   sharedGroup(app, pane, scr, show);
   removeGroup(app, pane, scr);
@@ -505,11 +509,7 @@ async function panelPane(app, pane, show) {
   const reflowNote = h("p", { class: "fnote" });
   pane.append(h("h4", { class: "gtitle", text: "Display" }), group(
     grow("Model", null, select(kind.displays.map((d) => [d.id, `${d.name}, ${d.w} × ${d.h}`]), spec.display, (v) => placeFor(app, v, spec.orientation || 0))),
-    grow("Mounted", "Which way up it hangs", select([[0, "Landscape"], [180, "Landscape, upside down"], [90, "Portrait"], [270, "Portrait, flipped"]], spec.orientation || 0, async (v) => {
-      const was = [90, 270].includes(Number(spec.orientation)), now = [90, 270].includes(Number(v));
-      if (!(await placeFor(app, spec.display, v))) return;
-      if (was !== now) toast(`The canvas is ${now ? "portrait" : "landscape"} now.`, { label: "Rearrange this page", run: () => { reflowPageElements(doc.page(), now, app.geometry().d); doc.commit(); } });
-    }))), reflowNote);
+    grow("Mounted", "Which way up it hangs", select(ORIENTATIONS, spec.orientation || 0, (v) => setMounted(app, v)))), reflowNote);
   pane.append(h("h4", { class: "gtitle", text: "Power" }), timersBox(app, scr, () => show("panel")));
 
   sharedGroup(app, pane, scr, show);
@@ -543,25 +543,32 @@ async function panelPane(app, pane, show) {
 }
 
 /* Update every and Rotate every (timing.py): how a screen is powered, and how its pages turn. They apply at once. */
+/* The one way the editor changes a screen's timers: Settings › Screen and the screen bar both use it. */
+export async function changeTimers(app, scr, body, said) {
+  try {
+    const r = (await api(`api/devices/${encodeURIComponent(scr.id)}`, { method: "PATCH", body })).body;
+    app.applyScreens(r);
+    app.refresh();                                     // the inspector, the strip and the bar say how pages turn
+    toast(r.note || said);
+  } catch (e) { toast(`Couldn't change it: ${e.message}`); }
+}
+export const updateLabel = (m) => (m === 1 ? "1 minute · always on" : span(m));
+export const updateSaid = (m) => (m === 1 ? "It's always on." : `It updates every ${span(m)} from its next update.`);
+export const rotateOptions = (t) => (t.always_on
+  ? [...new Set([...t.rotate_seconds_choices, t.rotate_seconds])].sort((a, b) => a - b).map((x) => [x, seconds(x)])
+  : t.rotate_update_choices.map((n) => [n, n === 1 ? "Every update" : span(n * t.update_minutes)]));
+export const rotateChange = (t, v) => (t.always_on
+  ? [{ rotate_seconds: Number(v) }, `Each page shows for ${seconds(Number(v))}.`]
+  : [{ rotate_updates: Number(v) }, `It moves to the next page every ${span(Number(v) * t.update_minutes)}.`]);
+export const ORIENTATIONS = [[0, "Landscape"], [180, "Landscape, upside down"], [90, "Portrait"], [270, "Portrait, flipped"]];
+
 function timersBox(app, scr, redraw) {
   const info = scr.info || {}, t = scr.timing || {}, box = h("div");
   const url = `api/devices/${encodeURIComponent(scr.id)}`, pairs = scr.setup === "pair";
-  const change = async (body, said) => {
-    try {
-      const r = (await api(url, { method: "PATCH", body })).body;
-      app.applyScreens(r);
-      app.refresh();                                   // the inspector and the strip say how pages turn
-      toast(r.note || said);
-      redraw();
-    } catch (e) { toast(`Couldn't change it: ${e.message}`); redraw(); }
-  };
-  const update = select(t.update_choices.map((m) => [m, m === 1 ? "1 minute · always on" : span(m)]), t.update_minutes,
-    (v) => change({ update_minutes: Number(v) }, Number(v) === 1 ? "It's always on." : `It updates every ${span(Number(v))} from its next update.`), { "aria-label": "Update every" });
-  const rotate = t.always_on
-    ? select([...new Set([...t.rotate_seconds_choices, t.rotate_seconds])].sort((a, b) => a - b).map((x) => [x, seconds(x)]), t.rotate_seconds,
-      (v) => change({ rotate_seconds: Number(v) }, `Each page shows for ${seconds(Number(v))}.`), { "aria-label": "Rotate every" })
-    : select(t.rotate_update_choices.map((n) => [n, n === 1 ? "Every update" : span(n * t.update_minutes)]), t.rotate_updates,
-      (v) => change({ rotate_updates: Number(v) }, `It moves to the next page every ${span(Number(v) * t.update_minutes)}.`), { "aria-label": "Rotate every" });
+  const change = async (body, said) => { await changeTimers(app, scr, body, said); redraw(); };
+  const update = select(t.update_choices.map((m) => [m, updateLabel(m)]), t.update_minutes,
+    (v) => change({ update_minutes: Number(v) }, updateSaid(Number(v))), { "aria-label": "Update every" });
+  const rotate = select(rotateOptions(t), t.always_on ? t.rotate_seconds : t.rotate_updates, (v) => change(...rotateChange(t, v)), { "aria-label": "Rotate every" });
   const rows = [
     grow("Update every", t.always_on ? "Always on: for a panel on a cable" : t.can_stay_on ? "It sleeps in between. Longer lasts longer on a battery" : "Longer lasts longer on its battery", update),
     grow("Rotate every", t.always_on ? "How long each page shows" : "Each update refreshes the page on screen; this moves to the next", rotate)];

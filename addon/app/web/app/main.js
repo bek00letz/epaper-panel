@@ -14,6 +14,7 @@ import { geometry, setDisplays, makeElement, makeEntityElement, elName, TYPES, p
 import { syncDynamicGridShowIf, syncWidgetShowIf } from "./conditions.js";
 import { CATEGORY_TERMS } from "./legacy.js";
 import { unitsRows } from "./units.js";
+import { renderScreenBar } from "./screenbar.js";
 
 const CLIP_KEY = "clipboard";
 
@@ -27,7 +28,7 @@ class App {
     this.el = {
       app: document.getElementById("app"), tb: document.getElementById("toolbar"), bar: document.getElementById("canvasbar"),
       area: document.getElementById("canvasarea"), strip: document.getElementById("strip"), insp: document.getElementById("inspector"),
-      live: document.getElementById("live"),
+      live: document.getElementById("live"), screenbar: document.getElementById("screenbar"),
     };
     this.canvas = new Canvas(this);
     this.el.area.append(this.canvas.device);
@@ -101,7 +102,7 @@ class App {
     this.screen = this.screens.find((d) => d.id === id) || this.screens[0] || null;
     setDevice(this.screen?.id);
     if (this.screen) prefs.set("device", this.screen.id);
-    this.renderToolbar(); this.renderBar();
+    this.renderToolbar(); this.renderBar(); renderScreenBar(this);
   }
   async switchScreen(id) {
     if (!id || id === this.screen?.id) return;
@@ -241,7 +242,7 @@ class App {
   ready() { return !!this.screen; }
   refresh() {
     if (!this.ready()) { this.renderToolbar(); return; }
-    this.renderToolbar(); this.renderBar(); this.renderStrip(); this.renderInspector(); this.renderLayers(); this.canvas.draw();
+    this.renderToolbar(); this.renderBar(); this.renderStrip(); this.renderInspector(); this.renderLayers(); renderScreenBar(this); this.canvas.draw();
     document.title = this.doc.cur ? `${pageTitle(this.doc.cur)} · e-Paper Panel` : "e-Paper Panel";
   }
 

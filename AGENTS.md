@@ -333,7 +333,12 @@ up to v0.12.0). `app/legacy.js` keeps the pieces of it this one still uses.
   canvas by default so the window reads from general to specific (below or
   down the side is a setting), *is* the rotation: drag to reorder, a page can sit in it twice), a page (the
   inspector when nothing is selected), an element (canvas and inspector).
-  Don't give any of them a second home.
+  Don't give any of them a second home. The one exception, on purpose (the
+  user's call, 21 Oct): the screen bar under the canvas (`app/screenbar.js`)
+  keeps four everyday screen settings in sight and in reach — power and
+  Update every, Rotate every, quiet hours on or off, Mounted — like Control
+  Center next to Settings. Settings › Screen keeps them too and has the
+  rest; both change them through the same functions. Nothing else goes in it.
 - **The canvas is the task**, so the chrome is deliberately quiet and the panel
   sits in a dark frame that reads as the device. Do not add colour or weight
   that competes with it. The canvas shows only the add-on's own render

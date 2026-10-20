@@ -117,5 +117,45 @@ class TestRenaming(unittest.TestCase):
         self.assertIn('grow("Name", "Home Assistant takes it at the next install.", name)', js("sheets.js"))
 
 
+
+class TestScreenBar(unittest.TestCase):
+    def setUp(self):
+        self.bar = js("screenbar.js")
+
+    def test_it_sits_under_the_canvas_in_the_flow(self):
+        html = (WEB / "index.html").read_text()
+        self.assertLess(html.index('class="canvaswrap"'), html.index('id="screenbar"'))
+        self.assertIn("renderScreenBar(this)", js("main.js"))
+        self.assertIn("#app[data-strip=\"bottom\"] .screenbar { order: 2; }", CSS, "above a strip at the bottom")
+        self.assertIn('#app[data-strip="side"] .screenbar { grid-column: 2; grid-row: 3; }', CSS)
+
+    def test_folded_it_says_how_the_screen_runs(self):
+        self.assertIn('const power = t.always_on ? "Always on" : `Sleeps · updates every', self.bar)
+        self.assertIn("`next page every", self.bar)
+        self.assertIn('qh.enabled ? `quiet ${qh.start}–${qh.end}` : "no quiet hours"', self.bar)
+        self.assertIn('prefs.get("screenbar") === "open"', self.bar, "it remembers whether it was open")
+
+    def test_it_changes_things_the_way_settings_does(self):
+        # Like Control Center next to Settings: a second place, never a second way.
+        for shared in ("changeTimers", "rotateOptions", "rotateChange", "ORIENTATIONS", "setMounted"):
+            self.assertIn(shared, self.bar)
+            self.assertRegex(js("sheets.js"), rf"export (async function|const) {shared}\b")
+        timers = js("sheets.js")[js("sheets.js").index("function timersBox"):]
+        self.assertIn("await changeTimers(app, scr, body, said)", timers)
+
+    def test_only_the_four_everyday_settings(self):
+        cards = re.findall(r'card\("([^"]+)"', self.bar)
+        self.assertEqual(sorted(set(cards)), ["Mounted", "Next page", "Power", "Quiet hours"])
+
+    def test_toasts_rise_above_it(self):
+        self.assertIn("#toast { bottom: max(24px, calc(var(--sb-room, 0px) + 8px)); }", CSS)
+
+    def test_esc_folds_it(self):
+        self.assertIn('if (e.key === "Escape") { e.stopPropagation(); setOpen(false, "pill"); }', self.bar)
+
+    def test_big_enough_to_touch(self):
+        self.assertIn("@media (pointer: coarse) { .sbpill { min-height: 44px;", CSS)
+
+
 if __name__ == "__main__":
     unittest.main()

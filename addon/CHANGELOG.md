@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **How the screen runs is always in sight, under the canvas.** A small bar
+  says whether it's always on or sleeps, how often pages turn and its quiet
+  hours. Click it to change power, how often it updates, the next page, quiet
+  hours on or off, and which way up it's mounted, without opening Settings.
+  Settings › Screen still has all of these. The bar remembers whether you
+  left it open.
 - **Rename a screen right in the toolbar.** Choose Rename in the screen menu,
   or double-click its name, and type: Enter or clicking away keeps it, Esc
   puts it back. Settings › Screen still has its Name, now saying that
