@@ -428,7 +428,7 @@ async def api_preview(request):
         layout.render_page, page, vals,
         clock=datetime.now().strftime("%H:%M"),
         label=str(body.get("label") or "preview")[:40],
-        battery_pct=None, series=series, metrics=metrics, orientation=orient,
+        series=series, metrics=metrics, orientation=orient,
         distance_m=dist, display=display)
     # Effective font sizes ride back on a header so the editor can report
     # what you actually got, in millimetres, rather than what you asked for.

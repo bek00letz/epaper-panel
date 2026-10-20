@@ -161,11 +161,20 @@ copies a page straight into its display buffer: no decoding.
 - **The server owns the geometry.** The header's reserved bytes carry the
   footer pill positions in logical pixels, plus the rotate-and-mirror
   transform to the physical buffer (`FLAG_GEOMETRY`). They come from
-  `theme.footer_geometry()`, the same function the footer is drawn with. The
+  `theme.footer_plan()`, the same plan the footer is drawn with. The
   firmware draws its highlight and padlocks through that transform and
   hard-codes no layout. This is what ended the 0.8.33–0.8.37 overlay
   back-and-forth: before, the footer's numbers lived in two places and
   disagreed in portrait.
+- **The footer fits itself to the screen.** `footer_plan()` plans one footer
+  per screen and strip of pages. When it doesn't fit, things give way in a
+  fixed order (`theme.FOOTER_STEPS`): first the page name (shortened, then
+  dropped), then pill padding, then the two padlocks share one spot, then
+  the counts shorten ("2/5" to "2"), then the margins, then the pill text,
+  and last the clock. The clock comes last because it's how you see the
+  panel is still syncing. The band at the bottom keeps the same height on
+  every screen. Pill outlines are drawn from the panel's own shape
+  (`theme.in_pill`), so its highlight covers them exactly.
 - **Mirroring.** The 5.79" and 4.2" (SSD1683) drivers store each row
   right-to-left, so pages are flipped before packing (`epf.MIRRORED_MODELS`),
   and the header says so.

@@ -425,15 +425,15 @@ async def design_state(session, design_id: str, spec: dict) -> DesignState:
     return DesignState(alert, live, plans)
 
 
-async def draw_category(plan: dict, sub_count: int, cat_label: str, *, page_def: dict, clock: str, orient: int,
+async def draw_category(plan: dict, sub_count: int, page_no: int, *, footer: dict, page_def: dict, orient: int,
                         display: str) -> list:
     """Every item of one page, drawn at a display's size and turned for its mounting.
 
     `page_def` is the page as placed on this screen (devices.view); its
-    elements are the design's, in the same order as the plan's values."""
+    elements are the design's, in the same order as the plan's values.
+    `footer` is the strip's theme.footer_plan(), and this is page `page_no` of it."""
     page_vals, elements = plan["vals"], page_def.get("elements", [])
     sub_type, feed_items, feed_entity = plan["sub_type"], plan["feed_items"], plan["feed_entity"]
-    cat_display_name = plan["name"].replace("_", " ").upper()
     page_imgs = []
     # Render each sub-item for this category
     for s_idx in range(sub_count):
@@ -482,15 +482,10 @@ async def draw_category(plan: dict, sub_count: int, cat_label: str, *, page_def:
 
             cloned_page["elements"].append(el_c)
 
-        sub_label = f"{s_idx + 1}/{sub_count}" if sub_count > 1 else ""
-
         img = await asyncio.to_thread(
             layout.render_page, cloned_page, cloned_vals,
-            clock=clock,
-            label=cat_display_name,
-            cat_label=cat_label,
-            sub_label=sub_label,
-            battery_pct=None, series=plan["series"], orientation=orient, display=display)
+            footer=footer, page_no=page_no, item_no=s_idx, items=sub_count,
+            series=plan["series"], orientation=orient, display=display)
         page_imgs.append(T.orient_for_panel(T.to_1bit(img), orient, display=display))
     return page_imgs
 
