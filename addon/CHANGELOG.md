@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.10.2 (unreleased)
+## 0.10.2
 Add-on only; no firmware change.
 
 - **Fixed:** a value set to step up its unit always wrote the unit after the
