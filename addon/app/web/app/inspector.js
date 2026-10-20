@@ -98,7 +98,7 @@ function element(app, head, body, el, i) {
   head.append(h("div", { class: "ttl" }, h("span", { class: "kind" }, icon(TYPES[el.type]?.icon || "square", "xs"), t), h("span", { class: "tname", text: d || t })));
   const set = setter(app, el);
   const doc = app.doc, g = app.geometry();
-  if (el._auto) body.append(h("p", { class: "note" }, icon("info", "sm"), h("span", { text: `Placed automatically for ${app.screen?.name || "this screen"}. Move or resize it and this screen keeps its own place for it.` })));
+  if (el._auto) body.append(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: `Placed automatically for ${app.screen?.name || "this screen"}. Move or resize it and this screen keeps its own place for it.` })));
 
   if (hasText(el)) {
     body.append(shows(app, el, set));

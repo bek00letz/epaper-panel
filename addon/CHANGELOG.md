@@ -12,6 +12,9 @@
   stay until the add-on itself restarted. Whether a restart is needed now
   comes from the version Home Assistant actually runs, and the pane updates
   by itself once Home Assistant is back.
+- **Settings breathes again.** Every pane now keeps the same space between
+  its parts, so text no longer runs into the cards below it, and the notes'
+  icons match their colour.
 
 ## 0.13.0
 **Firmware change:** install the panel again from Install or update to get
