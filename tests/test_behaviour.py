@@ -143,6 +143,40 @@ class TestPanelSetupSave(unittest.IsolatedAsyncioTestCase):
         self.assertIn('"two-two-two"', (folder / "crowpanel_epaper.yaml").read_text())
         self.assertIn('"one-one-one"', (folder / "crowpanel_epaper.yaml.previous").read_text())
 
+    async def test_no_way_online_is_said_before_install_and_not_written(self):
+        folder = Path(self.tmp.name)
+        res = await self.post({"device_name": "crowpanel-epaper", "wifi_ssid": "home", "wifi_password": "long-enough"})
+        self.assertEqual(res["problems"], [])
+        written = (folder / "crowpanel_epaper.yaml").read_text()
+        res = await self.post({"device_name": "crowpanel-epaper", "wifi_ssid": "", "wifi_networks": [], "hotspot": False})
+        self.assertEqual(len(res["problems"]), 1)
+        self.assertIn("no way online", res["problems"][0])
+        self.assertFalse(res["esphome_synced"])
+        self.assertEqual((folder / "crowpanel_epaper.yaml").read_text(), written, "the last good file stays")
+        res = await self.post({"device_name": "crowpanel-epaper", "hotspot": True})
+        self.assertEqual(res["problems"], [], "its own Wi-Fi is a way online: set up from a phone")
+
+    async def test_wifi_passwords_esphome_would_refuse(self):
+        for password, ok in (("", True), ("12345678", True), ("x" * 63, True), ("ab12" * 16, True),
+                             ("short", False), ("x" * 64, False), ("x" * 65, False)):
+            res = await self.post({"device_name": "crowpanel-epaper", "wifi_ssid": "home", "wifi_password": password,
+                                   "wifi_networks": [], "hotspot": True})
+            self.assertEqual(res["problems"] == [], ok, f"{len(password)} characters")
+        res = await self.post({"device_name": "crowpanel-epaper", "wifi_ssid": "home", "wifi_password": "long-enough",
+                               "wifi_networks": [{"ssid": "Work", "password": "abc"}]})
+        self.assertEqual(len(res["problems"]), 1)
+        self.assertIn("Work", res["problems"][0], "says which network")
+
+    async def test_no_first_network_but_others(self):
+        # ESPHome refuses a blank network name; the first of the others leads instead.
+        res = await self.post({"device_name": "crowpanel-epaper", "wifi_ssid": "", "wifi_password": "",
+                               "wifi_networks": [{"ssid": "Work", "password": "work-pass"},
+                                                 {"ssid": "Cabin", "password": "cabin-pass"}]})
+        self.assertEqual(res["problems"], [])
+        self.assertNotIn('ssid: ""', res["yaml"])
+        self.assertIn('ssid: "Work"', res["yaml"])
+        self.assertIn('ssid: "Cabin"', res["yaml"])
+
     async def test_its_own_timer_starts_at_update_every(self):
         # Always on, it checks every minute on its own timer; the form has no interval of its own.
         res = await self.post({"device_name": "crowpanel-epaper", "refresh_interval": "7min"})

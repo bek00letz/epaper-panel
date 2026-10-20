@@ -583,6 +583,13 @@ async function installPane(app, pane) {
   const secrets = h("textarea", { class: "inp code", readonly: true, "aria-label": "secrets.yaml lines", spellcheck: "false" });
   const secretsWrap = h("div");
   const status = h("div");
+  // What ESPHome would refuse (no way online, a Wi-Fi password it can't take), said before Install.
+  const problems = h("div", { role: "status", "aria-live": "polite" });
+  const copyFile = h("button", { class: "btn primary", onclick: () => copy(yaml.value, "the file") }, "Copy");
+  const downloadFile = h("button", { class: "btn tinted", onclick: () => {
+    const a = h("a", { href: URL.createObjectURL(new Blob([yaml.value], { type: "text/yaml" })), download: (dev.value.trim() || "crowpanel-epaper") + ".yaml" });
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  } }, "Download");
   const save = async (extra = {}, msg) => {
     try {
       const body = { ha_host: host.value.trim() || location.hostname || "homeassistant.local", frame_port: parseInt(port.value, 10) || 8099,
@@ -626,6 +633,10 @@ async function installPane(app, pane) {
     const cc = r.config || {};
     drawHotspot();
     yaml.value = r.yaml || ""; secrets.value = r.secrets_yaml || ""; key.value = cc.api_encryption_key || key.value;
+    const issues = r.problems || [];
+    problems.replaceChildren(...issues.map((t) => h("p", { class: "note warn" }, icon("info", "sm"), h("span", { text: t }))),
+      issues.length ? h("p", { class: "fnote", text: "ESPHome wouldn't install this file. Fix the above and it's ready; Home Assistant's ESPHome folder keeps the last good one until then." }) : "");
+    copyFile.disabled = downloadFile.disabled = issues.length > 0;
     secretsWrap.hidden = !(cc.use_secrets || !cc.wifi_ssid);
     const p = r.panel || {};
     status.replaceChildren(...[
@@ -640,12 +651,8 @@ async function installPane(app, pane) {
     h("h4", { class: "gtitle", text: "Other networks" }), h("p", { class: "fnote", text: "Where else the screen goes, like work. It joins whichever it finds." }), netsBox, hotspotBox,
     group(grow("Encryption key", "Also protects updates over Wi-Fi", h("div", { class: "inline" }, key, h("button", { class: "btn tinted", onclick: () => copy(key.value, "the key") }, "Copy"))),
       grow("New key", "The panel then needs reinstalling and re-adding in Home Assistant", h("button", { class: "btn tinted danger", onclick: () => save({ regenerate_keys: true }, "New key made. Reinstall the panel and add it again in Home Assistant.") }, "Make a new key"))),
-    h("h4", { class: "gtitle", text: "The panel's file" }), yaml,
-    h("div", { class: "btnrow" }, h("button", { class: "btn primary", onclick: () => copy(yaml.value, "the file") }, "Copy"),
-      h("button", { class: "btn tinted", onclick: () => {
-        const a = h("a", { href: URL.createObjectURL(new Blob([yaml.value], { type: "text/yaml" })), download: (dev.value.trim() || "crowpanel-epaper") + ".yaml" });
-        a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-      } }, "Download")),
+    h("h4", { class: "gtitle", text: "The panel's file" }), problems, yaml,
+    h("div", { class: "btnrow" }, copyFile, downloadFile),
     secretsWrap,
     h("h4", { class: "gtitle", text: "Installing" }),
     h("ol", { class: "steps" },

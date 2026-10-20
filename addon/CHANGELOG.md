@@ -34,6 +34,12 @@
 - **Fixed:** the editor's API answered a request whose body wasn't JSON with
   an internal error and a stack trace in the log; it now says the request was
   wrong (400).
+- **Fixed:** Install or update made files ESPHome refuses. With no Wi-Fi
+  network and the panel's own Wi-Fi off, or a Wi-Fi password that isn't 8 to
+  63 characters, the editor now says what to fix above the file, and holds
+  back Copy, Download and writing it to Home Assistant's ESPHome folder (the
+  last good file stays there) until it's fixed. With no first network but
+  others, the first of them leads instead of a blank one.
 - **Removed:** the previous editor (`?classic=1`). It predates several
   screens; an old bookmark to it now opens the editor.
 

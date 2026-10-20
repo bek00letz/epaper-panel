@@ -28,7 +28,7 @@ from frames import _png, as_int, enrich_page_values, refresh_frames, split_page_
 from ha import curve_series, ha_json, resolve_templates
 from layouts_store import clear_draft, layouts_etag, load_draft, load_layouts, load_sources, sanitize_layouts, save_draft, save_layouts
 from panel_ops import push_panel_update
-from panel_setup import _detect_external_port, _detect_panel_connection, _new_api_key, generate_esphome_yaml, ha_name, hotspot_name, load_panel_setup, more_networks, save_panel_setup
+from panel_setup import _detect_external_port, _detect_panel_connection, _new_api_key, generate_esphome_yaml, ha_name, hotspot_name, load_panel_setup, more_networks, save_panel_setup, wifi_problems
 from sources.flights import fetch_overhead_aircraft
 
 
@@ -758,6 +758,7 @@ async def api_panel_setup_get(request):
         "config": masked_cfg,
         "yaml": yaml_text,
         "secrets_yaml": secrets_text,
+        "problems": wifi_problems(cfg),
         "frame_port": cfg.get("frame_port", detected_port),
         "has_frame_token": True,
         "frame_protection": frame_token.status(),
@@ -810,7 +811,9 @@ async def api_panel_setup_post(request):
     yaml_text, secrets_text = generate_esphome_yaml(masked_cfg, dev, public)
     esphome_dir = config.ESPHOME_DIR
     esphome_synced = False
-    if esphome_dir.exists() and esphome_dir.is_dir():
+    # A file ESPHome would refuse isn't written: the one there stays until this one would install.
+    problems = wifi_problems(saved)
+    if not problems and esphome_dir.exists() and esphome_dir.is_dir():
         try:
             device_slug = re.sub(r"[^a-z0-9_]+", "_", saved.get("device_name", "crowpanel-epaper").lower()).strip("_") or "crowpanel_epaper"
             target_yaml = esphome_dir / f"{device_slug}.yaml"
@@ -834,6 +837,7 @@ async def api_panel_setup_post(request):
         "config": masked_cfg,
         "yaml": yaml_text,
         "secrets_yaml": secrets_text,
+        "problems": problems,
         "esphome_synced": esphome_synced,
         "frame_port": saved.get("frame_port", FRAME_PORT),
         "has_frame_token": True,
