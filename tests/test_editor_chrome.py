@@ -39,5 +39,28 @@ class TestFit(unittest.TestCase):
         self.assertIn("overflow: auto", body)
 
 
+
+class TestAddAScreen(unittest.TestCase):
+    def setUp(self):
+        src = js("sheets.js")
+        self.sheet = src[src.index("export function openAddScreen"):src.index("export function openPairing")]
+
+    def test_power_comes_before_pages(self):
+        # On a short window Power sat below the fold, so a screen could be added without seeing it.
+        self.assertLess(self.sheet.index('text: "Power" }'), self.sheet.index('text: "Pages" }'))
+
+    def test_sleeping_says_how_often_and_offers_settings_times(self):
+        self.assertIn('choice("sleep", "Sleeps between updates"', self.sheet)
+        self.assertIn('"power", everySel)', self.sheet, "the picker sits on the card")
+        self.assertIn("st.kind.update_choices.filter((m) => m !== 1)", self.sheet)
+        self.assertIn('update_minutes: !pairs() && st.power === "on" ? 1 : st.minutes', self.sheet)
+
+    def test_picking_a_time_picks_sleeping(self):
+        self.assertIn('st.minutes = Number(v); st.power = "sleep"', self.sheet)
+
+    def test_a_sheet_can_use_the_whole_window(self):
+        self.assertIn("max-height: calc(100dvh - 48px)", rule(".sheet"))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -165,7 +165,8 @@ export function openFullStrip(app) {
 export function openAddScreen(app) {
   const kinds = app.kinds.filter((k) => k.displays.length);
   if (!kinds.length) { toast("This add-on doesn't know any kind of screen it can add."); return; }
-  const st = { kind: kinds[0], display: kinds[0].displays[0].id, orientation: 0, pages: "new", from: app.screen?.id || app.screens[0]?.id, quiet: true, power: "on" };
+  const st = { kind: kinds[0], display: kinds[0].displays[0].id, orientation: 0, pages: "new", from: app.screen?.id || app.screens[0]?.id, quiet: true, power: "on",
+    minutes: kinds[0].asleep_default || 15 };
   sheet("Add a screen", (node, close) => {
     const body = h("div", { class: "sheet-body" });
     const name = h("input", { class: "inp", placeholder: "Kitchen", "aria-label": "Name", maxlength: "60", autocomplete: "off" });
@@ -175,15 +176,25 @@ export function openAddScreen(app) {
     const source = () => app.screens.find((d) => d.id === st.from) || app.screens[0];
     const pick = (opts, value, onChange, label) => select(opts, value, onChange, { "aria-label": label });
 
-    function choice(mode, title, sub, extra, key = "pages") {
+    // A card to pick. `extra` goes under its text (Copy from: which screen); `aside` sits at its right edge (Sleeps: how often).
+    function choice(mode, title, sub, extra, key = "pages", aside = null) {
       const on = st[key] === mode;
-      const b = h("button", { class: "cmp choice", role: "radio", "aria-checked": String(on), onclick: (e) => { if (e.target.closest("select")) return; st[key] = mode; draw(); } },
-        h("span", { class: "ct", text: title }), h("span", { class: "cs", text: sub }), extra || null);
+      const b = h("button", { class: "cmp choice" + (aside ? " aside" : ""), role: "radio", "aria-checked": String(on), onclick: (e) => { if (e.target.closest("select")) return; st[key] = mode; draw(); } },
+        h("span", { class: "ct", text: title }), h("span", { class: "cs", text: sub }), extra || null, aside);
       return b;
     }
+    // How often a screen that sleeps updates: the same times Settings › Screen offers (timing.py), less always on.
+    const sleepChoices = () => st.kind.update_choices.filter((m) => m !== 1);
+    const every = (label) => pick(sleepChoices().map((m) => [m, span(m)]), st.minutes, (v) => {
+      st.minutes = Number(v); st.power = "sleep"; draw();
+      body.querySelector("select[data-every]")?.focus();
+    }, label);
     function draw() {
       const screensOpts = app.screens.map((d) => [d.id, d.name]);
       const fromSel = () => pick(screensOpts, st.from, (v) => { st.from = v; draw(); }, "Which screen");
+      if (!sleepChoices().includes(st.minutes)) st.minutes = sleepChoices().includes(st.kind.asleep_default) ? st.kind.asleep_default : sleepChoices()[0];
+      const everySel = every(pairs() ? "Updates every" : "Sleeps between updates: how often it updates");
+      everySel.dataset.every = "";
       const src = source();
       const qh = st.pages === "new" ? (app.screen || src)?.quiet : src?.quiet;
       const disp = st.kind.displays.find((d) => d.id === st.display) || st.kind.displays[0];
@@ -195,6 +206,13 @@ export function openAddScreen(app) {
             ? grow("Size", "Another size is picked up when it pairs", h("span", { class: "fnote", text: `${disp.name}, ${disp.w} × ${disp.h}` }))
             : grow("Model", null, pick(st.kind.displays.map((d) => [d.id, `${d.name}, ${d.w} × ${d.h}`]), st.display, (v) => { st.display = v; }, "Model")),
           grow("Mounted", null, pick([[0, "Landscape"], [180, "Landscape, upside down"], [90, "Portrait"], [270, "Portrait, flipped"]], st.orientation, (v) => { st.orientation = Number(v); }, "Mounted"))),
+        // Power comes first after the hardware: like the model and how it's mounted, it's about the screen
+        // itself (on a cable or a battery), and it's the choice every new screen makes. A TRMNL always sleeps.
+        h("h4", { class: "gtitle", text: "Power" }),
+        pairs() ? group(grow("Updates every", "It sleeps in between, so it lasts months on its battery. Change it any time.", everySel))
+          : h("div", { class: "choices", role: "radiogroup", "aria-label": "Power" },
+            choice("on", "Always on", "On a cable. Updates every minute; buttons and alerts answer at once.", null, "power"),
+            choice("sleep", "Sleeps between updates", "On a battery. The less often it updates, the longer it lasts. Change it any time.", null, "power", everySel)),
         h("h4", { class: "gtitle", text: "Pages" }),
         h("div", { class: "choices", role: "radiogroup", "aria-label": "Pages" },
           choice("new", "Set up as new", "One starter page to show it's working. Add your own from there."),
@@ -202,12 +220,6 @@ export function openAddScreen(app) {
           choice("same", "Same pages as another screen", "Edits show on both. Each screen keeps its own layout.", st.pages === "same" ? fromSel() : null)),
         qh?.enabled ? group(grow(`Same quiet hours as ${st.pages === "new" ? (app.screen || src).name : src.name}`, `${qh.start} to ${qh.end}. Change them any time.`,
           toggle(st.quiet, (v) => { st.quiet = v; }, "Same quiet hours"))) : "",
-        // The choice every new screen makes, in plain sight (a TRMNL always sleeps). Always on is picked.
-        h("h4", { class: "gtitle", text: "Power" }),
-        pairs() ? h("p", { class: "fnote", text: "It sleeps between updates, every 15 minutes, so it lasts months on its battery. Change it any time in Settings." })
-          : h("div", { class: "choices", role: "radiogroup", "aria-label": "Power" },
-            choice("on", "Always on", "On a cable. Updates every minute; buttons and alerts answer at once.", null, "power"),
-            choice("sleep", "Sleeps between updates", "On a battery. Updates every 15 minutes and lasts months. Change it any time.", null, "power")),
         err);
     }
     async function submit() {
@@ -218,7 +230,7 @@ export function openAddScreen(app) {
       add.disabled = true;
       try {
         const r = (await api("api/devices", { method: "POST", body: { kind: st.kind.id, name: name.value.trim(), display: st.display, orientation: st.orientation,
-          pages: st.pages, from: st.from, quiet_hours_from: st.quiet && qsrc?.quiet?.enabled ? qsrc.id : null, ...(pairs() ? {} : { update_minutes: st.power === "on" ? 1 : 15 }) } })).body;
+          pages: st.pages, from: st.from, quiet_hours_from: st.quiet && qsrc?.quiet?.enabled ? qsrc.id : null, update_minutes: !pairs() && st.power === "on" ? 1 : st.minutes } })).body;
         close();
         await app.doc.flush();
         app.screens = r.devices; app.kinds = r.kinds;

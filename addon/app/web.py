@@ -473,6 +473,8 @@ def _screens() -> dict:
                                 *(d for k in on for d in k.displays())]))
     return {"devices": [_screen(d, everyone) for d in everyone],
             "kinds": [{"id": k.id, "name": k.name, "setup": k.setup_flow,
+                       # What Update every offers a new screen of this kind, and where sleeping starts.
+                       "update_choices": timing.update_choices(k.stays_on), "asleep_default": timing.ASLEEP_DEFAULT,
                        "displays": [{"id": d, "name": T.get_display(d)["name"], "w": T.get_display(d)["w"],
                                      "h": T.get_display(d)["h"]} for d in k.displays()]}
                       for k in on],

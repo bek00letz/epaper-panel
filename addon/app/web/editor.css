@@ -413,7 +413,7 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
 
 .scrim { position: fixed; inset: 0; background: var(--scrim); pointer-events: auto; animation: fadein 0.2s ease-out; }
 .scrim.leaving { opacity: 0; transition: opacity 0.18s; }
-.sheet { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(560px, calc(100vw - 32px)); max-height: min(720px, calc(100dvh - 48px));
+.sheet { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: min(560px, calc(100vw - 32px)); max-height: calc(100dvh - 48px);
   background: var(--surface); border-radius: var(--r-sheet); box-shadow: var(--shadow-pop); display: flex; flex-direction: column; pointer-events: auto; animation: sheetin var(--t) var(--spring); overflow: hidden; }
 .sheet.wide { width: min(860px, calc(100vw - 32px)); }
 .sheet.tall { height: min(680px, calc(100dvh - 48px)); }
@@ -488,6 +488,10 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
 .cmp.choice .ct { font-weight: 600; font-size: 14px; }
 .cmp.choice .cs { color: var(--fg-2); font-size: 12.5px; }
 .cmp.choice select { margin-top: 8px; align-self: flex-start; }
+/* A card with its own setting at the right edge (Sleeps between updates: how often). */
+.cmp.choice.aside { display: grid; grid-template-columns: minmax(0, 1fr) auto; column-gap: 12px; row-gap: 2px; align-items: center; }
+.cmp.choice.aside > :not(select) { grid-column: 1; }
+.cmp.choice.aside > select { grid-column: 2; grid-row: 1 / span 2; width: auto; margin: 0; align-self: center; }
 .cmp .thumbwrap { margin-bottom: 6px; border-radius: 5px; }
 .cmp .ct { font-weight: 600; } .cmp .cs { font-size: 11.5px; color: var(--fg-2); }
 .keys { display: grid; grid-template-columns: 1fr auto; gap: 8px 16px; margin: 0; }
