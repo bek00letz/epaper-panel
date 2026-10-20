@@ -2,6 +2,7 @@
 
 The one place the project's state lives. The coordinator updates it after
 every release and every finished piece of work. Last updated 20 Oct 2026.
+Where we're going and why: [ROADMAP.md](ROADMAP.md).
 
 ## Released
 
@@ -22,7 +23,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 | Work | Where | State |
 |---|---|---|
 | What breaks 0.12.0 (session "break-it") | branch `break-it` (5 commits), worktree `~/Documents/HA/epaper-worktrees/break-it` | Done: 5 add-on fixes, each with a test, held for 0.13.0 (user, 20 Oct). Findings in the coordinator's notes (`break-it-0.12.0.md`) |
-| Feature roadmap (session "roadmap") | no code; a draft for `docs/ROADMAP.md` | Started 20 Oct, with the user |
+| Feature roadmap (session "roadmap") | `docs/ROADMAP.md` | Done 20 Oct, agreed with the user |
 
 `low-power-mode` was merged in 0.12.0 and deleted.
 
