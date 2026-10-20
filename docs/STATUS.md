@@ -46,20 +46,22 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
    for nothing; around clock changes a sleeping screen wakes an hour off;
    a stalled MQTT broker could slow every render; going back to 0.11.0 with a
    TRMNL breaks its screen list (say so in the changelog).
-5. **Low Power Mode on the real 5.79" panel:** sleep current (a month or a
-   year on 5,000 mAh), buttons waking it, first-press delay, and the full
-   flash on every wake (avoiding it means keeping the display powered).
-6. **The 5.79" away from home** (built in 0.11.0, never tried): fetching
+5. **Update every / Rotate every, and no flash after sleep** (decided 20 Oct,
+   see Decisions). Editor, add-on and firmware.
+6. **Sleeping on the real 5.79" panel:** sleep current with the display left
+   powered, buttons waking it, first-press delay, the partial refresh after
+   a wake.
+7. **The 5.79" away from home** (built in 0.11.0, never tried): fetching
    over HTTPS through the tunnel, and joining a second Wi-Fi network.
-7. **Audit #9, still open:** with no Reaching home set, a fresh Panel setup
+8. **Audit #9, still open:** with no Reaching home set, a fresh Panel setup
    takes its address from the browser. Opened through a tunnel, the panel is
    told to fetch from the tunnel's name over plain HTTP. Fix: default to
    Home Assistant's own home address and ignore the browser's.
-8. **Audit #14, still open:** the firmware doesn't check the footer
+9. **Audit #14, still open:** the firmware doesn't check the footer
    positions in a frame file against the screen. Memory-safe, but a forged
    or broken file can freeze the panel for seconds. Fix: reject positions
    outside the screen when reading the file; keep the fuzzer as a test.
-9. **Remove the classic editor** (`?classic=1`, decided 20 Oct): it predates
+10. **Remove the classic editor** (`?classic=1`, decided 20 Oct): it predates
    several screens. The way back is any tag up to v0.11.0.
 
 **Waiting on hardware:** a TRMNL (pairing, pictures, HTTPS, battery); a
@@ -79,10 +81,22 @@ The editor was checked by eye in Home Assistant on 19 Oct.
 - **Over-the-air updates are secured by the API key** (ESPHome's encryption
   key), with no separate password.
 - **Only an answer from the add-on puts a panel to sleep.** One firmware for
-  both modes; Low Power Mode is a setting of each screen, never a fact about
-  a kind of device.
-- **The user's refresh interval is the contract.** Only alerts, quiet hours and
-  people wake a panel early.
+  both modes.
+- **Two timers per screen, "Update every" and "Rotate every"** (20 Oct,
+  not built yet). They replace the Low Power Mode switch, the wake interval
+  and the panel's own refresh interval. Update every 1 minute = always on
+  (rotation in seconds, instant buttons, alerts at once). 2 minutes or more =
+  it sleeps between updates, and longer is lower power. Asleep, Rotate every
+  is a multiple of Update every: each wake refreshes the page, every Nth wake
+  moves on. Replaces "the panel's own refresh interval is the one source of
+  truth" and, for CrowPanels, "how a screen is powered is never assumed"
+  (AGENTS.md changes when it's built).
+- **Sleeping panels avoid the full flash TRMNL's way** (20 Oct, not built
+  yet): the display stays powered in its memory-keeping sleep, the first
+  change after a wake is a partial refresh, a full one every 8th change and
+  a fast full one at intervals of 30 minutes or more. Needs the real 5.79" to
+  confirm and measure. The always-on panel's ghost clearing stays as it is.
+- Only alerts, quiet hours and people wake a panel early.
 - **Alerts show even over a panel put to sleep by hand** (the user's call, 0.10.1); no extra note in the editor (20 Oct).
 - **A Home Assistant restart blanks values on purpose** (audit #4): blank
   tells you something is wrong.
