@@ -2,7 +2,7 @@
 // (render/units.py); this mirrors its tables only to show an example.
 
 import { h, clone } from "./util.js";
-import { field, number, select, seg, linkButton, toast } from "./ui.js";
+import { field, number, select, seg, linkButton, toast, toggleRow } from "./ui.js";
 
 const FAMILIES = [
   [["mW", 1e-3], ["W", 1], ["kW", 1e3], ["MW", 1e6], ["GW", 1e9]],
@@ -58,15 +58,21 @@ export function unitsRows(app, el, set) {
     wrap.append(field("Show in", select(targets.map((t) => [t, t]), el.units.to || targets[0], (v) => { el.units.to = v; app.doc.commit(); })));
   }
   if (mode !== "off" && el.type === "number") {
+    wrap.append(toggleRow("Unit after the number", el.units.show_unit !== false, (v) => {
+      if (v) delete el.units.show_unit; else el.units.show_unit = false;
+      app.doc.commit();
+    }, "Turn off when a label shows the unit"));
     wrap.append(linkButton("Add a label that follows the unit", () => {
       const g = app.geometry();
-      const label = { type: "text", entity: el.entity, show: "unit", units: clone(el.units), size: 30, bold: false, align: el.align || "left",
+      const units = clone(el.units); delete units.show_unit;
+      const label = { type: "text", entity: el.entity, show: "unit", units, size: 30, bold: false, align: el.align || "left",
         x: el.x, y: Math.min(g.H - 44, el.y + el.h + 4), w: el.w, h: 40 };
       if (base === "W") label.replace = { W: "Watts" };
+      el.units.show_unit = false;                       // the label says it now; don't say it twice
       app.doc.els().push(label);
       app.doc.sel = [app.doc.els().length - 1];
       app.doc.commit();
-      toast("Added a label that says the unit. Change its words under Say it differently.");
+      toast("Added a label that says the unit, and the value now shows just its number. Change the label's words under Say it differently.");
     }));
   }
   return wrap;

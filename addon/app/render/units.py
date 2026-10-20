@@ -5,6 +5,7 @@ An element opts in with `units`:
 
     {"base": "W", "mode": "scale", "decimals": 2}     # step up through kW, MW…
     {"base": "m/s", "mode": "convert", "to": "km/h"}  # always shown in km/h
+    {"base": "W", "show_unit": False}                  # just the number; a label says the unit
 
 `base` is the sensor's own unit. Scaling only ever steps *up* from it, so a
 kW sensor reading 0.5 says 0.50 kW rather than surprising anyone with 500 W.
@@ -93,7 +94,9 @@ def format_value(value: float, el: dict) -> str:
         dec = el.get("decimals", 0)
     dec = max(0, min(6, int(dec or 0)))
     sep = units.get("sep", " ")
-    return f"{v:.{dec}f}{sep}{unit}" if unit else f"{v:.{dec}f}"
+    if not unit or units.get("show_unit") is False:
+        return f"{v:.{dec}f}"
+    return f"{v:.{dec}f}{sep}{unit}"
 
 
 def unit_for(raw, el: dict) -> str:

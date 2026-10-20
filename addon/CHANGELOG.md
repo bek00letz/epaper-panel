@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.10.2 (unreleased)
+Add-on only; no firmware change.
+
+- **Fixed:** a value set to step up its unit always wrote the unit after the
+  number, so with a label underneath the unit showed twice. Under Units, a
+  new switch, **Unit after the number**, leaves it off; adding a label that
+  follows the unit turns it off for you.
+
 ## 0.10.1 (unreleased)
 **Firmware change:** after updating, install the panel again from Panel
 setup (Install in the ESPHome Device Builder). Until then the old firmware

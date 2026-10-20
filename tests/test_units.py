@@ -43,6 +43,13 @@ class TestScaling(unittest.TestCase):
         self.assertEqual(layout.element_text(number(units={"base": "lux"}), {0: "1234"}, 0), "1234 lux")
         self.assertEqual(layout.element_text(number(units={"base": "W"}, fallback="--"), {0: "unavailable"}, 0), "--")
 
+    def test_number_alone_when_a_label_says_the_unit(self):
+        el = number(units={"base": "W", "decimals": 2, "show_unit": False})
+        self.assertEqual(layout.element_text(el, {0: "355"}, 0), "355")
+        self.assertEqual(layout.element_text(el, {0: "1234"}, 0), "1.23", "still steps up, just without the unit")
+        label = {"type": "text", "entity": "sensor.solar_power", "show": "unit", "units": {"base": "W", "show_unit": False}}
+        self.assertEqual(layout.element_text(label, {0: "1234"}, 0), "kW", "the label follows either way")
+
     def test_without_units_nothing_changes(self):
         self.assertEqual(layout.element_text(number(suffix=" W"), {0: "1234"}, 0), "1234 W")
 
