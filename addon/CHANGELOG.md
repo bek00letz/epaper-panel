@@ -44,6 +44,9 @@
   didn't build. Both build now, with the pins and controllers from Elecrow's
   own demo code, and the 2.9" gets its pages the right way round for its
   upright display. Neither has been tried on a real panel yet.
+- **Fixed (firmware):** in Low Power Mode, pressing a button right after a
+  wake, before the new pages had arrived, replaced the picture with a
+  "waiting for frames" screen. The picture now stays until the pages arrive.
 - **Changed:** the sizes offered for a new CrowPanel are the 5.79", 4.2" and
   2.9". The 7.5" and 10.2" are no longer offered, because Elecrow doesn't
   make them; a screen already set to one keeps working.

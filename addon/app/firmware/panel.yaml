@@ -361,10 +361,20 @@ script:
     mode: restart
     then:
       - delay: 80ms
-      - lambda: |-
-          if (epf::PanelController::instance().begin_redraw()) @FULL_REFRESH@
-          id(last_redraw_ms) = millis();
-      - component.update: epd
+      - if:
+          condition:
+            lambda: |-
+              if (epf::may_redraw()) return true;
+              #ifdef USE_WIFI_AP
+              if (wifi::global_wifi_component->is_ap_active()) return true;   // say how to give it a network
+              #endif
+              ESP_LOGD("panel", "Just woke: keeping the picture until the frames arrive");
+              return false;
+          then:
+            - lambda: |-
+                if (epf::PanelController::instance().begin_redraw()) @FULL_REFRESH@
+                id(last_redraw_ms) = millis();
+            - component.update: epd
 
   # Home Assistant asked for new frames. While someone is scrolling, wait
   # until they stop so the pages don't change under them.

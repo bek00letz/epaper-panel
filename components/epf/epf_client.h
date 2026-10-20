@@ -324,6 +324,14 @@ inline void power_note_download(uint32_t now_ms, FetchResult result) {
     choose_waveform(PanelController::instance().waveform(), PowerPolicy::instance(), g_remembered);
 }
 
+// Whether a redraw may go ahead. After a deep sleep the screen still shows its last
+// picture but the frames aren't in memory yet, so a press before they arrive would
+// replace it with the "waiting for frames" screen. Their arrival redraws. After a
+// fresh start there's nothing on screen worth keeping.
+inline bool may_redraw() {
+  return EpfClient::instance().has_stream() || PowerPolicy::instance().wake() == Wake::BOOT;
+}
+
 // Just before deep sleep: how long, and what wakes it. `buttons`: the button pins as a bit mask.
 // The display has finished refreshing (sleep_due waits for it). Its driver puts its
 // controller in the sleep that keeps its memory (on_safe_shutdown); holding its

@@ -498,6 +498,16 @@ class TestFirmwareYaml(unittest.TestCase):
             self.assertNotEqual(firmware_gen.keep_picture(disp), "{}", display)
             self.assertIn("switch:\n  - platform: gpio\n    pin: 7\n", text, "the pin it holds is the display's power")
 
+    def test_a_press_before_the_frames_arrive_keeps_the_picture(self):
+        # After a deep sleep the frames aren't in memory: a redraw then drew "waiting
+        # for frames" over the picture on screen.
+        text, _ = reference_yaml()
+        redraw = text.split("  - id: redraw\n", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("if (epf::may_redraw()) return true;", redraw)
+        self.assertLess(redraw.index("epf::may_redraw()"), redraw.index("component.update: epd"))
+        client = (ROOT / "components" / "epf" / "epf_client.h").read_text()
+        self.assertIn("has_stream() || PowerPolicy::instance().wake() == Wake::BOOT", client)
+
     def test_the_way_back_switches_the_display_off_in_deep_sleep(self):
         # Until it's proven on a real panel: KEEP_DISPLAY_ASLEEP = False is 0.12's way.
         keep = firmware_gen.KEEP_DISPLAY_ASLEEP
