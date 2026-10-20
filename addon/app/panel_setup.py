@@ -98,6 +98,11 @@ def _wpa_ok(password: str) -> bool:
     return n == 0 or 8 <= n <= 63 or (n == 64 and all(c in "0123456789abcdefABCDEF" for c in password))
 
 
+def hotspot_password_ok(password: str) -> bool:
+    """Its own Wi-Fi is never open: a password ESPHome takes, 8 to 63 characters (or a 64-digit hex key)."""
+    return bool(password) and _wpa_ok(password)
+
+
 def wifi_problems(cfg: dict) -> list[str]:
     """What in a panel's Wi-Fi would make ESPHome refuse its file, said so it can be fixed before Install.
     Mirrors what generate_esphome_yaml writes (a value from secrets.yaml can't be checked)."""
@@ -114,6 +119,9 @@ def wifi_problems(cfg: dict) -> list[str]:
         if not _wpa_ok(password):
             problems.append(f"The password for {name} is {len(password)} characters. Wi-Fi passwords are 8 to 63; "
                             "check it, or leave it empty for an open network.")
+    own = str(cfg.get("hotspot_password") or "")
+    if cfg.get("hotspot", True) and not hotspot_password_ok(own):
+        problems.append(f"The password for its own Wi-Fi is {len(own)} characters. It needs 8 to 63.")
     return problems
 
 

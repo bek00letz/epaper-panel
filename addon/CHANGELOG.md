@@ -15,6 +15,9 @@
 - **Settings breathes again.** Every pane now keeps the same space between
   its parts, so text no longer runs into the cards below it, and the notes'
   icons match their colour.
+- **You can change the password of the panel's own Wi-Fi** (Install or
+  update, "Its own Wi-Fi when it's lost"). It needs 8 to 63 characters, and
+  a change takes effect when you install the panel again.
 
 ## 0.13.0
 **Firmware change:** install the panel again from Install or update to get

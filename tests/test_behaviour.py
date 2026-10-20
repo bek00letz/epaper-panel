@@ -167,6 +167,28 @@ class TestPanelSetupSave(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(res["problems"]), 1)
         self.assertIn("Work", res["problems"][0], "says which network")
 
+    async def test_its_own_wifi_password_can_be_changed(self):
+        folder = Path(self.tmp.name)
+        base = {"device_name": "crowpanel-epaper", "wifi_ssid": "home", "wifi_password": "long-enough",
+                "wifi_networks": [], "hotspot": True}
+        res = await self.post({**base, "hotspot_password": "kitchen-panel"})
+        self.assertEqual(res["problems"], [])
+        self.assertEqual(res["config"]["hotspot_password"], "kitchen-panel", "shown, for typing on a phone")
+        self.assertIn('password: "kitchen-panel"', (folder / "crowpanel_epaper.yaml").read_text())
+        for password in ("short", "x" * 64):
+            res = await self.post({**base, "hotspot_password": password})
+            self.assertEqual(len(res["problems"]), 1, f"{len(password)} characters")
+            self.assertIn("its own Wi-Fi", res["problems"][0])
+            self.assertFalse(res["esphome_synced"], "ESPHome would refuse it")
+            self.assertIn('password: "kitchen-panel"', (folder / "crowpanel_epaper.yaml").read_text())
+        res = await self.post({**base, "hotspot_password": "x" * 63})
+        self.assertEqual(res["problems"], [])
+        res = await self.post({**base, "hotspot_password": ""})
+        self.assertEqual(res["config"]["hotspot_password"], "x" * 63, "never open: an empty one keeps the old")
+        res = await self.post({**base, "hotspot": False, "hotspot_password": "short"})
+        self.assertEqual(res["problems"], [], "off, its password doesn't matter")
+        await self.post({**base, "hotspot_password": "abcdefghjkmn"})      # the next tests start from a good one
+
     async def test_no_first_network_but_others(self):
         # ESPHome refuses a blank network name; the first of the others leads instead.
         res = await self.post({"device_name": "crowpanel-epaper", "wifi_ssid": "", "wifi_password": "",

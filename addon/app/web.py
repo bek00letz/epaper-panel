@@ -786,6 +786,9 @@ async def api_panel_setup_post(request):
         cur["use_secrets"] = bool(body["use_secrets"])
     if "hotspot" in body:
         cur["hotspot"] = bool(body["hotspot"])
+    # Its own Wi-Fi is never open: an empty password keeps the one it has (wifi_problems says what's wrong).
+    if isinstance(body.get("hotspot_password"), str) and body["hotspot_password"]:
+        cur["hotspot_password"] = body["hotspot_password"][:64]
     if "wifi_password" in body and isinstance(body["wifi_password"], str):
         if body["wifi_password"] != feeds.SECRET_MASK:
             cur["wifi_password"] = body["wifi_password"]

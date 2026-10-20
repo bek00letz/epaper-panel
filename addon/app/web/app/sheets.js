@@ -617,14 +617,18 @@ async function installPane(app, pane) {
   // Its own Wi-Fi, for choosing a network from a phone where it knows none.
   let hotspotOn = c.hotspot !== false;
   const hotspotBox = h("div");
+  let hotspotPw = null;
   const drawHotspot = () => {
     const cc = r.config || c;
     hotspotBox.replaceChildren(group(
       grow("Its own Wi-Fi when it's lost", `Where it finds none of these networks, it opens “${cc.hotspot_name || "setup"}” so you can choose one from your phone. Its screen says so.`,
         toggle(hotspotOn, (v) => { hotspotOn = v; save(); }, "Its own Wi-Fi when it's lost")),
-      hotspotOn ? grow("Password", "For joining it from your phone", h("div", { class: "inline" },
-        h("input", { class: "inp code", readonly: true, value: cc.hotspot_password || "", "aria-label": "The panel's own Wi-Fi password" }),
-        h("button", { class: "btn tinted", onclick: () => copyText(cc.hotspot_password || "", "the password") }, "Copy"))) : null),
+      hotspotOn ? grow("Password", "For joining it from your phone. A change takes effect when you install the panel again.", h("div", { class: "inline" },
+        hotspotPw = input(cc.hotspot_password || "", (v) => {
+          if (!v) { toast("Its own Wi-Fi needs a password: 8 to 63 characters."); hotspotPw.value = cc.hotspot_password || ""; return; }
+          save({ hotspot_password: v });
+        }, { class: "inp code", maxlength: "64", "aria-label": "The panel's own Wi-Fi password" }),
+        h("button", { class: "btn tinted", onclick: () => copyText(hotspotPw.value, "the password") }, "Copy"))) : null),
       hotspotOn ? h("p", { class: "fnote", text: "A network you choose there replaces the ones above until you install the panel again, so add places it goes often above." }) : null);
   };
   const copy = copyText;
