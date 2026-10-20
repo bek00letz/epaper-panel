@@ -30,22 +30,22 @@ DISPLAY = "crowpanel_579"
 CLOCK = "12:34"
 
 
-def pipeline(logical: Image.Image, deg: int) -> Image.Image:
+def pipeline(logical: Image.Image, deg: int, display: str = DISPLAY) -> Image.Image:
     """Exactly what build_frames + encode_epf do to a page before packing."""
-    phys = T.orient_for_panel(T.to_1bit(logical), deg, display=DISPLAY)
-    if DISPLAY in epf.MIRRORED_MODELS:
+    phys = T.orient_for_panel(T.to_1bit(logical), deg, display=display)
+    if display in epf.MIRRORED_MODELS:
         phys = phys.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
     return phys
 
 
-def physical_of(points, deg):
+def physical_of(points, deg, display=DISPLAY):
     """Map logical points through the real pipeline, one Pillow image per point."""
-    cw, ch = T.canvas_dims(deg, display=DISPLAY)
+    cw, ch = T.canvas_dims(deg, display=display)
     out = []
     for x, y in points:
         img = Image.new("L", (cw, ch), 255)
         img.putpixel((x, y), 0)
-        phys = pipeline(img, deg)
+        phys = pipeline(img, deg, display)
         black = [(i % phys.width, i // phys.width) for i, v in enumerate(phys.convert("L").tobytes()) if v == 0]
         assert len(black) == 1, (deg, x, y, black)
         out.append(black[0])
@@ -87,6 +87,23 @@ class TestGeometry(unittest.TestCase):
             self.assertEqual(img.getpixel((fg["cat_x0"], mid)), 0, f"{deg}: left edge of the pill")
             self.assertEqual(img.getpixel((fg["cat_x1"], mid)), 0, f"{deg}: right edge of the pill")
             self.assertEqual(img.getpixel((fg["cat_x0"] + 2, fg["pill_y0"] - 2)), 255, f"{deg}: above the pill")
+
+    def test_an_upright_panel_gets_its_pages_turned(self):
+        # The 2.9"'s memory is upright (128 x 296; ESPHome's driver and Elecrow's demo):
+        # at 0° a page is turned 270° into it, and the overlays follow.
+        self.assertEqual(T.panel_dims("crowpanel_290"), (128, 296))
+        self.assertEqual(T.panel_dims(DISPLAY), (792, 272))
+        for deg in ORIENTATIONS:
+            cw, ch = T.canvas_dims(deg, display="crowpanel_290")
+            geo = panel_geometry(T.footer_plan(clock=CLOCK, orientation=deg, display="crowpanel_290"), deg,
+                                 "crowpanel_290")
+            self.assertEqual(pipeline(Image.new("L", (cw, ch), 255), deg, "crowpanel_290").size, (128, 296), deg)
+            pts = [(0, 0), (cw - 1, 0), (0, ch - 1), (cw - 1, ch - 1), (cw // 3, ch // 5)]
+            self.assertEqual([epf.to_physical(geo, x, y) for x, y in pts], physical_of(pts, deg, "crowpanel_290"),
+                             deg)
+        # Elecrow's landscape (USE_HORIZONTIAL 2): memory x = y, memory y = 295 - x.
+        geo = panel_geometry(T.footer_plan(clock=CLOCK, orientation=0, display="crowpanel_290"), 0, "crowpanel_290")
+        self.assertEqual(epf.to_physical(geo, 10, 3), (3, 285))
 
     def test_geometry_roundtrips_through_the_file(self):
         img, fg = footer_page(90)
@@ -229,6 +246,14 @@ class TestFirmwareCore(unittest.TestCase):
                 (tmp / f"orient{q}.pill").write_text("".join(
                     f"{i % phys.width} {i // phys.width}\n" for i, v in enumerate(phys.convert("L").tobytes()) if v == 0))
 
+            plan = T.footer_plan(clock=CLOCK, pages=[("solar", 1)], orientation=0, display="crowpanel_290")
+            page, _ = T.new_canvas(0, display="crowpanel_290")
+            pw, ph = T.panel_dims("crowpanel_290")
+            (tmp / "upright.epf").write_bytes(epf.encode_epf(
+                [pipeline(page, 0, "crowpanel_290")], [1], [0], [1], [plan["pages"][0]["w"]], [2],
+                display_model="crowpanel_290", width=pw, height=ph,
+                geometry=panel_geometry(plan, 0, "crowpanel_290")))
+
             (tmp / "legacy180.epf").write_bytes(epf.encode_epf(
                 blank(1), [1], [0], [1], [110], [2], display_model=DISPLAY, orientation_180=True))
             (tmp / "nav_a.epf").write_bytes(epf.encode_epf(
@@ -240,9 +265,14 @@ class TestFirmwareCore(unittest.TestCase):
                 blank(1), [900], [0], [1], [110], [90], display_model=DISPLAY, alert_interrupt=True))
 
             exe = tmp / "core_test"
-            build = subprocess.run(["c++", "-std=c++17", "-O1", "-Wall", "-Wextra", "-o", str(exe),
-                                    str(ROOT / "tests" / "firmware" / "core_test.cpp")],
-                                   capture_output=True, text=True)
+            # With AddressSanitizer and UndefinedBehaviorSanitizer where the compiler has them,
+            # so the parser fuzzer in core_test catches memory errors, not only wrong answers.
+            source = str(ROOT / "tests" / "firmware" / "core_test.cpp")
+            flags = ["c++", "-std=c++17", "-O1", "-Wall", "-Wextra", "-o", str(exe), source]
+            build = subprocess.run(flags[:1] + ["-fsanitize=address,undefined", "-fno-sanitize-recover=all",
+                                                "-fno-omit-frame-pointer"] + flags[1:], capture_output=True, text=True)
+            if build.returncode != 0:
+                build = subprocess.run(flags, capture_output=True, text=True)
             self.assertEqual(build.returncode, 0, build.stderr)
             run = subprocess.run([str(exe), str(tmp)], capture_output=True, text=True)
             self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
@@ -255,6 +285,27 @@ def reference_yaml():
         frames_url='"http://homeassistant.local:8099/frames.epf"', api_key="!secret api_encryption_key",
         wifi_ssid="!secret wifi_ssid", wifi_password="!secret wifi_password",
         interval_min=5, orientation=180), version
+
+
+def offered_sizes():
+    """The CrowPanel sizes the editor offers."""
+    return [k for k, d in T.DISPLAYS.items() if d.get("kind") == "crowpanel" and d.get("offered", True)]
+
+
+# A made-up key that isn't all zeros (ESPHome refuses that one).
+TEST_KEY = '"AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA="'
+
+
+def local_build(display, **kw):
+    """What Panel setup writes for `display`, with the epf component taken from this
+    checkout instead of the release tag (the tag doesn't exist yet)."""
+    text = firmware_gen.render(
+        disp=T.get_display(display), version="1.2.3", device_name="kitchen",
+        frames_url='"http://192.0.2.1:8099/frames.epf"', api_key=TEST_KEY, interval_min=5,
+        **{"wifi_ssid": '"home"', "wifi_password": '"password1"', "orientation": 0, **kw})
+    tagged = "  - source: github://bek00letz/epaper-panel@v1.2.3\n"
+    assert tagged in text
+    return text.replace(tagged, f"  - source:\n      type: local\n      path: {ROOT / 'components'}\n")
 
 
 class TestFirmwareYaml(unittest.TestCase):
@@ -285,6 +336,24 @@ class TestFirmwareYaml(unittest.TestCase):
         self.assertIn('  ap:\n    ssid: "Kitchen setup"\n    password: "abcdefghjkmn"', block)
         self.assertIn("\ncaptive_portal:", block, "a page for choosing a network")
         self.assertNotIn("ap:", firmware_gen.wifi_block([('"home"', '"pw"')]))
+
+    def test_a_blank_network_is_left_out(self):
+        # ESPHome refuses `ssid: ""` (break-it #5): with its own Wi-Fi on, a panel
+        # with no network yet gets only that, and chooses one from a phone.
+        hotspot = ('"Kitchen setup"', '"abcdefghjkmn"')
+        only = firmware_gen.wifi_block([('""', '""')], hotspot)
+        self.assertNotIn("ssid: \"\"", only)
+        self.assertNotIn("networks:", only)
+        self.assertNotIn("fast_connect", only)
+        self.assertIn('  ap:\n    ssid: "Kitchen setup"', only)
+        self.assertIn("\ncaptive_portal:", only)
+        rest = firmware_gen.wifi_block([('""', '""'), ('"work"', '"pw2"')], hotspot)
+        self.assertNotIn('ssid: ""', rest)
+        self.assertIn('  ssid: "work"\n  password: "pw2"\n  fast_connect: true', rest, "one network left: straight away")
+        text = firmware_gen.render(
+            disp=T.get_display(DISPLAY), version="1.2.3", device_name="kitchen", frames_url='"http://x/frames.epf"',
+            api_key='"k"', wifi_ssid='""', wifi_password='""', interval_min=5, orientation=0, hotspot=hotspot)
+        self.assertNotIn('ssid: ""', text)
 
     def test_panel_setup_turns_it_on_with_its_own_password(self):
         import devices
@@ -327,7 +396,7 @@ class TestFirmwareYaml(unittest.TestCase):
                       text, "all five buttons wake it, whichever way it's mounted")
         self.assertIn("reboot_timeout: 0s", text.split("\napi:\n", 1)[1].split("\n\n", 1)[0],
                       "Home Assistant being away never restarts it")
-        self.assertIn("epf::power_begin();", text, "the first download says why it's awake")
+        self.assertIn("epf::power_begin(7);", text, "the first download says why it's awake")
         self.assertIn("epf::power_note_download(millis(), result);", text)
         self.assertIn("on_begin:\n      - lambda: 'epf::PowerPolicy::instance().hold(true);'", text, "never asleep mid-update")
         self.assertEqual(text.count("epf::PowerPolicy::instance().note_press(millis());"), 5, "every button counts as a press")
@@ -335,9 +404,11 @@ class TestFirmwareYaml(unittest.TestCase):
     def test_it_sleeps_only_once_the_display_is_done(self):
         # Deep sleep cuts the display's power: a refresh still running would be cut short.
         self.assertEqual(firmware_gen.display_settled(T.get_display("crowpanel_579")), "id(epd).is_idle()")
-        waveshare = T.get_display("crowpanel_750")
+        waveshare = T.get_display("crowpanel_290")
         self.assertIn("last_redraw_ms", firmware_gen.display_settled(waveshare))
-        for disp in ("crowpanel_579", "crowpanel_750"):
+        self.assertTrue(firmware_gen.display_settled(waveshare).startswith("id(last_redraw_ms) == 0 ||"),
+                        "nothing redrawn since it woke: settled at once, not 6 s later (break-it #10)")
+        for disp in ("crowpanel_579", "crowpanel_290"):
             text = firmware_gen.render(
                 disp=T.get_display(disp), version="1.2.3", device_name="kitchen", frames_url='"http://x/frames.epf"',
                 api_key='"k"', wifi_ssid='"a"', wifi_password='"b"', interval_min=5, orientation=0)
@@ -375,6 +446,78 @@ class TestFirmwareYaml(unittest.TestCase):
             self.assertEqual(out.returncode, 0, out.stderr[-500:])
             self.assertIn("#ifdef USE_WIFI_AP", out.stdout, "the guard is inside the lambda")
             self.assertIn("get_ap()", out.stdout)
+
+    @unittest.skipUnless((ROOT / ".esphome-venv" / "bin" / "esphome").exists(), "no ESPHome here")
+    def test_esphome_accepts_every_offered_size(self):
+        # break-it #3: only the 5.79" was ever checked, and the other sizes didn't
+        # build. ESPHome's own check (`esphome config`) on what Panel setup writes,
+        # with the epf component from this checkout, for every size the editor
+        # offers: one network; no network with its own Wi-Fi, upside down; several.
+        offered = offered_sizes()
+        self.assertIn(DISPLAY, offered)
+        variants = [
+            dict(wifi_ssid='"home"', wifi_password='"password1"', orientation=0),
+            dict(wifi_ssid='""', wifi_password='""', orientation=180, hotspot=('"Kitchen setup"', '"abcdefghjkmn"')),
+            dict(wifi_ssid='"home"', wifi_password='"password1"', orientation=90,
+                 more_networks=[('"work"', '"password2"')], hotspot=('"Kitchen setup"', '"abcdefghjkmn"')),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {**os.environ, "ESPHOME_DATA_DIR": str(Path(tmp) / "data")}   # the driver is fetched once
+            for display in offered:
+                for i, variant in enumerate(variants):
+                    path = Path(tmp) / f"{display}-{i}.yaml"
+                    path.write_text(local_build(display, **variant))
+                    out = subprocess.run([str(ROOT / ".esphome-venv" / "bin" / "esphome"), "config", str(path)],
+                                         capture_output=True, text=True, timeout=300, env=env)
+                    self.assertEqual(out.returncode, 0, f"{display}, variant {i}:\n{out.stdout[-1500:]}{out.stderr[-500:]}")
+
+    def test_every_offered_size_has_a_full_refresh_its_driver_has(self):
+        # force_full_update() is the CrowPanel driver's; the Waveshare one has no such
+        # call (break-it #3: the 7.5" didn't compile because of it).
+        for display in offered_sizes():
+            call = firmware_gen.full_refresh(T.get_display(display))
+            self.assertNotEqual(call, "{}", display)
+            text = local_build(display)
+            redraw = text.split("  - id: redraw\n", 1)[1].split("\n\n", 1)[0]
+            self.assertIn(f"begin_redraw()) {call}", redraw, display)
+            self.assertEqual(text.count("force_full_update()"), redraw.count("force_full_update()"),
+                             "only the redraw script asks for a full refresh")
+            if T.get_display(display)["esphome_component"] == "waveshare_epaper":
+                self.assertIn("\nspi:\n  clk_pin: 12\n  mosi_pin: 11\n", text, "Elecrow's demo: SCK 12, MOSI 11")
+                self.assertNotIn("force_full_update", text, display)
+
+    def test_a_sleeping_panel_keeps_its_picture(self):
+        # TRMNL's way (0.13): the display stays powered through deep sleep, and its
+        # driver is told it still holds the picture, so the first change is partial.
+        for display in offered_sizes():
+            disp = T.get_display(display)
+            text = local_build(display)
+            boot = text.split("  on_boot:\n", 1)[1].split("\n\n", 1)[0]
+            self.assertIn("epf::power_begin(7);", boot, display)
+            self.assertIn(f"if (epf::PowerPolicy::instance().picture_kept()) {firmware_gen.keep_picture(disp)}", boot)
+            self.assertNotEqual(firmware_gen.keep_picture(disp), "{}", display)
+            self.assertIn("switch:\n  - platform: gpio\n    pin: 7\n", text, "the pin it holds is the display's power")
+
+    def test_a_press_before_the_frames_arrive_keeps_the_picture(self):
+        # After a deep sleep the frames aren't in memory: a redraw then drew "waiting
+        # for frames" over the picture on screen.
+        text, _ = reference_yaml()
+        redraw = text.split("  - id: redraw\n", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("if (epf::may_redraw()) return true;", redraw)
+        self.assertLess(redraw.index("epf::may_redraw()"), redraw.index("component.update: epd"))
+        client = (ROOT / "components" / "epf" / "epf_client.h").read_text()
+        self.assertIn("has_stream() || PowerPolicy::instance().wake() == Wake::BOOT", client)
+
+    def test_the_way_back_switches_the_display_off_in_deep_sleep(self):
+        # Until it's proven on a real panel: KEEP_DISPLAY_ASLEEP = False is 0.12's way.
+        keep = firmware_gen.KEEP_DISPLAY_ASLEEP
+        try:
+            firmware_gen.KEEP_DISPLAY_ASLEEP = False
+            text = local_build(DISPLAY)
+        finally:
+            firmware_gen.KEEP_DISPLAY_ASLEEP = keep
+        self.assertIn("epf::power_begin(-1);", text)
+        self.assertIn("if (epf::PowerPolicy::instance().picture_kept()) {}", text)
 
     def test_mounting_upside_down_swaps_the_buttons(self):
         self.assertEqual(firmware_gen.button_pins(180)["NEXT_PIN"], 6)

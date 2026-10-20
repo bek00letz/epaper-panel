@@ -465,7 +465,11 @@ def _screen(dev: dict, everyone: list[dict]) -> dict:
 def _screens() -> dict:
     everyone = kinds.shown_devices()                   # a kind that's switched off shows nothing
     on = kinds.enabled_kinds()
-    sizes = list(dict.fromkeys(d for k in on for d in k.displays()))
+    # The canvases of every profile of these kinds (one not offered still belongs to a
+    # screen already set to it), and the sizes a TRMNL reported; the pickers offer k.displays().
+    ids = {k.id for k in on}
+    sizes = list(dict.fromkeys([*(d for d, v in T.DISPLAYS.items() if v.get("kind") in ids),
+                                *(d for k in on for d in k.displays())]))
     return {"devices": [_screen(d, everyone) for d in everyone],
             "kinds": [{"id": k.id, "name": k.name, "setup": k.setup_flow,
                        "displays": [{"id": d, "name": T.get_display(d)["name"], "w": T.get_display(d)["w"],

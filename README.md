@@ -57,20 +57,23 @@ you need; the pages and the buttons follow.
 
 ## Made for every CrowPanel
 
-The add-on is built for the whole CrowPanel e-paper family: the renderer, the
-editor and the firmware generator all know every size below. Only the 5.79"
-has been tested on a real device so far. If you have another one, please try
-it and [open an issue](https://github.com/bek00letz/epaper-panel/issues)
-saying what worked and what didn't, so the table can say "tested" for more of
-them.
+The add-on is built for the CrowPanel e-paper family: the renderer, the
+editor and the firmware generator know every size below, and a test checks
+that each one's firmware builds. Only the 5.79" has been tried on a real
+device so far. If you have another one, please try it and
+[open an issue](https://github.com/bek00letz/epaper-panel/issues) saying what
+worked and what didn't, so the table can say "tested" for more of them.
 
 | Model | SKU | Pixels | Status |
 |---|---|---|---|
 | CrowPanel 5.79" | DIS08792E | 792 × 272 | Tested on the device |
-| CrowPanel 4.2" | DIS08042E | 400 × 300 | Should work, not tested yet |
-| CrowPanel 2.9" | DIS08029E | 296 × 128 | Should work, not tested yet |
-| CrowPanel 7.5" | DIS08075E | 800 × 480 | Should work, not tested yet |
-| CrowPanel 10.2" | DIS08102E | 960 × 640 | Should work, not tested yet |
+| CrowPanel 4.2" | DIS08042E | 400 × 300 | Builds, not tried on hardware |
+| CrowPanel 2.9" | DIS08029E | 296 × 128 | Builds, not tried on hardware |
+
+The pins and display controllers come from Elecrow's own demo code for each
+board (SSD1683 on the 4.2" and 5.79", SSD1680 on the 2.9"). Some later 4.2"
+boards are said to carry a UC8276 controller instead; that version isn't
+supported yet. The 1.54", 2.13" and 3.7" CrowPanels aren't offered yet.
 
 ## More than one screen
 
@@ -433,10 +436,19 @@ measurements behind each decision.
   battery; it would need a resistor divider soldered on. (A TRMNL reports its
   own.)
 - **Low Power Mode hasn't been tried on a real panel yet.** It's built from
-  end to end, but how long a battery lasts, whether the buttons wake it
-  reliably, and whether the screen flashes on every check are still to be
-  measured. A panel installed before Low Power Mode existed stays connected
-  until you install it again; the editor says so.
+  end to end, but how long a battery lasts and whether the buttons wake it
+  reliably are still to be measured. A panel installed before Low Power Mode
+  existed stays connected until you install it again; the editor says so.
+- **No flash after a wake is untried too.** Since 0.13 a sleeping panel keeps
+  its display powered, in the display's own memory-keeping sleep, the way a
+  TRMNL does. A change after a wake is then a quick partial refresh; every
+  8th change, and every change when it checks only every 30 minutes or more,
+  is a full one that clears ghosting. Until it's confirmed on a real panel,
+  the sleep current with the display powered is unknown.
+- **Measuring through USB gives an upper bound.** A USB power meter on the
+  panel's USB port also counts the USB-to-serial chip, which stays powered,
+  and most meters can't read below about 1 mA. The battery's own draw is
+  lower; a reading on the battery itself is still to come.
 
 ## Development
 

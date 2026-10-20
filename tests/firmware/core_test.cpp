@@ -96,6 +96,108 @@ static void test_rejects_bad_files(const std::string &dir) {
         "legacy geometry from the 180 flag");
 }
 
+static void put16(std::vector<uint8_t> &b, size_t at, uint16_t v) {
+  b[at] = (uint8_t) (v >> 8);
+  b[at + 1] = (uint8_t) v;
+}
+
+static void fix_crc(std::vector<uint8_t> &b) {
+  uint32_t crc = epf::compute_crc32(b.data(), b.size() - 4);
+  for (int i = 0; i < 4; i++) b[b.size() - 4 + i] = (uint8_t) (crc >> (24 - 8 * i));
+}
+
+// The 2.9"'s memory is upright (128 x 296): its frame file is, and its footer is
+// checked against the page as mounted (296 x 128).
+static void test_upright_panel(const std::string &dir) {
+  auto buf = read_file(dir + "/upright.epf");
+  epf::Stream s;
+  auto r = epf::parse_stream(buf.data(), buf.size(), 128, 296, s);
+  CHECK(r == epf::FetchResult::OK, "the 2.9\"'s frame file loads on its upright display: %s", epf::describe(r));
+  CHECK(s.geometry.quarter_turns == 3 && s.geometry.logical_w == 296 && s.geometry.logical_h == 128,
+        "turned 270 degrees, the page as mounted");
+  CHECK(epf::parse_stream(buf.data(), buf.size(), 296, 128, s) == epf::FetchResult::ERROR_WRONG_PANEL,
+        "a landscape display buffer refuses it");
+}
+
+// Footer positions off the screen are refused when the file is read (audit #14).
+// Offsets: the geometry block starts at byte 44, the first category record at 64.
+static void test_footer_inside_the_screen(const std::string &dir) {
+  auto good = read_file(dir + "/orient0.epf");
+  epf::Stream s;
+  CHECK(epf::parse_stream(good.data(), good.size(), 792, 272, s) == epf::FetchResult::OK, "the server's own file");
+  struct Case { const char *what; size_t at; uint16_t value; };
+  const Case cases[] = {
+      {"pill bottom below the screen", 52, 272},       {"pill bottom far below (the audit's file)", 52, 65535},
+      {"pill top below its bottom", 50, 300},          {"category pill starts past the edge", 54, 792},
+      {"item pill ends past the edge", 58, 65534},     {"item pill starts after it ends", 56, 791},
+      {"category pill wider than the screen", 64 + 8, 790},
+  };
+  for (const auto &c : cases) {
+    auto bad = good;
+    put16(bad, c.at, c.value);
+    fix_crc(bad);
+    CHECK(epf::parse_stream(bad.data(), bad.size(), 792, 272, s) == epf::FetchResult::ERROR_LAYOUT, "refused: %s",
+          c.what);
+  }
+  auto both = good;                                   // the audit's 25-second overlay
+  put16(both, 52, 65535);
+  put16(both, 58, 65534);
+  fix_crc(both);
+  CHECK(epf::parse_stream(both.data(), both.size(), 792, 272, s) == epf::FetchResult::ERROR_LAYOUT,
+        "pill_y1=65535, sub_x1=65534 refused");
+}
+
+// The frame parser against mutated files (bounded, fixed seed, so it's the same
+// run every time). Built with AddressSanitizer and UndefinedBehaviorSanitizer
+// where the compiler has them (tests/test_firmware.py). Whatever parses must
+// keep its footer on the screen and draw its overlays quickly.
+static void test_fuzz_parser(const std::string &dir) {
+  uint32_t seed = 0x2545F491u;
+  auto rnd = [&]() { seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5; return seed; };
+  std::vector<std::vector<uint8_t>> bases;
+  for (const char *name : {"orient0", "orient1", "orient2", "orient3", "nav_a", "nav_b", "legacy180", "nav_alert"})
+    bases.push_back(read_file(dir + "/" + name + ".epf"));
+  std::vector<uint8_t> screen((size_t) 99 * 272);
+  int parsed = 0;
+  double slowest_ms = 0;
+  for (int i = 0; i < 6000; i++) {
+    auto buf = bases[rnd() % bases.size()];
+    int edits = 1 + (int) (rnd() % 4);
+    for (int e = 0; e < edits; e++) {
+      // Mostly the header, geometry and directory, where the numbers are.
+      size_t span = (rnd() % 4) ? std::min<size_t>(buf.size() - 4, 64 + 16 * 8) : buf.size() - 4;
+      size_t at = rnd() % span;
+      switch (rnd() % 3) {
+        case 0: buf[at] = (uint8_t) rnd(); break;
+        case 1: buf[at] ^= (uint8_t) (1u << (rnd() % 8)); break;
+        default: buf[at] = (rnd() & 1) ? 0xFF : 0x00; break;
+      }
+    }
+    if (rnd() % 8) fix_crc(buf);                      // most get past the checksum
+    if (rnd() % 16 == 0) buf.resize(rnd() % buf.size());
+    epf::Stream s;
+    if (epf::parse_stream(buf.data(), buf.size(), 792, 272, s) != epf::FetchResult::OK) continue;
+    parsed++;
+    const auto &g = s.geometry;
+    CHECK(g.pill_y1 < g.logical_h && g.sub_x1 < g.logical_w && g.cat_x0 < g.logical_w, "fuzz %d: footer inside", i);
+    for (const auto &c : s.categories) {
+      epf::OverlayState st;
+      st.cat_pill_w = c.pill_width;
+      st.has_sub = true;
+      st.cat_locked = st.panel_locked = true;
+      for (bool sub : {false, true}) {
+        st.highlight_sub = sub;
+        auto t0 = std::chrono::steady_clock::now();
+        epf::draw_overlays(screen.data(), 792, 272, g, st);
+        double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+        if (ms > slowest_ms) slowest_ms = ms;
+      }
+    }
+  }
+  CHECK(parsed > 100, "the fuzzer reached the overlays (%d files parsed)", parsed);
+  CHECK(slowest_ms < 250, "the slowest overlay took %.1f ms", slowest_ms);
+}
+
 // Navigation keeps the reader's place and locks across new frame files.
 static void test_controller(const std::string &dir) {
   auto &pc = epf::PanelController::instance();
@@ -152,6 +254,29 @@ static void test_waveform() {
   for (int i = 0; i < 30; i++) fulls += c.decide(false, true, false, 0);
   CHECK(fulls == 3, "classic: every 10th refresh is full, scrolling or not (%d)", fulls);
   CHECK(!c.idle_clear_due(999), "classic has no idle fallback");
+
+  // Asleep between updates, TRMNL's way: partial after a wake, every 8th change full,
+  // counted across wakes (in RTC memory).
+  epf::WaveformPolicy s;
+  uint32_t changes = 0;
+  s.sleep_between(&changes, 15 * 60);
+  int full_at = -1;
+  for (int i = 0; i < 8; i++)
+    if (s.decide(false, false, true, 999)) { full_at = i; break; }
+  CHECK(full_at == 7 && changes == 0, "asleep: the 8th change is full (at %d)", full_at);
+  epf::WaveformPolicy after_wake;                     // a new start: only the RTC count is left
+  after_wake.sleep_between(&changes, 15 * 60);
+  for (int i = 0; i < 5; i++) after_wake.decide(false, false, true, 999);
+  CHECK(changes == 5, "counted across wakes (%u)", (unsigned) changes);
+  for (int i = 0; i < 20; i++)
+    CHECK(!after_wake.decide(false, true, false, 0), "asleep: a press is still never a full refresh (#%d)", i);
+  CHECK(after_wake.decide(false, false, true, 999) && changes == 0, "the next change of its own carries the full one");
+  CHECK(after_wake.decide(true, true, false, 0), "asleep: a forced clear is full");
+  after_wake.sleep_between(&changes, 30 * 60);
+  CHECK(after_wake.decide(false, false, true, 999), "30 min or more between checks: every change of its own is full");
+  CHECK(!after_wake.decide(false, true, false, 0), "...but a press stays partial");
+  after_wake.sleep_between(nullptr, 0);
+  CHECK(!after_wake.sleeps_between(), "back to always on");
 
   // Through the controller: quiet hours starting forces one full refresh.
   auto &pc = epf::PanelController::instance();
@@ -336,13 +461,13 @@ static void test_power() {
 
   // A fresh start that's never told to sleep stays connected, whatever happens.
   p.begin(Wake::BOOT, mem, 0);
-  p.on_answer(true, false, o, 1000);
+  p.on_answer(200, false, o, 1000);
   CHECK(!p.low_power() && !p.sleep_due(999999, false), "no header: stays connected");
-  p.on_answer(false, false, o, 2000);
+  p.on_answer(0, false, o, 2000);
   CHECK(!p.sleep_due(999999, false), "never told to sleep: a failed download doesn't make it sleep");
 
   // Told to sleep on a timer wake: draw, then sleep at once, for what's left.
-  p.on_answer(true, true, timer, 10000);
+  p.on_answer(200, true, timer, 10000);
   CHECK(p.sleep_due(10000, false), "awake=0: sleeps as soon as it's done");
   CHECK(!p.sleep_due(10000, true), "...not while it's still drawing");
   CHECK(p.sleep_ms(14000) == 896000, "counted from the answer (%u)", (unsigned) p.sleep_ms(14000));
@@ -352,20 +477,20 @@ static void test_power() {
   p.hold(false);
 
   // A press keeps it awake a minute after the last press.
-  p.on_answer(true, true, press, 0);
+  p.on_answer(200, true, press, 0);
   CHECK(!p.sleep_due(59000, false) && p.sleep_due(60000, false), "awake=60 after the download");
   p.note_press(50000);
   CHECK(!p.sleep_due(100000, false) && p.sleep_due(110000, false), "a minute after the last press");
   CHECK(p.sleep_ms(110000) == 790000, "less the time awake (%u)", (unsigned) p.sleep_ms(110000));
 
   // Asked to stay awake for an update: the same field.
-  p.on_answer(true, true, stay, 200000);
+  p.on_answer(200, true, stay, 200000);
   CHECK(!p.sleep_due(799000, false) && p.sleep_due(800000, false), "ten minutes awake");
   CHECK(p.sleep_ms(800000) == 300000, "then the rest of the interval");
   CHECK(p.sleep_ms(2000000) == epf::MIN_SLEEP_SEC * 1000u, "never less than the minimum");
 
   // Low Power Mode turned off in the editor: the next answer has no header.
-  p.on_answer(true, false, o, 900000);
+  p.on_answer(200, false, o, 900000);
   CHECK(!p.low_power() && !p.sleep_due(9000000, false) && mem.interval_sec == 0, "off: stays connected");
 
   // A timer wake that can't reach the add-on sleeps and tries again, backing off.
@@ -374,23 +499,87 @@ static void test_power() {
   uint32_t expect[] = {60, 120, 240, 480, 600, 600};
   for (uint32_t want : expect) {
     p.begin(Wake::TIMER, mem, 900000);
-    p.on_answer(false, false, o, 5000);
+    p.on_answer(0, false, o, 5000);
     CHECK(p.low_power() && p.sleep_due(5000, false), "no answer on a timer wake: sleeps");
     CHECK(p.sleep_ms(5000) == want * 1000u, "retry after %u s (got %u)", (unsigned) want, (unsigned) (p.sleep_ms(5000) / 1000));
   }
   mem.interval_sec = 300;
   p.begin(Wake::TIMER, mem, 900000);
-  p.on_answer(false, false, o, 0);
+  p.on_answer(0, false, o, 0);
   CHECK(p.sleep_ms(0) == 300000, "never longer than its interval");
-  p.on_answer(true, true, timer, 1000);
+  p.on_answer(200, true, timer, 1000);
   CHECK(mem.failures == 0, "an answer ends the backoff");
   p.begin(Wake::BUTTON, mem, 900000);
-  p.on_answer(false, false, o, 0);
+  p.on_answer(0, false, o, 0);
   CHECK(!p.sleep_due(59000, false) && p.sleep_due(60000, false), "a press that can't reach it: awake a minute");
   p.begin(Wake::TIMER, mem, 900000);
-  p.on_answer(true, true, timer, 0);
-  p.on_answer(false, false, o, 500);
+  p.on_answer(200, true, timer, 0);
+  p.on_answer(0, false, o, 500);
   CHECK(p.sleep_ms(500) == 899500, "a later failure in the same wake keeps the answer it had");
+
+  // Only the add-on's own answer (200 or 304) without the header means "stay connected".
+  // Home Assistant's 502 while the add-on restarts, a tunnel's 5xx, a 401 or a 429
+  // count as no answer: it sleeps and tries again (break-it #4).
+  for (int status : {502, 503, 500, 404, 401, 429, 302}) {
+    mem.interval_sec = 900;
+    mem.failures = 0;
+    p.begin(Wake::TIMER, mem, 900000);
+    p.on_answer(status, false, o, 5000);
+    CHECK(p.low_power() && p.sleep_due(5000, false) && p.sleep_ms(5000) == 60000u,
+          "HTTP %d without the header: sleeps and retries in 60 s", status);
+    CHECK(mem.interval_sec == 900 && mem.failures == 1, "HTTP %d: still in Low Power Mode, one failure", status);
+  }
+  mem.interval_sec = 900;
+  p.begin(Wake::TIMER, mem, 900000);
+  p.on_answer(304, false, o, 0);
+  CHECK(!p.low_power() && mem.interval_sec == 0, "a 304 without the header: Low Power Mode is off");
+  mem.interval_sec = 900;
+  p.begin(Wake::TIMER, mem, 900000);
+  p.on_answer(503, true, timer, 0);
+  CHECK(p.low_power() && p.sleep_ms(0) == 900000u && mem.failures == 0, "a sleep order is obeyed whatever the status");
+  mem.interval_sec = 900;
+  p.begin(Wake::BUTTON, mem, 900000);
+  p.on_answer(502, false, o, 0);
+  CHECK(!p.sleep_due(59000, false) && p.sleep_due(60000, false), "a press during a restart: awake a minute, then sleeps");
+
+  // The panel's own refresh timer is off while the add-on decides when it wakes (break-it #1, #10).
+  auto &panel = epf::PanelController::instance();
+  panel.note_fetch(false);                            // owed, so it's due even if resting
+  panel.tick_seconds(900);
+  CHECK(panel.fetch_due(300), "a download is due");
+  p.begin(Wake::BOOT, mem, 0);
+  p.on_answer(200, false, o, 0);
+  CHECK(epf::own_timer_fetch_due(panel, p, 300), "connected: its own timer downloads");
+  p.on_answer(200, true, press, 0);
+  CHECK(!epf::own_timer_fetch_due(panel, p, 300), "Low Power Mode: its own timer is off");
+  panel.note_fetch(true);
+
+  // The picture kept through deep sleep (TRMNL's way), and which refresh policy applies.
+  epf::WaveformPolicy wf;
+  mem.interval_sec = 900;
+  p.begin(Wake::TIMER, mem, 900000);
+  p.before_sleep(1000, true);
+  p.begin(Wake::TIMER, mem, 900000);
+  CHECK(p.picture_kept() && mem.picture_kept == 0, "slept with the display powered: the picture is kept");
+  epf::choose_waveform(wf, p, mem);
+  CHECK(wf.sleeps_between(), "woke from Low Power Mode: the sleeping policy before any answer");
+  p.on_answer(200, true, timer, 0);
+  epf::choose_waveform(wf, p, mem);
+  CHECK(wf.sleeps_between(), "told to sleep again: still the sleeping policy");
+  p.before_sleep(2000, false);
+  p.begin(Wake::BUTTON, mem, 900000);
+  CHECK(!p.picture_kept(), "slept with the display switched off: nothing kept");
+  p.before_sleep(3000, true);
+  p.begin(Wake::BOOT, mem, 0);
+  CHECK(!p.picture_kept(), "a power cut or reset never trusts the display's memory");
+  epf::choose_waveform(wf, p, mem);
+  CHECK(!wf.sleeps_between(), "a fresh start is always on until told to sleep");
+  p.on_answer(200, true, timer, 0);
+  epf::choose_waveform(wf, p, mem);
+  CHECK(wf.sleeps_between(), "told to sleep: the sleeping policy");
+  p.on_answer(200, false, o, 0);
+  epf::choose_waveform(wf, p, mem);
+  CHECK(!wf.sleeps_between(), "Low Power Mode turned off: the always-on policy, exactly as before");
 
   // A power cut or a reset is a fresh start.
   p.begin(Wake::BOOT, mem, 0);
@@ -417,6 +606,9 @@ int main(int argc, char **argv) {
   }
   test_streams_and_mapping(argv[1]);
   test_rejects_bad_files(argv[1]);
+  test_footer_inside_the_screen(argv[1]);
+  test_upright_panel(argv[1]);
+  test_fuzz_parser(argv[1]);
   test_controller(argv[1]);
   test_waveform();
   test_sleep();

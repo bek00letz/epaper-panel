@@ -69,7 +69,9 @@ class CrowPanel(Kind):
     owns_interval = "device"
 
     def displays(self) -> list[str]:
-        return [k for k, d in T.DISPLAYS.items() if d.get("kind") == self.id]
+        """The sizes offered: not one Elecrow doesn't make (`offered: False`), which
+        stays in DISPLAYS only so a screen already set to it still renders."""
+        return [k for k, d in T.DISPLAYS.items() if d.get("kind") == self.id and d.get("offered", True)]
 
     async def switched(self, old: dict, dev: dict) -> str | None:
         """Sleeping or always on takes effect at the panel's next download. To sleep, the add-on asks
@@ -155,8 +157,7 @@ class CrowPanel(Kind):
         if orient not in (0, 90, 180, 270):
             orient = 0
         display = spec.get("display", T.DEFAULT_DISPLAY)
-        disp = T.get_display(display)
-        dw, dh = disp["w"], disp["h"]
+        dw, dh = T.panel_dims(display)          # the panel's own memory, which the frames fill
         rot_sec = timing.rotate_seconds(dev)
         alert = st.alert
         rt = runtime.device(dev["id"])
@@ -306,14 +307,13 @@ def _single_epf(img, *, dev: dict, name: str, sub_key: str, spec: dict, fg: dict
                 cat_flags: int = 0, cat_id: int | None = None, sub_id: int | None = None) -> bytes:
     """One page as a frame file of its own, with the identities it has in the strip."""
     orient, display = _orient(spec), T.get_display(spec.get("display"))["id"]
-    disp = T.get_display(display)
     if cat_id is None or sub_id is None:
         cat_ids, sub_ids = subitems.compute_identities([name], [[sub_key]])
         cat_id, sub_id = cat_ids[0], sub_ids[0]
     digest = hashlib.md5(img.tobytes()).digest()
     return epf.encode_epf(
         pages=[img], cat_ids=[cat_id], cat_offsets=[0], cat_sizes=[1], cat_pill_widths=[pill_w],
-        sub_ids=[sub_id], display_model=display, width=disp["w"], height=disp["h"],
+        sub_ids=[sub_id], display_model=display, width=T.panel_dims(display)[0], height=T.panel_dims(display)[1],
         rotate_sec=timing.rotate_seconds(dev), quiet_hours=quiet, alert_interrupt=False,
         orientation_180=(orient == 180), content_hash=int.from_bytes(digest[:8], "big"),
         geometry=frames.panel_geometry(fg, orient, display), cat_flags=[cat_flags])

@@ -512,7 +512,7 @@ def empty_page(orient: int, display: str, clock: str | None = None):
 def panel_geometry(fg: dict, orient: int, display: str) -> epf.OverlayGeometry:
     cw, ch = fg["canvas"]
     return epf.OverlayGeometry(
-        logical_w=cw, logical_h=ch, quarter_turns=(int(orient) // 90) % 4,
+        logical_w=cw, logical_h=ch, quarter_turns=(int(orient) // 90 + T.panel_turns(display)) % 4,
         mirror_x=T.get_display(display)["id"] in epf.MIRRORED_MODELS,
         pill_y0=fg["pill_y0"], pill_y1=fg["pill_y1"], cat_x0=fg["cat_x0"],
         sub_x0=fg["sub_x0"], sub_x1=fg["sub_x1"])

@@ -203,6 +203,15 @@ inline FetchResult parse_stream(const uint8_t *buf, size_t len, int native_w, in
   } else {
     s.geometry = legacy_geometry(h);
   }
+  // The footer the panel draws over must sit inside the screen: a broken or
+  // forged file with pills off the edge could keep the panel busy drawing them
+  // for seconds (audit #14).
+  const Geometry &g = s.geometry;
+  if (g.pill_y0 > g.pill_y1 || g.pill_y1 >= g.logical_h || g.cat_x0 >= g.logical_w || g.sub_x0 > g.sub_x1 ||
+      g.sub_x1 >= g.logical_w)
+    return FetchResult::ERROR_LAYOUT;
+  for (const auto &c : s.categories)
+    if ((uint32_t) g.cat_x0 + c.pill_width >= g.logical_w) return FetchResult::ERROR_LAYOUT;
   out = std::move(s);
   return FetchResult::OK;
 }
@@ -289,6 +298,9 @@ inline void draw_overlays(uint8_t *buf, int buf_w, int buf_h, const Geometry &g,
 // (auto-rotation, new frames) is done as a full refresh. If someone browses so
 // long that no such change comes, it clears after a minute of stillness.
 // "Classic" is the driver's old every-Nth-refresh, kept as a one-tap revert.
+constexpr uint32_t SLEEP_FULL_EVERY = 8;              // asleep between updates: every 8th change is full
+constexpr uint32_t SLEEP_FULL_INTERVAL_SEC = 30 * 60;  // ...and every change, at 30 min or more between checks
+
 class WaveformPolicy {
  public:
   void set_threshold(int n) { threshold_ = n < 2 ? 2 : (n > 200 ? 200 : n); }
@@ -297,9 +309,28 @@ class WaveformPolicy {
   bool classic() const { return classic_; }
   int partials() const { return partials_; }
 
+  // A panel that sleeps between updates (Low Power Mode), TRMNL's way: the display
+  // keeps its picture through deep sleep, so a change after a wake is partial. Every
+  // 8th change is full, and with 30 minutes or more between checks every change the
+  // panel makes on its own is full: ghosts build up while a partial picture sits for
+  // that long. A person still never sees a flash they caused. `changes` is kept in
+  // RTC memory, so it counts across wakes. nullptr: always on (the policy below).
+  void sleep_between(uint32_t *changes, uint32_t interval_sec) {
+    changes_ = changes;
+    interval_sec_ = interval_sec;
+  }
+  bool sleeps_between() const { return changes_ != nullptr; }
+
   // Decide this refresh and record it. `user_cool_sec`: seconds since the last press.
   bool decide(bool forced, bool by_person, bool automatic, int user_cool_sec) {
     bool full;
+    if (changes_) {
+      bool due = *changes_ + 1 >= SLEEP_FULL_EVERY || interval_sec_ >= SLEEP_FULL_INTERVAL_SEC;
+      full = forced || (!by_person && due);
+      *changes_ = full ? 0 : *changes_ + 1;
+      partials_ = full ? 0 : partials_ + 1;
+      return full;
+    }
     if (classic_) full = forced || partials_ + 1 >= threshold_;
     else full = forced || (!by_person && automatic && partials_ >= threshold_ && user_cool_sec >= 15);
     partials_ = full ? 0 : partials_ + 1;
@@ -314,6 +345,8 @@ class WaveformPolicy {
   int threshold_{10};
   bool classic_{false};
   int partials_{0};
+  uint32_t *changes_{nullptr};
+  uint32_t interval_sec_{0};
 };
 
 // Every way a person or Home Assistant can move the panel. dispatch() is the
@@ -847,7 +880,7 @@ class PanelController {
 // One firmware for both modes: the add-on decides on every download. An answer
 // with `X-EPF-Sleep: <seconds>; awake=<seconds>` means "check again in that
 // many seconds (counted from this answer), and stay awake that long first";
-// an answer without it means "stay connected", as always. The panel never
+// a 200 or 304 without it means "stay connected", as always. The panel never
 // sleeps on its own say-so, except to retry later when a timer wake couldn't
 // reach the add-on at all (it was told to sleep before, so it's on a battery).
 
@@ -917,9 +950,11 @@ struct Remembered {
   uint32_t awake_ms;          // how long the last wake was awake, for the add-on
   uint32_t quick_wakes;       // button wakes in a row right after falling asleep
   uint32_t buttons_off;       // the buttons woke it in a loop: timer only until the next timer wake
+  uint32_t picture_kept;      // it went to sleep with the display powered, its picture in memory
+  uint32_t changes;           // picture changes since the last full refresh (WaveformPolicy)
   char etag[40];              // what's on screen, so an unchanged page is a 304: no download, no redraw
 };
-constexpr uint32_t REMEMBERED_MAGIC = 0x4C504D31;  // "LPM1"
+constexpr uint32_t REMEMBERED_MAGIC = 0x4C504D32;  // "LPM2"
 
 // When to sleep, and for how long. Times are millis(); differences survive its wrap.
 class PowerPolicy {
@@ -938,6 +973,8 @@ class PowerPolicy {
     wake_ = wake;
     mem_ = &mem;
     have_ = held_ = pressed_ = false;
+    kept_ = wake != Wake::BOOT && mem.picture_kept;
+    mem.picture_kept = 0;                           // until it next sleeps with the display powered
     if (wake == Wake::BUTTON && slept_ms < QUICK_WAKE_MS) {
       if (++mem.quick_wakes >= QUICK_WAKES_LIMIT && !mem.buttons_off) {
         mem.buttons_off = 1;
@@ -950,10 +987,14 @@ class PowerPolicy {
     }
   }
 
-  // After every download. `answered`: the add-on gave any HTTP answer at all.
-  void on_answer(bool answered, bool has_order, const SleepOrder &order, uint32_t now_ms) {
+  // After every download. `http_status`: the answer's HTTP status, 0 when nothing answered.
+  // A sleep order is obeyed whatever the status. Without one, only the add-on's own
+  // answer to a download (200 or 304) means "stay connected"; anything else (a 502
+  // from Home Assistant while the add-on restarts, a tunnel's 5xx, a 401 or 429)
+  // isn't the add-on speaking, so it counts as no answer.
+  void on_answer(int http_status, bool has_order, const SleepOrder &order, uint32_t now_ms) {
     if (!mem_) return;
-    if (answered) {
+    if (has_order || http_status == 200 || http_status == 304) {
       mem_->failures = 0;
       if (has_order) {
         order_ = order;
@@ -1006,10 +1047,17 @@ class PowerPolicy {
     return (uint32_t) (left < MIN_SLEEP_SEC * 1000u ? MIN_SLEEP_SEC * 1000u : left);
   }
 
-  // Just before sleeping: what the next wake tells the add-on.
-  void before_sleep(uint32_t now_ms) {
-    if (mem_) mem_->awake_ms = now_ms;
+  // Just before sleeping: what the next wake tells the add-on, and whether the
+  // display stays powered with its picture in memory (TRMNL's way).
+  void before_sleep(uint32_t now_ms, bool display_kept) {
+    if (!mem_) return;
+    mem_->awake_ms = now_ms;
+    mem_->picture_kept = display_kept;
   }
+
+  // After a deep sleep that kept the display powered: it still holds what's on
+  // screen, so the first change can be partial. False after any other start.
+  bool picture_kept() const { return kept_; }
 
  private:
   PowerPolicy() = default;
@@ -1023,8 +1071,22 @@ class PowerPolicy {
   Remembered *mem_{nullptr};
   Wake wake_{Wake::BOOT};
   SleepOrder order_;
-  bool have_{false}, held_{false}, pressed_{false};
+  bool have_{false}, held_{false}, pressed_{false}, kept_{false};
   uint32_t answer_ms_{0}, press_ms_{0};
 };
+
+// Which refresh policy applies: the sleeping one (WaveformPolicy::sleep_between)
+// while answers put the panel to sleep, or once it woke from such a sleep until
+// an answer says otherwise; always on otherwise. At start-up and after every answer.
+inline void choose_waveform(WaveformPolicy &w, const PowerPolicy &p, Remembered &mem) {
+  bool between = p.low_power() || (p.wake() != Wake::BOOT && mem.interval_sec > 0);
+  w.sleep_between(between ? &mem.changes : nullptr, mem.interval_sec);
+}
+
+// The panel's own download timer. Off while the add-on's answers decide when it
+// wakes (Low Power Mode): those downloads would only keep it awake longer.
+inline bool own_timer_fetch_due(const PanelController &panel, const PowerPolicy &power, int interval_sec) {
+  return !power.low_power() && panel.fetch_due(interval_sec);
+}
 
 }  // namespace epf

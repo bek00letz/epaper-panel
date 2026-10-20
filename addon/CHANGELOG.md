@@ -59,6 +59,44 @@
 - **Removed:** the previous editor (`?classic=1`). It predates several
   screens; an old bookmark to it now opens the editor.
 
+- **Fixed (firmware):** a panel in Low Power Mode stayed connected for as
+  long as the add-on was down (an update, a restart, a stopped add-on),
+  because Home Assistant's "isn't answering" counted as an answer. Only the
+  add-on's own answer keeps it connected now; anything else makes it sleep and
+  try again later, as when the network is down.
+
+- **Fixed (firmware setup):** a screen with no Wi-Fi network filled in made
+  firmware ESPHome refused, even with "Its own Wi-Fi when it's lost" on. It
+  now gets only its own Wi-Fi, so you choose the network from a phone. A
+  blank network among several is left out.
+
+- **Fixed (firmware):** the panel now refuses a frame file whose footer sits
+  outside the screen. Only a broken or forged file has one, and drawing it
+  could freeze the panel for seconds.
+
+- **Fixed (firmware):** in Low Power Mode the panel's own refresh timer no
+  longer downloads while it's awake: the add-on's answer says when it next
+  checks. A 2.9" panel no longer stays awake 6 seconds after a wake that
+  didn't redraw anything.
+
+- **Fixed (firmware):** the firmware for the 4.2" and 2.9" CrowPanels
+  didn't build. Both build now, with the pins and controllers from Elecrow's
+  own demo code, and the 2.9" gets its pages the right way round for its
+  upright display. Neither has been tried on a real panel yet.
+- **Fixed (firmware):** in Low Power Mode, pressing a button right after a
+  wake, before the new pages had arrived, replaced the picture with a
+  "waiting for frames" screen. The picture now stays until the pages arrive.
+- **Changed:** the sizes offered for a new CrowPanel are the 5.79", 4.2" and
+  2.9". The 7.5" and 10.2" are no longer offered, because Elecrow doesn't
+  make them; a screen already set to one keeps working.
+
+- **New (firmware), untried on a real panel:** in Low Power Mode the screen
+  no longer has to flash after every wake. The display stays powered while
+  the panel sleeps, keeping its picture, so a change is a quick partial
+  refresh; every 8th change is a full one that clears ghosting, and so is
+  every change when the panel checks only every 30 minutes or more. A panel
+  that stays connected clears ghosting exactly as before.
+
 ## 0.12.0
 **Firmware change** (only needed for Low Power Mode, or if your panel has
 "Its own Wi-Fi when it's lost" switched off): install the panel again from

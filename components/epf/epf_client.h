@@ -11,6 +11,7 @@
 
 #include "epf_core.h"
 
+#include "driver/gpio.h"
 #include "esp_crt_bundle.h"
 #include "esp_heap_caps.h"
 #include "esp_http_client.h"
@@ -18,6 +19,7 @@
 #include "esp_sleep.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "soc/soc_caps.h"
 #include "esphome/components/display/display_buffer.h"
 
 #include <sys/time.h>
@@ -28,6 +30,34 @@ class DisplayBufferAccessor : public esphome::display::DisplayBuffer {
  public:
   static uint8_t *raw(esphome::display::DisplayBuffer *d) { return static_cast<DisplayBufferAccessor *>(d)->buffer_; }
 };
+
+// A Waveshare driver that refreshes in full when its update count is at 0 and
+// has no call for it (ESPHome's 2.90inv2-r2): restart the count, so the next
+// refresh is full. Only the redraw script calls this (firmware_gen.FULL_REFRESH).
+template <class Driver> inline void full_refresh_next(Driver *display) {
+  struct Count : Driver {
+    static void restart(Driver *d) { static_cast<Count *>(d)->at_update_ = 0; }
+  };
+  Count::restart(display);
+}
+
+// After a deep sleep that kept the display powered with its picture in memory
+// (PowerPolicy::picture_kept), its driver needn't start with a full refresh:
+// the refresh policy decides. Each driver counts its refreshes and does a full
+// one first; these start the count past that. Only on_boot calls them
+// (firmware_gen.KEEP_PICTURE).
+template <class Driver> inline void crowpanel_picture_kept(Driver *display) {
+  struct Count : Driver {
+    static void skip_first(Driver *d) { static_cast<Count *>(d)->update_count_ = 1; }
+  };
+  Count::skip_first(display);
+}
+template <class Driver> inline void waveshare_picture_kept(Driver *display) {
+  struct Count : Driver {
+    static void skip_first(Driver *d) { static_cast<Count *>(d)->at_update_ = 1; }
+  };
+  Count::skip_first(display);
+}
 
 // Per buffer, in PSRAM. Two of the larger size fit an N8R8 board's 8 MB with
 // room to spare; a board that can't give that much gets the smaller one. The
@@ -83,8 +113,8 @@ class EpfClient {
     if (awake_ms) wake_query_ += "&awake_ms=" + std::to_string(awake_ms);
   }
 
-  // The last finished download: whether the add-on answered at all, and its X-EPF-Sleep ("" when none).
-  bool answered() const { return last_answered_; }
+  // The last finished download: its HTTP status (0: nothing answered), and its X-EPF-Sleep ("" when none).
+  int status() const { return last_status_; }
   const std::string &etag() const { return current_etag_; }
   // What's on screen, after a deep sleep: the frames are gone from memory, the picture isn't.
   void set_etag(const std::string &etag) { current_etag_ = etag; }
@@ -95,7 +125,7 @@ class EpfClient {
   bool poll(FetchResult &result) {
     if (state_.load(std::memory_order_acquire) != FINISHED) return false;
     result = task_result_;
-    last_answered_ = answered_;             // copies: the next download writes the originals
+    last_status_ = status_;                 // copies: the next download writes the originals
     last_sleep_ = answer_.sleep;
     if (result == FetchResult::OK) {
       std::swap(front_buf_, back_buf_);
@@ -166,7 +196,7 @@ class EpfClient {
   // Runs in the download task. Touches only the back buffer and pending_.
   FetchResult download_() {
     answer_ = AnswerHeaders{};
-    answered_ = false;
+    status_ = 0;
     esp_http_client_config_t config = {};
     config.url = url_.c_str();
     // An https address (a screen away from home) is checked against ESP-IDF's
@@ -186,7 +216,7 @@ class EpfClient {
     if (esp_http_client_open(client, 0) == ESP_OK) {
       esp_http_client_fetch_headers(client);
       int status = esp_http_client_get_status_code(client);
-      answered_ = status > 0;
+      status_ = status > 0 ? status : 0;
       if (status == 304) {
         result = FetchResult::NOT_MODIFIED;
       } else if (status == 200) {
@@ -223,7 +253,7 @@ class EpfClient {
   int native_w_{0}, native_h_{0};
   std::string url_, send_etag_, current_etag_, wake_query_, last_sleep_;
   AnswerHeaders answer_;                  // written by the download task
-  bool answered_{false}, last_answered_{false};
+  int status_{0}, last_status_{0};
   Stream stream_, pending_;
   bool has_stream_{false};
 };
@@ -240,8 +270,21 @@ inline int64_t rtc_now_us_() {
   return (int64_t) tv.tv_sec * 1000000 + tv.tv_usec;
 }
 
+// The display's power pin, held on through deep sleep; -1 when the display is
+// switched off in deep sleep (the way it was before 0.13).
+inline int &power_display_pin_() {
+  static int pin = -1;
+  return pin;
+}
+
 // At start-up, before the first download: why it's awake and what it remembers.
-inline void power_begin() {
+// `display_pin`: the display's power pin, to keep it on through deep sleep (TRMNL's
+// way: the picture stays in the controller's memory), or -1 to switch it off.
+inline void power_begin(int display_pin) {
+  power_display_pin_() = display_pin;
+  // Held on through the sleep it just woke from. The pin is an output, already
+  // set high (switch epd_power, restore ALWAYS_ON), so letting go changes nothing.
+  if (display_pin >= 0) gpio_hold_dis((gpio_num_t) display_pin);
   Wake wake = Wake::BOOT;
   switch (esp_sleep_get_wakeup_cause()) {
     case ESP_SLEEP_WAKEUP_TIMER: wake = Wake::TIMER; break;
@@ -262,7 +305,8 @@ inline void power_begin() {
     EpfClient::instance().set_etag(g_remembered.etag);
   }
   EpfClient::instance().set_wake(wake_name(wake), wake == Wake::BOOT ? 0 : awake_ms);
-  ESP_LOGI(TAG, "Awake: %s", wake_name(wake));
+  if (display_pin >= 0) choose_waveform(PanelController::instance().waveform(), PowerPolicy::instance(), g_remembered);
+  ESP_LOGI(TAG, "Awake: %s%s", wake_name(wake), PowerPolicy::instance().picture_kept() ? ", picture kept" : "");
 }
 
 // After every finished download: what the add-on said about sleeping.
@@ -275,13 +319,33 @@ inline void power_note_download(uint32_t now_ms, FetchResult result) {
   SleepOrder order;
   bool has = !c.sleep_header().empty() && parse_sleep_order(c.sleep_header().c_str(), order);
   if (!c.sleep_header().empty() && !has) ESP_LOGW(TAG, "Ignored an X-EPF-Sleep it can't read: %s", c.sleep_header().c_str());
-  PowerPolicy::instance().on_answer(c.answered(), has, order, now_ms);
+  PowerPolicy::instance().on_answer(c.status(), has, order, now_ms);
+  if (power_display_pin_() >= 0)
+    choose_waveform(PanelController::instance().waveform(), PowerPolicy::instance(), g_remembered);
+}
+
+// Whether a redraw may go ahead. After a deep sleep the screen still shows its last
+// picture but the frames aren't in memory yet, so a press before they arrive would
+// replace it with the "waiting for frames" screen. Their arrival redraws. After a
+// fresh start there's nothing on screen worth keeping.
+inline bool may_redraw() {
+  return EpfClient::instance().has_stream() || PowerPolicy::instance().wake() == Wake::BOOT;
 }
 
 // Just before deep sleep: how long, and what wakes it. `buttons`: the button pins as a bit mask.
+// The display has finished refreshing (sleep_due waits for it). Its driver puts its
+// controller in the sleep that keeps its memory (on_safe_shutdown); holding its
+// power pin on keeps that memory, and so the picture, for the next wake.
 inline uint32_t power_prepare_sleep(uint32_t now_ms, uint64_t buttons) {
   auto &p = PowerPolicy::instance();
-  p.before_sleep(now_ms);
+  int pin = power_display_pin_();
+  if (pin >= 0) {
+    gpio_hold_en((gpio_num_t) pin);
+#if !SOC_GPIO_SUPPORT_HOLD_SINGLE_IO_IN_DSLP
+    gpio_deep_sleep_hold_en();
+#endif
+  }
+  p.before_sleep(now_ms, pin >= 0);
   uint32_t ms = p.sleep_ms(now_ms);
   if (p.buttons_wake()) esp_sleep_enable_ext1_wakeup(buttons, ESP_EXT1_WAKEUP_ANY_LOW);
   else esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT1);

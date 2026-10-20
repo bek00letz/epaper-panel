@@ -23,7 +23,9 @@ esphome:
     priority: -100
     then:
       - lambda: |-
-          epf::power_begin();                   // why it's awake, for the first download
+          epf::power_begin(@KEEP_DISPLAY_PIN@);  // why it's awake, for the first download
+          // Slept with the display powered: it still shows its picture, so no full refresh first.
+          if (epf::PowerPolicy::instance().picture_kept()) @KEEP_PICTURE@
           auto &w = epf::PanelController::instance().waveform();
           w.set_threshold((int) id(ghost_clear_after).state);
           auto mode = id(ghost_mode).active_index();
@@ -52,6 +54,7 @@ globals:
     type: uint32_t
     initial_value: '0'
   # When the display was last asked to redraw (Low Power Mode waits for it).
+  # 0: not since it woke.
   - id: last_redraw_ms
     type: uint32_t
     initial_value: '0'
@@ -144,10 +147,11 @@ deep_sleep:
 
 @WIFI_BLOCK@
 
-# GPIO7 powers the display; nothing renders until it is high.
+# GPIO@DISPLAY_POWER_PIN@ powers the display; nothing renders until it is high. In Low
+# Power Mode it stays on through deep sleep (epf::power_prepare_sleep).
 switch:
   - platform: gpio
-    pin: 7
+    pin: @DISPLAY_POWER_PIN@
     id: epd_power
     restore_mode: ALWAYS_ON
     internal: true
@@ -357,10 +361,20 @@ script:
     mode: restart
     then:
       - delay: 80ms
-      - lambda: |-
-          if (epf::PanelController::instance().begin_redraw()) id(epd).force_full_update();
-          id(last_redraw_ms) = millis();
-      - component.update: epd
+      - if:
+          condition:
+            lambda: |-
+              if (epf::may_redraw()) return true;
+              #ifdef USE_WIFI_AP
+              if (wifi::global_wifi_component->is_ap_active()) return true;   // say how to give it a network
+              #endif
+              ESP_LOGD("panel", "Just woke: keeping the picture until the frames arrive");
+              return false;
+          then:
+            - lambda: |-
+                if (epf::PanelController::instance().begin_redraw()) @FULL_REFRESH@
+                id(last_redraw_ms) = millis();
+            - component.update: epd
 
   # Home Assistant asked for new frames. While someone is scrolling, wait
   # until they stop so the pages don't change under them.
@@ -400,6 +414,7 @@ script:
   # Low Power Mode: everything on screen is done, so sleep until the next
   # check or a press of any of the five buttons (GPIO 1, 2, 4, 5, 6, all
   # RTC-capable on the ESP32-S3; active-low, so any one pressed wakes it).
+  # The display sleeps too, powered, keeping its picture for the next wake.
   - id: go_to_sleep
     mode: single
     then:
@@ -455,9 +470,10 @@ interval:
           else if (panel.idle_clear_due()) id(redraw).execute();
           // The panel's own timer. Asleep or in quiet hours, it waits for
           // the add-on or a press instead (the add-on retries until
-          // delivered), except to retry a download that failed.
+          // delivered), except to retry a download that failed. Off in Low
+          // Power Mode: the add-on's answer says when it next checks.
           int every = std::max(30, (int) (id(panel_refresh_interval).state * 60.0f));
-          if (panel.fetch_due(every)) {
+          if (epf::own_timer_fetch_due(panel, epf::PowerPolicy::instance(), every)) {
             panel.reset_fetch_idle();
             id(request_refetch).execute();
           }
