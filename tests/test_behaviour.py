@@ -26,14 +26,14 @@ def fixed_now(hour, minute=0):
 
 class TestAlerts(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        runtime.ALERT.update(name=None, until=0.0, fired={})
+        self.state = runtime.new_alert()
         self.spec = {"pages": {"dryer_done": {"tier": "alert", "show_if": "{{ x }}", "hold_minutes": 10}}}
 
     async def check(self, truthy, at):
         with mock.patch.object(frames, "resolve_templates",
                                mock.AsyncMock(return_value={"dryer_done": "true" if truthy else "false"})), \
              mock.patch.object(frames.time, "time", return_value=at):
-            return await frames.check_alerts(None, self.spec)
+            return await frames.check_alerts(None, self.spec, self.state)
 
     async def test_fires_once_holds_then_hands_back(self):
         self.assertEqual(await self.check(True, 1000), "dryer_done")

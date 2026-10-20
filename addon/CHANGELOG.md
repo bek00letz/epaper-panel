@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+Add-on only; no firmware change. Nothing changes on your panel or in the editor.
+
+- **Ready for more than one screen.** The add-on now keeps track of
+  screens ("devices") and the pages each one shows ("designs"), so a later
+  version can drive several panels of different sizes, each with its own
+  pages, quiet hours and key. On the first start your panel becomes the
+  first screen with everything it had: the same pages, settings, download
+  address and Home Assistant entities. The files it used before stay where
+  they were, so going back to 0.10.3 still works (changes made after the
+  update won't be in them).
+
 ## 0.10.3
 Add-on only; no firmware change.
 

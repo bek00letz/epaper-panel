@@ -5,6 +5,7 @@ from aiohttp.test_utils import TestClient, TestServer
 
 import support
 import config
+import devices
 import frame_token
 import frames
 import web
@@ -77,7 +78,8 @@ class TestRoutes(unittest.IsolatedAsyncioTestCase):
     async def test_the_panel_yaml_carries_the_token(self):
         config.FRAME_TOKEN = ""
         import panel_setup
-        yaml_text, _ = panel_setup.generate_esphome_yaml(panel_setup.load_panel_setup())
+        dev = devices.primary()
+        yaml_text, _ = panel_setup.generate_esphome_yaml(panel_setup.load_panel_setup(dev), dev)
         self.assertIn(f"/frames.epf?token={frame_token.token()}", yaml_text)
         self.assertIn("encryption: {}", yaml_text)
         self.assertNotIn("password: ", yaml_text.split("ota:")[1].split("wifi:")[0], "no OTA password")

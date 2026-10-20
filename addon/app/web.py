@@ -2,13 +2,11 @@
 
 import health
 import asyncio
-import hashlib
 import json
 import re
 import time
 import urllib.parse
 from datetime import datetime, timedelta, timezone
-from email.utils import formatdate
 from pathlib import Path
 from aiohttp import web
 
@@ -17,14 +15,16 @@ import live_data
 from render import binding, epf, layout, sleep, stripmeta, subitems, theme as T
 import airports
 import config
+import devices
 import frame_token
+import kinds
 import runtime
 from config import ADDON_VERSION, FRAME_PORT, HA_BASE, HA_TOKEN, INGRESS_GATEWAY, REFRESH, SLEEP_PAGE, WEB_DIR, valid_entity_id
 from fixture import load_fixture
-from frames import _etag, _png, as_int, enrich_page_values, refresh_frames, split_page_values
+from frames import _png, as_int, enrich_page_values, refresh_frames, split_page_values
 from ha import curve_series, ha_json, resolve_templates
 from layouts_store import clear_draft, layouts_etag, load_draft, load_layouts, load_sources, sanitize_layouts, save_draft, save_layouts
-from panel_ops import push_panel_update, step_panel_page
+from panel_ops import push_panel_update
 from panel_setup import _detect_external_port, _detect_panel_connection, _new_api_key, generate_esphome_yaml, load_panel_setup, save_panel_setup
 from sources.flights import fetch_overhead_aircraft
 
@@ -51,122 +51,31 @@ async def ingress_only(request, handler):
     return await handler(request)
 
 
-def _provided_token(request) -> str:
-    auth_hdr = request.headers.get("Authorization") or ""
-    if auth_hdr.lower().startswith("bearer "):
-        return auth_hdr[7:].strip()
-    return request.query.get("token") or request.headers.get("X-Frame-Token") or ""
-
-
-def _require_frame_token(request):
-    """LAN endpoints that make the add-on or the panel do something: always
-    need the token, even while plain frame downloads are still switching over."""
-    if frame_token.check(_provided_token(request)) != "ok":
-        raise web.HTTPUnauthorized(text="This needs the frame token (Panel setup shows it in the panel's YAML).")
-
-
-def _check_frame_auth(request):
-    """Frames and status on the LAN port (see frame_token for the switch-over)."""
-    result = frame_token.check(_provided_token(request))
-    if result == "wrong" or (result == "missing" and frame_token.required()):
-        raise web.HTTPUnauthorized(text="invalid or missing token")
-
-
-def _frame_headers(f=None, etag=None, page_count=1):
-    """Caching headers for frame responses.
-
-    0.8.x also sent page names, category layout and the quiet-hours flag as
-    X- headers. Nothing read them, and on an untokened LAN port they said more
-    than a frame should (quiet hours can mean nobody is home).
-    """
-    last_mod = (getattr(f, "last_modified", "") if f is not None else "") or formatdate(timeval=None, localtime=False, usegmt=True)
-    h = {"Cache-Control": "no-cache", "Last-Modified": last_mod}
-    if etag:
-        h["ETag"] = etag
-    return h
-
-
-async def frame_png(request):
-    _check_frame_auth(request)
-    f = runtime.FRAMES
-    if not f.single:
-        raise web.HTTPServiceUnavailable(text="no frame rendered yet")
-    page_q = request.query.get("page")
-    body = f.single
-    if page_q is not None and f.slices:
-        try:
-            idx = max(0, min(len(f.slices) - 1, int(page_q)))
-            body = f.slices[idx]
-        except (ValueError, TypeError):
-            body = f.single
-    etag = _etag(body)
-    if etag and request.headers.get("If-None-Match") == etag:
-        raise web.HTTPNotModified(headers=_frame_headers(f=f, etag=etag, page_count=1))
-    return web.Response(body=body, content_type="image/png", headers=_frame_headers(f=f, etag=etag, page_count=1))
-
-
-async def frames_png(request):
-    _check_frame_auth(request)
-    f = runtime.FRAMES
-    if not f.strip:
-        raise web.HTTPServiceUnavailable(text="no frame rendered yet")
-    if f.strip_etag and request.headers.get("If-None-Match") == f.strip_etag:
-        raise web.HTTPNotModified(headers=_frame_headers(f=f, etag=f.strip_etag, page_count=len(f.names)))
-    return web.Response(body=f.strip, content_type="image/png", headers=_frame_headers(f=f, etag=f.strip_etag, page_count=len(f.names)))
-
-
-async def frame_epf(request):
-    _check_frame_auth(request)
-    f = runtime.FRAMES
-    if not getattr(f, "epf_strip", None):
-        raise web.HTTPServiceUnavailable(text="no epf frame rendered yet")
-    page_q = request.query.get("page")
-    body = getattr(f, "epf_single", None)
-    if page_q is not None and getattr(f, "epf_strip", None):
-        try:
-            page_idx = max(0, min(len(f.names) - 1, int(page_q)))
-            body = epf.extract_page_epf(f.epf_strip, page_idx)
-        except (ValueError, TypeError, IndexError):
-            body = getattr(f, "epf_single", None)
-    if not body:
-        body = epf.extract_page_epf(f.epf_strip, 0)
-    etag = f'"{hashlib.blake2s(body, digest_size=8).hexdigest()}"'
-    if etag and request.headers.get("If-None-Match") == etag:
-        raise web.HTTPNotModified(headers=_frame_headers(f=f, etag=etag, page_count=1))
-    h = _frame_headers(f=f, etag=etag, page_count=1)
-    h["Content-Type"] = "application/octet-stream"
-    h["X-EPF-Version"] = "3.0"
-    return web.Response(body=body, headers=h)
-
-
-async def frames_epf(request):
-    _check_frame_auth(request)
+def _device(request) -> dict:
+    """The device an editor request is about (?device=), or the first."""
     try:
-        if "cap" in request.query and runtime.set_panel_capacity(int(request.query["cap"])):
-            runtime.LIVE._event().set()                # render to the new size now
-    except ValueError:
-        pass
-    f = runtime.FRAMES
-    if not getattr(f, "epf_strip", None):
-        raise web.HTTPServiceUnavailable(text="no epf frame rendered yet")
-    etag = getattr(f, "epf_strip_etag", "")
-    if etag and request.headers.get("If-None-Match") == etag:
-        raise web.HTTPNotModified(headers=_frame_headers(f=f, etag=etag, page_count=len(f.names)))
-    h = _frame_headers(f=f, etag=etag, page_count=len(f.names))
-    h["Content-Type"] = "application/octet-stream"
-    h["X-EPF-Version"] = "3.0"
-    return web.Response(body=f.epf_strip, headers=h)
+        return devices.resolve(request.query.get("device"))
+    except KeyError:
+        raise web.HTTPNotFound(text="There's no such screen.")
+
+
+def _frames(request):
+    return runtime.device(_device(request)["id"]).frames
+
+
+def _link(dev: dict):
+    return kinds.of(dev).link(dev)
 
 
 async def editor_strip_epf(request):
-    f = runtime.FRAMES
+    f = _frames(request)
     if not getattr(f, "epf_strip", None):
         raise web.HTTPServiceUnavailable(text="no epf frame rendered yet")
     return web.Response(body=f.epf_strip, headers={"Content-Type": "application/octet-stream", "Cache-Control": "no-cache"})
 
 
 async def api_manifest(request):
-    f = runtime.FRAMES
+    f = _frames(request)
     return web.json_response({
         "page_count": len(f.names),
         "cat_count": f.cat_count,
@@ -182,10 +91,9 @@ async def api_manifest(request):
 
 
 async def public_status(request):
-    """Health check on the LAN port. Deliberately says nothing about the pages
+    """Health check on the device port. Deliberately says nothing about the pages
     or why quiet hours are on: the reason can reveal whether anyone is home."""
-    _check_frame_auth(request)
-    f = runtime.FRAMES
+    f = runtime.device(kinds.device_for(request)["id"]).frames
     return web.json_response({
         "ok": f.error is None and bool(f.strip),
         "page_count": len(f.names),
@@ -196,7 +104,7 @@ async def public_status(request):
 
 async def editor_strip_png(request):
     """Serve the rendered strip over Ingress without requiring config.FRAME_TOKEN."""
-    f = runtime.FRAMES
+    f = _frames(request)
     if not f.strip:
         raise web.HTTPServiceUnavailable(text="no frame rendered yet")
     return web.Response(body=f.strip, content_type="image/png",
@@ -204,11 +112,13 @@ async def editor_strip_png(request):
 
 
 async def status(request):
-    f = runtime.FRAMES
-    spec = load_layouts()
-    panel_cfg = load_panel_setup()
-    m_int = re.search(r"\d+", str(panel_cfg.get("refresh_interval", "5")))
-    panel_int = (await runtime.LINK.refresh_interval()) or (int(m_int.group(0)) if m_int else 5)
+    dev = _device(request)
+    rt = runtime.device(dev["id"])
+    f = rt.frames
+    spec = load_layouts(dev["id"])
+    link = _link(dev)
+    m_int = re.search(r"\d+", str((dev.get("setup") or {}).get("refresh_interval", "5")))
+    panel_int = (await link.refresh_interval() if link else None) or (int(m_int.group(0)) if m_int else 5)
     return web.json_response({
         "pages": [n for n in f.names if n != SLEEP_PAGE],
         "rendered_at": f.rendered_at,
@@ -224,18 +134,19 @@ async def status(request):
         "error": f.error,
         "refresh_seconds": REFRESH,
         "panel_interval": panel_int,
-        "esphome_device": runtime.ESPHOME_DEVICE,
-        "active_alert": runtime.ALERT.get("name"),
+        "device": {"id": dev["id"], "name": dev.get("name"), "kind": dev.get("kind")},
+        "esphome_device": link.preferred_node() if link else None,
+        "active_alert": runtime.alert(dev["design"]).get("name"),
         "frame_port": FRAME_PORT,
         "display": spec.get("display", T.DEFAULT_DISPLAY),
         "orientation": int(spec.get("orientation") or 0),
-        "panel_link": runtime.LINK.status(),
+        "panel_link": link.status() if link else None,
         "live_data": runtime.LIVE.status(),
         # Every outside service and data source: last success, and the problem
         # if it is failing (also a problem sensor in Home Assistant).
         "services": health.status(),
         # How many pages the panel holds, and what was left out to fit.
-        "fit": runtime.FIT,
+        "fit": rt.fit,
         "ha_entities": runtime.PUBLISHER.status() if runtime.PUBLISHER is not None else
                        {"mode": "off", "problem": "not started", "entities": 0},
         "version": ADDON_VERSION,
@@ -256,9 +167,10 @@ async def api_panel_refresh(request):
     except (TypeError, ValueError):
         raise web.HTTPBadRequest(text="invalid interval")
 
-    cfg = load_panel_setup()
+    dev = _device(request)
+    cfg = load_panel_setup(dev)
     cfg["refresh_interval"] = f"{minutes}min"
-    save_panel_setup(cfg)
+    save_panel_setup(dev["id"], cfg)
 
     runtime.LAST_PANEL_PUSH_TIME = time.time()
 
@@ -269,10 +181,11 @@ async def api_panel_refresh(request):
         pass
 
     # The panel's own interval entity is what it actually uses; set it there.
-    ha_updated, err = await runtime.LINK.set_refresh_interval(minutes)
+    link = _link(dev)
+    ha_updated, err = await link.set_refresh_interval(minutes) if link else (False, "the add-on can't reach this screen")
     if not ha_updated:
         print(f"panel: couldn't set refresh interval: {err}", flush=True)
-    await push_panel_update("refresh interval changed")
+    await push_panel_update(dev["id"], "refresh interval changed")
 
     return web.json_response({
         "saved": True,
@@ -295,11 +208,12 @@ def _if_match(request) -> str | None:
 
 
 async def api_layouts_get(request):
-    spec = load_layouts()
+    spec = load_layouts(_device(request)["id"])
     return web.json_response(spec, headers={"ETag": _quoted(layouts_etag(spec))})
 
 
 async def api_layouts_put(request):
+    dev_id = _device(request)["id"]
     spec = await request.json()
     if not isinstance(spec, dict) or "pages" not in spec:
         raise web.HTTPBadRequest(text="expected {rotation, pages}")
@@ -312,15 +226,15 @@ async def api_layouts_put(request):
     # save goes through as it always has.
     expected = _if_match(request)
     if expected is not None and expected != "*":
-        current = load_layouts()
+        current = load_layouts(dev_id)
         current_tag = layouts_etag(current)
         if expected != current_tag:
             return web.json_response({"error": "These pages were changed somewhere else since you opened them.",
                                       "current": current, "etag": current_tag},
                                      status=409, headers={"ETag": _quoted(current_tag)})
-    save_layouts(clean)
-    clear_draft()                                         # sent: nothing is waiting any more
-    tag = layouts_etag(load_layouts())
+    save_layouts(clean, dev_id)
+    clear_draft(dev_id)                                   # sent: nothing is waiting any more
+    tag = layouts_etag(load_layouts(dev_id))
     try:
         await refresh_frames(runtime.SESSION)
     except Exception as exc:
@@ -338,7 +252,8 @@ async def api_layouts_put(request):
 
 async def api_draft_get(request):
     """Unsent editor changes, and the version of what's live."""
-    return web.json_response({"draft": load_draft(), "etag": layouts_etag()})
+    dev_id = _device(request)["id"]
+    return web.json_response({"draft": load_draft(dev_id), "etag": layouts_etag(device_id=dev_id)})
 
 
 async def api_draft_put(request):
@@ -349,6 +264,7 @@ async def api_draft_put(request):
     mismatch (another window saved, or the draft was sent) the answer is 409
     with the current draft and the live pages, so the client can merge.
     """
+    dev_id = _device(request)["id"]
     body = await request.json()
     if not isinstance(body, dict) or not isinstance(body.get("spec"), dict):
         raise web.HTTPBadRequest(text="expected {spec, base, base_etag}")
@@ -357,22 +273,25 @@ async def api_draft_put(request):
         base = sanitize_layouts(body["base"]) if isinstance(body.get("base"), dict) else None
     except ValueError as exc:
         raise web.HTTPBadRequest(text=str(exc))
-    current = load_draft()
+    current = load_draft(dev_id)
     version = int(current.get("version") or 0) if current else 0
     expected = _if_match(request)
     if expected is not None and expected != "*" and expected != str(version):
-        live = load_layouts()
+        live = load_layouts(dev_id)
         return web.json_response({"error": "These pages were changed in another window.",
                                   "draft": current, "live": live, "etag": layouts_etag(live)}, status=409)
     draft = {"version": version + 1, "base_etag": str(body.get("base_etag") or ""),
              "base": base, "spec": spec, "saved_at": time.time()}
-    save_draft(draft)
+    save_draft(draft, dev_id)
     return web.json_response({"saved": True, "version": draft["version"]})
 
 
 async def api_panel_device_get(request):
     """The panel's Sleep and ghost-clearing settings, read through Home Assistant."""
-    return web.json_response(await runtime.LINK.device_settings())
+    link = _link(_device(request))
+    if link is None:
+        return web.json_response({"available": False, "problem": "the add-on can't reach this screen"})
+    return web.json_response(await link.device_settings())
 
 
 async def api_panel_device_post(request):
@@ -381,14 +300,15 @@ async def api_panel_device_post(request):
     if not isinstance(body, dict) or len(body) != 1:
         raise web.HTTPBadRequest(text="expected one setting")
     key, value = next(iter(body.items()))
-    ok, err = await runtime.LINK.set_device_setting(key, value)
+    link = _link(_device(request))
+    ok, err = await link.set_device_setting(key, value) if link else (False, "the add-on can't reach this screen")
     return web.json_response({"ok": ok, "error": err or None}, status=200 if ok or key in
                              ("sleep", "ghost_after", "ghost_mode", "clear_ghosting") else 400)
 
 
 async def api_draft_delete(request):
     """Throw away unsent changes (the editor offers this as one undoable step)."""
-    clear_draft()
+    clear_draft(_device(request)["id"])
     return web.json_response({"cleared": True})
 
 
@@ -480,13 +400,14 @@ async def api_preview(request):
     if not isinstance(body, dict) or not isinstance(body.get("page") or {}, dict):
         raise web.HTTPBadRequest(text="expected {page}")
     page = body.get("page") or {}
+    view = load_layouts(_device(request)["id"])
     try:
-        orient = int(body.get("orientation") if "orientation" in body else load_layouts().get("orientation", 0))
+        orient = int(body.get("orientation") if "orientation" in body else view.get("orientation", 0))
     except (TypeError, ValueError):
         orient = 0
     if orient not in (0, 90, 180, 270):
         orient = 0
-    display = body.get("display") or load_layouts().get("display", T.DEFAULT_DISPLAY)
+    display = body.get("display") or view.get("display", T.DEFAULT_DISPLAY)
     vals, tpls = split_page_values(page)
     if tpls:
         vals.update(await resolve_templates(runtime.SESSION, tpls))
@@ -536,40 +457,16 @@ async def api_aircraft(request):
 
 async def api_push(request):
     """Re-render immediately and make the panel fetch and redraw now."""
+    dev = _device(request)
     try:
         await refresh_frames(runtime.SESSION)
     except Exception as exc:
         print(f"pre-push render failed: {health.describe(exc)}", flush=True)
-    delivered = await push_panel_update("pushed from the editor")
-    return web.json_response({"pushed": delivered, "pending": runtime.LINK.pending is not None,
-                              "error": None if delivered else runtime.LINK.last_error})
-
-
-async def api_action_refresh(request):
-    """LAN endpoint (scripts, webhooks) to re-render and make the panel redraw. Needs frame_token."""
-    _require_frame_token(request)
-    try:
-        await refresh_frames(runtime.SESSION)
-        ha_pushed = await push_panel_update("action endpoint")
-        return web.json_response({"success": True, "action": "refresh", "ha_pushed": ha_pushed, "timestamp": datetime.now().isoformat()})
-    except Exception as exc:
-        return web.json_response({"success": False, "error": str(exc)}, status=500)
-
-
-async def api_action_page(request):
-    """LAN endpoint to step the panel's page. Needs frame_token."""
-    _require_frame_token(request)
-    try:
-        body = await request.json() if request.can_read_body else {}
-    except Exception:
-        body = {}
-    try:
-        delta = int(body.get("delta") if "delta" in body else (request.query.get("delta") or 1))
-    except (TypeError, ValueError, OverflowError):
-        delta = 1
-    delta = max(-100, min(100, delta))                # the panel steps one page at a time
-    ha_stepped = await step_panel_page(delta=delta)
-    return web.json_response({"success": True, "action": "page_step", "delta": delta, "ha_stepped": ha_stepped})
+    delivered = await push_panel_update(dev["id"], "pushed from the editor")
+    link = _link(dev)
+    return web.json_response({"pushed": delivered, "pending": bool(link and link.pending is not None),
+                              "error": None if delivered else (link.last_error if link else
+                                                               "the add-on can't reach this screen")})
 
 
 async def api_sources_get(request):
@@ -605,15 +502,16 @@ async def api_panel_setup_get(request):
     host_guess = fwd.split(",")[0].strip().split(":")[0]
     if not host_guess or host_guess in ("localhost", "127.0.0.1", "0.0.0.0"):
         host_guess = "homeassistant.local"
-    cfg = load_panel_setup(default_host=host_guess)
+    dev = _device(request)
+    cfg = load_panel_setup(dev, default_host=host_guess)
     detected_port = await _detect_external_port(runtime.SESSION)
     if "frame_port" not in cfg:
         cfg["frame_port"] = detected_port
     masked_cfg = dict(cfg)
     if masked_cfg.get("wifi_password"):
         masked_cfg["wifi_password"] = feeds.SECRET_MASK
-    yaml_text, secrets_text = generate_esphome_yaml(masked_cfg)
-    conn = await _detect_panel_connection(cfg["device_name"])
+    yaml_text, secrets_text = generate_esphome_yaml(masked_cfg, dev)
+    conn = await _detect_panel_connection(dev)
     return web.json_response({
         "config": masked_cfg,
         "yaml": yaml_text,
@@ -629,7 +527,8 @@ async def api_panel_setup_post(request):
     body = await request.json()
     if not isinstance(body, dict):
         raise web.HTTPBadRequest(text="expected a JSON object")
-    cur = load_panel_setup()
+    dev = _device(request)
+    cur = load_panel_setup(dev)
     if body.get("regenerate_keys"):
         cur["api_encryption_key"] = _new_api_key()
     for k in ("device_name", "ha_host", "wifi_ssid", "refresh_interval", "display"):
@@ -641,14 +540,10 @@ async def api_panel_setup_post(request):
         except (ValueError, TypeError):
             pass
     if cur.get("display"):
-        cur["display"] = T.get_display(cur["display"])["id"]
-        try:
-            lay = load_layouts()
-            if lay.get("display") != cur["display"]:
-                lay["display"] = cur["display"]
-                save_layouts(lay)
-        except Exception:
-            pass
+        # The size is the device's own; the form shows and changes it here too.
+        display = T.get_display(cur["display"])["id"]
+        if display in kinds.of(dev).displays() and display != dev.get("display"):
+            dev = devices.update(dev["id"], display=display)
     if "use_secrets" in body:
         cur["use_secrets"] = bool(body["use_secrets"])
     if "wifi_password" in body and isinstance(body["wifi_password"], str):
@@ -658,15 +553,16 @@ async def api_panel_setup_post(request):
         if k in body and isinstance(body[k], str) and body[k].strip():
             if not body.get("regenerate_keys"):
                 cur[k] = body[k].strip()
-    saved = save_panel_setup(cur)
+    saved = save_panel_setup(dev["id"], cur)
+    saved["display"] = T.get_display(load_layouts(dev["id"]).get("display"))["id"]
     masked_cfg = dict(saved)
     if masked_cfg.get("wifi_password"):
         masked_cfg["wifi_password"] = feeds.SECRET_MASK
     # The file the panel is built from gets the real values; only the copy
     # shown in the browser is masked. (0.9.2 and earlier wrote the mask into
     # the file when the Wi-Fi password was left untouched.)
-    disk_yaml, _ = generate_esphome_yaml(saved)
-    yaml_text, secrets_text = generate_esphome_yaml(masked_cfg)
+    disk_yaml, _ = generate_esphome_yaml(saved, dev)
+    yaml_text, secrets_text = generate_esphome_yaml(masked_cfg, dev)
     esphome_dir = config.ESPHOME_DIR
     esphome_synced = False
     if esphome_dir.exists() and esphome_dir.is_dir():
@@ -685,7 +581,7 @@ async def api_panel_setup_post(request):
             print(f"Synced ESPHome config to {target_yaml}", flush=True)
         except Exception as e:
             print(f"Could not sync to {esphome_dir}: {e}", flush=True)
-    conn = await _detect_panel_connection(saved["device_name"])
+    conn = await _detect_panel_connection(dev)
     return web.json_response({
         "saved": True,
         "config": masked_cfg,
@@ -763,20 +659,11 @@ def make_apps():
     """The LAN frame server and the Ingress-only editor."""
     panel = web.Application()
     panel.add_routes([
-        web.get("/frame.png", frame_png),
-        web.get("/frames.png", frames_png),
-        web.get("/frame.epf", frame_epf),
-        web.get("/frames.epf", frames_epf),
         web.get("/status", public_status),
         web.get("/fonts/{name}", panel_font),
-        web.post("/api/action/refresh", api_action_refresh),
-        web.post("/api/action/page", api_action_page),
-        # Removed from the LAN port in 0.9.2: /api/layouts (exposed every
-        # entity, template and custom location, with no token check at all),
-        # /manifest.json and /api/manifest (page names, presence-based quiet
-        # reason), and GET on the actions (a link preview could trigger them).
-        # Nothing on the network used them; the editor keeps its own copies.
     ])
+    for kind in kinds.KINDS.values():                  # each kind of device adds its own
+        panel.add_routes(kind.routes())
 
     editor = web.Application(client_max_size=1024 * 1024, middlewares=[ingress_only])
     editor.add_routes([

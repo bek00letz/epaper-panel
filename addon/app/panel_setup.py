@@ -13,7 +13,8 @@ import aiohttp
 import firmware_gen
 from render import binding, epf, layout, sleep, stripmeta, subitems, theme as T
 import config
-import frame_token
+import devices
+import kinds
 import runtime
 from config import ADDON_VERSION, FRAME_PORT, HA_TOKEN
 from fixture import load_fixture
@@ -24,18 +25,17 @@ def _new_api_key() -> str:
     return base64.b64encode(os.urandom(32)).decode("ascii")
 
 
-def load_panel_setup(default_host: str = "homeassistant.local") -> dict:
-    """Load or initialize the ESPHome panel setup wizard state."""
-    cfg = {}
-    if config.panel_setup_path().exists():
-        try:
-            cfg = json.loads(config.panel_setup_path().read_text())
-        except Exception:
-            cfg = {}
+def load_panel_setup(dev: dict, default_host: str = "homeassistant.local") -> dict:
+    """A panel's setup (its ESPHome settings), with defaults filled in and kept.
+
+    The size and orientation are the device's own (`display` is shown here
+    for the form, and saving it changes the device)."""
+    cfg = dict(dev.get("setup") or {})
     changed = False
     defaults = {
-        "device_name": runtime.ESPHOME_DEVICE.replace("_", "-"),
-        "display": load_layouts().get("display", T.DEFAULT_DISPLAY),
+        "device_name": (runtime.ESPHOME_DEVICE if dev.get("install_token") else
+                        re.sub(r"[^a-z0-9]+", "-", str(dev.get("name") or "").lower()).strip("-")
+                        or f"epaper-{dev['id']}").replace("_", "-"),
         "ha_host": default_host,
         "wifi_ssid": "",
         "wifi_password": "",
@@ -51,20 +51,18 @@ def load_panel_setup(default_host: str = "homeassistant.local") -> dict:
             cfg[k] = v
             changed = True
     if changed:
-        save_panel_setup(cfg)
+        cfg = save_panel_setup(dev["id"], cfg)
+    cfg["display"] = T.get_display(load_layouts(dev["id"]).get("display"))["id"]
     return cfg
 
 
-def save_panel_setup(cfg: dict) -> dict:
-    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    dev = re.sub(r"[^a-z0-9-]+", "-", str(cfg.get("device_name") or "crowpanel-epaper").strip().lower()).strip("-")
-    cfg["device_name"] = dev or "crowpanel-epaper"
-    runtime.ESPHOME_DEVICE = cfg["device_name"].replace("-", "_")
-    tmp = config.panel_setup_path().with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(cfg, indent=2))
-    os.chmod(tmp, 0o600)
-    tmp.replace(config.panel_setup_path())
-    return cfg
+def save_panel_setup(device_id, cfg: dict) -> dict:
+    """Keep a panel's setup with its device (devices.json is 0600: the Wi-Fi password and API key)."""
+    cfg = {k: v for k, v in cfg.items() if k != "display"}
+    dev_name = re.sub(r"[^a-z0-9-]+", "-", str(cfg.get("device_name") or "crowpanel-epaper").strip().lower()).strip("-")
+    cfg["device_name"] = dev_name or "crowpanel-epaper"
+    devices.update(device_id, setup=cfg)
+    return dict(cfg)
 
 
 def _yaml_str(s: str) -> str:
@@ -91,9 +89,10 @@ def _inspect_existing_secrets() -> set[str]:
     return set()
 
 
-def generate_esphome_yaml(cfg: dict) -> tuple[str, str]:
-    """Build ready-to-flash crowpanel-epaper.yaml and companion secrets.yaml."""
-    display_id = cfg.get("display") or load_layouts().get("display", T.DEFAULT_DISPLAY)
+def generate_esphome_yaml(cfg: dict, dev: dict) -> tuple[str, str]:
+    """Build a panel's ready-to-flash ESPHome YAML and companion secrets.yaml."""
+    view = load_layouts(dev["id"])
+    display_id = cfg.get("display") or view.get("display", T.DEFAULT_DISPLAY)
     disp = T.get_display(display_id)
     dw, dh = disp["w"], disp["h"]
     dev_name = cfg.get("device_name") or "crowpanel-epaper"
@@ -118,7 +117,7 @@ def generate_esphome_yaml(cfg: dict) -> tuple[str, str]:
         scheme = "http"
 
     base_url = f"{scheme}://{host_only}:{port}"
-    token_q = f"?token={urllib.parse.quote(frame_token.token())}"
+    token_q = f"?token={urllib.parse.quote(devices.key_of(dev))}"
     frames_epf_url = f"{base_url}/frames.epf{token_q}"
 
     use_secrets = bool(cfg.get("use_secrets"))
@@ -129,7 +128,7 @@ def generate_esphome_yaml(cfg: dict) -> tuple[str, str]:
     m_int = re.search(r"\d+", str(raw_interval))
     initial_min = max(1, min(60, int(m_int.group(0)))) if m_int else 5
     try:
-        orient = int(cfg.get("orientation") if "orientation" in cfg else load_layouts().get("orientation", 0))
+        orient = int(cfg.get("orientation") if "orientation" in cfg else view.get("orientation", 0))
     except (TypeError, ValueError):
         orient = 0
 
@@ -163,13 +162,14 @@ api_encryption_key: {_yaml_str(api_key)}
     return yaml_text, secrets_text
 
 
-async def _detect_panel_connection(device_slug: str) -> dict:
+async def _detect_panel_connection(dev: dict) -> dict:
     """Whether Home Assistant sees the panel, found by its registry IDs (see PanelLink)."""
-    if not HA_TOKEN:
+    link = kinds.of(dev).link(dev)
+    if not HA_TOKEN or link is None:
         panel_fix = load_fixture().get("panel") or {}
         return {"connected": False, "ip": None, "rssi": panel_fix.get("rssi"), "node": None,
-                "problem": "running without Home Assistant"}
-    return await runtime.LINK.connection()
+                "problem": "running without Home Assistant" if not HA_TOKEN else "the add-on can't reach this screen"}
+    return await link.connection()
 
 
 async def _detect_external_port(session: aiohttp.ClientSession | None = None) -> int:

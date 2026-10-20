@@ -5,6 +5,7 @@ import re
 import time
 import urllib.parse
 
+import devices
 import feeds
 import health
 import runtime
@@ -59,7 +60,7 @@ async def publish_category_sensors(session, cur_f):
     """Retired: see RETIRED_SENSORS. Still published for a page that binds to one."""
     if not cur_f or not cur_f.rendered_at:
         return
-    if not retired_sensors_in_use(load_layouts()):
+    if not retired_sensors_in_use(load_layouts(devices.primary()["id"])):
         return
     try:
         await publish_entity(session, "sensor.epaper_category_count", cur_f.cat_count,
@@ -159,9 +160,13 @@ async def publish_computed(session):
     # service is down keeps its entity (mqtt_bridge withdraws only the rest).
     prune_published()
     wanted = await publish_sources(session)
-    wanted |= {"sensor.epaper_quiet_hours", "sensor.epaper_panel_last_render", "sensor.epaper_panel_pages"}
+    for dev in devices.all_devices():
+        wanted |= {devices.entity_id(base, dev) for base in
+                   ("sensor.epaper_quiet_hours", "sensor.epaper_panel_last_render", "sensor.epaper_panel_pages")}
 
-    cur_spec = load_layouts()
+    # Every design some screen shows: their widgets all need their values.
+    cur_spec = {"pages": {f"{d}:{name}": page for d in sorted(devices.designs_in_use())
+                          for name, page in (devices.design(d).get("pages") or {}).items()}}
     spec_text = json.dumps(cur_spec)
     home_tz = await get_home_timezone(session)
 

@@ -13,6 +13,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 DISPLAYS = {
     "crowpanel_579": {
+        "kind": "crowpanel",
         "id": "crowpanel_579",
         "name": "CrowPanel 5.79\"",
         "sku": "DIS08792E",
@@ -25,6 +26,7 @@ DISPLAYS = {
         "esphome_component": "github://ESPBoards/esphome-lvgl-crowpanel-epaper-5.79-4.2",
     },
     "crowpanel_420": {
+        "kind": "crowpanel",
         "id": "crowpanel_420",
         "name": "CrowPanel 4.2\"",
         "sku": "DIS08042E",
@@ -37,6 +39,7 @@ DISPLAYS = {
         "esphome_component": "github://ESPBoards/esphome-lvgl-crowpanel-epaper-5.79-4.2",
     },
     "crowpanel_290": {
+        "kind": "crowpanel",
         "id": "crowpanel_290",
         "name": "CrowPanel 2.9\"",
         "sku": "DIS08029E",
@@ -49,6 +52,7 @@ DISPLAYS = {
         "esphome_component": "waveshare_epaper",
     },
     "crowpanel_750": {
+        "kind": "crowpanel",
         "id": "crowpanel_750",
         "name": "CrowPanel 7.5\"",
         "sku": "DIS08075E",
@@ -61,6 +65,7 @@ DISPLAYS = {
         "esphome_component": "waveshare_epaper",
     },
     "crowpanel_102": {
+        "kind": "crowpanel",
         "id": "crowpanel_102",
         "name": "CrowPanel 10.2\"",
         "sku": "DIS08102E",

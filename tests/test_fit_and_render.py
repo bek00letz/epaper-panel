@@ -16,6 +16,7 @@ import aiohttp  # noqa: E402
 from aiohttp.test_utils import TestClient, TestServer  # noqa: E402
 
 import config  # noqa: E402
+import devices  # noqa: E402
 import feeds  # noqa: E402
 import frames  # noqa: E402
 import runtime  # noqa: E402
@@ -30,9 +31,8 @@ PAGE_579 = 99 * 272        # bytes per 5.79" page
 class Base(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         config.DATA_DIR = Path(tempfile.mkdtemp())
-        runtime._capacity = None
-        runtime.FIT = None
-        runtime.FRAMES = runtime.Frames()
+        runtime.forget_devices_except([])
+        self.dev_id = devices.primary()["id"]
         self.spec = sanitize_layouts(load_layouts())
         self.spec["rotation"] = self.spec["rotation"][:2]
         save_layouts(self.spec)
@@ -43,11 +43,11 @@ class TestOneRenderAtATime(Base):
         async with aiohttp.ClientSession() as s:
             real, calls = frames.check_alerts, {"n": 0}
 
-            async def slow_first(session, sp):
+            async def slow_first(session, sp, st):
                 calls["n"] += 1
                 if calls["n"] == 1:
                     await asyncio.sleep(0.3)
-                return await real(session, sp)
+                return await real(session, sp, st)
             frames.check_alerts = slow_first
             try:
                 loop_render = asyncio.create_task(frames.refresh_frames(s))
@@ -58,7 +58,7 @@ class TestOneRenderAtATime(Base):
                 await loop_render
             finally:
                 frames.check_alerts = real
-        self.assertEqual([n for n in runtime.FRAMES.names if n != config.SLEEP_PAGE], new["rotation"])
+        self.assertEqual([n for n in support.first_frames().names if n != config.SLEEP_PAGE], new["rotation"])
 
 
 class TestBadFields(Base):
@@ -67,7 +67,7 @@ class TestBadFields(Base):
         self.spec["pages"][name]["elements"].append({"type": "curve", "entity": "sensor.x", "hours": None})
         save_layouts(sanitize_layouts(self.spec))
         async with aiohttp.ClientSession() as s:
-            f = await frames.refresh_frames(s)
+            f = (await frames.refresh_frames(s))[devices.primary()["id"]]
         self.assertIn(name, f.names)
 
 
@@ -86,28 +86,28 @@ class TestFitThePanel(unittest.TestCase):
 
     def test_what_was_left_out_is_recorded(self):
         plans = [{"name": "sport", "want": 6}, {"name": "cat", "want": 1}]
-        frames.record_fit(plans, [2, 1])
-        self.assertEqual(runtime.FIT["trimmed"], [{"page": "sport", "shown": 2, "of": 6}])
-        self.assertEqual((runtime.FIT["pages_shown"], runtime.FIT["pages_wanted"]), (3, 7))
+        fit = frames.record_fit(plans, [2, 1], 1 << 20)
+        self.assertEqual(fit["trimmed"], [{"page": "sport", "shown": 2, "of": 6}])
+        self.assertEqual((fit["pages_shown"], fit["pages_wanted"]), (3, 7))
 
 
 class TestPanelCapacity(Base):
     async def test_the_panel_reports_what_it_holds(self):
         _, _ = None, None
         panel, _ = web.make_apps()
-        runtime.FRAMES.epf_strip, runtime.FRAMES.names = b"x", ["a"]
+        support.first_frames().epf_strip, support.first_frames().names = b"x", ["a"]
         async with TestClient(TestServer(panel)) as c:
             await c.get("/frames.epf?cap=2097152")
-        self.assertEqual(runtime.panel_capacity(), 2097152)
-        runtime._capacity = None
-        self.assertEqual(runtime.panel_capacity(), 2097152, "remembered across a restart")
+        self.assertEqual(runtime.panel_capacity(self.dev_id), 2097152)
+        runtime.forget_devices_except([])
+        self.assertEqual(runtime.panel_capacity(self.dev_id), 2097152, "remembered across a restart")
 
     async def test_non_ascii_token_is_refused_not_an_error(self):
         os.environ.pop("FRAME_TOKEN", None)
         config.FRAME_TOKEN = "abc"
         try:
             panel, _ = web.make_apps()
-            runtime.FRAMES.epf_strip, runtime.FRAMES.names = b"x", ["a"]
+            support.first_frames().epf_strip, support.first_frames().names = b"x", ["a"]
             async with TestClient(TestServer(panel)) as c:
                 r = await c.get("/frames.epf?token=%C3%A9")
             self.assertEqual(r.status, 401)
@@ -119,7 +119,7 @@ class TestPushPolicy(Base):
     async def test_pages_changing_shape_waits_for_the_panel(self):
         pushes = []
 
-        async def fake_push(reason="update"):
+        async def fake_push(device_id, reason="update"):
             pushes.append(reason)
             return True
         real = frames.push_panel_update

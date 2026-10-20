@@ -8,7 +8,8 @@ import re
 import feeds
 from render import binding, epf, layout, sleep, stripmeta, subitems, theme as T
 import config
-from config import DEFAULTS_PATH, PAGE_RE, valid_entity_id
+import devices
+from config import PAGE_RE, valid_entity_id
 
 
 def load_sources():
@@ -29,14 +30,9 @@ def load_sources():
     return seeded
 
 
-def load_layouts():
-    """User layouts, seeded from the shipped defaults on first run."""
-    for src in (config.layouts_path(), DEFAULTS_PATH):
-        try:
-            return json.loads(src.read_text())
-        except Exception:
-            continue
-    return {"rotation": [], "pages": {}}
+def load_layouts(device_id=None):
+    """A device's pages and settings (devices.view); the first device when none is named."""
+    return devices.view(device_id)
 
 
 LEGACY_ENTITY_MAP = {
@@ -180,18 +176,18 @@ def sanitize_layouts(spec: dict) -> dict:
     }
 
 
-def layouts_etag(spec: dict | None = None) -> str:
+def layouts_etag(spec: dict | None = None, device_id=None) -> str:
     """A version for the saved pages: changes whenever what's saved changes."""
     if spec is None:
-        spec = load_layouts()
+        spec = load_layouts(device_id)
     canon = json.dumps(spec, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
     return hashlib.sha256(canon.encode()).hexdigest()[:16]
 
 
-def load_draft() -> dict | None:
-    """The editor's unsent changes: {version, base_etag, base, spec}, or None."""
+def load_draft(device_id=None) -> dict | None:
+    """The editor's unsent changes for a device: {version, base_etag, base, spec}, or None."""
     try:
-        d = json.loads(config.draft_path().read_text())
+        d = json.loads(devices.draft_path(device_id).read_text())
     except Exception:
         return None
     if not isinstance(d, dict) or not isinstance(d.get("spec"), dict):
@@ -199,22 +195,21 @@ def load_draft() -> dict | None:
     return d
 
 
-def save_draft(draft: dict) -> None:
-    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = config.draft_path().with_suffix(".json.tmp")
+def save_draft(draft: dict, device_id=None) -> None:
+    path = devices.draft_path(device_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".json.tmp")
     tmp.write_text(json.dumps(draft))
-    tmp.replace(config.draft_path())
+    tmp.replace(path)
 
 
-def clear_draft() -> None:
+def clear_draft(device_id=None) -> None:
     try:
-        config.draft_path().unlink()
+        devices.draft_path(device_id).unlink()
     except FileNotFoundError:
         pass
 
 
-def save_layouts(spec):
-    config.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = config.layouts_path().with_suffix(".json.tmp")
-    tmp.write_text(json.dumps(spec, indent=2))
-    tmp.replace(config.layouts_path())
+def save_layouts(spec, device_id=None):
+    """Store a device's pages and settings: the pages go to its design, the rest to the device and library."""
+    devices.save_view(spec, device_id)

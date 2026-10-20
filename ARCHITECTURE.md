@@ -32,7 +32,7 @@ walk-past layer: a timestamp so you can tell a live panel from a frozen one.
    │ dial / buttons / HA action │       │ :8080 editor + API, Ingress only          │
    │                            │       │ :8099 frames for the LAN                  │
    │ download task:             │       │                                           │
-   │   GET /frames.epf  ◄───────┼───────┤   in-memory FRAMES (ETag / 304)           │
+   │   GET /frames.epf  ◄───────┼───────┤   frames per device (ETag / 304)          │
    │   check, then swap         │       │     ▲ render loop (60 s) / save / push    │
    │ main loop:                 │       │     ├ feeds/, widgets (sports, flights…)  │
    │   copy page + overlays     │       │     ├ HA /api/template, history, ws       │
@@ -47,31 +47,75 @@ Where things live in `addon/app/`:
 |---|---|
 | `server.py` | Entry point: starts the web apps and the background loops |
 | `config.py` / `runtime.py` | Settings from the environment; what the running add-on holds. Always read as `config.X` / `runtime.X`, so changes are seen everywhere |
-| `frames.py` | Which pages are live, their values, alerts, quiet hours, rendering, packing the frame file |
+| `devices.py` | The screens the add-on drives, the design each shows, the shared library; keys; the move in from one panel |
+| `kinds/` | Kinds of device (`crowpanel.py`): their sizes, device-port routes, how they're woken, and packing what they fetch |
+| `frames.py` | Per design: which pages are live, their values, alerts. Per device: quiet hours, then its kind renders it |
 | `entities.py` / `mqtt_bridge.py` | The add-on's own values, and mirroring them into Home Assistant |
 | `sources/` | Outside data (flights, sports, racing, weather, calendars), always through `live_data.py` |
-| `panel_link.py` / `panel_ops.py` | Finding the panel and asking it to refresh or step |
+| `panel_link.py` / `panel_ops.py` | Finding a panel and asking it to refresh or step |
 | `panel_setup.py` / `firmware_gen.py` / `firmware/panel.yaml` | Panel setup, and the one source of the firmware YAML |
-| `web.py` | The LAN frame server and the Ingress-only editor API |
-| `layouts_store.py`, `ha.py`, `hass.py`, `fixture.py` | Pages on disk; Home Assistant calls; offline stand-in |
+| `web.py` | The device port (shared routes; each kind adds its own) and the Ingress-only editor API |
+| `layouts_store.py`, `ha.py`, `hass.py`, `fixture.py` | Checking what the editor saves (stored through `devices`); Home Assistant calls; offline stand-in |
 | `render/` | Drawing: layout, theme, footer geometry, sleep screen, the EPF encoder |
 
 The add-on runs two HTTP listeners in one event loop:
 - **Port `8080` (Ingress only):** the editor and its API. It refuses any client
   other than Home Assistant's Ingress proxy (`172.30.32.2`).
-- **Port `8099` (LAN):** `/frames.epf` and `/frame.epf` for the panel, the PNG
-  versions for the editor and older clients, and a minimal `/status`. ETag /
-  `304 Not Modified`. Protected by a frame token: the option, or one the
-  add-on generates. Frames start requiring it once the panel has first used it
-  (`frame_token.py`), so moving a panel over never blanks it.
+- **Port `8099` (the device port):** what each device fetches, found by its
+  key (`kinds.device_for`): for a CrowPanel `/frames.epf` and `/frame.epf`, the
+  PNG versions for older clients, and a minimal `/status`. ETag /
+  `304 Not Modified`. Every device has its own key. The first panel's is the
+  install's frame token: the option, or one the add-on generates. Its frames
+  start requiring it once the panel has first used it (`frame_token.py`), so
+  moving a panel over never blanks it.
 
 Every 60 seconds, and right away on a save or push, `frames.refresh_frames()`:
 
 - Runs the data sources and widgets and records their values (see
   [The add-on's own values](#the-add-ons-own-values)).
-- Evaluates `alert` and `when` conditions, per-element `show_if` and quiet hours.
-- Renders every live page, rotates it for the mounting orientation, and packs
-  the lot into one **frame file** (`render/epf.py`).
+- Per design: evaluates `alert` and `when` conditions and per-element
+  `show_if`, and resolves the live pages' values, once however many screens
+  show it (`frames.DesignState`).
+- Per device: evaluates its quiet hours, then its kind renders the pages at
+  its size and mounting. For a CrowPanel that's one **frame file**
+  (`render/epf.py`), fitted to what that panel holds.
+
+## Devices, designs and kinds
+
+The add-on drives **devices** (`devices.py`): screens of any supported kind
+and size. Each shows a **design**, its pages and rotation, and several can
+show the same one. The **library** (saved presets and places) is shared by
+every design.
+
+| Belongs to | What | Stored in |
+|---|---|---|
+| The device | kind, name, size (`display`), orientation, seconds per page, quiet hours, key, its kind's setup (a CrowPanel's ESPHome settings) | `devices.json` (0600) |
+| The design | pages, rotation | `designs/<id>.json`; one never saved is the shipped starter pages |
+| The library | saved presets and places | `library.json` |
+| What a device reports | how much it holds | `state/<id>.json` |
+
+- **One shape for the editor and the renderer.** A device's *view*
+  (`devices.view`) is its design plus its own settings plus the library:
+  exactly what `layouts.json` held. So the editor's pages, drafts
+  (`drafts/<id>.json`) and version tags are per device, and saving a view
+  puts each part back where it belongs. Editor requests name the device with
+  `?device=`; without it they mean the first.
+- **The move in.** The first start with devices turns `layouts.json`,
+  `panel_setup.json`, `draft.json` and `panel_capacity` into device 1 and
+  design 1, and leaves those files untouched, so the previous add-on version
+  still finds them. Device 1 keeps everything the panel knew: its key is the
+  install's frame token, its download address is the same, and its Home
+  Assistant entities keep their names. Other devices' entities end in a
+  suffix fixed when they're added (`_kitchen`), so a rename never renames them.
+- **Kinds** (`kinds/`) say what a device of that kind supports: its display
+  profiles (`theme.DISPLAYS[*].kind`), the routes it adds to the device port,
+  whether the add-on can wake it (`link`), who picks the page and who owns the
+  refresh interval. The core names no kind. `crowpanel` is the panel
+  described in the rest of this file.
+- **Per-device runtime** (`runtime.device(id)`): the current frames, what was
+  left out to fit, and the panel link. Alerts and lingering widget pages are
+  per design (`runtime.alert`, `runtime.linger`), so an alert seizes every
+  screen that shows its design.
 
 ### The frame file (EPF v3)
 
@@ -203,12 +247,13 @@ wins over everything.
 
 ## Reaching the panel
 
-`panel_link.py` is the only code that talks to the panel, through Home
-Assistant. It never guesses names:
+`panel_link.py` is the only code that talks to a panel, through Home
+Assistant. Each CrowPanel device has its own link. It never guesses names:
 
 - **Actions**: an ESPHome node offering `refresh_now`, `page_step` and
-  `show_page` is a panel. The device name from Panel setup picks one if there
-  are several; with exactly one, it is used.
+  `show_page` is a panel. The device name from that panel's setup picks it.
+  The only panel in Home Assistant is taken as ours only while the add-on
+  drives a single CrowPanel.
 - **Entities** (refresh interval, IP, Wi-Fi) are found by registry
   `unique_id`, which ESPHome builds from the firmware's entity names
   (`<MAC>/0/number/Refresh interval`). It survives any rename of the entity ID.

@@ -219,12 +219,22 @@ inside the add-on and versioned with it):
 
 ## Order of work
 
-1. **Devices in the core.** The device and design store, the migration, the
+1. **Devices in the core.** *Done 2026-10-20: `devices.py`, `kinds/`, renders
+   split per design and per device, per-device keys. Old and new code produce
+   byte-identical frame files for the same pages (checked at four sizes,
+   every rotation, with quiet hours on).* The device and design store, the migration, the
    kind interface with `crowpanel` behind it, and per-device keys. Nothing
    visible changes and the existing tests still pass.
 2. **Adding devices.** New, Copy and Linked, arrangements per size, the device
    switcher, per-device quiet hours, and Reaching home with both ways (the
    companion integration included). A second CrowPanel works at this point.
+   Found in step 1, to do here:
+   - With two CrowPanels, `panel_link` can name each one's actions but not yet
+     find its entities (refresh interval, IP, Wi-Fi). Today it relies on there
+     being one panel; match the ESPHome node to its device through Home
+     Assistant's device registry instead.
+   - The "Refresh panel" button in Home Assistant now wakes every screen. Give
+     each screen its own button.
 3. **The TRMNL kind**, as the module.
 
 ## Rules this changes

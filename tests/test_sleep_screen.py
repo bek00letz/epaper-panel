@@ -15,14 +15,10 @@ from render import epf, sleep
 class TestSleepScreen(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         support.use_test_data_dir()
-        path = config.layouts_path()
-        self._saved = path.read_text() if path.exists() else None
+        self._saved = layouts_store.load_layouts()
 
     async def asyncTearDown(self):
-        if self._saved is None:
-            config.layouts_path().unlink(missing_ok=True)
-        else:
-            config.layouts_path().write_text(self._saved)
+        layouts_store.save_layouts(self._saved)
 
     async def render(self, sleep_screen, quiet=True, reason="schedule (23:00–07:00)"):
         spec = json.loads(config.DEFAULTS_PATH.read_text())
@@ -30,7 +26,7 @@ class TestSleepScreen(unittest.IsolatedAsyncioTestCase):
         layouts_store.save_layouts(layouts_store.sanitize_layouts(spec))
         with mock.patch.object(frames, "evaluate_quiet_hours", mock.AsyncMock(return_value=(quiet, reason))):
             await frames.refresh_frames(None)
-        return epf.decode_epf(runtime.FRAMES.epf_strip)
+        return epf.decode_epf(support.first_frames().epf_strip)
 
     async def test_quiet_hours_mark_the_sleep_screen_auto(self):
         s = await self.render(True)

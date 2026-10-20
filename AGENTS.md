@@ -92,7 +92,7 @@ the add-on itself lives in `addon/`.
 | Endpoint | Purpose |
 |---|---|
 | HA Sidebar (`:8080` via Ingress) | Drag-and-drop visual editor and JSON API. Answers only Home Assistant's Ingress proxy (`172.30.32.2`); any other app on the internal network gets 403 |
-| `<homeassistant>:8099` | Frame server for the panel on the LAN: `/frames.epf`, `/frame.epf`, the PNG fallbacks, and a minimal `/status`. `POST /api/action/refresh|page` always need the token. Frames need it once the panel has used it (`frame_token.py`). Remappable in the add-on's network settings |
+| `<homeassistant>:8099` | The device port: what each device fetches, found by its key (`kinds.device_for`). For a CrowPanel: `/frames.epf`, `/frame.epf`, the PNG fallbacks, and a minimal `/status`. `POST /api/action/refresh|page` always need a key. The first panel's frames need it once that panel has used it (`frame_token.py`). Remappable in the add-on's network settings |
 | ESPHome node (`crowpanel-epaper`) | Exposes `refresh_now`, `show_page`, `page_step`, and `hold_toggle` actions over the encrypted ESPHome native API |
 
 Never expose port `8099` or the panel's endpoints to the public internet.
@@ -106,8 +106,17 @@ Never expose port `8099` or the panel's endpoints to the public internet.
 - **No grey.** Size carries hierarchy. `theme.screen()` exists for large text
   only; at small sizes a checkerboard just looks broken.
 - **Pages are data, not code** — `default_layouts.json`, or the user's own in
-  `/data/layouts.json`. An element carries its own box; there is no layout
+  `/data/designs/<id>.json`. An element carries its own box; there is no layout
   algorithm, because the editor produces absolute positions.
+- **Never assume one screen.** Every render, push, link, entity, setup and key
+  belongs to a device (`devices.py`), and a design can be shown by several.
+  Size, orientation, seconds per page and quiet hours are the device's; pages
+  and rotation are the design's. Read and write them through `devices.view` /
+  `save_view` (or `layouts_store`), never by file. A kind of device lives in
+  `kinds/`; the core never names one.
+- **The first device keeps its legacy names**: the install's frame token, its
+  download address, its entity IDs. Don't "tidy" them: that's what keeps an
+  upgraded panel working without a reflash.
 - **Prefer a structured binding over raw Jinja** (`render/binding.py`). An
   element says `{entity, show, format, prefix, suffix, replace}` and the engine
   builds the template. Supports `show: state`, `attribute`, `last_changed`, `last_updated`,
@@ -260,9 +269,11 @@ When touching display code, `it.image()` at a negative offset is a trap: see
 
 - **The LAN port serves frames and nothing else that matters.** No layouts,
   no page names, no quiet-hours reason (it can reveal whether anyone is home).
-  Every install has a frame token (`frame_token.py`, the option or a generated
-  one). Frames switch to requiring it the first time the panel uses it, so a
-  reinstall never leaves the panel blank. Actions always need it.
+  Every device has its own key; the key is also how a request says which
+  device it is. The first panel's key is the install's frame token
+  (`frame_token.py`, the option or a generated one). Its frames switch to
+  requiring it the first time the panel uses it, so a reinstall never leaves
+  the panel blank. Actions always need a key.
 - **No built-in location or timezone.** Home Assistant's settings are the
   source; a default would be someone's real home.
 

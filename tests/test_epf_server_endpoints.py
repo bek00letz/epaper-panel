@@ -6,7 +6,7 @@ from aiohttp.test_utils import make_mocked_request
 
 import support
 import frames
-import web as webapp
+from kinds import crowpanel as webapp
 from render import epf
 
 support.use_test_data_dir()

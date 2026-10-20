@@ -7,15 +7,15 @@ import time
 import urllib.parse
 from datetime import datetime, timedelta, timezone
 from email.utils import formatdate
-from PIL import Image
 
 from render import binding, epf, layout, sleep, stripmeta, subitems, theme as T
+import devices
 import health
+import kinds
 import runtime
 from config import HA_TOKEN, SLEEP_PAGE, valid_entity_id
 from entities import publish_category_sensors, publish_computed, publish_entity, sync_entities
 from ha import curve_series, ha_json, resolve_templates
-from layouts_store import load_layouts
 from panel_ops import push_panel_update
 from sources.flights import fetch_overhead_aircraft, place_of
 from sources.geo import get_home_timezone
@@ -25,8 +25,8 @@ from sources.sports import compute_sports_active_window, fetch_sports_match
 from runtime import Frames
 
 
-async def evaluate_quiet_hours(session, spec: dict) -> tuple[bool, str]:
-    """Determine if Night / Quiet Hours (Zero-Ghosting Deep Idle) is currently active."""
+async def evaluate_quiet_hours(session, spec: dict, dev: dict | None = None) -> tuple[bool, str]:
+    """Whether a device's quiet hours are on now, and why. `dev` names its entity (the first device's when None)."""
     qh = spec.get("quiet_hours") if isinstance(spec.get("quiet_hours"), dict) else {}
     enabled = bool(qh.get("enabled", False))
     start_str = str(qh.get("start") or "23:00").strip()[:5]
@@ -66,8 +66,9 @@ async def evaluate_quiet_hours(session, spec: dict) -> tuple[bool, str]:
         if not active:
             reason = "outside quiet window"
 
-    await publish_entity(session, "sensor.epaper_quiet_hours", "active" if active else "inactive", {
-        "friendly_name": "E-Paper Quiet Hours",
+    dev = dev or {}
+    await publish_entity(session, devices.entity_id("sensor.epaper_quiet_hours", dev), "active" if active else "inactive", {
+        "friendly_name": "E-Paper Quiet Hours" if not dev.get("entity_suffix") else f"{dev['name']} · Quiet hours",
         "icon": "mdi:weather-night" if active else "mdi:weather-sunny",
         "enabled": enabled,
         "reason": reason,
@@ -178,15 +179,16 @@ def fit_counts(wants: list[int], page_bytes: int, capacity: int, extra_pages: in
     return counts
 
 
-def record_fit(plans: list[dict], counts: list[int]) -> None:
-    """What was left out to fit the panel, for the editor and Home Assistant."""
+def record_fit(plans: list[dict], counts: list[int], capacity: int, previous: dict | None = None,
+               device_name: str = "the panel") -> dict:
+    """What was left out to fit a panel, for the editor and Home Assistant."""
     trimmed = [{"page": p["name"], "shown": c, "of": p["want"]} for p, c in zip(plans, counts) if c < p["want"]]
-    fit = {"capacity": runtime.panel_capacity(), "pages_shown": sum(counts),
+    fit = {"capacity": capacity, "pages_shown": sum(counts),
            "pages_wanted": sum(p["want"] for p in plans), "trimmed": trimmed}
-    if trimmed and fit["trimmed"] != (runtime.FIT or {}).get("trimmed"):
+    if trimmed and fit["trimmed"] != (previous or {}).get("trimmed"):
         what = ", ".join(f"{t['page']} {t['shown']} of {t['of']}" for t in trimmed)
-        print(f"frames: the panel holds {fit['pages_shown']} of {fit['pages_wanted']} pages; showing {what}", flush=True)
-    runtime.FIT = fit
+        print(f"frames: {device_name} holds {fit['pages_shown']} of {fit['pages_wanted']} pages; showing {what}", flush=True)
+    return fit
 
 
 def split_page_values(page):
@@ -281,8 +283,11 @@ async def _evaluate_widget_gate(session, widget: dict, home_tz: str) -> bool:
     return True
 
 
-async def eligible_pages(session, spec):
-    """Pages whose tier and show_if (or built-in widget active window) say they belong in the rotation now."""
+async def eligible_pages(session, spec, linger):
+    """Pages whose tier and show_if (or built-in widget active window) say they belong in the rotation now.
+
+    `linger` is the design's (runtime.linger): pages that stay a while after their condition.
+    """
     rotation = spec.get("rotation", [])
     defs = spec.get("pages", {})
     home_tz = await get_home_timezone(session)
@@ -310,8 +315,8 @@ async def eligible_pages(session, spec):
             is_on = False
         # Live widgets flicker (a plane at the edge of the radius); once a page
         # has appeared it stays a few minutes, so the rotation keeps its shape.
-        widget_results[n] = runtime.WIDGET_LINGER.keep(n, is_on)
-    runtime.WIDGET_LINGER.forget_except(widget_gates)
+        widget_results[n] = linger.keep(n, is_on)
+    linger.forget_except(widget_gates)
 
     live = []
     for name in rotation:
@@ -328,19 +333,20 @@ async def eligible_pages(session, spec):
     return live or [n for n in rotation if n in defs and defs[n].get("tier") != "alert"][:1]
 
 
-async def check_alerts(session, spec):
+async def check_alerts(session, spec, state: dict):
     """Alert pages never rotate. They seize the screen when their condition
     turns true, hold, then hand it back.
 
     Edge-triggered, not level: an alert that stays true all evening fires
-    once, rather than grabbing the panel every refresh.
+    once, rather than grabbing the panel every refresh. `state` is the
+    design's (runtime.alert): every screen showing it is seized together.
     """
     now = time.time()
     defs = spec.get("pages", {})
     alerts = {n: p for n, p in defs.items()
               if p.get("tier") == "alert" and p.get("show_if")}
     if not alerts:
-        runtime.ALERT["name"], runtime.ALERT["until"] = None, 0.0
+        state["name"], state["until"] = None, 0.0
         return None
 
     states = await resolve_templates(session, {n: p["show_if"] for n, p in alerts.items()})
@@ -348,67 +354,46 @@ async def check_alerts(session, spec):
               if str(v).strip().lower() in ("true", "on", "yes", "1")}
 
     # release an expired or no-longer-true alert
-    if runtime.ALERT["name"] and (now > runtime.ALERT["until"] or runtime.ALERT["name"] not in truthy):
-        print(f"alert {runtime.ALERT['name']} released", flush=True)
-        runtime.ALERT["name"], runtime.ALERT["until"] = None, 0.0
+    if state["name"] and (now > state["until"] or state["name"] not in truthy):
+        print(f"alert {state['name']} released", flush=True)
+        state["name"], state["until"] = None, 0.0
 
     for name in truthy:
-        if runtime.ALERT["fired"].get(name):
+        if state["fired"].get(name):
             continue                                  # already handled this episode
         hold = max(1, min(1440, int(alerts[name].get("hold_minutes", 10)))) * 60
-        runtime.ALERT.update(name=name, until=now + hold)
-        runtime.ALERT["fired"][name] = True
+        state.update(name=name, until=now + hold)
+        state["fired"][name] = True
         print(f"alert {name} fired, holding {hold}s", flush=True)
         break
 
-    for name in list(runtime.ALERT["fired"]):                  # re-arm when it goes false
+    for name in list(state["fired"]):                  # re-arm when it goes false
         if name not in truthy:
-            runtime.ALERT["fired"].pop(name, None)
+            state["fired"].pop(name, None)
 
-    return runtime.ALERT["name"]
+    return state["name"]
 
 
-async def build_frames(session):
-    await publish_computed(session)
-    spec = load_layouts()
-    orient = int(spec.get("orientation") or 0)
-    if orient not in (0, 90, 180, 270):
-        orient = 0
-    display = spec.get("display", T.DEFAULT_DISPLAY)
-    disp = T.get_display(display)
-    dw, dh = disp["w"], disp["h"]
-    alert = await check_alerts(session, spec)
+class DesignState:
+    """What a design has to say this cycle: its alert, live pages and their
+    values. Worked out once and shared by every screen that shows the design."""
+
+    def __init__(self, alert: str | None, live: list[str], plans: list[dict]):
+        self.alert = alert
+        self.live = live
+        self.plans = plans
+
+
+async def design_state(session, design_id: str, spec: dict) -> DesignState:
+    alert = await check_alerts(session, spec, runtime.alert(design_id))
     if alert and alert in spec.get("pages", {}):
-        # Serve a 1-page strip while an alert is active: decodes in ~1s on
-        # the ESP32 and prevents its 5-minute interval from rotating away.
+        # One page while an alert is active: decodes in ~1 s on the ESP32 and
+        # keeps a 5-minute interval from rotating away from it.
         live = [alert]
     else:
-        live = await eligible_pages(session, spec)
-
-    quiet_active, quiet_reason = await evaluate_quiet_hours(session, spec)
-    try:
-        rot_sec = max(5, min(3600, int(spec.get("rotate_seconds") or 30)))
-    except (TypeError, ValueError):
-        rot_sec = 30
-
+        live = await eligible_pages(session, spec, runtime.linger(design_id))
     if not live:
-        cw, _ = T.canvas_dims(orient, display=display)
-        empty_page = {"elements": [{"type": "text", "value": "no pages", "x": 24, "y": 60, "w": cw - 48, "h": 120}]}
-        img = await asyncio.to_thread(
-            layout.render_page, empty_page, {},
-            clock=datetime.now().strftime("%H:%M"), label="empty", orientation=orient, display=display)
-        one = T.orient_for_panel(T.to_1bit(img), orient, display=display)
-        png = _png(one)
-        cat_ids = [stripmeta.identity("empty")]
-        sub_ids = [stripmeta.identity("empty:0")]
-        # No pills on the empty page: width 0 tells the panel to draw no highlight.
-        fg = T.footer_geometry(clock=datetime.now().strftime("%H:%M"), orientation=orient, display=display)
-        epf_data = epf.encode_epf(
-            pages=[one], cat_ids=cat_ids, cat_offsets=[0], cat_sizes=[1], cat_pill_widths=[0], sub_ids=sub_ids,
-            display_model=display, width=dw, height=dh, rotate_sec=rot_sec, quiet_hours=quiet_active,
-            alert_interrupt=False, orientation_180=(orient == 180), geometry=panel_geometry(fg, orient, display),
-        )
-        return png, png, [png], [], [0], [1], ["empty"], [110], quiet_active, quiet_reason, rot_sec, cat_ids, sub_ids, epf_data, epf_data
+        return DesignState(alert, [], [])
 
     vals = await gather_values(session, spec, set(live))
 
@@ -419,7 +404,7 @@ async def build_frames(session):
                 series.setdefault(name, {})[i] = await curve_series(
                     session, el["entity"], as_int(el.get("hours"), 24))
 
-    # Pass 1: what each page wants to show (how many items).
+    # What each page wants to show (how many items).
     plans = []
     for cat_name in live:
         try:
@@ -432,178 +417,87 @@ async def build_frames(session):
             )
             plans.append({"name": cat_name, "page_def": page_def, "vals": page_vals, "elements": elements,
                           "want": sub_count, "sub_type": sub_type, "sub_keys": sub_keys,
-                          "feed_items": feed_items, "feed_entity": feed_entity})
+                          "feed_items": feed_items, "feed_entity": feed_entity,
+                          "series": series.get(cat_name)})
         except Exception as exc:
             # One page that can't be built must not cost the others.
             print(f"page {cat_name} left out: {health.describe(exc)}", flush=True)
+    return DesignState(alert, live, plans)
 
-    # The panel holds a limited number of pages. Every page keeps its first
-    # item; extra items are shared out fairly; the rest are left out, and
-    # said so (runtime.FIT, /api/status, sensor.epaper_panel_pages).
-    counts = fit_counts([p["want"] for p in plans], page_bytes=((dw + 7) // 8) * dh,
-                        capacity=runtime.panel_capacity(), extra_pages=0 if alert else 1)
-    record_fit(plans, counts)
 
-    imgs = []
-    cat_offsets = []
-    cat_sizes = []
-    cat_names = []
-    cat_pill_widths = []
-    cat_sub_keys = []
-    clock = datetime.now().strftime("%H:%M")       # one clock for the whole strip
-    geo = None
-    kept = [(p, c) for p, c in zip(plans, counts) if c > 0]
+async def draw_category(plan: dict, sub_count: int, cat_label: str, *, clock: str, orient: int,
+                        display: str) -> list:
+    """Every item of one page, drawn at a display's size and turned for its mounting."""
+    page_def, page_vals, elements = plan["page_def"], plan["vals"], plan["elements"]
+    sub_type, feed_items, feed_entity = plan["sub_type"], plan["feed_items"], plan["feed_entity"]
+    cat_display_name = plan["name"].replace("_", " ").upper()
+    page_imgs = []
+    # Render each sub-item for this category
+    for s_idx in range(sub_count):
+        cloned_page = {**page_def, "elements": []}
+        cloned_vals = dict(page_vals)
 
-    # Pass 2: draw them.
-    for cat_i, (plan, sub_count) in enumerate(kept):
-        cat_name, page_def, page_vals, elements = plan["name"], plan["page_def"], plan["vals"], plan["elements"]
-        sub_type, feed_items, feed_entity = plan["sub_type"], plan["feed_items"], plan["feed_entity"]
-        sub_keys = plan["sub_keys"][:sub_count]
-        cat_display_name = cat_name.replace("_", " ").upper()
-        cat_label = f"{cat_i + 1}/{len(kept)}  {cat_display_name}"
-        # The same numbers the footer is drawn with, so the panel's highlight
-        # lands exactly on the pill in every orientation.
-        fg = T.footer_geometry(clock=clock, cat_label=cat_label, has_sub=sub_count > 1,
-                               orientation=orient, display=display)
-        page_imgs = []
-        try:
-            # Render each sub-item for this category
-            for s_idx in range(sub_count):
-                cloned_page = {**page_def, "elements": []}
-                cloned_vals = dict(page_vals)
+        for el_idx, el in enumerate(elements):
+            el_c = dict(el)
+            if el.get("type") in ("flight_tracker", "sports_match"):
+                el_c["sub_index"] = s_idx
+            elif sub_type in ("feed", "watch") and feed_items and s_idx < len(feed_items):
+                item_data = feed_items[s_idx]
+                top_title = str(feed_items[0].get("title", "")).strip()
+                top_detail = str(feed_items[0].get("detail", "")).strip()
+                ent = str(el.get("entity", "")).strip()
+                val_str = str(el.get("value", "")).strip()
+                cur_val = str(cloned_vals.get(el_idx, "")).strip()
 
-                for el_idx, el in enumerate(elements):
-                    el_c = dict(el)
-                    if el.get("type") in ("flight_tracker", "sports_match"):
-                        el_c["sub_index"] = s_idx
-                    elif sub_type in ("feed", "watch") and feed_items and s_idx < len(feed_items):
-                        item_data = feed_items[s_idx]
-                        top_title = str(feed_items[0].get("title", "")).strip()
-                        top_detail = str(feed_items[0].get("detail", "")).strip()
-                        ent = str(el.get("entity", "")).strip()
-                        val_str = str(el.get("value", "")).strip()
-                        cur_val = str(cloned_vals.get(el_idx, "")).strip()
+                # 1. Detail / Episode field
+                is_detail = (
+                    (ent and (ent == feed_entity or ent == "sensor.epaper_watch") and el.get("show") == "attribute" and "detail" in str(el.get("attribute", "")).lower())
+                    or ("detail" in val_str.lower() and any(k in val_str.lower() for k in ("state_attr", "states", feed_entity, "watch", "jelly", "item")))
+                    or (bool(top_detail) and cur_val == top_detail)
+                )
 
-                        # 1. Detail / Episode field
-                        is_detail = (
-                            (ent and (ent == feed_entity or ent == "sensor.epaper_watch") and el.get("show") == "attribute" and "detail" in str(el.get("attribute", "")).lower())
-                            or ("detail" in val_str.lower() and any(k in val_str.lower() for k in ("state_attr", "states", feed_entity, "watch", "jelly", "item")))
-                            or (bool(top_detail) and cur_val == top_detail)
-                        )
+                # 2. Show title field
+                is_title = (
+                    (ent and (ent == feed_entity or ent == "sensor.epaper_watch") and el.get("show") != "attribute")
+                    or (bool(top_title) and cur_val == top_title)
+                )
 
-                        # 2. Show title field
-                        is_title = (
-                            (ent and (ent == feed_entity or ent == "sensor.epaper_watch") and el.get("show") != "attribute")
-                            or (bool(top_title) and cur_val == top_title)
-                        )
+                own = subitems.item_value(el, feed_entity, item_data)
+                if own is not None:
+                    cloned_vals[el_idx] = own
+                elif is_detail:
+                    cloned_vals[el_idx] = item_data.get("detail", "")
+                    if "value" in el_c and "{{" in str(el_c["value"]):
+                        el_c["value"] = ""
+                elif is_title:
+                    cloned_vals[el_idx] = item_data.get("title", "")
+                    if "value" in el_c and "{{" in str(el_c["value"]):
+                        el_c["value"] = ""
+                elif el.get("type") == "text" and any(k in val_str.lower() for k in ("watch", "deck", "media", "episode", "unwatch")) and sub_count > 1:
+                    base_val = val_str.split("  [")[0]
+                    el_c["value"] = f"{base_val}  [{s_idx + 1}/{sub_count}]"
 
-                        own = subitems.item_value(el, feed_entity, item_data)
-                        if own is not None:
-                            cloned_vals[el_idx] = own
-                        elif is_detail:
-                            cloned_vals[el_idx] = item_data.get("detail", "")
-                            if "value" in el_c and "{{" in str(el_c["value"]):
-                                el_c["value"] = ""
-                        elif is_title:
-                            cloned_vals[el_idx] = item_data.get("title", "")
-                            if "value" in el_c and "{{" in str(el_c["value"]):
-                                el_c["value"] = ""
-                        elif el.get("type") == "text" and any(k in val_str.lower() for k in ("watch", "deck", "media", "episode", "unwatch")) and sub_count > 1:
-                            base_val = val_str.split("  [")[0]
-                            el_c["value"] = f"{base_val}  [{s_idx + 1}/{sub_count}]"
+            cloned_page["elements"].append(el_c)
 
-                    cloned_page["elements"].append(el_c)
+        sub_label = f"{s_idx + 1}/{sub_count}" if sub_count > 1 else ""
 
-                sub_label = f"{s_idx + 1}/{sub_count}" if sub_count > 1 else ""
+        img = await asyncio.to_thread(
+            layout.render_page, cloned_page, cloned_vals,
+            clock=clock,
+            label=cat_display_name,
+            cat_label=cat_label,
+            sub_label=sub_label,
+            battery_pct=None, series=plan["series"], orientation=orient, display=display)
+        page_imgs.append(T.orient_for_panel(T.to_1bit(img), orient, display=display))
+    return page_imgs
 
-                img = await asyncio.to_thread(
-                    layout.render_page, cloned_page, cloned_vals,
-                    clock=clock,
-                    label=cat_display_name,
-                    cat_label=cat_label,
-                    sub_label=sub_label,
-                    battery_pct=None, series=series.get(cat_name), orientation=orient, display=display)
-                page_imgs.append(T.orient_for_panel(T.to_1bit(img), orient, display=display))
-        except Exception as exc:
-            print(f"page {cat_name} left out: {health.describe(exc)}", flush=True)
-            continue
-        if geo is None:
-            geo = panel_geometry(fg, orient, display)
-        cat_offsets.append(len(imgs))
-        cat_sizes.append(sub_count)
-        cat_names.append(cat_name)
-        cat_pill_widths.append(fg["cat_w"])
-        cat_sub_keys.append(sub_keys)
-        imgs.extend(page_imgs)
-    live = cat_names
-    if not imgs:
-        raise RuntimeError("no page could be drawn")
 
-    # The sleep screen always goes first, so the panel can fall asleep
-    # instantly (dial centre held, or its Sleep switch) without asking us.
-    # The panel never pages onto it. During quiet hours with the sleep screen
-    # on, it's also marked "auto": the panel goes to sleep by itself.
-    cat_flags = [0] * len(cat_offsets)
-    qh = spec.get("quiet_hours") or {}
-    if not alert:
-        auto = quiet_active and qh.get("sleep_screen", True)
-        text = (sleep.wake_text(quiet_reason, qh.get("end") or "07:00") if quiet_active
-                else sleep.MANUAL_TEXT)
-        sleep_img = await asyncio.to_thread(sleep.render_sleep_page, text, orient, display)
-        imgs.insert(0, T.orient_for_panel(T.to_1bit(sleep_img), orient, display=display))
-        cat_offsets = [0] + [o + 1 for o in cat_offsets]
-        cat_sizes = [1] + cat_sizes
-        cat_names = [SLEEP_PAGE] + cat_names
-        cat_pill_widths = [0] + cat_pill_widths
-        cat_sub_keys = [[f"{SLEEP_PAGE}:{text}"]] + cat_sub_keys     # new text, new identity: the panel redraws it
-        cat_flags = [epf.CAT_FLAG_SLEEP | (epf.CAT_FLAG_SLEEP_AUTO if auto else 0)] + cat_flags
-        live = [SLEEP_PAGE] + list(live)
-
-    slice_pngs = [_png(im) for im in imgs]
-    slices_digest = hashlib.md5(b"".join(slice_pngs)).digest()
-    etag_b0, etag_b1 = slices_digest[0], slices_digest[1]
-
-    cat_ids, sub_ids = subitems.compute_identities(live, cat_sub_keys)
-    meta = stripmeta.StripMeta(
-        offsets=cat_offsets,
-        sizes=cat_sizes,
-        pill_widths=cat_pill_widths,
-        cat_ids=cat_ids,
-        sub_ids=sub_ids,
-        quiet=quiet_active,
-        rotate_seconds=rot_sec,
-        content_hash=(etag_b0 << 8) | etag_b1,
-        interrupt=bool(alert)
-    )
-    payload = stripmeta.encode(meta)
-    meta_rows = stripmeta.rows_needed(len(payload), dw)
-
-    strip = Image.new("1", (dw, dh * len(imgs) + meta_rows), 1)
-    for i, im in enumerate(imgs):
-        strip.paste(im, (0, i * dh))
-    stripmeta.paint(strip, dh * len(imgs), payload)
-
-    epf_data = epf.encode_epf(
-        pages=imgs,
-        cat_ids=cat_ids,
-        cat_offsets=cat_offsets,
-        cat_sizes=cat_sizes,
-        cat_pill_widths=cat_pill_widths,
-        sub_ids=sub_ids,
-        display_model=display,
-        width=dw,
-        height=dh,
-        rotate_sec=rot_sec,
-        quiet_hours=quiet_active,
-        alert_interrupt=bool(alert),
-        orientation_180=(orient == 180),
-        content_hash=int.from_bytes(slices_digest[:8], "big"),
-        geometry=geo,
-        cat_flags=cat_flags,
-    )
-    epf_single = epf.extract_page_epf(epf_data, 0)
-
-    return _png(strip), slice_pngs[0], slice_pngs, live, cat_offsets, cat_sizes, cat_names, cat_pill_widths, quiet_active, quiet_reason, rot_sec, cat_ids, sub_ids, epf_data, epf_single
+def empty_page(orient: int, display: str):
+    """What a screen shows when its design has no pages."""
+    cw, _ = T.canvas_dims(orient, display=display)
+    page = {"elements": [{"type": "text", "value": "no pages", "x": 24, "y": 60, "w": cw - 48, "h": 120}]}
+    return layout.render_page(page, {}, clock=datetime.now().strftime("%H:%M"), label="empty",
+                              orientation=orient, display=display)
 
 
 def panel_geometry(fg: dict, orient: int, display: str) -> epf.OverlayGeometry:
@@ -627,8 +521,8 @@ def _render_lock() -> asyncio.Lock:
     return _lock
 
 
-async def refresh_frames(session):
-    """Build a new Frames snapshot and swap runtime.FRAMES.
+async def refresh_frames(session) -> dict[str, Frames]:
+    """Render every device and swap in its new frames. Returns them by device id.
 
     One render at a time: the render loop, Send, Push, the Refresh button and
     the action endpoint can all ask at once, and an older render finishing
@@ -636,64 +530,73 @@ async def refresh_frames(session):
     the pages as saved when it starts.
     """
     async with _render_lock():
-        return await _refresh_frames(session)
+        return await _refresh_all(session)
 
 
-async def _refresh_frames(session):
-    res = await build_frames(session)
-    strip, single, slices, names, cat_offsets, cat_sizes, cat_names, cat_pill_widths, quiet_active, quiet_reason, rot_sec, cat_ids, sub_ids, epf_strip, epf_single = res
-    old_f = runtime.FRAMES
-    has_prev = old_f is not None and getattr(old_f, "rendered_at", None)
-    quiet_changed = bool(has_prev and getattr(old_f, "quiet_active", False) != quiet_active)
-    nxt = Frames()
-    nxt.strip, nxt.single, nxt.slices, nxt.names = strip, single, slices, names
-    nxt.strip_etag = _etag(strip)
-    nxt.single_etag = _etag(single)
-    nxt.epf_strip = epf_strip
-    nxt.epf_single = epf_single
-    nxt.epf_strip_etag = f'"{hashlib.blake2s(epf_strip, digest_size=8).hexdigest()}"'
-    nxt.epf_single_etag = f'"{hashlib.blake2s(epf_single, digest_size=8).hexdigest()}"'
-    if has_prev and old_f.strip_etag == nxt.strip_etag and getattr(old_f, "last_modified", ""):
+async def _refresh_all(session) -> dict[str, Frames]:
+    await publish_computed(session)
+    views = devices.all_views()
+    runtime.forget_devices_except([dev["id"] for dev, _ in views])
+    states: dict[str, DesignState] = {}
+    out: dict[str, Frames] = {}
+    for dev, spec in views:
+        try:
+            st = states.get(dev["design"])
+            if st is None:
+                st = states[dev["design"]] = await design_state(session, dev["design"], spec)
+            out[dev["id"]] = await _refresh_device(session, dev, spec, st)
+        except Exception as exc:
+            # One screen that can't be drawn must not cost the others.
+            print(f"{dev['name']}: render failed: {health.describe(exc)}", flush=True)
+            runtime.device(dev["id"]).frames.error = health.describe(exc)
+    await publish_category_sensors(session, runtime.device(devices.primary()["id"]).frames)
+    await sync_entities()
+    return out
+
+
+async def _refresh_device(session, dev: dict, spec: dict, st: DesignState) -> Frames:
+    rt = runtime.device(dev["id"])
+    quiet_active, quiet_reason = await evaluate_quiet_hours(session, spec, dev)
+    nxt = await kinds.of(dev).render(session, dev, spec, st, quiet_active, quiet_reason)
+    old_f = rt.frames
+    has_prev = bool(getattr(old_f, "rendered_at", None))
+    quiet_changed = bool(has_prev and old_f.quiet_active != quiet_active)
+    if has_prev and old_f.strip_etag == nxt.strip_etag and old_f.last_modified:
         nxt.last_modified = old_f.last_modified
     else:
         nxt.last_modified = formatdate(timeval=None, localtime=False, usegmt=True)
     nxt.rendered_at = datetime.now().astimezone().isoformat(timespec="seconds")
-    nxt.cat_offsets = cat_offsets
-    nxt.cat_sizes = cat_sizes
-    nxt.cat_names = cat_names
-    nxt.cat_pill_widths = cat_pill_widths
-    nxt.cat_ids = cat_ids
-    nxt.sub_ids = sub_ids
-    nxt.cat_count = len(cat_offsets)
     nxt.quiet_active = quiet_active
     nxt.quiet_reason = quiet_reason
-    nxt.rotate_seconds = rot_sec
-    runtime.FRAMES = nxt
-    print(f"rendered {names} ({len(strip)}B strip, {nxt.cat_count} cats, offsets: {cat_offsets}, sizes: {cat_sizes}, rot: {rot_sec}s, quiet: {quiet_active} [{quiet_reason}])", flush=True)
-    await publish_entity(session, "sensor.epaper_panel_last_render", nxt.rendered_at,
-                         {"friendly_name": "E-Paper · Last render", "icon": "mdi:clock-check-outline",
-                          "pages_count": len([n for n in nxt.names if n != SLEEP_PAGE]),
-                          "active_pages": [n for n in nxt.names if n != SLEEP_PAGE],
-                          "device_class": "timestamp"})
-    fit = runtime.FIT or {}
-    await publish_entity(session, "sensor.epaper_panel_pages", fit.get("pages_shown", len(names)), {
-        "friendly_name": "E-Paper · Pages on the panel", "icon": "mdi:book-open-page-variant-outline",
+    rt.frames = nxt
+    print(f"{dev['name']}: rendered {nxt.names} ({len(nxt.strip)}B strip, {nxt.cat_count} cats, "
+          f"offsets: {nxt.cat_offsets}, sizes: {nxt.cat_sizes}, rot: {nxt.rotate_seconds}s, "
+          f"quiet: {quiet_active} [{quiet_reason}])", flush=True)
+    shown = [n for n in nxt.names if n != SLEEP_PAGE]
+    await publish_entity(session, devices.entity_id("sensor.epaper_panel_last_render", dev), nxt.rendered_at,
+                         {"friendly_name": _per_device("Last render", dev), "icon": "mdi:clock-check-outline",
+                          "pages_count": len(shown), "active_pages": shown, "device_class": "timestamp"})
+    fit = rt.fit or {}
+    await publish_entity(session, devices.entity_id("sensor.epaper_panel_pages", dev), fit.get("pages_shown", len(nxt.names)), {
+        "friendly_name": _per_device("Pages on the panel", dev), "icon": "mdi:book-open-page-variant-outline",
         "unit_of_measurement": "pages", "pages_wanted": fit.get("pages_wanted"),
         "capacity_kb": (fit.get("capacity") or 0) // 1024,
         "left_out": ", ".join(f"{t['page']}: {t['shown']} of {t['of']}" for t in fit.get("trimmed") or []) or "nothing"})
-    await publish_category_sensors(session, nxt)
-    await sync_entities()
-    # The panel's own refresh interval is the contract: new content waits for
+    # A panel's own refresh interval is the contract: new content waits for
     # it, however often pages come and go (a panel on a battery may fetch
     # every hour). The add-on wakes it early only for alerts (render loop),
     # quiet hours starting or ending, and what a person does (Send, Push, the
     # Refresh button, the action endpoint).
-    qh = load_layouts().get("quiet_hours") or {}
+    qh = spec.get("quiet_hours") or {}
     if quiet_changed or (not has_prev and qh.get("enabled") and not quiet_active):
-        # Delivered with retries: the panel stops fetching on its own during
+        # Delivered with retries: a panel stops fetching on its own during
         # quiet hours, so missing the wake-up would leave it asleep. After a
         # restart we can't know whether it is still asleep, so wake it once.
-        print(f"Quiet hours {'started' if quiet_active else 'ended'} ({quiet_reason}): telling the panel", flush=True)
-        runtime.LAST_PANEL_PUSH_TIME = time.time()
-        await push_panel_update("quiet hours " + ("started" if quiet_active else "ended"))
+        print(f"{dev['name']}: quiet hours {'started' if quiet_active else 'ended'} ({quiet_reason})", flush=True)
+        await push_panel_update(dev["id"], "quiet hours " + ("started" if quiet_active else "ended"))
     return nxt
+
+
+def _per_device(label: str, dev: dict) -> str:
+    """An entity's name: the first device's keep theirs, others say which screen."""
+    return label if not dev.get("entity_suffix") else f"{dev['name']} · {label}"

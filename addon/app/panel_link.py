@@ -61,9 +61,12 @@ def unique_id_is(uid: str, domain: str, name: str) -> bool:
 
 
 class PanelLink:
-    def __init__(self, hass: Hass, preferred_node=lambda: ""):
+    def __init__(self, hass: Hass, preferred_node=lambda: "", sole=lambda: True):
+        """`preferred_node`: the panel's ESPHome node, if set up. `sole`: whether the
+        add-on drives only one panel, so the only one in Home Assistant must be it."""
         self.hass = hass
         self._preferred = preferred_node
+        self._sole = sole
         self.node: str | None = None
         self.entities: dict[str, str] = {}
         self.problem: str = "not looked for the panel yet"
@@ -74,6 +77,9 @@ class PanelLink:
         self._next_attempt = 0.0
         self.last_ok_at: float | None = None
         self.last_error: str | None = None
+
+    def preferred_node(self) -> str:
+        return _slug(self._preferred() or "")
 
     # ------------------------------------------------------------------ discovery
     async def discover(self, force: bool = False) -> bool:
@@ -99,7 +105,7 @@ class PanelLink:
         preferred = _slug(self._preferred() or "")
         if preferred in nodes:
             node = preferred
-        elif len(nodes) == 1:
+        elif len(nodes) == 1 and self._sole():
             node = nodes[0]
         else:
             node = None
@@ -111,12 +117,14 @@ class PanelLink:
             self.entities = {}
             return False
         if node is None:
-            self.problem = (f"found {len(nodes)} panels ({', '.join(nodes)}). "
+            self.problem = (f"Home Assistant has no panel called {preferred} (it has {', '.join(nodes)}). "
+                            "Check the device name in Panel setup" if preferred else
+                            f"found {len(nodes)} panel{'' if len(nodes) == 1 else 's'} ({', '.join(nodes)}). "
                             "Set the device name in Panel setup to pick one")
             self.entities = {}
             return False
 
-        self.entities = await self._find_entities(single_panel=len(nodes) == 1)
+        self.entities = await self._find_entities(single_panel=len(nodes) == 1 and self._sole())
         self.problem = ""
         return True
 

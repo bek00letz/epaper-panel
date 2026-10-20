@@ -20,9 +20,7 @@ ESPHOME_DEVICE = (
 ENTITY_CACHE = {"at": 0.0, "items": []}
 SESSION: aiohttp.ClientSession | None = None
 HASS = Hass(HA_BASE, HA_TOKEN, lambda: SESSION)
-LINK = PanelLink(HASS, lambda: ESPHOME_DEVICE)
 PUBLISHER: "mqtt_bridge.EntityPublisher | None" = None
-WIDGET_LINGER = Linger()
 # Outside data is fetched in the background; renders only read it (live_data).
 LIVE = live_data.LiveData()
 live = lambda interval, stale_after=None: LIVE.decorate(interval, lambda: SESSION, stale_after)  # noqa: E731
@@ -59,10 +57,50 @@ class Frames:
         self.error = None
 
 
-FRAMES = Frames()
+class DeviceRuntime:
+    """What the running add-on holds for one device: its current render and how to reach it."""
 
-# Which alert page, if any, currently owns the screen.
-ALERT = {"name": None, "until": 0.0, "fired": {}}
+    def __init__(self, device_id: str):
+        self.id = device_id
+        self.frames = Frames()
+        self.fit: dict | None = None             # what frames.fit_counts left out, for the editor
+        self.link: PanelLink | None = None       # set by the device's kind when it can be reached
+
+
+_DEVICES: dict[str, DeviceRuntime] = {}
+
+
+def device(device_id: str) -> DeviceRuntime:
+    found = _DEVICES.get(device_id)
+    if found is None:
+        found = _DEVICES[device_id] = DeviceRuntime(device_id)
+    return found
+
+
+def forget_devices_except(ids) -> None:
+    for k in [k for k in _DEVICES if k not in set(ids)]:
+        del _DEVICES[k]
+
+
+def new_alert() -> dict:
+    return {"name": None, "until": 0.0, "fired": {}}
+
+
+# Per design: which alert page, if any, currently owns its screens.
+ALERTS: dict[str, dict] = {}
+
+# Per design: conditional widget pages that stay a while after their condition.
+LINGERS: dict[str, Linger] = {}
+
+
+def alert(design_id: str) -> dict:
+    return ALERTS.setdefault(design_id, new_alert())
+
+
+def linger(design_id: str) -> Linger:
+    return LINGERS.setdefault(design_id, Linger())
+
+
 FEED_ITEMS = {}
 
 
@@ -83,35 +121,23 @@ def prune(cache: dict, max_age: float = CACHE_DAY) -> None:
         del cache[k]
 
 
-# How many bytes of frame file the panel can hold. New firmware says so on
+# How many bytes of frame file a panel can hold. New firmware says so on
 # every download (?cap=), remembered across restarts; older firmware holds 1 MiB.
-FIT: dict | None = None                     # what frames.fit_counts left out, for the editor
-_capacity: int | None = None
-
-
-def panel_capacity() -> int:
-    global _capacity
-    if _capacity is None:
-        import config
-        from render import epf
-        try:
-            _capacity = int((config.DATA_DIR / "panel_capacity").read_text())
-        except (OSError, ValueError):
-            _capacity = epf.DEFAULT_CAPACITY
-    return _capacity
-
-
-def set_panel_capacity(value: int) -> bool:
-    """Remember what the panel says it holds. Returns whether it changed."""
-    global _capacity
-    import config
-    value = max(256 * 1024, min(16 * 1024 * 1024, int(value)))
-    if value == panel_capacity():
-        return False
-    _capacity = value
+def panel_capacity(device_id: str) -> int:
+    import devices
+    from render import epf
     try:
-        (config.DATA_DIR / "panel_capacity").write_text(str(value))
-    except OSError:
-        pass
-    print(f"frames: the panel holds {value // 1024} KB of pages", flush=True)
+        return int(devices.state(device_id)["capacity"])
+    except (KeyError, TypeError, ValueError):
+        return epf.DEFAULT_CAPACITY
+
+
+def set_panel_capacity(device_id: str, value: int) -> bool:
+    """Remember what a panel says it holds. Returns whether it changed."""
+    import devices
+    value = max(256 * 1024, min(16 * 1024 * 1024, int(value)))
+    if value == panel_capacity(device_id):
+        return False
+    devices.set_state(device_id, capacity=value)
+    print(f"frames: device {device_id} holds {value // 1024} KB of pages", flush=True)
     return True

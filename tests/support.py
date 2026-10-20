@@ -15,3 +15,10 @@ def use_test_data_dir() -> Path:
     config.DATA_DIR = Path(os.environ["DATA_DIR"])
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
     return config.DATA_DIR
+
+
+def first_frames():
+    """The current render of the first device (this install's panel)."""
+    import devices
+    import runtime
+    return runtime.device(devices.primary()["id"]).frames
