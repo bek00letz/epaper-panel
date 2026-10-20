@@ -90,6 +90,9 @@ class App {
   /* The screens the add-on drives; the editor works on one at a time. */
   async loadScreens(want) {
     const r = (await api("api/devices")).body;
+    // The canvas's sizes come only from here; without them there's nothing safe to draw.
+    if (!r || !r.displays || !Object.keys(r.displays).length || !(r.devices || []).length)
+      throw new Error("The add-on didn't say which screens it has. Restart the add-on, then reload this page.");
     this.applyScreens(r, want);
   }
   applyScreens(r, want) {
