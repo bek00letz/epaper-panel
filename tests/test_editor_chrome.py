@@ -76,5 +76,17 @@ class TestFindingAddAScreen(unittest.TestCase):
         self.assertIn("openAddScreen(app)", group)
 
 
+
+class TestErrorsSayWhy(unittest.TestCase):
+    def test_a_plain_text_reason_reaches_the_person(self):
+        # The add-on refuses with text ("There's already a screen called Kitchen."),
+        # which the editor used to swap for "The add-on couldn't read that."
+        api = js("util.js")
+        api = api[api.index("export async function api"):api.index("export const clone")]
+        self.assertIn("await r.text()", api)
+        self.assertIn("|| said ||", api)
+        self.assertIn("!/^\\d{3}: /.test(", api, "aiohttp's own '400: Bad Request' isn't a reason")
+
+
 if __name__ == "__main__":
     unittest.main()

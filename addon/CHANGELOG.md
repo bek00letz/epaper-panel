@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- **The editor says why the add-on refused something.** A name that's taken
+  or missing said "The add-on couldn't read that"; it now says, for example,
+  "There's already a screen called Kitchen."
 - **Renaming the first panel no longer renames it in Home Assistant.** Its
   name there stays "E-paper panel" when you install it again, as it always
   has. Any other screen still takes its new name there at its next install.

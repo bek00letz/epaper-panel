@@ -123,10 +123,14 @@ export async function api(path, opts = {}) {
     throw Object.assign(new Error("The add-on isn't answering. Check that it's running."), { status: 0 });
   }
   if (opts.raw) { if (!r.ok) throw Object.assign(new Error(await r.text() || r.statusText), { status: r.status }); return r; }
+  const text = await r.text().catch(() => "");
   let body = null;
-  try { body = await r.json(); } catch (_) {}
+  try { body = text ? JSON.parse(text) : null; } catch (_) {}
   if (!r.ok) {
-    const msg = (body && body.error) || (r.status === 400 ? "The add-on couldn't read that." : `The add-on answered ${r.status}.`);
+    // The add-on says why in plain text ("There's already a screen called Kitchen."); its
+    // framework's own "400: Bad Request" says nothing, so that gets our words instead.
+    const said = !body && text.trim() && text.length <= 300 && !/^\d{3}: /.test(text.trim()) ? text.trim() : "";
+    const msg = (body && body.error) || said || (r.status === 400 ? "The add-on couldn't read that." : `The add-on answered ${r.status}.`);
     throw Object.assign(new Error(msg), { status: r.status, body });
   }
   return { body, etag: (r.headers.get("ETag") || "").replace(/^W\//, "").replace(/"/g, "") };
