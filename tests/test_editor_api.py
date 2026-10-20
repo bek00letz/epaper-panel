@@ -1,13 +1,11 @@
 """The editor's API: version check on saves, drafts, presets, and the panel's own settings."""
 import asyncio
 import json
-import shutil
 import unittest
 
 from aiohttp.test_utils import TestClient, TestServer
 
 import support
-import config
 import frames
 import layouts_store
 import panel_link
@@ -17,13 +15,9 @@ from test_panel_link_and_entities import PANEL_REGISTRY, FakeHass
 
 class EditorClient(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        data = support.use_test_data_dir()
-        self._backup = {}
-        for name in ("layouts.json", "draft.json"):
-            f = data / name
-            self._backup[name] = f.read_bytes() if f.exists() else None
-            if f.exists():
-                f.unlink()
+        # A data folder of its own: saves here land in devices.json and more,
+        # so backing up a list of files would always miss one.
+        support.fresh_data_dir()
         await frames.refresh_frames(None)
         _, editor = web.make_apps()
         self.ed = TestClient(TestServer(editor))
@@ -31,12 +25,7 @@ class EditorClient(unittest.IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self):
         await self.ed.close()
-        for name, raw in self._backup.items():
-            f = config.DATA_DIR / name
-            if raw is None:
-                f.unlink(missing_ok=True)
-            else:
-                f.write_bytes(raw)
+        support.use_test_data_dir()
 
     async def spec_and_tag(self):
         r = await self.ed.get("/api/layouts")

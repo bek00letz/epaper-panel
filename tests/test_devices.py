@@ -2,10 +2,8 @@
 import json
 import os
 import stat
-import tempfile
 import unittest
 from datetime import datetime as real_datetime
-from pathlib import Path
 from unittest import mock
 
 from aiohttp.test_utils import TestClient, TestServer
@@ -49,11 +47,7 @@ def without_ids(spec):
     return out
 
 
-def fresh_data_dir() -> Path:
-    config.DATA_DIR = Path(tempfile.mkdtemp())
-    runtime.forget_devices_except([])
-    runtime.ALERTS.clear()
-    return config.DATA_DIR
+fresh_data_dir = support.fresh_data_dir
 
 
 def fixed_now(hour, minute=0):

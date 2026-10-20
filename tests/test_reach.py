@@ -1,8 +1,6 @@
 """Reaching home: who may come in which way, keys away from home, wrong keys, the companion integration."""
 import json
-import tempfile
 import unittest
-from pathlib import Path
 from unittest import mock
 
 from aiohttp import web
@@ -122,7 +120,7 @@ class TestAddresses(unittest.TestCase):
 class TestCompanion(unittest.TestCase):
     def setUp(self):
         self._dir, self._version = config.HA_CONFIG_DIR, config.ADDON_VERSION
-        config.HA_CONFIG_DIR = Path(tempfile.mkdtemp())
+        config.HA_CONFIG_DIR = support.temp_dir()
         config.ADDON_VERSION = "0.11.0"
 
     def tearDown(self):
