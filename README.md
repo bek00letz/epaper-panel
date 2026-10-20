@@ -417,9 +417,9 @@ measurements behind each decision.
   `sensor.epaper_panel_pages`.
 - **No battery reading on a CrowPanel.** The board's battery pin isn't
   documented. (A TRMNL reports its own.)
-- **A CrowPanel expects mains power.** Deep sleep would cost instant
-  updates, remote control and alerts; quiet hours give you still, dark nights
-  without that. For a screen on a battery, use a TRMNL.
+- **CrowPanels run plugged in for now.** A battery mode, where the panel sleeps
+  between updates, isn't built yet. It would trade instant updates, remote
+  control and alerts for months on a battery. A TRMNL already works that way.
 
 ## Development
 
