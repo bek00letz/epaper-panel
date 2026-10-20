@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.10.3 (unreleased)
+## 0.10.3
 Add-on only; no firmware change.
 
 - **Fixed:** "Space evenly" spread the elements' left edges between the outer
