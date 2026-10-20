@@ -10,7 +10,7 @@ import { renderStrip, statusSummary } from "./strip.js";
 import { renderInspector } from "./inspector.js";
 import { openEntityPicker, openAttributePicker, openIconPicker, openInsert } from "./pickers.js";
 import { openPresets, savePresetSheet, openStatus, openSettings, resolveClashes, openShortcuts, openAddScreen } from "./sheets.js";
-import { geometry, makeElement, makeEntityElement, elName, TYPES, pairByType, LAYOUT_KEYS, normalizeLineParity } from "./elements.js";
+import { geometry, setDisplays, makeElement, makeEntityElement, elName, TYPES, pairByType, LAYOUT_KEYS, normalizeLineParity } from "./elements.js";
 import { syncDynamicGridShowIf, syncWidgetShowIf } from "./conditions.js";
 import { CATEGORY_TERMS } from "./legacy.js";
 import { unitsRows } from "./units.js";
@@ -93,7 +93,7 @@ class App {
     this.applyScreens(r, want);
   }
   applyScreens(r, want) {
-    this.screens = r.devices || []; this.kinds = r.kinds || [];
+    this.screens = r.devices || []; this.kinds = r.kinds || []; setDisplays(r.displays);
     const id = want || this.screen?.id;
     this.screen = this.screens.find((d) => d.id === id) || this.screens[0] || null;
     setDevice(this.screen?.id);

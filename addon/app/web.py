@@ -496,7 +496,12 @@ def _screens() -> dict:
             "kinds": [{"id": k.id, "name": k.name,
                        "displays": [{"id": d, "name": T.DISPLAYS[d]["name"], "w": T.DISPLAYS[d]["w"],
                                      "h": T.DISPLAYS[d]["h"]} for d in k.displays()]}
-                      for k in kinds.KINDS.values()]}
+                      for k in kinds.KINDS.values()],
+            # Every panel model's canvases, so the editor's guides and new
+            # elements use the renderer's own numbers (footer band, margins).
+            "displays": {d: {"id": d, "name": v["name"], "w": v["w"], "h": v["h"], "mm_w": v["mm_w"],
+                             "landscape": T.canvas_geometry(0, d), "portrait": T.canvas_geometry(90, d)}
+                         for d, v in T.DISPLAYS.items()}}
 
 
 def _clean_name(raw, exclude_id=None) -> str:

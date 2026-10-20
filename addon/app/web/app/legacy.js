@@ -6,12 +6,11 @@ export function reflowPageElements(p, toPortrait, disp) {
   const list = p && p.elements;
   if (!Array.isArray(list) || !list.length) return;
 
-  const TW = toPortrait ? Math.min(disp.w, disp.h) : Math.max(disp.w, disp.h);
-  const TH = toPortrait ? Math.max(disp.w, disp.h) : Math.min(disp.w, disp.h);
-  const fsz = TH < 200 ? 14 : (TH < 400 ? 18 : 20);
-  const footerH = Math.round(fsz * 1.8);
-  const safeH = TH - footerH;
-  const margin = TW < 400 ? Math.min(disp.margin || 24, 16) : (disp.margin || 32);
+  // The canvas it's going to, from the add-on (elements.js DISPLAYS).
+  const c = toPortrait ? disp.portrait : disp.landscape;
+  const TW = c.w, TH = c.h;
+  const safeH = c.h - c.band;
+  const margin = c.margin;
   const usableW = TW - (margin * 2);
 
   // Group elements by type

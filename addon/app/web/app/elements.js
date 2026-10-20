@@ -1,22 +1,21 @@
 // Element types, their starting values, their names, and the geometry of each
-// panel model. Panel pixels throughout: the numbers match theme.py.
+// panel model. Panel pixels throughout: the numbers come from theme.py.
 
-export const DISPLAYS = {
-  crowpanel_579: { id: "crowpanel_579", name: 'CrowPanel 5.79"', w: 792, h: 272, mm_w: 139.1, margin: 40 },
-  crowpanel_420: { id: "crowpanel_420", name: 'CrowPanel 4.2"', w: 400, h: 300, mm_w: 84.8, margin: 24 },
-  crowpanel_290: { id: "crowpanel_290", name: 'CrowPanel 2.9"', w: 296, h: 128, mm_w: 66.9, margin: 16 },
-  crowpanel_750: { id: "crowpanel_750", name: 'CrowPanel 7.5"', w: 800, h: 480, mm_w: 163.2, margin: 40 },
-  crowpanel_102: { id: "crowpanel_102", name: 'CrowPanel 10.2"', w: 960, h: 640, mm_w: 215.0, margin: 48 },
-};
+// Each panel model and its canvases, landscape and portrait: size, footer band
+// and side margin. They come from the add-on (theme.canvas_geometry, sent with
+// api/devices), so the guides sit where the renderer draws.
+export const DISPLAYS = {};
+export function setDisplays(ds) {
+  if (!ds || typeof ds !== "object" || !Object.keys(ds).length) return;
+  for (const k of Object.keys(DISPLAYS)) delete DISPLAYS[k];
+  Object.assign(DISPLAYS, ds);
+}
 
 export function geometry(spec) {
-  const d = DISPLAYS[spec.display] || DISPLAYS.crowpanel_579;
+  const d = DISPLAYS[spec.display] || Object.values(DISPLAYS)[0];
   const portrait = [90, 270].includes(Number(spec.orientation || 0));
-  const W = portrait ? d.h : d.w, H = portrait ? d.w : d.h;
-  const fsz = H < 200 ? 14 : H < 400 ? 18 : 20;
-  const footer = Math.round(fsz * 1.8);
-  const margin = W < 400 ? Math.min(d.margin, 16) : d.margin;
-  return { d, W, H, portrait, footer, safeH: H - footer, margin, mmPerPx: d.mm_w / d.w };
+  const c = portrait ? d.portrait : d.landscape;
+  return { d, W: c.w, H: c.h, portrait, footer: c.band, safeH: c.h - c.band, margin: c.margin, mmPerPx: d.mm_w / d.w };
 }
 
 export const TYPES = {

@@ -4,7 +4,7 @@ import unittest
 import support  # noqa: F401
 import devices
 from layouts_store import load_layouts, sanitize_layouts, save_layouts
-from render import arrange
+from render import arrange, theme as T
 from test_devices import fresh_data_dir
 
 BASE, SMALL = "792x272", "400x300"
@@ -19,7 +19,7 @@ class TestPlacing(unittest.TestCase):
         el = {"x": 40, "y": 30, "w": 300, "h": 120, "size": 90}
         there = arrange.auto_box(el, BASE, SMALL)
         self.assertLessEqual(there["x"] + there["w"], 400)
-        self.assertLessEqual(there["y"] + there["h"], 300 - arrange.FOOTER_BAND)
+        self.assertLessEqual(there["y"] + there["h"], arrange.content_height(SMALL))
         back = arrange.base_box(there, BASE, SMALL)
         for k in ("x", "y", "w", "h", "size"):
             self.assertAlmostEqual(back[k], el[k], delta=2, msg=k)
@@ -42,6 +42,49 @@ class TestPlacing(unittest.TestCase):
         design = {"pages": arrange.ensure_ids({"a": page({"type": "text", "x": 10, "y": 10, "w": 50, "h": 20})})}
         el = arrange.pages_for(design, BASE, SMALL)["a"]["elements"][0]
         self.assertTrue(el[arrange.AUTO])
+
+
+def every_canvas():
+    return sorted({arrange.canvas_key(*T.canvas_dims(deg, d)) for d in T.DISPLAYS for deg in (0, 90)})
+
+
+class TestPlacingAboveTheFooter(unittest.TestCase):
+    """Automatic placement maps the area above one canvas's footer band onto
+    the area above the other's: theme.band_height(), not a fixed 36. With 36
+    content ran up to 24 px into the footer (2.9" flat to 5.79" flat) or left
+    up to 11 px empty above it (anything to the 2.9" flat)."""
+
+    def test_the_whole_content_area_fits_the_other_one_on_every_pair(self):
+        for base in every_canvas():
+            for target in every_canvas():
+                if base == target:
+                    continue
+                bw, _ = arrange.parse_canvas(base)
+                tw, _ = arrange.parse_canvas(target)
+                tch = arrange.content_height(target)
+                with self.subTest(base=base, target=target):
+                    box = arrange.auto_box({"x": 0, "y": 0, "w": bw, "h": arrange.content_height(base)}, base, target)
+                    self.assertGreaterEqual(min(box["x"], box["y"]), 0)
+                    self.assertLessEqual(box["x"] + box["w"], tw)
+                    self.assertLessEqual(box["y"] + box["h"], tch, "never into the footer")
+                    fills_width = box["x"] == 0 and box["w"] == tw
+                    fills_height = box["y"] == 0 and abs(box["h"] - tch) <= 1
+                    self.assertTrue(fills_width or fills_height, box)
+                    if fills_width:          # centred in the room above the band
+                        self.assertLessEqual(abs(box["y"] - (tch - box["h"] - box["y"])), 1)
+                    else:
+                        self.assertLessEqual(abs(box["x"] - (tw - box["w"] - box["x"])), 1)
+
+    def test_where_the_fixed_band_was_wrong(self):
+        # The 2.9" flat's bottom row of content, on the 5.79" flat: right on its hairline now.
+        el = {"x": 0, "y": 0, "w": 296, "h": 103}
+        self.assertEqual(arrange.auto_box(el, "296x128", "792x272"), {"x": 51, "y": 0, "w": 690, "h": 240})
+        # The 5.79" flat on the 2.9" flat: centred in its 103 px, not in 92.
+        el = {"x": 0, "y": 0, "w": 792, "h": 240}
+        self.assertEqual(arrange.auto_box(el, "792x272", "296x128"), {"x": 0, "y": 7, "w": 296, "h": 90})
+        # The 4.2" flat on the 7.5" flat: down to its hairline at 444, not 451 (7 px into the footer).
+        el = {"x": 0, "y": 0, "w": 400, "h": 268}
+        self.assertEqual(arrange.auto_box(el, "400x300", "800x480"), {"x": 69, "y": 0, "w": 663, "h": 444})
 
 
 class TestSavingOnAnotherSize(unittest.TestCase):
