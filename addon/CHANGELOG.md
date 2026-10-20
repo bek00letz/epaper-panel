@@ -40,6 +40,11 @@
   checks. A 2.9" panel no longer stays awake 6 seconds after a wake that
   didn't redraw anything.
 
+- **Fixed (firmware):** the firmware for the 4.2" and 2.9" CrowPanels
+  didn't build. Both build now, with the pins and controllers from Elecrow's
+  own demo code; neither has been tried on a real panel yet. The 7.5" and
+  10.2" are no longer offered: Elecrow doesn't make them.
+
 ## 0.12.0
 **Firmware change** (only needed for Low Power Mode, or if your panel has
 "Its own Wi-Fi when it's lost" switched off): install the panel again from

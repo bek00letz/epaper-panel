@@ -36,7 +36,7 @@ DISPLAYS = {
         "mm_w": 84.8,
         "mm_h": 63.6,
         "margin": 24,
-        "esphome_model": "4.2in",
+        "esphome_model": "4.20in",
         "esphome_component": "github://ESPBoards/esphome-lvgl-crowpanel-epaper-5.79-4.2",
     },
     "crowpanel_290": {
@@ -49,10 +49,14 @@ DISPLAYS = {
         "mm_w": 66.9,
         "mm_h": 29.1,
         "margin": 16,
-        "esphome_model": "2.90inv2",
+        "esphome_model": "2.90inv2-r2",
         "esphome_component": "waveshare_epaper",
     },
     "crowpanel_750": {
+        # Not offered: Elecrow makes no CrowPanel e-paper this size (their demo
+        # repositories: 1.54", 2.13", 2.9", 3.7", 4.2", 5.79"). Kept so a screen
+        # already set to it still renders.
+        "offered": False,
         "kind": "crowpanel",
         "id": "crowpanel_750",
         "name": "CrowPanel 7.5\"",
@@ -66,6 +70,10 @@ DISPLAYS = {
         "esphome_component": "waveshare_epaper",
     },
     "crowpanel_102": {
+        # Not offered: Elecrow makes no CrowPanel e-paper this size (their demo
+        # repositories: 1.54", 2.13", 2.9", 3.7", 4.2", 5.79"). Kept so a screen
+        # already set to it still renders.
+        "offered": False,
         "kind": "crowpanel",
         "id": "crowpanel_102",
         "name": "CrowPanel 10.2\"",

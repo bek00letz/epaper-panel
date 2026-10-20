@@ -42,6 +42,29 @@ def display_settled(disp: dict) -> str:
     return "id(last_redraw_ms) == 0 || millis() - id(last_redraw_ms) > 6000"
 
 
+# Every CrowPanel board has the same wiring (Elecrow's demo source for the 2.9",
+# 4.2" and 5.79": EPD_SPI.h / spi.h and the *_key examples): the display on
+# SCK 12, MOSI 11, CS 45, DC 46, RES 47, BUSY 48, its power on GPIO 7, and the
+# five buttons on 1, 2, 4, 5, 6.
+
+# How the redraw script asks each driver for a full (ghost-clearing) refresh,
+# by ESPHome model. Full refreshes are the panel's policy (WaveformPolicy),
+# so each driver's own count is set out of reach.
+FULL_REFRESH = {
+    "5.79in": "id(epd).force_full_update();",
+    "4.20in": "id(epd).force_full_update();",
+    # Its full refresh happens when its count is at 0, and it has no call for
+    # that: epf restarts the count (epf_client.h).
+    "2.90inv2-r2": "epf::full_refresh_next(id(epd));",
+}
+
+
+def full_refresh(disp: dict) -> str:
+    """The C++ statement that makes the display's next refresh a full one. A driver
+    not listed (only sizes the editor doesn't offer) is left to refresh as it does."""
+    return FULL_REFRESH.get(disp["esphome_model"], "{}")
+
+
 def display_blocks(disp: dict) -> tuple[str, str]:
     """(extra external component line, display: block without its lambda)."""
     if disp["esphome_component"].startswith("github://"):
@@ -64,7 +87,11 @@ def display_blocks(disp: dict) -> tuple[str, str]:
     auto_clear_enabled: false"""
     else:
         component = ""
-        block = f"""display:
+        block = f"""spi:
+  clk_pin: 12
+  mosi_pin: 11
+
+display:
   - platform: waveshare_epaper
     id: epd
     model: "{disp["esphome_model"]}"
@@ -72,7 +99,9 @@ def display_blocks(disp: dict) -> tuple[str, str]:
     dc_pin: 46
     busy_pin: 48
     reset_pin: 47
-    reset_duration: 2ms
+    # Full refreshes are decided by the panel's ghost-clearing policy
+    # (WaveformPolicy), not by a fixed count.
+    full_update_every: 1000000
     update_interval: never
     auto_clear_enabled: false"""
     return component, block
@@ -130,7 +159,8 @@ def render(*, disp: dict, version: str, device_name: str, frames_url: str, api_k
         "DISPLAY_NAME": disp["name"], "SKU": disp["sku"], "W": str(disp["w"]), "H": str(disp["h"]),
         "VERSION": version or "dev", "DEVICE_NAME": device_name, "FRAMES_URL": frames_url,
         "COMPONENT_REF": component_ref(version), "DISPLAY_COMPONENT": component,
-        "DISPLAY_BLOCK": block, "DISPLAY_SETTLED": display_settled(disp), "API_KEY": api_key,
+        "DISPLAY_BLOCK": block, "DISPLAY_SETTLED": display_settled(disp), "FULL_REFRESH": full_refresh(disp),
+        "API_KEY": api_key,
         "WIFI_BLOCK": wifi_block([(wifi_ssid, wifi_password), *more_networks], hotspot),
         "FRIENDLY_NAME": friendly_name,
         "INTERVAL_MIN": str(max(1, min(60, int(interval_min)))),

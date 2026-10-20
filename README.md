@@ -57,20 +57,23 @@ you need; the pages and the buttons follow.
 
 ## Made for every CrowPanel
 
-The add-on is built for the whole CrowPanel e-paper family: the renderer, the
-editor and the firmware generator all know every size below. Only the 5.79"
-has been tested on a real device so far. If you have another one, please try
-it and [open an issue](https://github.com/bek00letz/epaper-panel/issues)
-saying what worked and what didn't, so the table can say "tested" for more of
-them.
+The add-on is built for the CrowPanel e-paper family: the renderer, the
+editor and the firmware generator know every size below, and a test checks
+that each one's firmware builds. Only the 5.79" has been tried on a real
+device so far. If you have another one, please try it and
+[open an issue](https://github.com/bek00letz/epaper-panel/issues) saying what
+worked and what didn't, so the table can say "tested" for more of them.
 
 | Model | SKU | Pixels | Status |
 |---|---|---|---|
 | CrowPanel 5.79" | DIS08792E | 792 × 272 | Tested on the device |
-| CrowPanel 4.2" | DIS08042E | 400 × 300 | Should work, not tested yet |
-| CrowPanel 2.9" | DIS08029E | 296 × 128 | Should work, not tested yet |
-| CrowPanel 7.5" | DIS08075E | 800 × 480 | Should work, not tested yet |
-| CrowPanel 10.2" | DIS08102E | 960 × 640 | Should work, not tested yet |
+| CrowPanel 4.2" | DIS08042E | 400 × 300 | Builds, not tried on hardware |
+| CrowPanel 2.9" | DIS08029E | 296 × 128 | Builds, not tried on hardware |
+
+The pins and display controllers come from Elecrow's own demo code for each
+board (SSD1683 on the 4.2" and 5.79", SSD1680 on the 2.9"). Some later 4.2"
+boards are said to carry a UC8276 controller instead; that version isn't
+supported yet. The 1.54", 2.13" and 3.7" CrowPanels aren't offered yet.
 
 ## More than one screen
 

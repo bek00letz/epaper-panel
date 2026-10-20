@@ -29,6 +29,16 @@ class DisplayBufferAccessor : public esphome::display::DisplayBuffer {
   static uint8_t *raw(esphome::display::DisplayBuffer *d) { return static_cast<DisplayBufferAccessor *>(d)->buffer_; }
 };
 
+// A Waveshare driver that refreshes in full when its update count is at 0 and
+// has no call for it (ESPHome's 2.90inv2-r2): restart the count, so the next
+// refresh is full. Only the redraw script calls this (firmware_gen.FULL_REFRESH).
+template <class Driver> inline void full_refresh_next(Driver *display) {
+  struct Count : Driver {
+    static void restart(Driver *d) { static_cast<Count *>(d)->at_update_ = 0; }
+  };
+  Count::restart(display);
+}
+
 // Per buffer, in PSRAM. Two of the larger size fit an N8R8 board's 8 MB with
 // room to spare; a board that can't give that much gets the smaller one. The
 // panel tells the add-on which it got (?cap=), and the add-on fits the frame

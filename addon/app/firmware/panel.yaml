@@ -359,7 +359,7 @@ script:
     then:
       - delay: 80ms
       - lambda: |-
-          if (epf::PanelController::instance().begin_redraw()) id(epd).force_full_update();
+          if (epf::PanelController::instance().begin_redraw()) @FULL_REFRESH@
           id(last_redraw_ms) = millis();
       - component.update: epd
 

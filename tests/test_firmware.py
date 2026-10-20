@@ -262,6 +262,27 @@ def reference_yaml():
         interval_min=5, orientation=180), version
 
 
+def offered_sizes():
+    """The CrowPanel sizes the editor offers."""
+    return [k for k, d in T.DISPLAYS.items() if d.get("kind") == "crowpanel" and d.get("offered", True)]
+
+
+# A made-up key that isn't all zeros (ESPHome refuses that one).
+TEST_KEY = '"AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA="'
+
+
+def local_build(display, **kw):
+    """What Panel setup writes for `display`, with the epf component taken from this
+    checkout instead of the release tag (the tag doesn't exist yet)."""
+    text = firmware_gen.render(
+        disp=T.get_display(display), version="1.2.3", device_name="kitchen",
+        frames_url='"http://192.0.2.1:8099/frames.epf"', api_key=TEST_KEY, interval_min=5,
+        **{"wifi_ssid": '"home"', "wifi_password": '"password1"', "orientation": 0, **kw})
+    tagged = "  - source: github://bek00letz/epaper-panel@v1.2.3\n"
+    assert tagged in text
+    return text.replace(tagged, f"  - source:\n      type: local\n      path: {ROOT / 'components'}\n")
+
+
 class TestFirmwareYaml(unittest.TestCase):
     def test_pinned_to_the_release_and_complete(self):
         text, version = reference_yaml()
@@ -358,11 +379,11 @@ class TestFirmwareYaml(unittest.TestCase):
     def test_it_sleeps_only_once_the_display_is_done(self):
         # Deep sleep cuts the display's power: a refresh still running would be cut short.
         self.assertEqual(firmware_gen.display_settled(T.get_display("crowpanel_579")), "id(epd).is_idle()")
-        waveshare = T.get_display("crowpanel_750")
+        waveshare = T.get_display("crowpanel_290")
         self.assertIn("last_redraw_ms", firmware_gen.display_settled(waveshare))
         self.assertTrue(firmware_gen.display_settled(waveshare).startswith("id(last_redraw_ms) == 0 ||"),
                         "nothing redrawn since it woke: settled at once, not 6 s later (break-it #10)")
-        for disp in ("crowpanel_579", "crowpanel_750"):
+        for disp in ("crowpanel_579", "crowpanel_290"):
             text = firmware_gen.render(
                 disp=T.get_display(disp), version="1.2.3", device_name="kitchen", frames_url='"http://x/frames.epf"',
                 api_key='"k"', wifi_ssid='"a"', wifi_password='"b"', interval_min=5, orientation=0)
@@ -400,6 +421,45 @@ class TestFirmwareYaml(unittest.TestCase):
             self.assertEqual(out.returncode, 0, out.stderr[-500:])
             self.assertIn("#ifdef USE_WIFI_AP", out.stdout, "the guard is inside the lambda")
             self.assertIn("get_ap()", out.stdout)
+
+    @unittest.skipUnless((ROOT / ".esphome-venv" / "bin" / "esphome").exists(), "no ESPHome here")
+    def test_esphome_accepts_every_offered_size(self):
+        # break-it #3: only the 5.79" was ever checked, and the other sizes didn't
+        # build. ESPHome's own check (`esphome config`) on what Panel setup writes,
+        # with the epf component from this checkout, for every size the editor
+        # offers: one network; no network with its own Wi-Fi, upside down; several.
+        offered = offered_sizes()
+        self.assertIn(DISPLAY, offered)
+        variants = [
+            dict(wifi_ssid='"home"', wifi_password='"password1"', orientation=0),
+            dict(wifi_ssid='""', wifi_password='""', orientation=180, hotspot=('"Kitchen setup"', '"abcdefghjkmn"')),
+            dict(wifi_ssid='"home"', wifi_password='"password1"', orientation=90,
+                 more_networks=[('"work"', '"password2"')], hotspot=('"Kitchen setup"', '"abcdefghjkmn"')),
+        ]
+        with tempfile.TemporaryDirectory() as tmp:
+            env = {**os.environ, "ESPHOME_DATA_DIR": str(Path(tmp) / "data")}   # the driver is fetched once
+            for display in offered:
+                for i, variant in enumerate(variants):
+                    path = Path(tmp) / f"{display}-{i}.yaml"
+                    path.write_text(local_build(display, **variant))
+                    out = subprocess.run([str(ROOT / ".esphome-venv" / "bin" / "esphome"), "config", str(path)],
+                                         capture_output=True, text=True, timeout=300, env=env)
+                    self.assertEqual(out.returncode, 0, f"{display}, variant {i}:\n{out.stdout[-1500:]}{out.stderr[-500:]}")
+
+    def test_every_offered_size_has_a_full_refresh_its_driver_has(self):
+        # force_full_update() is the CrowPanel driver's; the Waveshare one has no such
+        # call (break-it #3: the 7.5" didn't compile because of it).
+        for display in offered_sizes():
+            call = firmware_gen.full_refresh(T.get_display(display))
+            self.assertNotEqual(call, "{}", display)
+            text = local_build(display)
+            redraw = text.split("  - id: redraw\n", 1)[1].split("\n\n", 1)[0]
+            self.assertIn(f"begin_redraw()) {call}", redraw, display)
+            self.assertEqual(text.count("force_full_update()"), redraw.count("force_full_update()"),
+                             "only the redraw script asks for a full refresh")
+            if T.get_display(display)["esphome_component"] == "waveshare_epaper":
+                self.assertIn("\nspi:\n  clk_pin: 12\n  mosi_pin: 11\n", text, "Elecrow's demo: SCK 12, MOSI 11")
+                self.assertNotIn("force_full_update", text, display)
 
     def test_mounting_upside_down_swaps_the_buttons(self):
         self.assertEqual(firmware_gen.button_pins(180)["NEXT_PIN"], 6)
