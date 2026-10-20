@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- **Reaching home through Home Assistant's address now finishes setting
+  itself up.** After the restart, Home Assistant loaded the integration but
+  nobody turned it on, so screens away from home got "not found". The add-on
+  now does it within a minute of Home Assistant coming back, without opening
+  the editor. Settings › Reaching home says which step it's at: restart
+  needed, setting up, running, turned off, or not started.
+
 ## 0.13.0
 **Firmware change:** install the panel again from Install or update to get
 the fixes below and, for a panel that sleeps between updates, no flash after

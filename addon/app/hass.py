@@ -13,11 +13,13 @@ import aiohttp
 
 
 class HassError(Exception):
-    """Home Assistant refused or failed a request. `status` is the HTTP code, 0 for network errors."""
+    """Home Assistant refused or failed a request. `status` is the HTTP code, 0 for network errors;
+    `code` is a websocket command's error code ("not_found", ...), empty otherwise."""
 
-    def __init__(self, message: str, status: int = 0):
+    def __init__(self, message: str, status: int = 0, code: str = ""):
         super().__init__(message)
         self.status = status
+        self.code = code
 
 
 class Hass:
@@ -74,7 +76,7 @@ class Hass:
                         continue
                     if not msg.get("success", False):
                         err = msg.get("error") or {}
-                        raise HassError(err.get("message") or "websocket command failed")
+                        raise HassError(err.get("message") or "websocket command failed", code=str(err.get("code") or ""))
                     return msg.get("result")
         except HassError:
             raise

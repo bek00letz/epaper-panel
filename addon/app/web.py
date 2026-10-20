@@ -652,14 +652,18 @@ async def _reach_status() -> dict:
     s = reach.settings()
     ha_addr = await reach.ha_address(runtime.HASS) if HA_TOKEN else ""
     installed = companion.installed_version()
-    running = await companion.loaded(runtime.HASS) if HA_TOKEN else False
+    # Set it up here too, so a visit right after the restart doesn't wait for the add-on's own check.
+    comp = await companion.ensure(runtime.HASS) if HA_TOKEN else {"state": companion.UNKNOWN}
+    running = comp["state"] == companion.RUNNING
     return {
         **s,
         "ha_address": ha_addr,
         # Where a tunnel app on Home Assistant points (Cloudflare Tunnel's "service").
         "service_address": reach.service_address(hostname),
         "companion": {"installed": installed is not None, "version": installed, "running": running,
-                      "restart_needed": installed is not None and (not running or runtime.COMPANION_UPDATED)},
+                      "state": comp["state"], "disabled": comp.get("disabled", False),
+                      "problem": comp.get("problem"),
+                      "restart_needed": comp["state"] == companion.RESTART or runtime.COMPANION_UPDATED},
         # A frame token someone chose can be short; away from home that matters.
         "token_short": bool(config.FRAME_TOKEN) and len(config.FRAME_TOKEN) < 16,
     }
@@ -679,29 +683,19 @@ async def api_reach_put(request):
 
 
 async def api_reach_companion(request):
-    """Install (or update) the companion integration, and set it up if Home Assistant already runs it."""
+    """Install (or update) the companion integration; the status sets it up if Home Assistant already has it."""
     hostname = await reach.addon_hostname(runtime.SESSION)
     try:
         companion.install(reach.service_address(hostname))
     except (OSError, ValueError) as exc:
         raise web.HTTPConflict(text=f"Couldn't install it: {health.describe(exc)}")
-    status = await _reach_status()
-    if status["companion"]["running"]:
-        ok, problem = await companion.set_up(runtime.HASS)
-        status["set_up"] = ok
-        status["problem"] = problem or None
-    return web.json_response(status)
+    return web.json_response(await _reach_status())
 
 
 async def api_reach_restart(request):
-    """Restart Home Assistant so it loads the companion integration. Set up happens on the next visit."""
+    """Restart Home Assistant so it loads the companion integration. The add-on sets it up once it's back."""
     ok, problem = await companion.restart_home_assistant(runtime.HASS)
     return web.json_response({"restarting": ok, "problem": problem or None})
-
-
-async def api_reach_setup(request):
-    ok, problem = await companion.set_up(runtime.HASS)
-    return web.json_response({"set_up": ok, "problem": problem or None, **await _reach_status()})
 
 
 async def api_sources_get(request):
@@ -954,7 +948,6 @@ def make_apps():
         web.get("/api/reach", api_reach_get),
         web.put("/api/reach", api_reach_put),
         web.post("/api/reach/companion", api_reach_companion),
-        web.post("/api/reach/setup", api_reach_setup),
         web.post("/api/reach/restart", api_reach_restart),
         web.get("/api/panel-setup", api_panel_setup_get),
         web.post("/api/panel-setup", api_panel_setup_post),

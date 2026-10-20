@@ -711,13 +711,19 @@ async function reachPane(app, pane) {
     if (r.mode === "ha") {
       const c = r.companion || {};
       parts.push(r.ha_address
-        ? h("p", { class: "note good" }, icon("check", "sm"), h("span", { text: `Screens use ${r.ha_address}/api/epaper.` }))
+        ? (c.state === "running" && !c.restart_needed
+          ? h("p", { class: "note good" }, icon("check", "sm"), h("span", { text: `Screens use ${r.ha_address}/api/epaper.` }))
+          : h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: `Screens will use ${r.ha_address}/api/epaper once the integration runs.` })))
         : h("p", { class: "note warn" }, icon("info", "sm"), h("span", { text: "Home Assistant has no address outside your home yet. Set one in Home Assistant under Settings, System, Network, or turn on Home Assistant Cloud." })));
+      const restart = (title, sub) => grow(title, sub, h("button", { class: "btn primary", onclick: () => call("api/reach/restart", "POST", undefined, "Home Assistant is restarting. Come back here in a minute.") }, "Restart"));
       parts.push(group(
         !c.installed ? grow("A small integration", "Home Assistant needs it to pass screens on to the add-on. Nothing to fill in.", h("button", { class: "btn primary", onclick: () => call("api/reach/companion", "POST", undefined, "Installed. Restart Home Assistant to load it.") }, "Install"))
-        : c.restart_needed ? grow("Restart Home Assistant", "It loads the integration when it starts. Takes about a minute.", h("button", { class: "btn primary", onclick: () => call("api/reach/restart", "POST", undefined, "Home Assistant is restarting. Come back here in a minute.") }, "Restart"))
-        : grow("The integration", `Running, version ${c.version}.`, h("span", { class: "fnote", text: "Ready" }))));
-      if (c.installed && c.running && !r.set_up_tried) { r.set_up_tried = true; api("api/reach/setup", { method: "POST" }).then((x) => { if (!x.body.set_up) toast(`Home Assistant didn't set it up: ${x.body.problem}`); }).catch(() => {}); }
+        : c.restart_needed ? restart("Restart Home Assistant", "It loads the integration when it starts. Takes about a minute.")
+        : c.state === "running" ? grow("The integration", `Running, version ${c.version}.`, h("span", { class: "fnote", text: "Ready" }))
+        : c.state === "set_up" ? grow("The integration", `Home Assistant didn't set it up: ${c.problem || "no answer"}.`, h("button", { class: "btn tinted", onclick: () => call("api/reach", "GET") }, "Try again"))
+        : c.state === "stopped" && c.disabled ? grow("The integration is turned off", "Turn on e-Paper Panel in Home Assistant under Settings, Devices & services.", h("button", { class: "btn tinted", onclick: () => call("api/reach", "GET") }, "Check again"))
+        : c.state === "stopped" ? restart("The integration didn't start", "Restart Home Assistant to try again. If it still doesn't, Home Assistant's log says why.")
+        : grow("The integration", "Home Assistant didn't answer. It may be restarting.", h("button", { class: "btn tinted", onclick: () => call("api/reach", "GET") }, "Check again"))));
     }
     if (r.mode === "own") {
       const addr = input(r.address, (v) => call("api/reach", "PUT", { mode: "own", address: v }, "Saved."), { placeholder: "https://panel.example.com", "aria-label": "Your address", inputmode: "url", autocomplete: "off" });

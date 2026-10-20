@@ -140,6 +140,8 @@ async def main():
         start_entity_publisher()
         await start(runners)
         background = [asyncio.create_task(panel_link_loop()), asyncio.create_task(runtime.LIVE.run())]
+        if HA_TOKEN:
+            background.append(asyncio.create_task(companion.keep_set_up(runtime.HASS)))
         if runtime.PUBLISHER is not None:
             background.append(asyncio.create_task(runtime.PUBLISHER.run()))
         try:
