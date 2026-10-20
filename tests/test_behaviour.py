@@ -137,8 +137,8 @@ class TestPanelSetupSave(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("real-secret", res["yaml"], "the browser gets the masked copy")
 
     async def test_a_changed_file_keeps_the_previous_one(self):
-        await self.post({"device_name": "crowpanel-epaper", "wifi_password": "one-one-one"})
-        await self.post({"device_name": "crowpanel-epaper", "wifi_password": "two-two-two"})
+        await self.post({"device_name": "crowpanel-epaper", "wifi_ssid": "home", "wifi_password": "one-one-one"})
+        await self.post({"device_name": "crowpanel-epaper", "wifi_ssid": "home", "wifi_password": "two-two-two"})
         folder = Path(self.tmp.name)
         self.assertIn('"two-two-two"', (folder / "crowpanel_epaper.yaml").read_text())
         self.assertIn('"one-one-one"', (folder / "crowpanel_epaper.yaml.previous").read_text())
