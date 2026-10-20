@@ -426,17 +426,18 @@ async def design_state(session, design_id: str, spec: dict) -> DesignState:
 
 
 async def draw_category(plan: dict, sub_count: int, page_no: int, *, footer: dict, page_def: dict, orient: int,
-                        display: str) -> list:
+                        display: str, only: int | None = None) -> list:
     """Every item of one page, drawn at a display's size and turned for its mounting.
 
     `page_def` is the page as placed on this screen (devices.view); its
     elements are the design's, in the same order as the plan's values.
-    `footer` is the strip's theme.footer_plan(), and this is page `page_no` of it."""
+    `footer` is the strip's theme.footer_plan(), and this is page `page_no` of it.
+    `only`: just that item (0-based) of the `sub_count`."""
     page_vals, elements = plan["vals"], page_def.get("elements", [])
     sub_type, feed_items, feed_entity = plan["sub_type"], plan["feed_items"], plan["feed_entity"]
     page_imgs = []
     # Render each sub-item for this category
-    for s_idx in range(sub_count):
+    for s_idx in (range(sub_count) if only is None else [only]):
         cloned_page = {**page_def, "elements": []}
         cloned_vals = dict(page_vals)
 
@@ -490,11 +491,11 @@ async def draw_category(plan: dict, sub_count: int, page_no: int, *, footer: dic
     return page_imgs
 
 
-def empty_page(orient: int, display: str):
-    """What a screen shows when its design has no pages."""
+def empty_page(orient: int, display: str, clock: str | None = None):
+    """What a screen shows when its design has no pages. `clock`: the footer's time (now)."""
     cw, _ = T.canvas_dims(orient, display=display)
     page = {"elements": [{"type": "text", "value": "no pages", "x": 24, "y": 60, "w": cw - 48, "h": 120}]}
-    return layout.render_page(page, {}, clock=datetime.now().strftime("%H:%M"), label="empty",
+    return layout.render_page(page, {}, clock=clock or datetime.now().strftime("%H:%M"), label="empty",
                               orientation=orient, display=display)
 
 
@@ -533,7 +534,8 @@ async def refresh_frames(session) -> dict[str, Frames]:
 
 async def _refresh_all(session) -> dict[str, Frames]:
     await publish_computed(session)
-    views = devices.all_views()
+    # Devices of a kind that's switched off aren't drawn (kinds.shown).
+    views = [(dev, spec) for dev, spec in devices.all_views() if kinds.shown(dev)]
     runtime.forget_devices_except([dev["id"] for dev, _ in views])
     states: dict[str, DesignState] = {}
     out: dict[str, Frames] = {}

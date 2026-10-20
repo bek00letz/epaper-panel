@@ -1,0 +1,6 @@
+configuration:
+  trmnl:
+    name: TRMNL screens
+    description: >-
+      Lets TRMNL screens pair with this add-on (in the editor, Add a screen).
+      While it's off, nothing of it exists on the add-on's port or in the editor.

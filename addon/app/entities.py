@@ -160,9 +160,11 @@ async def publish_computed(session):
     # service is down keeps its entity (mqtt_bridge withdraws only the rest).
     prune_published()
     wanted = await publish_sources(session)
-    for dev in devices.all_devices():
+    import kinds                                      # here: kinds' modules import this one
+    for dev in kinds.shown_devices():
         wanted |= {devices.entity_id(base, dev) for base in
-                   ("sensor.epaper_quiet_hours", "sensor.epaper_panel_last_render", "sensor.epaper_panel_pages")}
+                   ("sensor.epaper_quiet_hours", "sensor.epaper_panel_last_render", "sensor.epaper_panel_pages",
+                    *kinds.of(dev).entities(dev))}
 
     # Every design some screen shows: their widgets all need their values.
     cur_spec = {"pages": {f"{d}:{name}": page for d in sorted(devices.designs_in_use())

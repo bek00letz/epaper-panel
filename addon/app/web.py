@@ -54,11 +54,17 @@ async def ingress_only(request, handler):
 
 
 def _device(request) -> dict:
-    """The device an editor request is about (?device=), or the first."""
+    """The device an editor request is about (?device=), or the first the add-on drives."""
+    asked = request.query.get("device")
     try:
-        return devices.resolve(request.query.get("device"))
+        dev = devices.resolve(asked)
     except KeyError:
         raise web.HTTPNotFound(text="There's no such screen.")
+    if kinds.shown(dev):
+        return dev
+    if asked:
+        raise web.HTTPNotFound(text="There's no such screen.")         # its kind is switched off
+    return next(iter(kinds.shown_devices()), dev)
 
 
 def _frames(request):
@@ -97,7 +103,7 @@ async def public_status(request):
     or why quiet hours are on: the reason can reveal whether anyone is home."""
     f = runtime.device(kinds.device_for(request)["id"]).frames
     return web.json_response({
-        "ok": f.error is None and bool(f.strip),
+        "ok": f.error is None and f.rendered_at is not None,
         "page_count": len(f.names),
         "rendered_at": f.rendered_at,
         "version": ADDON_VERSION,
@@ -119,8 +125,7 @@ async def status(request):
     f = rt.frames
     spec = load_layouts(dev["id"])
     link = _link(dev)
-    m_int = re.search(r"\d+", str((dev.get("setup") or {}).get("refresh_interval", "5")))
-    panel_int = (await link.refresh_interval() if link else None) or (int(m_int.group(0)) if m_int else 5)
+    panel_int = (await link.refresh_interval() if link else None) or kinds.of(dev).interval(dev) or 5
     return web.json_response({
         "pages": [n for n in f.names if n != SLEEP_PAGE],
         "rendered_at": f.rendered_at,
@@ -484,6 +489,7 @@ def _screen(dev: dict, everyone: list[dict]) -> dict:
         "shares_with": [{"id": d["id"], "name": d.get("name") or ""} for d in everyone
                         if d["design"] == dev["design"] and d["id"] != dev["id"]],
         "can_wake": kind.link(dev) is not None, "picks_page": kind.picks_page, "owns_interval": kind.owns_interval,
+        "setup": kind.setup_flow, "info": kind.describe(dev),
         "entity_suffix": dev.get("entity_suffix") or "",
         # Enough to offer "the same quiet hours as …" when adding a screen.
         "quiet": {k: (dev.get("quiet_hours") or {}).get(k) for k in ("enabled", "start", "end")},
@@ -491,17 +497,19 @@ def _screen(dev: dict, everyone: list[dict]) -> dict:
 
 
 def _screens() -> dict:
-    everyone = devices.all_devices()
+    everyone = kinds.shown_devices()                   # a kind that's switched off shows nothing
+    on = kinds.enabled_kinds()
+    sizes = list(dict.fromkeys(d for k in on for d in k.displays()))
     return {"devices": [_screen(d, everyone) for d in everyone],
-            "kinds": [{"id": k.id, "name": k.name,
-                       "displays": [{"id": d, "name": T.DISPLAYS[d]["name"], "w": T.DISPLAYS[d]["w"],
-                                     "h": T.DISPLAYS[d]["h"]} for d in k.displays()]}
-                      for k in kinds.KINDS.values()],
-            # Every panel model's canvases, so the editor's guides and new
-            # elements use the renderer's own numbers (footer band, margins).
+            "kinds": [{"id": k.id, "name": k.name, "setup": k.setup_flow,
+                       "displays": [{"id": d, "name": T.get_display(d)["name"], "w": T.get_display(d)["w"],
+                                     "h": T.get_display(d)["h"]} for d in k.displays()]}
+                      for k in on],
+            # Every model's canvases, so the editor's guides and new elements
+            # use the renderer's own numbers (footer band, margins).
             "displays": {d: {"id": d, "name": v["name"], "w": v["w"], "h": v["h"], "mm_w": v["mm_w"],
                              "landscape": T.canvas_geometry(0, d), "portrait": T.canvas_geometry(90, d)}
-                         for d, v in T.DISPLAYS.items()}}
+                         for d, v in ((d, T.get_display(d)) for d in sizes)}}
 
 
 def _clean_name(raw, exclude_id=None) -> str:
@@ -538,7 +546,7 @@ async def api_devices_add(request):
     """Add a screen: {kind, name, display, orientation, pages: new|copy|same, from, quiet_hours_from}."""
     body = await _body(request)
     kind = kinds.KINDS.get(str(body.get("kind") or ""))
-    if kind is None:
+    if kind is None or not kind.enabled():
         raise web.HTTPBadRequest(text="That isn't a kind of screen this add-on knows.")
     display = str(body.get("display") or "")
     if display not in kind.displays():
@@ -573,12 +581,17 @@ async def api_devices_add(request):
 
 
 async def api_devices_update(request):
-    """Rename a screen: {name}. Its size and mounting go with its pages (Send)."""
+    """Rename a screen: {name}, or change its kind's own settings (a TRMNL's wake interval).
+    Its size and mounting go with its pages (Send)."""
     dev = _device_by_path(request)
     body = await _body(request)
     fields = {}
     if "name" in body:
         fields["name"] = _clean_name(body["name"], exclude_id=dev["id"])
+    try:
+        fields.update(kinds.of(dev).settings(dev, body))
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text=str(exc))
     dev = devices.update(dev["id"], **fields) if fields else dev
     return web.json_response({"device": _screen(dev, devices.all_devices()), **_screens()})
 
@@ -592,6 +605,8 @@ async def api_devices_unlink(request):
 
 async def api_devices_remove(request):
     dev = _device_by_path(request)
+    if len(kinds.shown_devices()) < 2:
+        raise web.HTTPConflict(text="This is the only screen, so it can't be removed.")
     try:
         devices.remove(dev["id"])
     except ValueError as exc:
@@ -612,9 +627,12 @@ async def api_devices_restore(request):
 
 def _device_by_path(request) -> dict:
     try:
-        return devices.get(request.match_info["id"])
+        dev = devices.get(request.match_info["id"])
     except KeyError:
         raise web.HTTPNotFound(text="There's no such screen.")
+    if not kinds.shown(dev):
+        raise web.HTTPNotFound(text="There's no such screen.")
+    return dev
 
 
 async def api_arrange(request):
@@ -884,8 +902,9 @@ async def api_mdi_all(request):
 
 async def api_displays(request):
     """Catalog of supported CrowPanel e-paper hardware models."""
+    on = {k.id for k in kinds.enabled_kinds()}
     return web.json_response({
-        "displays": list(T.DISPLAYS.values()),
+        "displays": [d for d in T.DISPLAYS.values() if d.get("kind") in on],
         "default": T.DEFAULT_DISPLAY,
     })
 
@@ -906,7 +925,7 @@ def make_apps():
         web.get("/status", public_status),
         web.get("/fonts/{name}", panel_font),
     ])
-    for kind in kinds.KINDS.values():                  # each kind of device adds its own
+    for kind in kinds.enabled_kinds():                 # each kind of device adds its own; one that's off, none
         panel.add_routes(kind.routes())
 
     editor = web.Application(client_max_size=1024 * 1024, middlewares=[ingress_only])
@@ -953,6 +972,8 @@ def make_apps():
         web.get("/api/mdi/list", api_mdi_list),
         web.get("/api/mdi/all", api_mdi_all),
     ])
+    for kind in kinds.enabled_kinds():
+        editor.add_routes(kind.editor_routes())
     if WEB_DIR.exists():
         editor.router.add_static("/static/", WEB_DIR)
 

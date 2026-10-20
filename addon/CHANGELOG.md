@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+- **TRMNL screens.** Turn on TRMNL screens in the add-on's configuration, then
+  add one in the editor (Add a screen, TRMNL). It pairs within ten minutes of
+  you asking, gets its own key and shows your pages: one per wake, at an
+  interval you choose per screen, with its button going to the next page.
+  Quiet hours let it sleep until they end. Battery and Wi-Fi show in the
+  editor and as Home Assistant sensors. Works through Reaching home too.
+  Built from TRMNL's open-source firmware; not yet tried on a real one.
+- The Add a screen sheet no longer shows a stray "null" under the pages.
+
 ## 0.11.0
 **Firmware change** (only needed for the new things below): install the panel
 again from Panel setup when you want it to work away from home or join more

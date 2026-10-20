@@ -241,7 +241,25 @@ inside the add-on and versioned with it):
    - Also built: group styles across selected elements (a real group, shaped
      by its members on every size), snapping for several elements at once, a
      Refresh button per screen.
-3. **The TRMNL kind**, as the module.
+3. **The TRMNL kind**, as the module. *Built 2026-10-20 (`kinds/trmnl.py`,
+   `tests/test_trmnl.py`), re-checked against the firmware's current source,
+   still commit `383d6ff`.* Decided along the way, with the user:
+   - A device that reports a size other than 800 × 480 gets a profile of its
+     own (`trmnl_<w>x<h>`), its physical size estimated from the TRMNL OG's
+     pixel density.
+   - A button press during quiet hours shows the next page, and two minutes
+     later it's back to the sleep screen.
+   - Battery as an estimated percentage (a standard lithium curve) plus the
+     voltage as its own sensor.
+   - "updated HH:MM" is when that page last changed, not the wake: otherwise
+     every picture differs, and the TRMNL downloads and flashes on every wake.
+     Whether it checks in is "Last seen", in the editor and Home Assistant.
+   Found in the firmware and not in the plan above: both replies carry a
+   `status` (setup: 200 pairs, 404 shows our message, but only in an HTTP 200;
+   display: only 0 is safe, 202 polls every 5 s and 500 wipes its Wi-Fi); the
+   picture needs `Content-Type: image/png` exactly; the setup reply's
+   `image_url` is left empty, because a setup picture would replace the
+   device's own logo.
 
 ## Rules this changes
 

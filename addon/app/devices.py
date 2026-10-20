@@ -220,6 +220,19 @@ def add(kind: str, name: str, display: str, design: str | None = None, *, orient
     return dev
 
 
+def rekey(device_id) -> str:
+    """Give a device a new key. The old one stops working at once."""
+    store = _load()
+    for dev in store["devices"]:
+        if dev["id"] == _clean_id(device_id):
+            if dev.get("install_token"):
+                raise ValueError("The first panel's key is the install's frame token.")
+            dev["key"] = secrets.token_urlsafe(24)
+            _save(store)
+            return dev["key"]
+    raise KeyError(f"no device {device_id}")
+
+
 def unlink(device_id) -> dict:
     """Give a device its own copy of the design it shares, as placed for it. A no-op if it doesn't share."""
     dev = get(device_id)

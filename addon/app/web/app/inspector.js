@@ -521,7 +521,9 @@ function page(app, head, body) {
       h("div", { class: "btnrow" },
         h("button", { class: "btn tinted", onclick: () => { doc.spec.rotation.push(cur); doc.commit(); } }, times ? "Show again" : "Add to rotation"),
         times ? h("button", { class: "btn tinted", onclick: () => { doc.spec.rotation.splice(doc.spec.rotation.lastIndexOf(cur), 1); doc.commit(); } }, times > 1 ? "Show once less" : "Take out") : null),
-      field("Each page shows for", select([[15, "15 seconds"], [30, "30 seconds"], [45, "45 seconds"], [60, "1 minute"], [120, "2 minutes"], [300, "5 minutes"]], doc.spec.rotate_seconds || 30, (v) => { doc.spec.rotate_seconds = Number(v); doc.commit(); }), { note: "For every page in the rotation." })));
+      app.screen?.picks_page === "addon"
+        ? h("p", { class: "fnote", text: `${app.screen.name} shows the next page each time it wakes. How often is in Settings.` })
+        : field("Each page shows for", select([[15, "15 seconds"], [30, "30 seconds"], [45, "45 seconds"], [60, "1 minute"], [120, "2 minutes"], [300, "5 minutes"]], doc.spec.rotate_seconds || 30, (v) => { doc.spec.rotate_seconds = Number(v); doc.commit(); }), { note: "For every page in the rotation." })));
   }
   body.append(section(null, h("div", { class: "btnrow" },
     h("button", { class: "btn tinted", onclick: () => app.duplicatePage() }, icon("dup", "sm"), "Duplicate"),

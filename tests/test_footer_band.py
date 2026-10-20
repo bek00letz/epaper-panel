@@ -67,12 +67,15 @@ class TestOneSource(unittest.TestCase):
 class TestTheEditorGetsItFromTheServer(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         fresh_data_dir()
+        # Every kind on, so every profile reaches the editor (a kind that's off sends none of its own).
+        self._trmnl, support.config.TRMNL = support.config.TRMNL, True
         _, editor = web.make_apps()
         self.ed = TestClient(TestServer(editor))
         await self.ed.start_server()
 
     async def asyncTearDown(self):
         await self.ed.close()
+        support.config.TRMNL = self._trmnl
         support.use_test_data_dir()
 
     async def displays(self):

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import re
 from datetime import datetime
 from email.utils import formatdate
 
@@ -84,6 +85,11 @@ class CrowPanel(Kind):
 
             rt.link = PanelLink(runtime.HASS, preferred, sole=only_panel, ha_name=ha_name)
         return rt.link
+
+    def interval(self, dev: dict) -> int:
+        """What its Panel setup says; the panel's own number, through its link, wins."""
+        m = re.search(r"\d+", str((dev.get("setup") or {}).get("refresh_interval", "5")))
+        return int(m.group(0)) if m else 5
 
     async def render(self, session, dev, spec, st, quiet_active, quiet_reason) -> runtime.Frames:
         orient = int(spec.get("orientation") or 0)

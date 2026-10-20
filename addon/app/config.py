@@ -11,6 +11,8 @@ HA_BASE = (os.environ.get("HA_BASE") or "http://supervisor/core").rstrip("/")
 HA_TOKEN = (os.environ.get("HA_TOKEN") or "").strip()
 REFRESH = max(10, min(3600, int(os.environ.get("REFRESH_SECONDS", "60") or 60)))
 FRAME_TOKEN = (os.environ.get("FRAME_TOKEN") or "").strip()
+# TRMNL screens (kinds/trmnl.py): off unless the add-on option turns them on.
+TRMNL = (os.environ.get("TRMNL") or "").strip().lower() in ("1", "true", "yes", "on")
 
 FRAME_PORT = int(os.environ.get("FRAME_PORT", "8099") or 8099)
 INGRESS_PORT = int(os.environ.get("INGRESS_PORT", "8080") or 8080)

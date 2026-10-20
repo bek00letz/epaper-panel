@@ -7,6 +7,7 @@ There is no grey on a 1-bit panel: hierarchy is carried by SIZE, not tone.
 Small secondary text is solid black and simply smaller. Only text above
 ~90 px can be screened (see screen) and still read as a deliberate grey.
 """
+import re
 from functools import lru_cache
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
@@ -77,16 +78,65 @@ DISPLAYS = {
         "esphome_model": "10.2in",
         "esphome_component": "waveshare_epaper",
     },
+    # TRMNL's own 7.5" screen. A TRMNL says its size on every wake; any other
+    # size gets a profile of its own, made from this one (sized_display).
+    "trmnl_og": {
+        "kind": "trmnl",
+        "id": "trmnl_og",
+        "name": "TRMNL OG",
+        "w": 800,
+        "h": 480,
+        "mm_w": 163.2,
+        "mm_h": 97.9,
+        "margin": 40,
+        "reports_size": True,
+        "sized_name": "TRMNL",
+    },
 }
 
 DEFAULT_DISPLAY = "crowpanel_579"
 
+# A profile for a size a screen reported: "<kind>_<w>x<h>".
+SIZED_ID = re.compile(r"^([a-z0-9]+)_([0-9]{2,4})x([0-9]{2,4})$")
+SIZED_MIN, SIZED_MAX = 64, 4096
+
+
+def sized_display(kind, w, h):
+    """The profile id for a screen of `kind` that says it is w x h pixels: one of
+    the kind's own when the size matches, otherwise one made for that size."""
+    for k, d in DISPLAYS.items():
+        if d.get("kind") == kind and (d["w"], d["h"]) == (int(w), int(h)):
+            return k
+    key = f"{kind}_{int(w)}x{int(h)}"
+    return key if _made_display(key) else None
+
+
+@lru_cache(maxsize=64)
+def _made_display(key):
+    """A profile made for a reported size, from its kind's own profile (same
+    pixel density and margins), or None when the kind doesn't report sizes."""
+    m = SIZED_ID.match(key)
+    if not m:
+        return None
+    kind, w, h = m.group(1), int(m.group(2)), int(m.group(3))
+    if not (SIZED_MIN <= w <= SIZED_MAX and SIZED_MIN <= h <= SIZED_MAX):
+        return None
+    base = next((d for d in DISPLAYS.values() if d.get("kind") == kind and d.get("reports_size")), None)
+    if base is None:
+        return None
+    px_per_mm = base["w"] / base["mm_w"]          # an estimate: the size is known, the density isn't
+    margin = max(16, min(64, round(min(w, h) * base["margin"] / min(base["w"], base["h"]) / 8) * 8))
+    return {"kind": kind, "id": key, "name": base.get("sized_name") or base["name"], "w": w, "h": h,
+            "mm_w": round(w / px_per_mm, 1), "mm_h": round(h / px_per_mm, 1), "margin": margin,
+            "reports_size": True, "sized": True}
+
 
 def get_display(key=None):
     """Retrieve display profile by model key; defaults to CrowPanel 5.79\"."""
-    if not key or str(key).lower() not in DISPLAYS:
-        return DISPLAYS[DEFAULT_DISPLAY]
-    return DISPLAYS[str(key).lower()]
+    k = str(key or "").lower()
+    if k in DISPLAYS:
+        return DISPLAYS[k]
+    return _made_display(k) or DISPLAYS[DEFAULT_DISPLAY]
 
 
 W, H = 792, 272

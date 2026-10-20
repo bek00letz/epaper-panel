@@ -48,7 +48,7 @@ Where things live in `addon/app/`:
 | `server.py` | Entry point: starts the web apps and the background loops |
 | `config.py` / `runtime.py` | Settings from the environment; what the running add-on holds. Always read as `config.X` / `runtime.X`, so changes are seen everywhere |
 | `devices.py` | The screens the add-on drives, the design each shows, the shared library; keys; the move in from one panel |
-| `kinds/` | Kinds of device (`crowpanel.py`): their sizes, device-port routes, how they're woken, and packing what they fetch; the one key check (`device_for`) and the wrong-key slowdown |
+| `kinds/` | Kinds of device (`crowpanel.py`, `trmnl.py`): their sizes, device-port and editor routes, how they're woken, and what they fetch; which kinds are on; the one key check (`device_for`) and the wrong-key slowdown |
 | `render/arrange.py` | One design on several sizes: element IDs, automatic placement, each size's arrangement |
 | `reach.py` / `companion.py` / `companion/epaper_panel/` | Reaching home: how screens away from home get in, and the Home Assistant integration that passes them on |
 | `frames.py` | Per design: which pages are live, their values, alerts. Per device: quiet hours, then its kind renders it |
@@ -65,7 +65,8 @@ The add-on runs two HTTP listeners in one event loop:
   other than Home Assistant's Ingress proxy (`172.30.32.2`).
 - **Port `8099` (the device port):** what each device fetches, found by its
   key (`kinds.device_for`): for a CrowPanel `/frames.epf` and `/frame.epf`, the
-  PNG versions for older clients, and a minimal `/status`. ETag /
+  PNG versions for older clients, and a minimal `/status`; for a TRMNL (when
+  its option is on) `/api/setup`, `/api/display`, `/api/log` and its pictures. ETag /
   `304 Not Modified`. Every device has its own key. The first panel's is the
   install's frame token: the option, or one the add-on generates. Its frames
   start requiring it once the panel has first used it (`frame_token.py`), so
@@ -110,10 +111,17 @@ every design.
   Assistant entities keep their names. Other devices' entities end in a
   suffix fixed when they're added (`_kitchen`), so a rename never renames them.
 - **Kinds** (`kinds/`) say what a device of that kind supports: its display
-  profiles (`theme.DISPLAYS[*].kind`), the routes it adds to the device port,
-  whether the add-on can wake it (`link`), who picks the page and who owns the
-  refresh interval. The core names no kind. `crowpanel` is the panel
-  described in the rest of this file.
+  profiles (`theme.DISPLAYS[*].kind`), the routes it adds to the device port
+  and to the editor's API, whether the add-on can wake it (`link`), who picks
+  the page and who owns the refresh interval, how a new one is set up
+  (`setup_flow`: install or pair), what the editor shows about it
+  (`describe`), its own settings and the entities it publishes. The core names
+  no kind. `crowpanel` is the panel described in the rest of this file;
+  `trmnl` has [its own section](#trmnl).
+- **A kind can be optional.** `Kind.enabled()` is its add-on option. While
+  it's off its routes aren't added (`web.make_apps`), its devices aren't drawn,
+  and the editor lists none of them or their sizes (`kinds.shown`,
+  `kinds.shown_devices`). They stay in `devices.json` for when it's on again.
 - **Per-device runtime** (`runtime.device(id)`): the current frames, what was
   left out to fit, and the panel link. Alerts and lingering widget pages are
   per design (`runtime.alert`, `runtime.linger`), so an alert seizes every
@@ -318,6 +326,54 @@ Assistant. Each CrowPanel device has its own link. It never guesses names:
   appeared, it stays 5 minutes after its condition last held, so a plane at
   the edge of the radius doesn't reshape the rotation every minute.
 
+## TRMNL
+
+`kinds/trmnl.py`, off unless the add-on option `trmnl` is on
+(`config.TRMNL`). A TRMNL deep-sleeps, wakes on a timer or its button, asks
+for one picture and sleeps again. It speaks TRMNL's "bring your own server"
+protocol; everything here comes from its open-source firmware
+(`usetrmnl/firmware`, commit `383d6ff`), and `tests/test_trmnl.py` builds its
+requests and reads the answers the way that source does.
+
+- **Pairing.** Adding a TRMNL in the editor makes the device (name, pages)
+  and opens a ten-minute window for it (`POST /api/devices/{id}/pair`; one
+  window at a time). In it, `GET /api/setup` from a MAC address no other
+  TRMNL has is given a new key (`devices.rekey`) and a friendly ID. Outside
+  it, the answer is HTTP 200 with `"status": 404` and a message: only then
+  does the firmware show the message, and it sleeps five minutes before
+  asking again. Refusals count as wrong keys. `image_url` is empty in the
+  reply: a setup picture would replace the device's own logo, and its first
+  page follows in the same wake.
+- **Each wake** (`GET /api/display`) needs its key in `Access-Token` and
+  its MAC in `ID`. Its battery, Wi-Fi, model and firmware go to
+  `state/<id>.json` and to sensors. A reported `Width` × `Height` that isn't
+  the device's size becomes its size (`theme.sized_display`: the TRMNL OG's
+  own profile, or `trmnl_<w>x<h>` made from it), and it renders at the new
+  size at once.
+- **The page.** `render()` draws nothing: it keeps the cycle's design state.
+  The wake picks the page with the device's cursor (`step`: a timer wake moves
+  through every item of every live page; a button wake, or any other wake
+  reason, goes to the next page) and draws only that item
+  (`frames.draw_category(only=)`). Alerts show while they last; conditions
+  and linger apply as they do everywhere.
+- **"updated" is when the page last changed** (`steady`). The picture is
+  drawn again with the time it had; if it comes out the same, nothing changed
+  and it keeps its name. `filename` is the picture's hash, so an unchanged
+  page costs no download and no flash.
+- **`refresh_rate` is always sent** (the firmware stores a missing one as 0):
+  the device's wake interval, cut short to wake just after quiet hours start.
+  During quiet hours: the sleep screen until they end, plus a minute; a button
+  press shows a page for two minutes. Presence-based quiet hours have no end,
+  so it checks again at its interval.
+- **The picture** (`image_url`) is a 1-bit PNG, `Content-Type: image/png`
+  exactly (what `bl.cpp` decodes as PNG). Its address is built from the one
+  the device called (`base_address`: the forwarded host and the companion's
+  prefix when it came through a proxy) because the firmware sends `ID` and
+  `Access-Token` only to addresses that start with its server's.
+- **Only `status` 0 is ever sent**: 202 makes it poll every five seconds,
+  and 500 makes it forget its key and its Wi-Fi.
+- `/api/log` is kept in memory (the last 20 lines) for the editor.
+
 ## Reaching home
 
 `reach.py`. Screens away from the home network reach the add-on one of
@@ -344,6 +400,9 @@ Assistant's address, or through the user's own address.
 - **CrowPanels** fetch over HTTPS from the address in their YAML, checked
   against ESP-IDF's certificate bundle (`epf_client.h`). Away from home they
   can't be woken early: that goes through Home Assistant's ESPHome connection.
+- **TRMNLs** are given the address when they pair: the editor shows the home
+  one and, with Reaching home on, the away one (`reach.public_base`). The
+  companion passes `Access-Token` on like any other header.
 
 ## Measured numbers
 
@@ -493,6 +552,8 @@ timer runs. When an `alert` page fires, the server replaces the strip with a
 single-page alert frame for `hold_minutes` and pushes a refresh to the panel.
 
 **The panel owns which page is shown; the server owns what the pages are.**
+(For a CrowPanel. A TRMNL can't page on its own, so the add-on picks its page:
+see [TRMNL](#trmnl).)
 Paging had to move onto the device to be quick, which means display state
 (current page, held or not) lives on the panel and is lost on reboot. The
 server still decides the rotation's contents and order. The cost is that the

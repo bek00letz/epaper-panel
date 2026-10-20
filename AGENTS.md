@@ -93,11 +93,14 @@ the add-on itself lives in `addon/`.
 |---|---|
 | HA Sidebar (`:8080` via Ingress) | Drag-and-drop visual editor and JSON API. Answers only Home Assistant's Ingress proxy (`172.30.32.2`); any other app on the internal network gets 403 |
 | `<homeassistant>:8099` | The device port: what each device fetches, found by its key (`kinds.device_for`). For a CrowPanel: `/frames.epf`, `/frame.epf`, the PNG fallbacks, and a minimal `/status`. `POST /api/action/refresh|page` always need a key. The first panel's frames need it once that panel has used it (`frame_token.py`). Remappable in the add-on's network settings |
+| `<homeassistant>:8099` for a TRMNL | Only while the add-on option `trmnl` is on: `GET /api/setup` (pairing, only in the editor's ten-minute window), `GET /api/display` (one wake), `POST /api/log`, `GET /api/image/<hash>`. All but setup need its key in `Access-Token` |
 | ESPHome node (`crowpanel-epaper`) | Exposes `refresh_now`, `show_page`, `page_step`, and `hold_toggle` actions over the encrypted ESPHome native API |
 
 The device port is built to be reachable from the internet (Settings ›
 Reaching home): never add anything to it that answers without a device's key
-through `kinds.device_for`, and never let it say more than a frame does.
+through `kinds.device_for` (the one exception is a TRMNL's `/api/setup`, which
+answers only inside the editor's pairing window), and never let it say more
+than a frame does.
 
 ## Conventions
 
@@ -115,7 +118,13 @@ through `kinds.device_for`, and never let it say more than a frame does.
   Size, orientation, seconds per page and quiet hours are the device's; pages
   and rotation are the design's. Read and write them through `devices.view` /
   `save_view` (or `layouts_store`), never by file. A kind of device lives in
-  `kinds/`; the core never names one.
+  `kinds/`; the core never names one. A kind can be optional (`Kind.enabled`):
+  list devices for anything a person or a render sees through
+  `kinds.shown_devices()`, so a kind that's off shows nowhere.
+- **A size a screen reports is a profile too**: `theme.sized_display` gives
+  the kind's own profile, or `<kind>_<w>x<h>` made from it, which
+  `theme.get_display` understands anywhere. Don't add one to `DISPLAYS` at
+  runtime.
 - **The first device keeps its legacy names**: the install's frame token, its
   download address, its entity IDs, its name in Home Assistant ("E-paper
   panel"). Don't "tidy" them: that's what keeps an upgraded panel working
@@ -204,6 +213,30 @@ YAML comes only from `addon/app/firmware/panel.yaml`. After changing it, run
 - **Strokes under ~4 px are invisible on this panel** (145 dpi, so 3 px is
   0.5 mm). Icons drawn in the lambda need chunky geometry.
 
+## TRMNL gotchas
+
+From its firmware (`usetrmnl/firmware`), which is the authority here, not
+TRMNL's API docs. `tests/test_trmnl.py` pins each of these.
+
+- **Only ever send `"status": 0` from `/api/display`.** 202 makes it poll
+  every five seconds (battery gone in a day), and 500 makes it forget its key
+  *and its Wi-Fi*. Even for an error, send 0 and keep what it shows.
+- **Always send `refresh_rate`**, at least 60. A missing one is stored as 0.
+- **A refusal from `/api/setup` is HTTP 200 with `"status": 404`.** With any
+  other HTTP code the firmware drops the message and shows nothing useful.
+- **`filename` is the picture's hash and at most 31 characters**, never
+  `empty_state` or `screen_wiper.png` (both mean something to it). Anything
+  that changes every wake (a clock) makes it download and flash every wake:
+  that's why "updated" is when the page last changed (`trmnl.steady`).
+- **The picture's address must start with the address the device was given**,
+  or it doesn't send its key (`isSameOrigin` is a prefix check). Build it from
+  the request (`trmnl.base_address`), never from a setting.
+- **`Content-Type: image/png` exactly**: anything else is read as a BMP.
+- **Its messages are ASCII.** Its font has nothing else.
+- **Nothing on the device port answers a TRMNL without its key**, except
+  `/api/setup` in the window, and that gives a key only to a MAC address no
+  other TRMNL has.
+
 ## Editor design decisions
 
 The editor is `addon/app/web/`: `index.html`, `editor.css` and plain ES
@@ -269,7 +302,9 @@ When touching display code, `it.image()` at a negative offset is a trap: see
   `health.SERVICES`; anything else reports with `health.ok()` /
   `health.fail()`. That's what the problem sensors in Home Assistant show.
 - **Only alerts, quiet hours and people wake the panel early.** Never push on
-  a content or shape change: the panel's refresh interval is the user's.
+  a content or shape change: the panel's refresh interval is the user's. A
+  TRMNL can't be woken at all; its wake interval is a setting of that screen,
+  and the editor says alerts show at its next wake.
 
 - **Never guess an entity ID or an action name** from a device name. Find the
   panel through `panel_link.PanelLink` (service list, registry unique_ids).

@@ -5,6 +5,10 @@ port, whether the add-on can wake it early, and how a device of that kind gets
 its pages: `render` turns a design's pages for this cycle (frames.DesignState)
 into what the device fetches.
 
+A kind can be optional (an add-on option turns it on). While it's off its
+routes don't exist, its devices aren't drawn and the editor shows none of
+them (`enabled`, `shown`).
+
 Requests on the device port say which device they come from by its key
 (devices.authenticate). `device_for` is the one place that's checked.
 """
@@ -25,6 +29,12 @@ class Kind:
     # Who decides which page is on screen, and how often it fetches: "device" or "addon".
     picks_page = "device"
     owns_interval = "device"
+    # How a new one is set up in the editor: "install" (Panel setup) or "pair".
+    setup_flow = "install"
+
+    def enabled(self) -> bool:
+        """Whether this kind is on (an optional kind has an add-on option)."""
+        return True
 
     def displays(self) -> list[str]:
         """Display profiles (render.theme.DISPLAYS) a device of this kind can have."""
@@ -34,9 +44,31 @@ class Kind:
         """aiohttp routes this kind adds to the device port."""
         return []
 
+    def editor_routes(self) -> list:
+        """aiohttp routes this kind adds to the editor's API (behind Ingress)."""
+        return []
+
     def link(self, dev: dict):
         """How the add-on reaches the device to wake it early (a PanelLink), or None if it can't."""
         return None
+
+    def interval(self, dev: dict) -> int | None:
+        """Minutes between fetches, when the add-on knows them without asking the device."""
+        return None
+
+    def describe(self, dev: dict) -> dict:
+        """What the editor shows about the device beyond the core's fields. Never its key."""
+        return {}
+
+    def settings(self, dev: dict, body: dict) -> dict:
+        """The device fields an editor change asks for ({} when it asks for none of this kind's).
+        Raises ValueError, with what to fix, for a value it can't take."""
+        return {}
+
+    def entities(self, dev: dict) -> set[str]:
+        """Home Assistant entities this kind publishes for the device (without its suffix):
+        kept while the device is quiet, however long it sleeps."""
+        return set()
 
     async def render(self, session, dev: dict, spec: dict, st, quiet_active: bool, quiet_reason: str):
         """The device's new runtime.Frames from its design's state this cycle."""
@@ -58,11 +90,28 @@ def of(dev: dict) -> Kind:
     return found
 
 
+def enabled_kinds() -> list[Kind]:
+    return [k for k in KINDS.values() if k.enabled()]
+
+
+def shown(dev: dict) -> bool:
+    """Whether the add-on drives this device now: its kind exists and is on."""
+    found = KINDS.get(dev.get("kind"))
+    return found is not None and found.enabled()
+
+
+def shown_devices() -> list[dict]:
+    """The devices the add-on drives now, in the order they were added."""
+    return [d for d in devices.all_devices() if shown(d)]
+
+
 def provided_key(request) -> str:
     auth_hdr = request.headers.get("Authorization") or ""
     if auth_hdr.lower().startswith("bearer "):
         return auth_hdr[7:].strip()
-    return request.query.get("token") or request.headers.get("X-Frame-Token") or ""
+    # Access-Token: how a TRMNL sends its key (usetrmnl/firmware, request_headers.cpp).
+    return (request.query.get("token") or request.headers.get("X-Frame-Token")
+            or request.headers.get("Access-Token") or "")
 
 
 class WrongKeys:
@@ -126,9 +175,11 @@ def device_for(request, kind: str | None = None, *, always: bool = False) -> dic
         if always:
             raise web.HTTPUnauthorized(text="This needs the frame token (Panel setup shows it in the panel's YAML).")
         raise web.HTTPUnauthorized(text="invalid or missing token")
+    if not shown(dev):
+        raise web.HTTPUnauthorized(text="invalid or missing token")      # its kind is off
     if kind is not None and dev.get("kind") != kind:
         raise web.HTTPNotFound(text="not for this kind of device")
     return dev
 
 
-from kinds import crowpanel  # noqa: E402,F401  (registers itself)
+from kinds import crowpanel, trmnl  # noqa: E402,F401  (register themselves)

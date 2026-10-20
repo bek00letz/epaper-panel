@@ -39,10 +39,13 @@ services:
 options:
   refresh_seconds: 60
   esphome_device: "crowpanel_epaper"
+  # TRMNL screens: pair them in the editor (Add a screen). Off by default.
+  trmnl: false
 schema:
   refresh_seconds: "int(10,3600)"
   esphome_device: "str?"
   frame_token: "password?"
+  trmnl: "bool?"
   # DEPRECATED, kept only so an existing install migrates its Jellyfin
   # settings into the editor's Data sources on first start. Safe to clear
   # afterwards; a later version drops them.

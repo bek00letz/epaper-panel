@@ -65,6 +65,7 @@ class DeviceRuntime:
         self.frames = Frames()
         self.fit: dict | None = None             # what frames.fit_counts left out, for the editor
         self.link: PanelLink | None = None       # set by the device's kind when it can be reached
+        self.kind: dict = {}                     # what the device's kind keeps between requests
 
 
 _DEVICES: dict[str, DeviceRuntime] = {}

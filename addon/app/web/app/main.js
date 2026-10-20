@@ -121,6 +121,7 @@ class App {
     const parts = [d.display_name];
     if ([90, 270].includes(d.orientation)) parts.push("portrait");
     if (d.shares_with.length) parts.push(`same pages as ${d.shares_with.map((x) => x.name).join(", ")}`);
+    if (d.setup === "pair" && !d.info?.paired) parts.push("not paired yet");
     return parts.join(" · ");
   }
   openScreens(anchor) {

@@ -2,7 +2,8 @@
 
 # e-Paper Panel
 
-A Home Assistant add-on for Elecrow's CrowPanel e-paper displays. It turns
+A Home Assistant add-on for Elecrow's CrowPanel e-paper displays, and for
+TRMNL screens if you turn them on. It turns
 whatever you care about into calm, glanceable pages: on your desk under the
 monitor, by the bed, on the wall, or across the room from the sofa. You design
 the pages in a visual editor in Home Assistant's sidebar; the panel takes
@@ -92,6 +93,41 @@ the switcher takes you between them. Change a screen's model and its pages
 start from an automatic fit for the new size; switching back brings your old
 layout back.
 
+## TRMNL screens
+
+A [TRMNL](https://usetrmnl.com) runs on a battery for months: it sleeps,
+wakes on a timer or when you press its button, fetches one picture and sleeps
+again. Its own firmware can use a server of your choosing, and this add-on can
+be that server, so you design its pages in the same editor.
+
+1. Turn on **TRMNL screens** in the add-on's **Configuration** tab and restart
+   the add-on. While it's off, nothing of it exists.
+2. In the editor, **Add a screen…**, pick **TRMNL**, name it and choose its
+   pages. **Add and pair** listens for it for ten minutes.
+3. On the TRMNL's Wi-Fi setup page, under **Advanced**, enter the address the
+   editor shows as its **API server**, then connect. The editor says when it
+   has paired.
+
+What's different from a CrowPanel:
+
+- **It shows one page per wake.** A timer wake moves on through the rotation
+  (every item of every page, conditions and alerts included); its button goes
+  to the next page. How often it wakes is a setting of that screen (every
+  15 minutes to start).
+- **Nothing can wake it early.** New pages and alerts show at its next wake,
+  and the editor says so.
+- **Quiet hours** show the sleep screen and let it sleep until they end. A
+  press of its button shows a page for two minutes.
+- **"updated 14:05"** in the footer is when that page last changed. While
+  nothing changes the picture stays the same, so the TRMNL skips the download
+  and doesn't flash. When it last checked in is **Last seen**, in the editor
+  and in Home Assistant.
+- **Its size is whatever it reports.** TRMNL's firmware runs on several
+  screens; a size other than the TRMNL OG's 800 × 480 gets its own layout,
+  placed automatically until you move things.
+- **Battery and Wi-Fi** show in the editor and, with an MQTT broker, as
+  sensors (the battery percentage is estimated from its voltage).
+
 ## Away from home
 
 Take a screen to work and it keeps showing your pages. In **Settings ›
@@ -106,7 +142,8 @@ Reaching home**, choose how it gets them:
 
 Away from home every screen needs its own key, and wrong keys slow down.
 Install each CrowPanel again once (**Install or update**) so it uses the new
-address over HTTPS, and add the other place's Wi-Fi there too.
+address over HTTPS, and add the other place's Wi-Fi there too. A TRMNL is
+given the away address when you pair it.
 
 Somewhere it knows no Wi-Fi, a CrowPanel opens its own ("Kitchen setup"), and
 its screen tells you to join it from your phone and choose a network. The
@@ -315,7 +352,10 @@ data source, the live widgets' own (`sensor.epaper_flights_overhead`,
 the panel holds right now, and what was left out), a problem sensor per
 outside service, and a **Refresh panel** button. A second screen gets its own
 quiet hours, last render, pages and Refresh entities, named after it
-(`sensor.epaper_quiet_hours_kitchen`); the first keeps the names above. They show as unavailable
+(`sensor.epaper_quiet_hours_kitchen`); the first keeps the names above. A
+TRMNL also gets `sensor.epaper_battery_<name>` (estimated percent),
+`sensor.epaper_battery_voltage_<name>`, `sensor.epaper_wifi_signal_<name>` and
+`sensor.epaper_last_seen_<name>`, and no Refresh button: it can't be woken. They show as unavailable
 while the add-on is stopped. An entity stays while its source is down; it's
 removed only once nothing produces it any more.
 
@@ -324,7 +364,8 @@ removed only once nothing produces it any more.
 - **The editor is behind your Home Assistant login** and answers only Home
   Assistant's own proxy.
 - **The panel's port (8099) serves pictures of pages and nothing else**: no
-  layouts, entity names or places. Every screen has its own key, made for
+  layouts, entity names or places. A TRMNL pairs only in the ten minutes after
+  you ask it to, and then gets its own key like any other screen. Every screen has its own key, made for
   you. At home only (the default), it refuses anything that came through a
   tunnel. Away from home, nothing gets in without a key, and a sender that
   keeps getting keys wrong is refused for a while.
@@ -351,13 +392,21 @@ measurements behind each decision.
 - **Away from home, a CrowPanel can't be woken early.** Alerts and the
   Refresh button reach it through Home Assistant's own connection to it,
   which only exists at home. Away, it picks up changes on its own timer.
+- **TRMNL support is built from its open-source firmware, not tried on one
+  yet.** Pairing end to end, which pictures its decoder takes in practice,
+  HTTPS through Cloudflare or Home Assistant Cloud, and real battery life are
+  still to be checked on a device. While pairing it briefly shows its own
+  "visit trmnl.com/start" screen; that text is in its firmware. For screens
+  other than the TRMNL OG, the physical size behind the legibility note is an
+  estimate.
 - **You choose the entities.** Presets and search help, but it doesn't guess
   what belongs on your screen.
 - **Up to about 77 pages at a time** on the 5.79" (the panel keeps 2 MB of them).
   If the rotation needs more, every page keeps its first item and the extra
   items are shared out; what was left out shows in
   `sensor.epaper_panel_pages`.
-- **No battery reading.** The board's battery pin isn't documented.
+- **No battery reading on a CrowPanel.** The board's battery pin isn't
+  documented. (A TRMNL reports its own.)
 - **It expects mains power.** Deep sleep would cost instant updates, remote
   control and alerts; quiet hours give you still, dark nights without that.
 

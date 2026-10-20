@@ -28,6 +28,7 @@ import mqtt_bridge
 import companion
 import config
 import devices
+import kinds
 import reach
 import runtime
 from config import ADDON_VERSION, FRAME_PORT, HA_TOKEN, INGRESS_PORT, PROACTIVE_TIMED_PUSH, REFRESH, RETIRED_SENSORS
@@ -118,7 +119,9 @@ def start_entity_publisher():
             os.environ.get("MQTT_USERNAME") or "", os.environ.get("MQTT_PASSWORD") or "")
     runtime.PUBLISHER = mqtt_bridge.EntityPublisher(
         transport, runtime.HASS, config.DATA_DIR, ADDON_VERSION, on_button=on_refresh_button,
-        buttons=lambda: [(d.get("entity_suffix") or "", d.get("name") or "") for d in devices.all_devices()])
+        # A Refresh button for each screen the add-on can wake (not one that sleeps on its own timer).
+        buttons=lambda: [(d.get("entity_suffix") or "", d.get("name") or "") for d in kinds.shown_devices()
+                         if kinds.of(d).link(d) is not None])
     in_use = retired_sensors_in_use(load_layouts(devices.primary()["id"]))
     for eid in RETIRED_SENSORS:
         if eid not in in_use:
