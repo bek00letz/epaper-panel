@@ -195,7 +195,11 @@ class App {
   }
 
   /* ---------- drawing ---------- */
+  /* The canvas's size comes from the add-on with the screens (elements.js
+     DISPLAYS), so nothing that measures it draws before they've arrived. */
+  ready() { return !!this.screen; }
   refresh() {
+    if (!this.ready()) { this.renderToolbar(); return; }
     this.renderToolbar(); this.renderBar(); this.renderStrip(); this.renderInspector(); this.renderLayers(); this.canvas.draw();
     document.title = this.doc.cur ? `${pageTitle(this.doc.cur)} · e-Paper Panel` : "e-Paper Panel";
   }
@@ -254,6 +258,7 @@ class App {
   }
 
   renderStrip() {
+    if (!this.ready()) return;
     const old = this.el.strip.querySelector(".tiles");
     const scroll = old ? [old.scrollLeft, old.scrollTop] : [0, 0];
     const focusedTile = document.activeElement?.closest?.(".tile");
