@@ -5,6 +5,8 @@ hours at the wake, and the awake time. Then a CrowPanel that sleeps (Update
 every 2 minutes or more), end to end through its device port: what tells it
 to sleep, Rotate every, and that nothing tells it to sleep when it's always on.
 """
+import os
+import time
 import unittest
 from datetime import datetime, timedelta
 
@@ -87,6 +89,37 @@ class TestTheSleepTime(unittest.TestCase):
         self.assertLessEqual(paging.sleep_seconds(self.dev, stale, at, False), 900)
         # And the other way: they started after the last cycle.
         self.assertTrue(paging.quiet_now(ahead(qh), datetime(2026, 10, 20, 23, 0, 20))[0])
+
+
+class TestTheNightTheClocksChange(unittest.TestCase):
+    """A screen asleep until quiet hours end wakes at that time on the clock, not an hour off."""
+
+    def setUp(self):
+        self._tz = os.environ.get("TZ")
+        os.environ["TZ"] = "Europe/Bucharest"           # clocks change at 03:00/04:00 local, like most of Europe
+        time.tzset()
+
+    def tearDown(self):
+        if self._tz is None:
+            os.environ.pop("TZ", None)
+        else:
+            os.environ["TZ"] = self._tz
+        time.tzset()
+
+    def test_seconds_until_seven(self):
+        self.assertEqual(paging.seconds_until("07:00", datetime(2026, 10, 20, 23, 0)), 8 * 3600, "a usual night")
+        self.assertEqual(paging.seconds_until("07:00", datetime(2026, 10, 24, 23, 0)), 9 * 3600,
+                         "autumn: the clocks go back, so 07:00 is an hour further")
+        self.assertEqual(paging.seconds_until("07:00", datetime(2026, 3, 28, 23, 0)), 7 * 3600,
+                         "spring: the clocks go forward, so it's an hour nearer")
+        self.assertEqual(paging.seconds_until("07:00", datetime(2026, 10, 25, 2, 0).astimezone()), 6 * 3600,
+                         "an aware time, during the night itself")
+
+    def test_asleep_through_quiet_hours(self):
+        qh = {"enabled": True, "start": "22:00", "end": "07:00"}
+        dev = {"id": "9", "kind": "crowpanel", "update_minutes": 15}
+        self.assertEqual(paging.sleep_seconds(dev, ahead(qh), datetime(2026, 10, 24, 23, 0), False),
+                         9 * 3600 + paging.QUIET_MARGIN)
 
 
 class TestAwake(unittest.TestCase):

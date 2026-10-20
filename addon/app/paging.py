@@ -32,7 +32,7 @@ from __future__ import annotations
 import hashlib
 import time
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, time as dtime, timedelta
 
 import devices
 import frames
@@ -209,13 +209,19 @@ def _keep_updated(dev: dict, seen: dict) -> None:
 # ---------------------------------------------------------------- a wake
 
 def seconds_until(hhmm: str, now: datetime) -> int | None:
+    """Seconds from now until the clock next reads hh:mm. Counted in real time, with the
+    offset that day has: on the night the clocks change, 07:00 is an hour nearer or further
+    than it was the evening before."""
     try:
         h, m = (int(x) for x in str(hhmm).strip()[:5].split(":"))
-        target = now.replace(hour=h, minute=m, second=0, microsecond=0)
+        wall = dtime(h, m)
     except (TypeError, ValueError):
         return None
+    now = now.astimezone()                             # a naive time is local
+    day = now.date()
+    target = datetime.combine(day, wall).astimezone()  # the local time that day, with that day's offset
     if target <= now:
-        target += timedelta(days=1)
+        target = datetime.combine(day + timedelta(days=1), wall).astimezone()
     return int((target - now).total_seconds())
 
 

@@ -40,6 +40,9 @@
   back Copy, Download and writing it to Home Assistant's ESPHome folder (the
   last good file stays there) until it's fixed. With no first network but
   others, the first of them leads instead of a blank one.
+- **Fixed:** on the night the clocks change, a screen asleep until quiet hours
+  end woke an hour late (spring) or an hour early (autumn, then slept again).
+  It now wakes at the time on the clock.
 - **Removed:** the previous editor (`?classic=1`). It predates several
   screens; an old bookmark to it now opens the editor.
 
