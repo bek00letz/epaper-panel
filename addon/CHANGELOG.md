@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed:** in Low Power Mode, a panel whose refresh interval is one minute
+  never went back to sleep after a button press: every download it made while
+  awake kept it awake another minute. Only a wake does that now.
+
 ## 0.12.0
 **Firmware change** (only needed for Low Power Mode, or if your panel has
 "Its own Wi-Fi when it's lost" switched off): install the panel again from
