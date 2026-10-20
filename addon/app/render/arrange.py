@@ -17,12 +17,12 @@ from __future__ import annotations
 import copy
 import secrets
 
+from . import theme as T
+
 # What may differ between sizes. Everything else is the element's content and style.
 ARRANGE_KEYS = ("x", "y", "w", "h", "size", "font_scale")
 AUTO = "_auto"
 
-# The footer's band at the bottom of every canvas (theme.footer_band(): 25 to 36 px by screen height).
-FOOTER_BAND = 36
 
 
 def canvas_key(w: int, h: int) -> str:
@@ -70,11 +70,17 @@ def ensure_ids(pages: dict) -> dict:
 
 # ---------------------------------------------------------------- automatic placement
 
+def content_height(key: str) -> int:
+    """The height above the footer band on a canvas (theme.band_height(): 25 to 36 px by screen height)."""
+    _, h = parse_canvas(key)
+    return max(1, h - T.band_height(h))
+
+
 def _fit(base: str, target: str) -> tuple[float, float, float]:
     """Scale and offset that fit base's content area into target's, centred."""
     bw, bh = parse_canvas(base)
     tw, th = parse_canvas(target)
-    bch, tch = max(1, bh - FOOTER_BAND), max(1, th - FOOTER_BAND)
+    bch, tch = content_height(base), content_height(target)
     s = min(tw / bw, tch / bch)
     return s, (tw - bw * s) / 2, (tch - bch * s) / 2
 

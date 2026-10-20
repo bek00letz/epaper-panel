@@ -93,8 +93,6 @@ W, H = 792, 272
 WHITE, BLACK = 255, 0
 
 MARGIN       = 40
-FOOTER_RULE  = 236   # y of the hairline above the footer
-FOOTER_BASE  = 258   # baseline of footer text
 FOOTER_SIZE  = 20
 BODY_SIZE    = 26    # the "worthwhile when passing by" tier
 LABEL_SIZE   = 30
@@ -423,14 +421,33 @@ FOOTER_STEPS = (
 CLOCK_FLOOR = 11                 # smallest clock, the last thing to give way
 
 
-def footer_band(orientation=0, display=None):
-    """Height of the footer band at the bottom of the canvas, hairline included."""
-    _, ch = canvas_dims(orientation, display=display)
+def _footer_size(ch):
+    return 14 if ch < 200 else (18 if ch < 400 else FOOTER_SIZE)
+
+
+def band_height(ch):
+    """Height of the footer band on a canvas `ch` px tall, hairline included.
+
+    The one place this is decided: arrange.py and the editor (through
+    canvas_geometry()) ask here."""
     return round(_footer_size(ch) * 1.8)
 
 
-def _footer_size(ch):
-    return 14 if ch < 200 else (18 if ch < 400 else FOOTER_SIZE)
+def footer_band(orientation=0, display=None):
+    """Height of the footer band at the bottom of the canvas, hairline included."""
+    return band_height(canvas_dims(orientation, display=display)[1])
+
+
+def side_margin(cw, display=None):
+    """The margin at the left and right of a canvas `cw` px wide: the footer's, and the editor's guides."""
+    m = get_display(display)["margin"]
+    return m if cw >= 400 else min(m, 16)
+
+
+def canvas_geometry(orientation=0, display=None):
+    """What the editor needs about a canvas: its size, the footer band and the side margin."""
+    cw, ch = canvas_dims(orientation, display=display)
+    return {"w": cw, "h": ch, "band": band_height(ch), "margin": side_margin(cw, display)}
 
 
 def _ellipsize(s, f, max_w, min_chars=3):
@@ -455,10 +472,9 @@ def footer_plan(*, clock, pages=(), orientation=0, display=None):
     empty for a page without pills (the editor's preview, the empty screen).
     """
     cw, ch = canvas_dims(orientation, display=display)
-    disp = get_display(display)
-    base_margin = disp["margin"] if cw >= 400 else min(disp["margin"], 16)
+    base_margin = side_margin(cw, display)
     size = _footer_size(ch)
-    band = round(size * 1.8)
+    band = band_height(ch)
     pill_h = min(24, band - 4)                       # the padlock needs 22: 2 above it, 20 of it
     pill_y1 = ch - min(4, band - pill_h - 2)
     pill_y0 = pill_y1 - pill_h
