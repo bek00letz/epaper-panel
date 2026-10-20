@@ -313,6 +313,103 @@ static void test_remote_alerts_and_fetches() {
   CHECK(ms < 5, "page_step(2,000,000,000) took %.1f ms", ms);
 }
 
+// Low Power Mode: the add-on's answer decides whether and how long the panel sleeps.
+static void test_power() {
+  using epf::PowerPolicy;
+  using epf::Wake;
+  epf::SleepOrder o;
+
+  // The header, and anything else is ignored.
+  CHECK(epf::parse_sleep_order("900; awake=60", o) && o.sleep_sec == 900 && o.awake_sec == 60, "the header");
+  CHECK(epf::parse_sleep_order(" 900 ", o) && o.sleep_sec == 900 && o.awake_sec == 0, "awake is optional");
+  CHECK(epf::parse_sleep_order("900;awake=600", o) && o.awake_sec == 600, "no spaces");
+  CHECK(epf::parse_sleep_order("5; awake=0", o) && o.sleep_sec == epf::MIN_SLEEP_SEC, "never a wake loop");
+  CHECK(epf::parse_sleep_order("999999; awake=99999", o) && o.sleep_sec == epf::MAX_SLEEP_SEC &&
+            o.awake_sec == epf::MAX_AWAKE_SEC, "capped");
+  for (const char *bad : {"", "abc", "900 seconds", "900; sleep=5", "-5", "900; awake=", "99999999999", "900;"})
+    CHECK(!epf::parse_sleep_order(bad, o), "refused: \"%s\"", bad);
+  CHECK(!epf::parse_sleep_order(nullptr, o), "no header");
+
+  auto &p = PowerPolicy::instance();
+  epf::Remembered mem{};
+  epf::SleepOrder timer{900, 0}, press{900, 60}, stay{900, 600};
+
+  // A fresh start that's never told to sleep stays connected, whatever happens.
+  p.begin(Wake::BOOT, mem, 0);
+  p.on_answer(true, false, o, 1000);
+  CHECK(!p.low_power() && !p.sleep_due(999999, false), "no header: stays connected");
+  p.on_answer(false, false, o, 2000);
+  CHECK(!p.sleep_due(999999, false), "never told to sleep: a failed download doesn't make it sleep");
+
+  // Told to sleep on a timer wake: draw, then sleep at once, for what's left.
+  p.on_answer(true, true, timer, 10000);
+  CHECK(p.sleep_due(10000, false), "awake=0: sleeps as soon as it's done");
+  CHECK(!p.sleep_due(10000, true), "...not while it's still drawing");
+  CHECK(p.sleep_ms(14000) == 896000, "counted from the answer (%u)", (unsigned) p.sleep_ms(14000));
+  CHECK(mem.interval_sec == 900, "remembered for a wake that can't reach the add-on");
+  p.hold(true);
+  CHECK(!p.sleep_due(20000, false), "never in the middle of an update");
+  p.hold(false);
+
+  // A press keeps it awake a minute after the last press.
+  p.on_answer(true, true, press, 0);
+  CHECK(!p.sleep_due(59000, false) && p.sleep_due(60000, false), "awake=60 after the download");
+  p.note_press(50000);
+  CHECK(!p.sleep_due(100000, false) && p.sleep_due(110000, false), "a minute after the last press");
+  CHECK(p.sleep_ms(110000) == 790000, "less the time awake (%u)", (unsigned) p.sleep_ms(110000));
+
+  // Asked to stay awake for an update: the same field.
+  p.on_answer(true, true, stay, 200000);
+  CHECK(!p.sleep_due(799000, false) && p.sleep_due(800000, false), "ten minutes awake");
+  CHECK(p.sleep_ms(800000) == 300000, "then the rest of the interval");
+  CHECK(p.sleep_ms(2000000) == epf::MIN_SLEEP_SEC * 1000u, "never less than the minimum");
+
+  // Low Power Mode turned off in the editor: the next answer has no header.
+  p.on_answer(true, false, o, 900000);
+  CHECK(!p.low_power() && !p.sleep_due(9000000, false) && mem.interval_sec == 0, "off: stays connected");
+
+  // A timer wake that can't reach the add-on sleeps and tries again, backing off.
+  mem.interval_sec = 900;
+  mem.failures = 0;
+  uint32_t expect[] = {60, 120, 240, 480, 600, 600};
+  for (uint32_t want : expect) {
+    p.begin(Wake::TIMER, mem, 900000);
+    p.on_answer(false, false, o, 5000);
+    CHECK(p.low_power() && p.sleep_due(5000, false), "no answer on a timer wake: sleeps");
+    CHECK(p.sleep_ms(5000) == want * 1000u, "retry after %u s (got %u)", (unsigned) want, (unsigned) (p.sleep_ms(5000) / 1000));
+  }
+  mem.interval_sec = 300;
+  p.begin(Wake::TIMER, mem, 900000);
+  p.on_answer(false, false, o, 0);
+  CHECK(p.sleep_ms(0) == 300000, "never longer than its interval");
+  p.on_answer(true, true, timer, 1000);
+  CHECK(mem.failures == 0, "an answer ends the backoff");
+  p.begin(Wake::BUTTON, mem, 900000);
+  p.on_answer(false, false, o, 0);
+  CHECK(!p.sleep_due(59000, false) && p.sleep_due(60000, false), "a press that can't reach it: awake a minute");
+  p.begin(Wake::TIMER, mem, 900000);
+  p.on_answer(true, true, timer, 0);
+  p.on_answer(false, false, o, 500);
+  CHECK(p.sleep_ms(500) == 899500, "a later failure in the same wake keeps the answer it had");
+
+  // A power cut or a reset is a fresh start.
+  p.begin(Wake::BOOT, mem, 0);
+  CHECK(mem.interval_sec == 0 && mem.magic == epf::REMEMBERED_MAGIC, "after a reset it stays connected until told");
+
+  // Floating button pins wake it the moment it sleeps: after three, the timer only.
+  mem.interval_sec = 900;
+  for (int i = 0; i < 3; i++) p.begin(Wake::BUTTON, mem, 300);
+  CHECK(!p.buttons_wake(), "three instant button wakes: the buttons stop waking it");
+  p.begin(Wake::TIMER, mem, 900000);
+  CHECK(p.buttons_wake(), "the next timer wake tries them again");
+  p.begin(Wake::BUTTON, mem, 300);
+  p.begin(Wake::BUTTON, mem, 45000);
+  p.begin(Wake::BUTTON, mem, 300);
+  CHECK(p.buttons_wake(), "a real press in between resets the count");
+  CHECK(std::string(epf::wake_name(Wake::TIMER)) == "timer" && std::string(epf::wake_name(Wake::BUTTON)) == "button" &&
+            std::string(epf::wake_name(Wake::BOOT)) == "boot", "what it tells the add-on");
+}
+
 int main(int argc, char **argv) {
   if (argc < 2) {
     std::printf("usage: core_test <fixture-dir>\n");
@@ -324,6 +421,7 @@ int main(int argc, char **argv) {
   test_waveform();
   test_sleep();
   test_remote_alerts_and_fetches();
+  test_power();
   if (failures) {
     std::printf("%d check(s) failed\n", failures);
     return 1;

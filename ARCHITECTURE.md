@@ -590,28 +590,48 @@ default, with the shared wake interval (15 minutes by default, 5 minutes to
   Assistant. Its ghosting and sleep settings live on the panel: change them
   while it's asked to stay awake.
 
-### The firmware half (the next step)
+### The firmware
 
-Nothing under `components/` or in `firmware/panel.yaml` has changed yet. The
-plan:
+The same firmware for both modes (`PowerPolicy` in `epf_core.h`, tested on
+the host; the glue in `epf_client.h`; `go_to_sleep` in `firmware/panel.yaml`).
 
 - ESPHome `deep_sleep` is always compiled in, with no `run_duration`: it
-  never sleeps unless an answer says so (`deep_sleep.enter` takes the
-  duration at runtime). Wake sources: the timer, and the five buttons
-  (`EXIT 1`, `HOME 2`, `NEXT 4`, `OK 5`, `PRV 6`) as `ext1` with `ANY_LOW`;
-  all five are RTC-capable on the ESP32-S3.
-- `esp_sleep_get_wakeup_cause()` says timer or button; the first fetch after
-  a wake sends it. A failed fetch on a timer wake sleeps for the last known
-  interval (with the usual backoff) rather than staying awake.
+  never sleeps unless an answer says so, and `deep_sleep.enter` takes the
+  duration then. Wake sources: the timer, and the five buttons (`EXIT 1`,
+  `HOME 2`, `NEXT 4`, `OK 5`, `PRV 6`, all RTC-capable on the ESP32-S3) as
+  `ext1` `ANY_LOW`, set just before it sleeps.
+- `esp_sleep_get_wakeup_cause()` says timer, button or a fresh start; the
+  first download says which (`wake=`), with how long the last wake was awake
+  (`awake_ms=`, kept in RTC memory, `epf_power.cpp`).
+- **When it sleeps:** once the answer's awake time has passed (and a minute
+  after the last press), the download is done, and the display has finished
+  its refresh. Deep sleep cuts the display's power, so a refresh still
+  running would be cut short. The CrowPanel driver refreshes in the
+  background and says when it's done (`is_idle()`); the Waveshare driver used
+  for the other sizes can't, so the panel waits 6 s after its last redraw
+  (`firmware_gen.display_settled`). Never during an update over Wi-Fi.
+- **How long:** what the answer said, less the time it has been awake since.
+- **What's on screen survives the sleep.** The frames don't (they're in
+  PSRAM), but the picture does, and so does its ETag (RTC memory). A timer
+  wake sends it, so an unchanged page (the sleep screen through a long
+  absence, a one-page rotation) is a 304: no download, no redraw, no flash.
+  Anything more after that downloads the frames again.
+- **No answer at all** on a timer wake (no Wi-Fi, the add-on down): it was
+  told to sleep before, so it's on a battery; it sleeps and tries again after
+  60 s, doubling to 10 min, never longer than its interval. A press that
+  can't reach the add-on stays awake a minute first. A fresh start that can't
+  reach it stays connected, so its own Wi-Fi setup can open.
+- **Floating buttons.** If the button pins float in deep sleep, `ANY_LOW`
+  wakes the panel the moment it sleeps. Three button wakes in a row within
+  2 s of falling asleep turn the buttons off as a wake source until the next
+  timer wake, so a fault costs a few wakes per interval, not the battery.
 - **The Home Assistant connection stays, and a wake never waits for it.** It
   connects if the panel is awake long enough (after a press, while asked to
-  stay awake). `api: reboot_timeout` (15 minutes by default) restarts the
-  panel when no client has connected for that long; every wake starts the
-  count again, so in Low Power Mode it can only bite during a long stay
-  awake. Set it to `0s` with this firmware, so Home Assistant being down
-  never restarts a panel that doesn't need it.
+  stay awake). `api: reboot_timeout` is `0s`: by default ESPHome restarts a
+  panel that no client has connected to for 15 minutes, which helps nothing
+  here and would cut a stay-awake short.
 
-### Battery reading (designed, not built)
+### Battery reading (designed, not built yet)
 
 Elecrow's staff say the stock 5.79" can't read its battery
 (forum.elecrow.com, discussion 1063); the board charges a LiPo through an
@@ -620,9 +640,9 @@ in Install or update, off by default: **Battery reading on GPIO n**, saying
 plainly "Needs a resistor divider from the battery to that pin, soldered on;
 the board has none." On, the generated YAML adds an `adc` sensor on that pin
 (with the divider's ratio), and the voltage goes to the add-on with each
-download, to the editor and to the same battery sensors a TRMNL has. It's
-built with the firmware half; until then the editor doesn't offer it, since
-it would do nothing.
+download, to the editor and to the same battery sensors a TRMNL has. Not
+built yet: it needs a board with the divider to check against, and until
+it's built the editor doesn't offer it, since it would do nothing.
 
 ### What it costs
 
@@ -645,11 +665,13 @@ measure.
   that's cut in sleep, the pins float and `ANY_LOW` wakes the panel in a
   loop. The RTC's own pull-ups are the fallback.
 - **Whether the display needs a full, flashing refresh after every wake.**
-  Its power rail (`GPIO7`) is cut in deep sleep, so the controller loses its
-  picture memory and a partial refresh has nothing to start from. Holding the
-  rail (`gpio_hold_en` on GPIO7) and putting the controller into its
-  memory-keeping sleep instead may avoid it, at the controller's sleep
-  current.
+  As built, it does: the CrowPanel driver makes its first refresh after any
+  start a full one, and the display's power rail (`GPIO7`) is cut in deep
+  sleep, so the controller loses its picture memory anyway. An unchanged page
+  is a 304 and isn't redrawn at all. Holding the rail (`gpio_hold_en` on
+  GPIO7) and putting the controller into its memory-keeping sleep might allow
+  partial refreshes after a wake, at the controller's sleep current and a
+  change to the driver: worth trying once the sleep current is known.
 - **How long the first press takes**, from a deep-sleeping panel to the page
   on screen: boot, Wi-Fi, the strip's download and decode.
 - A USB power bank may switch off when the panel sleeps, seeing "nothing

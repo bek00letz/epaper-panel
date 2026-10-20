@@ -576,7 +576,7 @@ function powerBox(app, scr, redraw) {
   }
   box.append(group(...rows));
   if (info.low_power && !info.firmware_sleeps) box.append(h("p", { class: "note warn" }, icon("info", "sm"),
-    h("span", { text: "This panel's firmware can't sleep yet, so it stays connected and checks on its own timer. It sleeps once it's installed with firmware that can." })));
+    h("span", { text: "This panel's firmware can't sleep yet, so it stays connected and checks on its own timer. Install it again from Install or update and it starts sleeping." })));
   return box;
 }
 

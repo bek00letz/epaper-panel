@@ -31,6 +31,16 @@ def button_pins(orientation: int) -> dict[str, int]:
     return {"NEXT_PIN": 4, "PREV_PIN": 6, "TOP_PIN": 2, "BOTTOM_PIN": 1}
 
 
+def display_settled(disp: dict) -> str:
+    """A C++ expression: the display has finished its last refresh, so the panel may sleep
+    (deep sleep cuts the display's power). The CrowPanel driver refreshes in the
+    background and parks its loop when done; the Waveshare driver can't say, so the
+    panel waits long enough for a full refresh after its last redraw."""
+    if disp["esphome_component"].startswith("github://"):
+        return "id(epd).is_idle()"
+    return "millis() - id(last_redraw_ms) > 6000"
+
+
 def display_blocks(disp: dict) -> tuple[str, str]:
     """(extra external component line, display: block without its lambda)."""
     if disp["esphome_component"].startswith("github://"):
@@ -102,7 +112,7 @@ def render(*, disp: dict, version: str, device_name: str, frames_url: str, api_k
         "DISPLAY_NAME": disp["name"], "SKU": disp["sku"], "W": str(disp["w"]), "H": str(disp["h"]),
         "VERSION": version or "dev", "DEVICE_NAME": device_name, "FRAMES_URL": frames_url,
         "COMPONENT_REF": component_ref(version), "DISPLAY_COMPONENT": component,
-        "DISPLAY_BLOCK": block, "API_KEY": api_key,
+        "DISPLAY_BLOCK": block, "DISPLAY_SETTLED": display_settled(disp), "API_KEY": api_key,
         "WIFI_BLOCK": wifi_block([(wifi_ssid, wifi_password), *more_networks], hotspot),
         "FRIENDLY_NAME": friendly_name,
         "INTERVAL_MIN": str(max(1, min(60, int(interval_min)))),

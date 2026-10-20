@@ -418,10 +418,11 @@ measurements behind each decision.
 - **No battery reading on a CrowPanel.** The stock 5.79" can't read its
   battery; it would need a resistor divider soldered on. (A TRMNL reports its
   own.)
-- **Low Power Mode is half built.** The switch is in Settings › Screen and the
-  add-on already answers a panel that sleeps, but the panel's firmware can't
-  sleep yet, so a panel in Low Power Mode stays connected and checks on its
-  own timer. The editor says so. Leave it off until the firmware comes.
+- **Low Power Mode hasn't been tried on a real panel yet.** It's built from
+  end to end, but how long a battery lasts, whether the buttons wake it
+  reliably, and whether the screen flashes on every check are still to be
+  measured. A panel installed before Low Power Mode existed stays connected
+  until you install it again; the editor says so.
 
 ## Development
 

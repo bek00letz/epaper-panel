@@ -222,6 +222,15 @@ YAML comes only from `addon/app/firmware/panel.yaml`. After changing it, run
 - **Only the main loop touches the front buffer and the display.** The
   download task writes the back buffer; `EpfClient::poll()` swaps them on the
   main loop. Keep it that way, or a page can be drawn mid-swap.
+- **Only an answer from the add-on puts the panel to sleep** (`X-EPF-Sleep`,
+  `PowerPolicy` in `epf_core.h`, script `go_to_sleep`). `deep_sleep` has no
+  `run_duration` and must never get one: the same firmware stays connected
+  when Low Power Mode is off.
+- **Never sleep while the display is refreshing.** Deep sleep cuts its power
+  rail. The CrowPanel driver refreshes in the background, so the panel waits
+  for `id(epd).is_idle()` (`firmware_gen.display_settled`).
+- **Every button's `on_press` calls `PowerPolicy::note_press`**, or a press
+  doesn't keep the panel awake. A new button needs it too.
 - **Strokes under ~4 px are invisible on this panel** (145 dpi, so 3 px is
   0.5 mm). Icons drawn in the lambda need chunky geometry.
 

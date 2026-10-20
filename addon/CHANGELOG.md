@@ -1,12 +1,14 @@
 # Changelog
 
 ## Unreleased
-- **Low Power Mode (add-on side).** A switch per screen in Settings › Screen,
-  and when adding one: the panel checks for new pages at an interval you
-  choose and sleeps in between, for months on a battery. The add-on picks the
-  page for each check and says how long to sleep; a button press shows every
-  page. The panel's firmware that sleeps comes next; until then a panel in
-  Low Power Mode stays connected, and the editor says so.
+- **Low Power Mode.** A switch per screen in Settings › Screen, and when
+  adding one: the panel checks for new pages at an interval you choose and
+  deep-sleeps in between, for months on a battery. Each check shows the next
+  page; a button press shows every page and keeps it awake a minute. Stay
+  awake keeps it up ten minutes for an update over Wi-Fi. **Firmware
+  change:** install the panel again from Install or update to use it. The
+  same firmware stays connected while the switch is off. Not yet tried on a
+  real panel.
 - TRMNL screens show how long they're awake per wake, next to battery and
   Wi-Fi.
 - Screens that sleep get pictures drawn ahead in every render, so a wake is

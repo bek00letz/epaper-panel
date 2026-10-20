@@ -7,6 +7,10 @@
 # The panel downloads every page of the rotation in one frame file, keeps it in
 # memory and shows one page at a time, so paging with the dial needs no
 # network. Downloads run in the background; the buttons never wait on them.
+#
+# Low Power Mode is the add-on's to switch, per screen, with no new install:
+# when it's on, each answer says how long to sleep, and the panel deep-sleeps
+# until then or until a button is pressed. Off, it stays connected.
 
 substitutions:
   name: @DEVICE_NAME@
@@ -19,6 +23,7 @@ esphome:
     priority: -100
     then:
       - lambda: |-
+          epf::power_begin();                   // why it's awake, for the first download
           auto &w = epf::PanelController::instance().waveform();
           w.set_threshold((int) id(ghost_clear_after).state);
           auto mode = id(ghost_mode).active_index();
@@ -46,6 +51,10 @@ globals:
   - id: last_dial_ms
     type: uint32_t
     initial_value: '0'
+  # When the display was last asked to redraw (Low Power Mode waits for it).
+  - id: last_redraw_ms
+    type: uint32_t
+    initial_value: '0'
 
 font:
   - file: "gfonts://Lato@700"
@@ -57,7 +66,10 @@ font:
 
 logger:
 
+# A wake never waits for Home Assistant, and Home Assistant being away never
+# restarts a panel that doesn't need it (the default would, after 15 minutes).
 api:
+  reboot_timeout: 0s
   encryption:
     key: @API_KEY@
   actions:
@@ -119,6 +131,16 @@ api:
 ota:
   - platform: esphome
     encryption: {}
+    # Never asleep in the middle of an update.
+    on_begin:
+      - lambda: 'epf::PowerPolicy::instance().hold(true);'
+    on_error:
+      - lambda: 'epf::PowerPolicy::instance().hold(false);'
+
+# Always here, never on its own: only an answer from the add-on puts the panel
+# to sleep (script go_to_sleep), for as long as the answer says.
+deep_sleep:
+  id: deep_sleep_ctl
 
 @WIFI_BLOCK@
 
@@ -173,6 +195,7 @@ binary_sensor:
     on_press:
       - lambda: |-
           id(last_dial_ms) = millis();
+          epf::PowerPolicy::instance().note_press(millis());
           epf::PanelController::instance().dispatch(epf::NavAction::NEXT);
       - script.execute: redraw
 
@@ -184,6 +207,7 @@ binary_sensor:
     on_press:
       - lambda: |-
           id(last_dial_ms) = millis();
+          epf::PowerPolicy::instance().note_press(millis());
           epf::PanelController::instance().dispatch(epf::NavAction::PREV);
       - script.execute: redraw
 
@@ -196,6 +220,8 @@ binary_sensor:
     internal: true
     pin: {number: 5, mode: {input: true, pullup: true}, inverted: true}
     filters: [delayed_on: 30ms, delayed_off: 30ms]
+    on_press:
+      - lambda: 'epf::PowerPolicy::instance().note_press(millis());'
     on_click:
       - min_length: 30ms
         max_length: 700ms
@@ -220,6 +246,8 @@ binary_sensor:
     internal: true
     pin: {number: @TOP_PIN@, mode: {input: true, pullup: true}, inverted: true}
     filters: [delayed_on: 25ms, delayed_off: 25ms]
+    on_press:
+      - lambda: 'epf::PowerPolicy::instance().note_press(millis());'
     on_click:
       - min_length: 30ms
         max_length: 750ms
@@ -239,6 +267,8 @@ binary_sensor:
     internal: true
     pin: {number: @BOTTOM_PIN@, mode: {input: true, pullup: true}, inverted: true}
     filters: [delayed_on: 25ms, delayed_off: 25ms]
+    on_press:
+      - lambda: 'epf::PowerPolicy::instance().note_press(millis());'
     on_click:
       - min_length: 30ms
         max_length: 750ms
@@ -326,6 +356,7 @@ script:
       - delay: 80ms
       - lambda: |-
           if (epf::PanelController::instance().begin_redraw()) id(epd).force_full_update();
+          id(last_redraw_ms) = millis();
       - component.update: epd
 
   # Home Assistant asked for new frames. While someone is scrolling, wait
@@ -363,6 +394,17 @@ script:
             ESP_LOGD("panel", "A download is running; another follows it");
           }
 
+  # Low Power Mode: everything on screen is done, so sleep until the next
+  # check or a press of any of the five buttons (GPIO 1, 2, 4, 5, 6, all
+  # RTC-capable on the ESP32-S3; active-low, so any one pressed wakes it).
+  - id: go_to_sleep
+    mode: single
+    then:
+      - deep_sleep.enter:
+          id: deep_sleep_ctl
+          sleep_duration: !lambda |-
+            return epf::power_prepare_sleep(millis(), (1ULL << 1) | (1ULL << 2) | (1ULL << 4) | (1ULL << 5) | (1ULL << 6));
+
 interval:
   # Pick up a finished download. Cheap when there is none.
   - interval: 200ms
@@ -371,19 +413,31 @@ interval:
           epf::FetchResult result;
           auto &client = epf::EpfClient::instance();
           auto &panel = epf::PanelController::instance();
-          if (panel.take_wake_fetch()) id(refetch).execute();   // just woke: get fresh frames
-          if (!client.poll(result)) return;
-          if (result == epf::FetchResult::OK) {
-            panel.note_fetch(true);
-            panel.on_stream_loaded(client.stream());
-            id(redraw).execute();
-          } else {
-            // Failed: owed, and retried with a backoff even while resting.
-            panel.note_fetch(result == epf::FetchResult::NOT_MODIFIED);
-            // Nothing new, but a redraw is still owed (e.g. the clear on a
-            // long press of the bottom button).
-            if (panel.pending_redraw()) id(redraw).execute();
+          if (client.poll(result)) {
+            epf::power_note_download(millis(), result);   // whether the answer says to sleep
+            if (result == epf::FetchResult::OK) {
+              panel.note_fetch(true);
+              panel.on_stream_loaded(client.stream());
+              id(redraw).execute();
+            } else if (result == epf::FetchResult::NOT_MODIFIED && !client.has_stream()) {
+              // After a deep sleep: the page on screen hasn't changed, but the frames
+              // aren't in memory. Fine to sleep on; anything more needs them again.
+              panel.note_fetch(true);
+              client.forget_etag();
+              if (!epf::PowerPolicy::instance().sleep_due(millis(), false)) id(refetch).execute();
+            } else {
+              // Failed: owed, and retried with a backoff even while resting.
+              panel.note_fetch(result == epf::FetchResult::NOT_MODIFIED);
+              // Nothing new, but a redraw is still owed (e.g. the clear on a
+              // long press of the bottom button).
+              if (panel.pending_redraw()) id(redraw).execute();
+            }
           }
+          if (panel.take_wake_fetch()) id(refetch).execute();   // just woke: get fresh frames
+          // Low Power Mode: sleep once the download and the picture are done.
+          bool busy = client.busy() || id(refetch).is_running() || id(redraw).is_running() || !(@DISPLAY_SETTLED@);
+          if (epf::PowerPolicy::instance().sleep_due(millis(), busy) && !id(go_to_sleep).is_running())
+            id(go_to_sleep).execute();
 
   - interval: 5s
     then:
