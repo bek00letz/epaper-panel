@@ -8,7 +8,7 @@ arch:
   - aarch64
 init: false
 
-# Map /config so the add-on can auto-sync the device configuration into /config/esphome/
+# Map /config so Send to ESPHome can put the panel's file in /config/esphome/
 map:
   - config:rw
 
