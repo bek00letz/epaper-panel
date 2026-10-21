@@ -42,7 +42,8 @@ Next one when a good amount of work has piled up since v0.15.0.
 
 ## Backlog, most important first
 
-1. **0.15.0 by hand**: the checklist (`checklist-0.15.0.md`); almost all of
+1. **0.15.0 and 0.16.0 by hand**: the checklists (`checklist-0.15.0.md`, and the
+   0.16.0 steps in the coordinator's reply of 21 Oct); almost all of
    it is tested by code, little has met the real Home Assistant or an eye.
 2. **The world clock on the 4.2"** sits in a band a third of the height
    (Fit scales by width); a full-height box would read larger.
@@ -72,6 +73,9 @@ Next one when a good amount of work has piled up since v0.15.0.
    lists, a "how it went" report, TRMNL-compatible screens.
 
 The New page presets plan shipped in 0.15.0.
+8. **A visible limit on how many pages fit a device** (the user, 21 Oct: an
+   NBA season brings 30+ game pages). Today extras are shared out silently
+   apart from sensor.epaper_panel_pages; the editor should say what's left out.
 
 **Waiting on hardware:** a TRMNL (pairing, pictures, HTTPS, battery); a
 second CrowPanel side by side; a 4.2" or 2.9" CrowPanel (they build, untried;
