@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+- **"Changed" conditions.** A page can show for a while after a sensor
+  changes ("Pawpaw Location changed to Outdoor Cat in the last 30 minutes"),
+  then leave on its own, and an alert can fire each time it changes. Only a
+  new value counts: Home Assistant restarting, or a sensor dropping out and
+  coming back with the same value, doesn't. No firmware change.
+
 ## 0.15.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) to see which Wi-Fi network it's
