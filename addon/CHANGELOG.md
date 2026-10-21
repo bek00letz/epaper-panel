@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- **Larger page strip sizes.** Small is now what Standard was, Standard is
+  what Large was, and Large is new and bigger still (Settings › Editor ›
+  Page strip size). If you'd picked Small or Standard, you get the new
+  Small, which looks like Standard did; if you'd picked Large, the new
+  Standard, which looks the same.
 - **"Not sent yet" no longer shows for pages you didn't change.** The
   add-on and the editor write a page's details in a different order, and
   after a reload that alone counted as a change.

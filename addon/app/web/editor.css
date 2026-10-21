@@ -265,9 +265,9 @@ kbd { font: 12px var(--font); background: var(--surface); border-radius: 5px; pa
 .tiles { display: flex; align-items: flex-start; gap: 10px; overflow-x: auto; padding: 2px 4px 6px; position: relative; min-width: 0; flex: 1; scroll-padding: 8px; scrollbar-width: none; }
 .tiles::-webkit-scrollbar { display: none; }
 /* Its size (Settings › Editor): Standard is the size it always was. */
-#app { --tile-w: 132px; --side-w: 184px; }
-#app[data-stripsize="small"] { --tile-w: 104px; --side-w: 152px; }
-#app[data-stripsize="large"] { --tile-w: 184px; --side-w: 236px; }
+#app { --tile-w: 184px; --side-w: 236px; }
+#app[data-stripsize="small"] { --tile-w: 132px; --side-w: 184px; }
+#app[data-stripsize="large"] { --tile-w: 248px; --side-w: 300px; }
 .strip > .slider { flex: 1; min-width: 0; display: flex; --fade: 48px; --arrow-y: calc(4px + var(--tile-w) / var(--aspect, 2.9) / 2); }
 .slider.still > .slides { transition: none; }
 .tile { flex: none; width: var(--tile-w); border: 0; background: none; padding: 0; text-align: left; cursor: pointer; border-radius: 9px; position: relative; transition: transform var(--t) var(--spring); }
@@ -678,9 +678,9 @@ button.uopen:focus-visible { outline: 2px solid var(--accent); outline-offset: -
   .canvasarea { padding: 12px; place-items: start center; }
   .device { padding: 7px; border-radius: 12px; width: 100%; }
   .layers { position: absolute; inset: auto 8px 8px 8px; width: auto; height: 55%; margin: 0; z-index: 6; box-shadow: var(--shadow-pop); }
-  #app { --tile-w: 108px; }
-  #app[data-stripsize="small"] { --tile-w: 88px; }
-  #app[data-stripsize="large"] { --tile-w: 144px; }
+  #app { --tile-w: 144px; }
+  #app[data-stripsize="small"] { --tile-w: 108px; }
+  #app[data-stripsize="large"] { --tile-w: 184px; }
   .inspector { position: fixed; left: 0; right: 0; bottom: 0; height: 72dvh; z-index: 20; border-left: 0; border-radius: var(--r-sheet) var(--r-sheet) 0 0;
     box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.16), 0 0 0 0.5px var(--sep); transform: translateY(calc(100% - 76px - env(safe-area-inset-bottom))); transition: transform var(--t) var(--spring); }
   .inspector.open { transform: none; }

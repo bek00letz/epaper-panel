@@ -82,9 +82,21 @@ class App {
   applyStripPos() {
     const pos = prefs.get("strip_pos", "top");
     this.el.app.dataset.strip = ["top", "bottom", "side"].includes(pos) ? pos : "top";
-    const size = prefs.get("strip_size", "standard");
-    this.el.app.dataset.stripsize = ["small", "standard", "large"].includes(size) ? size : "standard";
+    this.el.app.dataset.stripsize = this.stripSize();
     this.renderStrip();
+  }
+  /* The page strip's size. Before 0.16 Small was smaller (the user's call, 21 Oct: Small is the old
+     Standard, Standard the old Large, and Large is new), so a choice saved then, under
+     "strip_size", becomes the nearest new one: Small or Standard → Small, Large → Standard. The
+     old one is left as it was, so an older editor still finds it. */
+  stripSize() {
+    let v = prefs.get("page_strip_size");
+    if (!v) {
+      const old = prefs.get("strip_size");
+      v = old === "large" ? "standard" : old ? "small" : "standard";
+      if (old) prefs.set("page_strip_size", v);
+    }
+    return ["small", "standard", "large"].includes(v) ? v : "standard";
   }
   stripVertical() { return this.el.app.dataset.strip === "side" && matchMedia("(min-width: 901px)").matches; }
   say(text) { this.el.live.textContent = ""; requestAnimationFrame(() => { this.el.live.textContent = text; }); }

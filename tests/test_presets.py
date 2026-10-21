@@ -903,13 +903,23 @@ class TestTheSheet(unittest.TestCase):
         self.assertIn("mask-image: linear-gradient(to right, transparent 0, #000 var(--fl), #000 calc(100% - var(--fr)), transparent 100%)", CSS)
         self.assertIn("transition: --fl var(--t) var(--spring), --fr var(--t) var(--spring);", CSS)
 
-    def test_the_page_strip_has_three_sizes_standard_as_it_was(self):
+    def test_the_page_strip_has_three_sizes(self):
+        # The user's call, 21 Oct: Small is the old Standard, Standard the old Large, Large is new.
         sheets = (APP_JS / "sheets.js").read_text()
-        self.assertIn('grow("Page strip size", "How large its pages are", select([["small", "Small"], ["standard", "Standard"], ["large", "Large"]], app.prefs.get("strip_size", "standard")', sheets)
-        self.assertIn("#app { --tile-w: 132px; --side-w: 184px; }", CSS, "Standard is the size it always was")
+        self.assertIn('grow("Page strip size", "How large its pages are", select([["small", "Small"], ["standard", "Standard"], ["large", "Large"]], app.stripSize(), (v) => { app.prefs.set("page_strip_size", v);', sheets)
+        self.assertIn("#app { --tile-w: 184px; --side-w: 236px; }", CSS)
+        self.assertIn('#app[data-stripsize="small"] { --tile-w: 132px; --side-w: 184px; }', CSS)
+        self.assertIn('#app[data-stripsize="large"] { --tile-w: 248px; --side-w: 300px; }', CSS)
         self.assertIn(".tile { flex: none; width: var(--tile-w);", CSS)
         self.assertIn(".stripfront { flex: none; width: var(--tile-w);", CSS)
-        self.assertIn('this.el.app.dataset.stripsize = ["small", "standard", "large"].includes(size) ? size : "standard";', (APP_JS / "main.js").read_text())
+        self.assertIn("this.el.app.dataset.stripsize = this.stripSize();", (APP_JS / "main.js").read_text())
+
+    def test_a_size_chosen_before_keeps_its_look(self):
+        main = (APP_JS / "main.js").read_text()
+        body = main[main.index("  stripSize() {"):]
+        self.assertIn('v = old === "large" ? "standard" : old ? "small" : "standard";', body, "Small and Standard → Small, Large → Standard")
+        self.assertIn('if (old) prefs.set("page_strip_size", v);', body)
+        self.assertNotIn('prefs.set("strip_size"', main + (APP_JS / "sheets.js").read_text(), "the old choice stays for an older editor")
 
     def test_a_pages_button_on_its_picture(self):
         """The user's choice (21 Oct): one "…" over the right third of the picture for the page's menu,
