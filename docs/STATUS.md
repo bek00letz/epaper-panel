@@ -39,6 +39,11 @@ Worker notes are in the coordinator's notes folder
 `fixes-0131.md`, `editor-polish.md`, `alerts-todo.md`); `widgets-015.md` is in
 the coordinator's own notes folder.
 
+## Framework review
+
+Last review: from v0.12.0 to `release-next` (21 Oct, session "framework-review",
+in progress). Next one when a good amount of work has piled up since.
+
 ## Backlog, most important first
 
 1. **Sleeping on the real 5.79" (since 0.13).** Always on first (nothing should change), then

@@ -27,6 +27,12 @@ backlog and the decisions already made.
   `vX.Y.Z` and pushes. Only after the user says yes to that specific release.
 - Updates `docs/STATUS.md` after every release and every finished piece of
   work.
+- Has the "framework, not patch" review run when a good amount of work has
+  piled up since the last one: several features or a large release, not every
+  small fix. The review session ("framework-review", or a new one with the
+  same brief) reads `git diff <last reviewed>..<release branch>`, changes
+  nothing, and reports ranked findings; fixes go to workers. STATUS.md records
+  where the last review ended.
 
 **A release that touches the firmware** (`components/` or the firmware YAML)
 is tagged and pushed before the user installs the panel's firmware: the panel
