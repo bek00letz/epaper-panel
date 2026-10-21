@@ -281,3 +281,39 @@ class TestOldAircraftAreNotShown(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestMissingIsAnAnswer(unittest.IsolatedAsyncioTestCase):
+    """Next year's racing calendar isn't published yet: its 404 is an answer, not a failure."""
+
+    async def asyncSetUp(self):
+        health.reset()
+        app = web.Application()
+        app.router.add_get("/missing.json", lambda r: web.Response(status=404))
+        self.server = web.AppRunner(app)
+        await self.server.setup()
+        site = web.TCPSite(self.server, "127.0.0.1", 0)
+        await site.start()
+        self.port = site._server.sockets[0].getsockname()[1]
+        health.SERVICES["127.0.0.1"] = "Test calendar"
+
+    async def asyncTearDown(self):
+        health.SERVICES.pop("127.0.0.1", None)
+        await self.server.cleanup()
+
+    async def _get(self, **kw):
+        async with aiohttp.ClientSession(trace_configs=[health.trace_config()]) as s:
+            async with s.get(f"http://127.0.0.1:{self.port}/missing.json", **kw) as r:
+                return r.status
+
+    async def test_a_404_marked_missing_ok_is_not_a_failure(self):
+        with contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(await self._get(trace_request_ctx=health.MISSING_OK), 404)
+        entry = health.status()[0]
+        self.assertIsNone(entry["failing_since"], "a lookup that may not exist yet doesn't count as failing")
+        self.assertNotIn("HTTP 404", out.getvalue())
+
+    async def test_any_other_404_still_is(self):
+        with contextlib.redirect_stdout(io.StringIO()):
+            await self._get()
+        self.assertIsNotNone(health.status()[0]["failing_since"])

@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed:** the add-on reported the racing calendar as failing every minute
+  ("HTTP 404" in its log, and its problem sensor), because next year's F1
+  and Formula E calendars aren't published yet. A missing next year is now a
+  normal answer; this year's calendar was never affected.
+
 ## 0.18.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) so its clock lines up with the

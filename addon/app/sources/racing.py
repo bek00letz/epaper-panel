@@ -1,6 +1,5 @@
 """Racing series: what's on now or next, and race windows."""
 
-import health
 import json
 import time
 from dataclasses import dataclass
@@ -8,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import aiohttp
 
+import health
 import runtime
 from render import clock
 from sources.geo import get_home_timezone
@@ -117,7 +117,9 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_na
             for yr in (cur_year, cur_year + 1):
                 fe_url = f"https://raw.githubusercontent.com/sportstimes/f1/main/_db/{ser.calendar}/{yr}.json"
                 try:
-                    async with session.get(fe_url, headers=headers, timeout=timeout) as r:
+                    # Next year's file may not be published yet: a 404 there is normal.
+                    async with session.get(fe_url, headers=headers, timeout=timeout,
+                                           trace_request_ctx=health.MISSING_OK if yr > cur_year else None) as r:
                         if r.status == 200:
                             fdata = await r.json(content_type=None)
                             yr_races = fdata.get("races") or []
@@ -361,7 +363,9 @@ async def compute_racing_active_window(session, series="f1", pre_buffer_hours=2.
         for yr in (cur_year, cur_year + 1):
             db_url = f"https://raw.githubusercontent.com/sportstimes/f1/main/_db/{ser.calendar}/{yr}.json"
             try:
-                async with session.get(db_url, headers=headers, timeout=timeout) as r:
+                # Next year's file may not be published yet: a 404 there is normal.
+                async with session.get(db_url, headers=headers, timeout=timeout,
+                                       trace_request_ctx=health.MISSING_OK if yr > cur_year else None) as r:
                     if r.status == 200:
                         fdata = await r.json(content_type=None)
                         races = fdata.get("races") or []

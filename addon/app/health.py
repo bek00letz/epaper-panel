@@ -103,6 +103,10 @@ SERVICES = {
 }
 
 
+# Passed as a request's trace_request_ctx: "not found" here is a normal answer.
+MISSING_OK = object()
+
+
 def trace_config():
     """aiohttp tracing that records every request to a known service."""
     import aiohttp
@@ -111,7 +115,10 @@ def trace_config():
         name = SERVICES.get(params.url.host or "")
         if name is None:
             return
-        if params.response.status < 400:
+        # A request may say a 404 is an answer, not a failure: something looked up that may
+        # not exist yet (next year's racing calendar), passed as trace_request_ctx=MISSING_OK.
+        missing_ok = getattr(ctx, "trace_request_ctx", None) is MISSING_OK and params.response.status == 404
+        if params.response.status < 400 or missing_ok:
             ok(name)
         else:
             fail(name, f"HTTP {params.response.status} from {params.url.host}")
