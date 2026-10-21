@@ -160,7 +160,7 @@ export const PRESETS = [
     asks: "sensor", prefer: { energy: "solar", device_class: ["energy"], units: ["kWh", "Wh", "MWh"] }, example: "sensor.solar_today_production",
     looks: [{ id: "solar", name: "Solar today", make: (ent) => [
       { type: "icon", icon: "mdi:white-balance-sunny", x: 32, y: 44, w: 116, h: 116 },
-      { type: "number", entity: ent || "", show: "state", unit: "entity", decimals: 1, x: 160, y: 30, w: 310, h: 128, align: "left" },
+      { type: "number", entity: ent || "", show: "state", unit: "entity", total: "today", decimals: 1, x: 160, y: 30, w: 310, h: 128, align: "left" },
       { type: "text", value: "produced today", size: 30, bold: false, x: 164, y: 170, w: 320, h: 40, align: "left" },
       { type: "curve", entity: ent || "", hours: 24, x: 490, y: 100, w: 270, h: 86 },
     ] }],
@@ -441,15 +441,23 @@ export function pageFor(p, look, ent, extra, unitOf = () => "") {
    °F home reads °F. A gauge marked max_val: "power" goes to 5000 in watts,
    5 in kW. `unitOf(entityId)` is the editor's entity list; the thumbnails'
    examples use the example sensors' own units (render/fixture.json). */
+/* The example sensors' units (and, for a running total, its state class) as the fixture has them. */
 export const EXAMPLE_UNITS = { "sensor.indoor_temperature": "°C", "sensor.solar_today_production": "kWh", "sensor.home_battery": "%",
   "sensor.house_power": "W", "sensor.solar_pv_power": "W" };
 const EXAMPLE_PARTS = { battery: "sensor.home_battery", load: "sensor.house_power", solar: "sensor.solar_pv_power" };
 const exampleUnit = (id) => EXAMPLE_UNITS[id] || "";
 const POWER_MAX = { W: 5000, kW: 5, MW: 0.005 };
-export function withUnits(elements, unitOf = () => "") {
+/* `total: "today"` (Solar today, framework review #3): a running total (state class total or
+   total_increasing: an inverter's lifetime meter, or a daily one) shows how much it went up
+   today (binding show "change_today", from long-term statistics), never "18,532 kWh today";
+   anything else shows its state. The sensor is still the one you pick. */
+const RUNNING = ["total", "total_increasing"];
+export function withUnits(elements, infoOf = () => "") {
+  const info = (id) => { const r = id ? infoOf(id) : ""; return typeof r === "string" ? { unit: r } : r || {}; };
   return elements.map((el) => {
-    if (el.unit !== "entity" && el.max_val !== "power") return el;
-    const e = { ...el }, u = e.entity ? String(unitOf(e.entity) || "") : "";
+    if (el.unit !== "entity" && el.max_val !== "power" && !el.total) return el;
+    const e = { ...el }, about = info(e.entity), u = String(about.unit || "");
+    if (e.total) { if (RUNNING.includes(about.state_class)) e.show = "change_today"; delete e.total; }
     // No unit is an empty suffix, not a missing one: a gauge with none would add its own "%".
     if (e.unit === "entity") { delete e.unit; e.suffix = !u ? "" : u === "%" ? "%" : ` ${u}`; }
     if (e.max_val === "power") { e.max_val = POWER_MAX[u] ?? 5000; if (u === "kW" || u === "MW") e.decimals = 1; }

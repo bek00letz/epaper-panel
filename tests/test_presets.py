@@ -292,6 +292,13 @@ class TestSensibleFirst(unittest.TestCase):
         self.assertEqual(got[0], ["sensor.pv_today", "From your Energy dashboard"])
         self.assertEqual(got[1], ["sensor.solar_month", ""])
 
+    def test_a_running_total_shows_its_change_today(self):
+        """Framework review #3: still the sensor you pick, but a lifetime meter reads today's share."""
+        got = run_js("""const p = P.presetById("solar");
+          console.log(JSON.stringify(["total_increasing", "total", "measurement", ""].map((sc) =>
+            P.pageFor(p, p.looks[0], "sensor.pv", undefined, () => ({ unit: "kWh", state_class: sc })).elements[1].show)))""")
+        self.assertEqual(got, ["change_today", "change_today", "state", "state"])
+
     def test_without_an_energy_dashboard_energy_sensors_first(self):
         self.assertEqual([e for e, _ in self.rank("solar")][:2], ["sensor.solar_month", "sensor.pv_today"])
 

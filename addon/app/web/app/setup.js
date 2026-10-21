@@ -92,7 +92,7 @@ export function setupStep(app, p, { thumb, add, foot, initialLook = 0, rememberL
   function ready() { addBtn.disabled = need ? !need.ready() : asksEntity && !ent; skip.hidden = !asksEntity; }
   function drawPreview() {
     const shown = need ? need.shows() : { ent, mine: !!ent, caption: ent ? `With ${app.entMap.get(ent)?.name || ent}.` : "" };
-    const page = shown.mine ? pageFor(p, look(), shown.ent || "", shown.extra, (id) => app.entMap.get(id)?.unit) : examplePage(p, look());
+    const page = shown.mine ? pageFor(p, look(), shown.ent || "", shown.extra, (id) => app.entMap.get(id) || "") : examplePage(p, look());
     const key = `preset:${look().id}:` + (shown.mine ? JSON.stringify([shown.ent || "", shown.extra || null]) : "example");
     preview.replaceChildren(thumb(app, key, page, { example: !shown.mine, cls: "big" }));
     caption.textContent = shown.mine ? shown.caption : "Example values. Your page shows yours.";

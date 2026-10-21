@@ -157,7 +157,7 @@ export function openPresets(app) {
   }, { cls: "wide tall", focus: "input[type=search]" });
 
   function add(p, look, ent, extra) {
-    const page = pageFor(p, look, ent, extra, (id) => app.entMap.get(id)?.unit);
+    const page = pageFor(p, look, ent, extra, (id) => app.entMap.get(id) || "");
     page.elements = fitToCanvas(page.elements, g, reflowPageElements);
     if (page.tier === "when") syncDynamicGridShowIf(page);
     const entName = ent ? app.entMap.get(ent)?.name : "";

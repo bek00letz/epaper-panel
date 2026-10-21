@@ -255,6 +255,11 @@
   all day after a shower, and asks for a rate (mm/h, in/h) or a sensor
   that's on while it rains.
 
+- **Solar today reads today, even from a lifetime meter.** It still shows the
+  sensor you pick (your Energy dashboard's first), but when that sensor is a
+  running total, as most inverters' are, the page shows how much it went up
+  today rather than "18,532 kWh produced today".
+
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) for the quiet-hours fix below.
