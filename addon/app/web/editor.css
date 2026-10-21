@@ -374,7 +374,7 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
 .switch[aria-checked="true"] { background: var(--green); }
 .switch[aria-checked="true"]::after { transform: translateX(18px); }
 .cond { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
-.cond .cmp select { flex: 0 0 auto; width: auto; }
+.cond .cmprow select { flex: 0 0 auto; width: auto; }
 .rangerow { display: flex; align-items: center; gap: 8px; }
 .rangerow .rmin { font-size: 11px; color: var(--fg-2); } .rangerow .rmax { font-size: 17px; color: var(--fg-2); }
 .range { flex: 1; accent-color: var(--accent); min-height: 28px; }

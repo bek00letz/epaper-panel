@@ -241,3 +241,14 @@ class TestDeviceNotScreen(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestConditionRow(unittest.TestCase):
+    def test_the_comparison_and_value_sit_in_one_row(self):
+        # It was "inline cmp", and .cmp is Settings' choice card: a padded,
+        # clickable column with the comparison centred above the value.
+        src = js("inspector.js")
+        self.assertIn('h("div", { class: "inline cmprow" }', src)
+        self.assertNotRegex(src, r'class: "[^"]*\bcmp\b[^"]*" }, opSel')
+        self.assertIn("flex: 0 0 auto", rule(".cond .cmprow select"))
+        self.assertFalse(rules(".cmprow {"), "no card styles of its own")

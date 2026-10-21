@@ -635,7 +635,7 @@ function conditionRows(app, p, c = SHOW) {
     const dom = parsed.ent.split(".")[0], known = KNOWN_STATES[dom];
     const opSel = select(OPS, parsed.op, (v) => upd({ op: v }), { "aria-label": c.label + " comparison" });
     const valIn = input(parsed.val, (v) => upd({ val: v }), { "aria-label": c.label + " value", placeholder: "Value" });
-    wrap.append(h("div", { class: "inline cmp" }, opSel, valIn));
+    wrap.append(h("div", { class: "inline cmprow" }, opSel, valIn));
     if (known && (parsed.op === "eq" || parsed.op === "ne")) wrap.append(h("div", { class: "chips" }, ...known.map((s) => h("button", { class: "chipbtn", "aria-pressed": String(parsed.val === s), onclick: () => upd({ val: s }) }, s.replace(/_/g, " ")))));
     const holds = evaluate(parsed, app.entMap);
     if (holds !== null) {
