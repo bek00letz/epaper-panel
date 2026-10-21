@@ -1,6 +1,13 @@
 # Changelog
 
-## Unreleased
+## 0.16.0
+Add-on only; no firmware change, so nothing to reinstall on the panel.
+
+In short: the editor shows what isn't sent yet, page by page, with an undo
+for each change; Duplicate and Delete on every page in the strip, which is
+larger now; and a page can show for a while after something changes ("PawPaw
+went outside"). The add-on's description lists the sizes it offers.
+The details:
 - **Duplicate and Delete on every page in the strip.** Hover a page (or
   hold it on a touch screen) and its last third shows two buttons:
   Duplicate, and Delete, which asks which you mean, Delete page or Take out
