@@ -88,7 +88,9 @@ The New page presets plan shipped in 0.15.0.
 keeps HTTPS (client only; ECDHE kept; plain-RSA key exchange and session
 tickets dropped), so tunnels like Cloudflare and Home Assistant Cloud still
 work; a very old proxy offering only RSA key exchange wouldn't. Release checks
-still compile with 2026.9.1 locally. Worth a look: devices that dial Home
+use 2026.10.0 from 21 Oct (`.esphome-venv`; the way back is
+`pip install esphome==2026.9.1` there); every offered size passes its
+`esphome config` test with it. Worth a look: devices that dial Home
 Assistant themselves (#18919, could let a panel away from home keep its
 Home Assistant link and be woken), the device onboarding wizard (#19966, the
 browser setup's open question), suspend_loop / loop_interval (#18136, power),
