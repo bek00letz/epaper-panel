@@ -1864,7 +1864,7 @@ def _draw_sports_racing(img, d, el, raw_val, display=None):
         }
 
     series = str(data.get("series") or "F1").upper()
-    default_name = "Formula E World Championship" if series == "FE" else "Formula 1 Grand Prix"
+    default_name = data.get("series_name") or series
     event_name = str(data.get("event_name") or default_name).upper()
     status = str(data.get("status") or "IN").upper()
     lap = data.get("lap")
@@ -1900,7 +1900,7 @@ def _draw_sports_racing(img, d, el, raw_val, display=None):
         mid_y = y + h // 2
         mid_icon = "mdi:car-electric" if series == "FE" else "mdi:racing-helmet"
         _draw_icon_glyph(d, mid_icon, mid_x, mid_y - 22, 50)
-        circ = data.get("circuit") or ("ePrix Circuit" if series == "FE" else "Grand Prix Circuit")
+        circ = data.get("circuit") or ""
         d.text((mid_x, mid_y + 18), circ, font=T.font(_s(20, fscale, 14, 32), bold=True), fill=T.BLACK, anchor="mm")
         detail = data.get("detail") or "Session scheduled soon"
         d.text((mid_x, mid_y + 44), detail, font=T.font(_s(15, fscale, 11, 24), bold=False), fill=T.BLACK, anchor="mm")

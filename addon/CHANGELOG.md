@@ -55,6 +55,10 @@
   the schedule ended but nobody was home, because nothing woke it to show
   "back when someone's home". It's now woken once when the sleep screen's
   words change, and never more often than that.
+- **Fixed:** a Race weekend page set to NASCAR or IndyCar showed Formula 1's
+  race, drivers and status. Each series now reads its own results, and its
+  page names it ("NASCAR · …"). Whether the page shows still followed the
+  right series before; only what it showed was wrong.
 
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,
