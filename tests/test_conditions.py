@@ -168,3 +168,49 @@ class TestUntilInTheEditor(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestOwnValuesInAnyTemplate(unittest.TestCase):
+    """Any template that mentions the add-on's own values works without a broker (framework review #12)."""
+    OWN = {"sensor.epaper_watch_count": {"state": "2", "attributes": {"titles": ["Severance"]}},
+           "sensor.epaper_watch": {"state": "nothing new", "attributes": {}},
+           "sensor.epaper_gone": {"state": None}}
+
+    def test_every_form_is_written_in(self):
+        t = ("{{ states('sensor.epaper_watch_count') | int > 0 and is_state('person.x', 'home') "
+             "and not is_state(\"sensor.epaper_watch\", 'Severance') and has_value('sensor.epaper_gone') "
+             "and state_attr('sensor.epaper_watch_count', 'titles') | count }}")
+        got = conditions.inline(t, self.OWN)
+        self.assertIn("'2' | int > 0", got)
+        self.assertIn("is_state('person.x', 'home')", got)              # Home Assistant's own: untouched
+        self.assertIn("('nothing new' == 'Severance')", got)
+        self.assertIn("and false and", got)
+        self.assertIn("['Severance'] | count", got)
+        self.assertNotIn("sensor.epaper_", got)
+
+    def test_a_sensor_the_add_on_doesnt_have_is_left_for_home_assistant(self):
+        t = "{{ states('sensor.epaper_other') }}"
+        self.assertEqual(conditions.inline(t, self.OWN), t)
+
+    def test_quotes_in_a_value_stay_text(self):
+        got = conditions.inline("{{ states('sensor.epaper_watch') }}", {"sensor.epaper_watch": {"state": "Bob's \\ show"}})
+        self.assertEqual(got, "{{ 'Bob\\'s \\\\ show' }}")
+
+    def test_a_word_is_no_value_in_a_number_comparison(self):
+        own = {"sensor.epaper_watch": {"state": "nothing new"}}
+        self.assertEqual(conditions.local("{{ states('sensor.epaper_watch') | int(0) < 5 }}", own), "False")
+
+
+class TestSentToHomeAssistantWrittenIn(unittest.IsolatedAsyncioTestCase):
+    async def test_resolve_templates_sends_the_values(self):
+        import ha
+        import runtime
+        sent = []
+
+        async def fake(session, tpl):
+            sent.append(tpl)
+            return "True"
+        with mock.patch.object(ha, "HA_TOKEN", "t"), mock.patch.object(ha, "ha_template", fake), \
+             mock.patch.dict(runtime.PUBLISHED, {"sensor.epaper_watch_count": {"state": "3"}}):
+            await ha.resolve_templates(None, {"a": "{{ states('sensor.epaper_watch_count') | int > 0 }}"})
+        self.assertEqual(sent, ["{{ '3' | int > 0 }}"])

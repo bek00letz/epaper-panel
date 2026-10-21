@@ -45,7 +45,10 @@
   (New to watch, for one) never showed without an MQTT broker, because Home
   Assistant was asked about a value it only learns through the broker. The
   add-on now answers those conditions itself, as it already did for what
-  the pages show.
+  the pages show. Any condition or template that uses one of the add-on's
+  own values now works without a broker, not only the simple form's, and
+  one that reads a word ("nothing new") as a number counts as no value,
+  not 0.
 - **Fixed:** "Watch battery is below 20" came true for a moment every time
   Home Assistant restarted, because a sensor with no value yet counted as 0.
   A sensor that's unavailable or unknown now never meets "is below", "is
