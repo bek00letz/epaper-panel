@@ -76,30 +76,105 @@ function settleAuto(spec, prevJson) {
   }
 }
 
+/* What a person calls each setting sent with the pages. */
+export const SETTING_NAMES = { quiet_hours: "Quiet hours", custom_presets: "Your presets", location_presets: "Saved places", display: "Panel model", orientation: "Mounting" };
+
+/* What differs from `base` in `mine`: the one comparison. The merge below
+   reads it, and so do the page strip and "Not sent yet" (base = what the
+   panel has, mine = the draft).
+     pages     by name, each page whose content differs: "added", "removed",
+               "renamed" (an added page holding a removed one's elements, by
+               ID; `from` names it, and the removed one has `to`) or
+               "changed"; with its elements by ID (added, removed, changed),
+               whether their order changed and whether the page's own
+               settings did
+     placed    by name, a page whose place in the rotation changed: "in",
+               "out" or "moved" (not in the longest run of pages both keep
+               in the same order, so dragging one page marks only it)
+     rotation  whether the rotation differs at all
+     settings  the settings sent with the pages that differ */
+export function changes(base, mine) {
+  base = base || { pages: {}, rotation: [] };
+  const bp = base.pages || {}, mp = mine.pages || {};
+  const pages = {};
+  for (const n of new Set([...Object.keys(bp), ...Object.keys(mp)])) {
+    const b = bp[n], m = mp[n];
+    if (same(m, b)) continue;
+    pages[n] = !b ? { status: "added" } : !m ? { status: "removed" } : { status: "changed", ...pageChanges(b, m) };
+  }
+  // Renamed: an added page that took at least half of a removed one's elements with it.
+  const names = {};
+  for (const [r, rc] of Object.entries(pages)) {
+    if (rc.status !== "removed") continue;
+    const ids = new Set((bp[r].elements || []).map((e) => e?.id).filter(Boolean));
+    if (!ids.size) continue;
+    const to = Object.keys(pages).find((a) => pages[a].status === "added" && !pages[a].from
+      && (mp[a].elements || []).filter((e) => ids.has(e?.id)).length * 2 >= ids.size);
+    if (!to) continue;
+    pages[to] = { status: "renamed", from: r, ...pageChanges(bp[r], mp[to]) };
+    rc.to = to; names[r] = to;
+  }
+  // Places in the rotation, of pages on both sides (a renamed one under its new name).
+  const both = (n) => mp[n] && (bp[n] || Object.values(names).includes(n));
+  const bseq = (base.rotation || []).map((n) => names[n] || n).filter(both), mseq = (mine.rotation || []).filter(both);
+  const kept = lcs(bseq, mseq), placed = {};
+  const left = (seq, used) => seq.filter((_, i) => !used.has(i));
+  for (const n of new Set([...left(bseq, kept.a), ...left(mseq, kept.b)])) {
+    placed[n] = !bseq.includes(n) ? "in" : !mseq.includes(n) ? "out" : "moved";
+  }
+  const settings = TOP_KEYS.filter((k) => !same(mine[k], base[k]));
+  const rotation = !same(mine.rotation, base.rotation);
+  return { pages, placed, rotation, settings, any: !!(Object.keys(pages).length || rotation || settings.length) };
+}
+
+/* A page's elements by ID, and its own settings (everything but its elements). */
+function pageChanges(b, m) {
+  const be = (b.elements || []).filter(Boolean), me = (m.elements || []).filter(Boolean);
+  const bi = new Map(be.map((e) => [e.id, e])), mi = new Map(me.map((e) => [e.id, e]));
+  // A group's box follows its members (syncGroups): moving them isn't a change of its own.
+  const own = (e) => (e.type === "group" ? { ...e, ...Object.fromEntries(ARRANGE_KEYS.map((k) => [k, 0])) } : e);
+  const added = me.filter((e) => !bi.has(e.id)).map((e) => e.id);
+  const removed = be.filter((e) => !mi.has(e.id)).map((e) => e.id);
+  const changed = me.filter((e) => bi.has(e.id) && !same(own(e), own(bi.get(e.id)))).map((e) => e.id);
+  const order = !same(be.map((e) => e.id).filter((i) => mi.has(i)), me.map((e) => e.id).filter((i) => bi.has(i)));
+  const { elements: _b, ...bs } = b, { elements: _m, ...ms } = m;
+  return { elements: { added, removed, changed }, order, settings: !same(bs, ms) };
+}
+
+/* The longest run two sequences keep in the same order: which indexes of each are in it. */
+function lcs(a, b) {
+  const L = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
+  for (let i = a.length - 1; i >= 0; i--) for (let j = b.length - 1; j >= 0; j--) L[i][j] = a[i] === b[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+  const ka = new Set(), kb = new Set();
+  for (let i = 0, j = 0; i < a.length && j < b.length;) {
+    if (a[i] === b[j]) { ka.add(i++); kb.add(j++); } else if (L[i + 1][j] >= L[i][j + 1]) i++; else j++;
+  }
+  return { a: ka, b: kb };
+}
+
 /* Three-way merge: by page, then rotation, then each setting. A part changed
    on only one side takes that side; changed on both, differently, is a clash. */
 export function merge(base, mine, theirs) {
   base = base || { pages: {} };
   const out = clone(theirs);
   const clashes = [];
-  const names = new Set([...Object.keys(base.pages || {}), ...Object.keys(mine.pages || {}), ...Object.keys(theirs.pages || {})]);
-  for (const n of names) {
-    const b = base.pages?.[n], m = mine.pages?.[n], t = theirs.pages?.[n];
-    if (same(m, b) || same(m, t)) continue;
-    if (same(t, b)) { if (m) out.pages[n] = clone(m); else delete out.pages[n]; continue; }
+  const ours = changes(base, mine), their = changes(base, theirs);
+  for (const n of Object.keys(ours.pages)) {
+    const m = mine.pages?.[n], t = theirs.pages?.[n];
+    if (same(m, t)) continue;
+    if (!their.pages[n]) { if (m) out.pages[n] = clone(m); else delete out.pages[n]; continue; }
     clashes.push({ kind: "page", name: n, mine: m, theirs: t });
   }
   // Page order: keep theirs, with any pages only you added at the end.
   const ordered = {};
   for (const k of Object.keys(out.pages)) ordered[k] = out.pages[k];
   out.pages = ordered;
-  if (!same(mine.rotation, base.rotation)) {
-    if (same(theirs.rotation, base.rotation)) out.rotation = clone(mine.rotation);
+  if (ours.rotation) {
+    if (!their.rotation) out.rotation = clone(mine.rotation);
     else if (!same(theirs.rotation, mine.rotation)) clashes.push({ kind: "rotation", name: "rotation", mine: mine.rotation, theirs: theirs.rotation });
   }
-  for (const k of TOP_KEYS) {
-    if (same(mine[k], base[k])) continue;
-    if (same(theirs[k], base[k])) out[k] = clone(mine[k]);
+  for (const k of ours.settings) {
+    if (!their.settings.includes(k)) out[k] = clone(mine[k]);
     else if (!same(theirs[k], mine[k])) clashes.push({ kind: "setting", name: k, mine: mine[k], theirs: theirs[k] });
   }
   out.rotation = (out.rotation || []).filter((n) => out.pages[n]);
@@ -309,6 +384,40 @@ export class Doc {
       }
     }
     throw new Error("The pages kept changing in another window. Try again in a moment.");
+  }
+
+  /* What the panel doesn't have yet (`changes`), worked out once per version of the pages. */
+  pending() {
+    const key = this.hist[this.hpos];
+    if (this._pending?.key !== key || this._pending.live !== this.live) this._pending = { key, live: this.live, c: changes(this.live, this.spec) };
+    return this._pending.c;
+  }
+
+  /* One page back to what the panel has: its content, its name and its place
+     in the rotation. One undoable step, like everything else. */
+  revertPage(name) {
+    const c = changes(this.live, this.spec), p = c.pages[name];
+    const names = [...new Set([name, p?.from, p?.to].filter(Boolean))];
+    for (const n of names) { if (this.live.pages[n]) this.spec.pages[n] = clone(this.live.pages[n]); else delete this.spec.pages[n]; }
+    let rot = this.spec.rotation.filter((n) => !names.includes(n));
+    const lr = this.live.rotation;
+    lr.forEach((n, i) => {
+      if (!names.includes(n)) return;
+      // After the page it follows on the panel, or first.
+      let at = 0;
+      for (let k = i - 1; k >= 0; k--) { const j = rot.lastIndexOf(lr[k]); if (j >= 0) { at = j + 1; break; } }
+      rot.splice(at, 0, n);
+    });
+    this.spec.rotation = rot;
+    if (!this.spec.pages[this.cur]) this.cur = (p?.from && this.spec.pages[p.from]) ? p.from : this.firstPage();
+    this.sel = [];
+    this.commit();
+  }
+
+  /* One setting sent with the pages back to what the panel has. */
+  revertSetting(k) {
+    this.spec[k] = clone(this.live[k]);
+    this.commit();
   }
 
   /* Throw away everything not sent: one undoable step. */

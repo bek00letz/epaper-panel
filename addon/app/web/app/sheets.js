@@ -9,6 +9,7 @@ import { describe, parseShowIf, syncDynamicGridShowIf } from "./conditions.js";
 import { reflowPageElements } from "./legacy.js";
 import { LOOKS as PRESETS, clockPages, dateInstead } from "./presets.js";
 import { thumbnail, statusSummary, forgetThumbnails } from "./strip.js";
+import { SETTING_NAMES } from "./doc.js";
 
 const thumbImg = (app, key, page) => {
   const img = h("img", { class: "thumb", alt: "", "data-thumb": key, draggable: "false" });
@@ -344,7 +345,7 @@ export function resolveClashes(app, clashes) {
           if (clashes.length > 1) body.append(h("h3", { class: "slab", text: pageTitle(c.name) }));
           body.append(h("div", { class: "cmpgrid", role: "radiogroup", "aria-label": pageTitle(c.name) }, mine, theirs));
         } else {
-          const label = c.kind === "rotation" ? "The rotation" : { quiet_hours: "Quiet hours", custom_presets: "Your presets", location_presets: "Saved places", display: "Panel model", orientation: "Mounting" }[c.name] || c.name;
+          const label = c.kind === "rotation" ? "The rotation" : SETTING_NAMES[c.name] || c.name;
           body.append(h("h3", { class: "slab", text: label }), seg([["mine", "Keep yours"], ["theirs", "Use the other one"]], "mine", (v) => { choice[c.name] = v; }, label));
         }
       });
