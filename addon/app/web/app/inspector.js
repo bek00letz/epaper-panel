@@ -548,6 +548,12 @@ function page(app, head, body) {
   name.addEventListener("keydown", (e) => { if (e.key === "Enter") name.blur(); if (e.key === "Escape") { name.value = cur; err.textContent = ""; name.blur(); } });
   name.addEventListener("change", () => app.renamePage(cur, name.value));
   head.append(h("div", { class: "ttl" }, h("span", { class: "kind", text: "Page" }), name), err);
+  // A countdown's page: passed (reuse it with another date, or delete it), or not showing yet.
+  const cd = app.canvas.metrics.find((m) => m.countdown)?.countdown;
+  if (cd?.state === "passed") body.append(h("div", { class: "note passed", role: "note" }, icon("info", "sm"),
+    h("span", { text: `Passed on ${cd.on}, so the panel leaves it out. Give it another date to use it again.` }),
+    h("button", { class: "btn tinted danger", onclick: () => app.deletePage() }, icon("trash", "sm"), "Delete")));
+  else if (cd?.state === "waiting") body.append(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: `It starts showing on ${cd.from}.` })));
   // What changes faster than a sleeping device updates is noted, never hidden (presets.staleNote).
   const stale = staleNote(pageChangesEvery(p.elements, app.entMap), app.screen);
   if (stale) body.append(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: stale })));

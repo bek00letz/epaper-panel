@@ -109,6 +109,41 @@ class TestEverywhereTheSame(unittest.IsolatedAsyncioTestCase):
         self.assertIn("calendar.bins", binding.template_for(el))
 
 
+class TestKeptAndWaiting(unittest.TestCase):
+    """The user's calls (21 Oct): a passed countdown stays, marked Passed, to reuse; and one set far
+    ahead can start showing only some days before."""
+    TRIP = {"type": "countdown", "to": "date", "name": "Trip", "at": "2027-04-21", "show_before": 30}
+
+    def test_it_waits_until_its_time(self):
+        self.assertEqual(countdown.status(self.TRIP, at("2026-10-21 10:00")), {"state": "waiting", "from": "Monday 22 March 2027"})
+        self.assertTrue(countdown.page_hidden({"elements": [self.TRIP]}, at("2026-10-21 10:00")))
+        self.assertEqual(countdown.status(self.TRIP, at("2027-03-22 08:00")), {"state": "showing"})
+        self.assertFalse(countdown.page_hidden({"elements": [self.TRIP]}, at("2027-03-22 08:00")))
+
+    def test_bins_can_show_only_the_evening_before(self):
+        el = {**BINS, "show_before": 1}
+        self.assertEqual(countdown.status(el, at("2026-10-31 10:00"))["state"], "waiting")
+        self.assertEqual(countdown.status(el, at("2026-11-02 19:00"))["state"], "showing")
+
+    def test_passed_is_said_and_kept(self):
+        got = countdown.status({**self.TRIP, "show_before": 0}, at("2027-04-22 09:00"))
+        self.assertEqual(got, {"state": "passed", "on": "Wednesday 21 April"})
+        metrics = []
+        layout.render_page({"elements": [{**self.TRIP, "at": "2000-01-01", "x": 24, "y": 14, "w": 744, "h": 208}]}, {0: {"tz": None}}, metrics=metrics)
+        self.assertEqual(metrics[0]["countdown"]["state"], "passed", "the editor hears it from the render")
+
+    def test_the_editor_shows_it_and_never_deletes_by_itself(self):
+        strip = (APP_JS / "strip.js").read_text()
+        self.assertIn('t.classList.toggle("passed", c?.state === "passed");', strip)
+        self.assertIn("`Shows from ${c.from}`", strip)
+        insp = (APP_JS / "inspector.js").read_text()
+        self.assertIn('h("button", { class: "btn tinted danger", onclick: () => app.deletePage() }, icon("trash", "sm"), "Delete")', insp)
+        css = (support.APP / "web" / "editor.css").read_text()
+        self.assertIn(".tile.passed .thumbwrap { box-shadow: 0 0 0 2px var(--orange); opacity: 0.55; }", css, "an outline, not just a pill")
+        self.assertNotIn("deletePage", (APP_JS / "countdown.js").read_text())
+        self.assertIn('[180, "6 months before"]', (APP_JS / "countdown.js").read_text())
+
+
 @unittest.skipUnless(shutil.which("node"), "no node to read the editor's presets")
 class TestThePreset(unittest.TestCase):
     def run_js(self, body):

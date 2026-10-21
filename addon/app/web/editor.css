@@ -706,3 +706,10 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
 .binlist { display: flex; flex-direction: column; gap: 8px; }
 .binlist .group { margin: 0; }
 .binlist .inline { display: flex; gap: 6px; align-items: center; }
+
+/* A countdown that has passed: kept, to reuse with another date, but plainly set apart. */
+.tile.passed .thumbwrap { box-shadow: 0 0 0 2px var(--orange); opacity: 0.55; }
+.tile.passed[aria-current="page"] .thumbwrap { box-shadow: 0 0 0 2.5px var(--orange), 0 0 0 5px color-mix(in srgb, var(--accent) 45%, transparent); }
+.tile.passed .tsub { color: var(--orange); font-weight: 600; }
+.note.passed { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: color-mix(in srgb, var(--orange) 10%, transparent); border: 1.5px solid var(--orange); border-radius: var(--r-card); padding: 10px 12px; }
+.note.passed > span { flex: 1; min-width: 12em; }

@@ -208,10 +208,13 @@
   and how often it comes (every week, or 2, 3 or 4 weeks), so alternating
   bins are two bins every 2 weeks. The evening before reads Tomorrow, the
   day Today until noon (or midnight, or numbers only: your choice). On the
-  day of a date with a time it counts the hours, and once a one-off date
-  has passed its page hides itself. Nothing needs Home Assistant's
-  calendar, and it's all editable later in the inspector. Pages you made
-  from a calendar work as before.
+  day of a date with a time it counts the hours. Starts showing keeps a
+  countdown off the panel until it's near: set a trip six months ahead and
+  have it show from a month before (its tile says "Shows from …"). Once a
+  one-off date has passed the panel leaves it out, and it stays among your
+  pages, outlined and marked Passed, to give another date or delete.
+  Nothing needs Home Assistant's calendar, and it's all editable later in
+  the inspector. Pages you made from a calendar work as before.
 
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,

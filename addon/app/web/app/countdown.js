@@ -17,6 +17,13 @@ function inp(value, onChange, attrs, live) {
   return x;
 }
 
+/* When the page starts showing (render/countdown.py `show_before`, in days): right away, or not
+   until it's near, so a countdown set six months ahead can wait. */
+export const SHOW_BEFORE = [[0, "Right away"], [1, "1 day before"], [3, "3 days before"], [7, "1 week before"], [14, "2 weeks before"],
+  [30, "1 month before"], [90, "3 months before"], [180, "6 months before"]];
+const startsShowing = (el, changed, sub) => row("Starts showing", sub, select(SHOW_BEFORE, el.show_before || 0,
+  (v) => { el.show_before = Number(v) || 0; changed(); }, { "aria-label": "Starts showing" }));
+
 /* A date: a name, the day, a time if you like, and whether it comes round every year. */
 export function dateEditor(el, changed, { live = false } = {}) {
   const [d0, t0] = String(el.at || "").split("T");
@@ -26,8 +33,9 @@ export function dateEditor(el, changed, { live = false } = {}) {
     row("What it's for", null, inp(el.name, (v) => { el.name = v; changed(); }, { placeholder: "Holiday", maxlength: "40", "aria-label": "What it's for" }, live)),
     row("Date", null, inp(day, (v) => { day = v; save(); }, { type: "date", "aria-label": "Date" }, live)),
     row("Time", "Leave it empty for the whole day", inp(time, (v) => { time = v; save(); }, { type: "time", "aria-label": "Time" }, live)),
-    row("Every year", "Birthdays and anniversaries come round again; otherwise the page hides itself after the day",
-      toggle(!!el.yearly, (v) => { el.yearly = v; changed(); }, "Every year")));
+    row("Every year", "Birthdays and anniversaries come round again; otherwise it's marked Passed after the day",
+      toggle(!!el.yearly, (v) => { el.yearly = v; changed(); }, "Every year")),
+    startsShowing(el, changed, "Until then the panel leaves the page out"));
 }
 
 export const EVERY = [[1, "Every week"], [2, "Every 2 weeks"], [3, "Every 3 weeks"], [4, "Every 4 weeks"]];
@@ -50,7 +58,8 @@ export function binsEditor(el, changed, { live = false } = {}) {
       draw(); changed();
       box.querySelector(`[aria-label="Bin ${el.bins.length} name"]`)?.focus();
     } }, icon("plus", "sm"), "Add a bin")),
-    h("div", { class: "group" }, row("Close to the day", null, select(CLOSE_TO, el.today_until || "noon", (v) => { el.today_until = v; changed(); }, { "aria-label": "Close to the day" }))));
+    h("div", { class: "group" }, row("Close to the day", null, select(CLOSE_TO, el.today_until || "noon", (v) => { el.today_until = v; changed(); }, { "aria-label": "Close to the day" })),
+      startsShowing(el, changed, "Before each collection; until then the panel leaves the page out")));
   };
   draw();
   return box;

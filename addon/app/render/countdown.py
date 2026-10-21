@@ -15,6 +15,15 @@ before reads "Tomorrow" and the day "Today" until noon, then the next one
 (`today_until`; "days" keeps numbers). A date without a time reads "Today"
 all its day; with a time, "In 3 hours" on the day; once past, a one-off
 date's page hides itself (`passed`) and a yearly one rolls on to next year.
+A passed one stays among your pages, marked Passed, to reuse with another
+date (the user's call, 21 Oct).
+
+`show_before` (days; none or 0 for always): the page shows only from that
+many days before, so a countdown set six months ahead can wait until a
+month before (the user's call, 21 Oct). Bins too: the evening before only.
+
+What the editor shows about it (the strip's tile, the page's note) comes
+from `status`, in the render's metrics: one place decides.
 """
 from __future__ import annotations
 
@@ -103,6 +112,41 @@ def passed(el: dict, now: datetime) -> bool:
         return False
     when, timed = _at(el.get("at"), now.tzinfo)
     return when is not None and _passed_at(when, timed, now)
+
+
+def _show_before(el: dict) -> int:
+    try:
+        return max(0, int(el.get("show_before") or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def _next_day(el: dict, now: datetime) -> date | None:
+    if el.get("to") == "bins":
+        got = next_bins(el, now)
+        return got[0] if got else None
+    when, _ = target(el, now)
+    return when.date() if when else None
+
+
+def status(el: dict, now: datetime) -> dict:
+    """{"state": "passed", "on"} | {"state": "waiting", "from"} | {"state": "showing"}: what the
+    page does now, said in the editor (the strip's tile, the page's note)."""
+    if passed(el, now):
+        when, _ = _at(el.get("at"), now.tzinfo)
+        return {"state": "passed", "on": _date_words(when.date(), now.date())}
+    day, before = _next_day(el, now), _show_before(el)
+    if day is not None and before and (day - now.date()).days > before:
+        start = day - timedelta(days=before)
+        return {"state": "waiting", "from": _date_words(start, now.date())}
+    return {"state": "showing"}
+
+
+def page_hidden(page: dict, now: datetime) -> bool:
+    """A countdown page shows only while one of its countdowns does: not once a one-off date has
+    passed, nor before its `show_before`."""
+    els = [e for e in page.get("elements") or [] if isinstance(e, dict) and e.get("type") == "countdown"]
+    return bool(els) and all(status(e, now)["state"] != "showing" for e in els)
 
 
 def page_passed(page: dict, now: datetime) -> bool:

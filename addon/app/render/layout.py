@@ -2193,6 +2193,10 @@ def render_page(page, vals, *, clock="", label="", footer=None, page_no=None, it
                     metrics.append(entry)
             elif el["type"] in WIDGETS:
                 drawer(img, d, el, vals.get(i), display=display)
+                if el["type"] == "countdown" and metrics is not None:
+                    # What its page does now (showing, waiting, passed), for the editor to say.
+                    data = vals.get(i) if isinstance(vals.get(i), dict) else {}
+                    metrics.append({"i": i, "countdown": countdown.status(el, todo.now_in(data.get("tz")))})
             elif el["type"] in ("bar", "qr", "dynamic_grid", "calendar_month", "calendar_agenda", "weather_forecast", "flight_tracker", "sports_racing", "sports_match"):
                 drawer(img, d, el, vals.get(i), display=display)
             else:

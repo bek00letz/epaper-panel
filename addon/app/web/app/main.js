@@ -420,7 +420,13 @@ class App {
   }
   inspectorKey() { return `${this.doc.cur}|${this.doc.sel.join(",")}`; }
   inspectorSoon() { cancelAnimationFrame(this.inspRaf); this.inspRaf = requestAnimationFrame(() => this.renderInspector()); }
-  onMetrics() { if (this.doc.sel.length === 1) this.renderInspector(); }
+  onMetrics(m) {
+    // The page's own note follows a countdown's state; redrawn only when that changes, so typing isn't lost.
+    const cd = JSON.stringify((m || []).find((x) => x.countdown)?.countdown || null);
+    const redrawPage = !this.doc.sel.length && cd !== this._countdown;
+    this._countdown = cd;
+    if (this.doc.sel.length === 1 || redrawPage) this.renderInspector();
+  }
   liveFields(el) {
     const q = this.el.insp.querySelectorAll(".quad input");
     if (q.length === 4) ["x", "y", "w", "h"].forEach((k, i) => { q[i].value = el[k]; });

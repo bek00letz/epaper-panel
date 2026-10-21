@@ -387,7 +387,7 @@ async def eligible_pages(session, spec, linger):
         page = defs.get(name)
         if page is None or page.get("tier") == "alert":
             continue
-        if countdown.page_passed(page, now_home):          # a one-off date that's gone hides itself
+        if countdown.page_hidden(page, now_home):          # past a one-off date, or not yet its time to show
             continue
         if name in widget_results:
             if not widget_results[name]:

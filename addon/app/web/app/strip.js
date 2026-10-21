@@ -9,6 +9,9 @@ import { describe, parseShowIf, evaluate } from "./conditions.js";
 /* Thumbnails come from the same renderer as everything else, one at a time,
    cached by what the page contains. */
 const thumbCache = new Map();
+// What the render said about each picture (its metrics): a countdown's state, for the tile to show.
+const thumbMeta = new Map();
+const tell = (img, metrics) => img.dispatchEvent(new CustomEvent("thumbmeta", { detail: metrics || [] }));
 let queue = [], running = false;
 // `example`: drawn with the add-on's example values (api/example), never Home Assistant's (New page's presets).
 export function thumbnail(app, name, img, override, { example = false } = {}) {
@@ -16,7 +19,7 @@ export function thumbnail(app, name, img, override, { example = false } = {}) {
   if (!page) return;
   const key = JSON.stringify([page, app.doc.spec.orientation, app.doc.spec.display, name, example]);
   const hit = thumbCache.get(key);
-  if (hit) { img.src = hit; img.classList.add("ready"); return; }
+  if (hit) { img.src = hit; img.classList.add("ready"); tell(img, thumbMeta.get(key)); return; }
   queue = queue.filter((q) => q.img.isConnected && q.img !== img);
   queue.push({ key, page, name, img, example });
   pump(app);
@@ -30,10 +33,12 @@ async function pump(app) {
     try {
       // An example is drawn by api/example: built-in example values, never Home Assistant's or the person's.
       const r = await api(job.example ? "api/example" : "api/preview", { method: "POST", raw: true, body: { page: job.page, label: job.name.replace(/^preset:(__blank)?/, "").split(":")[0], orientation: Number(app.doc.spec.orientation || 0), distance: 0, display: app.doc.spec.display } });
+      let metrics = [];
+      try { metrics = JSON.parse(r.headers.get("X-Metrics") || "[]"); } catch (_) {}
       const url = URL.createObjectURL(await r.blob());
-      thumbCache.set(job.key, url);
-      if (thumbCache.size > 80) { const [k, u] = thumbCache.entries().next().value; URL.revokeObjectURL(u); thumbCache.delete(k); }
-      document.querySelectorAll(`img[data-thumb="${CSS.escape(job.name)}"]`).forEach((im) => { im.src = url; im.classList.add("ready"); });
+      thumbCache.set(job.key, url); thumbMeta.set(job.key, metrics);
+      if (thumbCache.size > 80) { const [k, u] = thumbCache.entries().next().value; URL.revokeObjectURL(u); thumbCache.delete(k); thumbMeta.delete(k); }
+      document.querySelectorAll(`img[data-thumb="${CSS.escape(job.name)}"]`).forEach((im) => { im.src = url; im.classList.add("ready"); tell(im, metrics); });
     } catch (_) { /* the tile keeps its blank paper */ }
   }
   running = false;
@@ -118,6 +123,17 @@ function tile(app, n, { again, out }) {
     h("span", { class: "thumbwrap", style: { aspectRatio: `${app.geometry().W} / ${app.geometry().H}` } }, img),
     h("span", { class: "tname" }, h("span", { class: "tn", text: pageTitle(n) }), badge), h("span", { class: "tsub", text: sub }));
   t.addEventListener("contextmenu", (e) => { e.preventDefault(); app.openPageMenu(e, n); });
+  // A countdown says what its page does (render/countdown.status): Passed is outlined and greyed,
+  // to reuse with another date or delete; one waiting says when it starts showing.
+  img.addEventListener("thumbmeta", (e) => {
+    const c = (e.detail || []).find((m) => m.countdown)?.countdown;
+    t.classList.toggle("passed", c?.state === "passed");
+    if (!c || c.state === "showing" || again || out) return;
+    const said = c.state === "passed" ? `Passed · ${c.on}` : `Shows from ${c.from}`;
+    t.querySelector(".tsub").textContent = said;
+    t.classList.add("dim");
+    t.setAttribute("aria-label", `${pageTitle(n)}. ${said}`);
+  });
   requestAnimationFrame(() => thumbnail(app, n, img));
   return t;
 }

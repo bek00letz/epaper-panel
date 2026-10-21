@@ -96,10 +96,10 @@ export const PRESETS = [
     looks: [
       { id: "countdown_date", name: "A date", needs: "date",
         exampleExtra: () => ({ name: "Holiday", at: isoDay(12) }),
-        make: (_, x = {}) => [{ type: "countdown", to: "date", name: x.name || "", at: x.at || "", yearly: !!x.yearly, x: 24, y: 14, w: 744, h: 208 }] },
+        make: (_, x = {}) => [{ type: "countdown", to: "date", name: x.name || "", at: x.at || "", yearly: !!x.yearly, show_before: x.show_before || 0, x: 24, y: 14, w: 744, h: 208 }] },
       { id: "countdown_bins", name: "Bin day", needs: "bins",
         exampleExtra: () => ({ bins: [{ name: "Recycling", from: isoDay(1), every: 2 }, { name: "General waste", from: isoDay(8), every: 2 }], today_until: "noon" }),
-        make: (_, x = {}) => [{ type: "countdown", to: "bins", today_until: x.today_until || "noon", bins: x.bins || [], x: 24, y: 14, w: 744, h: 208 }] },
+        make: (_, x = {}) => [{ type: "countdown", to: "bins", today_until: x.today_until || "noon", bins: x.bins || [], show_before: x.show_before || 0, x: 24, y: 14, w: 744, h: 208 }] },
       { id: "event_countdown", name: "A calendar event", asks: "calendar", example: "calendar.bins", make: (ent) => [
         { type: "icon", icon: "mdi:calendar-clock", x: 32, y: 40, w: 110, h: 110 },
         { type: "number", entity: ent || "", show: "days_until", suffix: " days", decimals: 0, x: 160, y: 24, w: 340, h: 130, align: "left" },

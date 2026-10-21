@@ -359,8 +359,8 @@ function playersSetup({ app, changed }) {
 function countSetup(to) {
   return ({ changed }) => {
     const el = { to, ...(to === "bins" ? { bins: [], today_until: "noon" } : { name: "", at: "", yearly: false }) };
-    const extra = () => (to === "bins" ? { bins: el.bins.filter((b) => b.from).map((b) => ({ ...b, name: b.name.trim() })), today_until: el.today_until }
-      : { name: el.name.trim(), at: el.at, yearly: !!el.yearly });
+    const extra = () => ({ show_before: el.show_before || 0, ...(to === "bins" ? { bins: el.bins.filter((b) => b.from).map((b) => ({ ...b, name: b.name.trim() })), today_until: el.today_until }
+      : { name: el.name.trim(), at: el.at, yearly: !!el.yearly }) });
     const editor = to === "bins" ? binsEditor(el, changed, { live: true }) : dateEditor(el, changed, { live: true });
     return {
       node: h("div", { class: "stepsec" }, h("h3", { class: "slab", text: to === "bins" ? "Your bins" : "The date" }), editor,
