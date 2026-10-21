@@ -26,7 +26,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Work | Where | State |
 |---|---|---|
-| "Follows" for any icon in the inspector: pick an entity, an icon per state, from Home Assistant's own icons and the entity's states, plain or inverted per state; plus two inspector bugs: From can't switch Template → Sensor, and its "Template" label is clipped (session "icon-follows") | branch `icon-follows` from main | Started 21 Oct; designs with the user first |
+| "Follows" for any icon in the inspector: pick an entity, an icon per state, from Home Assistant's own icons and the entity's states, plain or inverted per state; plus two inspector bugs: From can't switch Template → Sensor, and its "Template" label is clipped (session "icon-follows") | branch `icon-follows` from main | Done 21 Oct: 9 commits, 764 tests pass, no firmware change, merges cleanly; not seen by eye |
 
 Worker notes are in the notes folders (`break-it-0.12.0.md`,
 `timers-addon.md`, `firmware-013.md`, `fixes-0131.md`, `editor-polish.md`,
@@ -84,6 +84,12 @@ The New page presets plan shipped in 0.15.0.
 8. **A visible limit on how many pages fit a device** (the user, 21 Oct: an
    NBA season brings 30+ game pages). Today extras are shared out silently
    apart from sensor.epaper_panel_pages; the editor should say what's left out.
+9. **The add-on's icon set is older than Home Assistant's**: `mdi:cat-outline`
+   (Home Assistant's icon for "Outdoor Cat") isn't in it, so such icons are
+   left out. Fix: bundle the same Material Design Icons version Home
+   Assistant uses, and keep it in step.
+10. **One more editor copy of a server table**: the page conditions' value
+   suggestions (`KNOWN_STATES` in `inspector.js`); read the catalog instead.
 
 **ESPHome 2026.10.0 (checked 21 Oct):** our firmware builds with it, 5.79" and
 2.9", no new warnings. It switches off TLS a device doesn't need, but ours
