@@ -405,6 +405,18 @@ async def api_preview(request):
                         headers={"X-Metrics": json.dumps(metrics)})
 
 
+async def api_energy(request):
+    """What the Energy dashboard is set up with, so a preset can say where its numbers come from
+    (or that it needs setting up there): {"solar": [{"energy", "power"}], "grid": [{"flows", "power"}],
+    "has_cost", "currency"}. Empty lists when there's no dashboard; 502 when Home Assistant didn't answer."""
+    from sources import energy
+    with live_data.waiting_for_fresh():
+        got = await energy.fetch_dashboard(runtime.SESSION)
+    if got is None:
+        return web.json_response({"error": "Home Assistant didn't say how its Energy dashboard is set up"}, status=502)
+    return web.json_response(got)
+
+
 async def api_airport(request):
     """A three-letter airport code, as a place for the flight widget."""
     code = (request.query.get("code") or "").strip()
@@ -953,6 +965,7 @@ def make_apps():
         web.get("/api/attributes", api_attributes),
         web.get("/api/aircraft", api_aircraft),
         web.get("/api/airport", api_airport),
+        web.get("/api/energy", api_energy),
         web.post("/api/preview", api_preview),
         web.post("/api/push", api_push),
         web.get("/api/sources", api_sources_get),

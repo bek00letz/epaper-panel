@@ -1,5 +1,6 @@
 """The 0.15 widgets: what each shows, at every size a screen can have."""
 import asyncio
+import unittest.mock
 import unittest
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -84,3 +85,167 @@ class TestSun(Sizes, unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------- energy
+
+from render import energy as energy_draw  # noqa: E402
+from sources import energy  # noqa: E402
+
+PREFS_2025 = {"energy_sources": [
+    {"type": "solar", "stat_energy_from": "sensor.pv_a", "stat_rate": "sensor.pv_a_power"},
+    {"type": "solar", "stat_energy_from": "sensor.pv_b"},
+    {"type": "grid", "stat_energy_from": "sensor.bought", "stat_energy_to": "sensor.sold", "stat_cost": None,
+     "entity_energy_price": "input_number.price", "power_config": {"stat_rate_inverted": "sensor.grid_w"}},
+]}
+PREFS_OLD = {"energy_sources": [
+    {"type": "grid", "flow_from": [{"stat_energy_from": "sensor.bought", "stat_cost": "sensor.my_cost"}],
+     "flow_to": [{"stat_energy_to": "sensor.sold"}], "stat_rate": "sensor.grid_w"},
+]}
+INFO = {"cost_sensors": {"sensor.bought": "sensor.bought_cost", "sensor.sold": "sensor.sold_compensation"}}
+
+
+class FakeHass:
+    """Home Assistant's websocket: the dashboard, and statistics a row per bar."""
+
+    def __init__(self, prefs=PREFS_2025, rows=None):
+        self.prefs, self.rows, self.asked = prefs, rows or {}, []
+
+    async def ws(self, payload, timeout=10):
+        self.asked.append(payload)
+        if payload["type"] == "energy/get_prefs":
+            return self.prefs
+        if payload["type"] == "energy/info":
+            return INFO
+        if payload["type"] == "recorder/statistics_during_period":
+            return {k: v for k, v in self.rows.items() if k in payload["statistic_ids"]}
+        raise AssertionError(payload)
+
+
+class TestEnergyDashboard(unittest.TestCase):
+    def test_both_ways_home_assistant_writes_a_grid_mean_the_same(self):
+        new, old = energy.summarise(PREFS_2025, INFO), energy.summarise(PREFS_OLD, INFO)
+        self.assertEqual(energy.stats_for(new, "grid_import"), ["sensor.bought"])
+        self.assertEqual(energy.stats_for(old, "grid_export"), ["sensor.sold"])
+        self.assertEqual(energy.stats_for(new, "solar"), ["sensor.pv_a", "sensor.pv_b"])
+
+    def test_costs_are_home_assistants_own_unless_you_gave_one(self):
+        new, old = energy.summarise(PREFS_2025, INFO), energy.summarise(PREFS_OLD, INFO)
+        self.assertEqual(new["grid"][0]["flows"][0]["cost"], "sensor.bought_cost")
+        self.assertEqual(new["grid"][0]["flows"][0]["compensation"], "sensor.sold_compensation")
+        self.assertEqual(old["grid"][0]["flows"][0]["cost"], "sensor.my_cost")
+        self.assertTrue(new["has_cost"])
+        self.assertFalse(energy.summarise({"energy_sources": [{"type": "grid", "stat_energy_from": "sensor.x"}]})["has_cost"])
+
+    def test_every_way_of_reading_grid_power(self):
+        def power(cfg):
+            return energy._grid_power(cfg)
+        self.assertEqual(power({"power_config": {"stat_rate": "a"}}), {"plus": "a", "minus": ""})
+        self.assertEqual(power({"power_config": {"stat_rate_inverted": "a"}}), {"plus": "", "minus": "a"})
+        self.assertEqual(power({"power_config": {"stat_rate_from": "a", "stat_rate_to": "b"}}), {"plus": "a", "minus": "b"})
+        self.assertEqual(power({"stat_rate": "a"}), {"plus": "a", "minus": ""})
+        self.assertIsNone(power({}))
+
+    def test_rows_land_in_their_bar_and_bars_to_come_are_empty(self):
+        now = datetime(2026, 10, 21, 13, 30, tzinfo=TZ)
+        at = lambda d, h=0: datetime(2026, 10, d, h, tzinfo=TZ).timestamp() * 1000    # noqa: E731
+        rows = {"a": [{"start": at(1), "change": 2.0}, {"start": at(21), "change": 1.5}],
+                "b": [{"start": at(1), "change": 1.0}]}
+        got = energy.buckets(rows, "month", now)
+        self.assertEqual(len(got), 31)
+        self.assertEqual((got[0], got[20], got[21]), (3.0, 1.5, None))
+        hours = energy.buckets({"a": [{"start": datetime(2026, 10, 21, 13, tzinfo=TZ).isoformat(), "change": 0.4}]}, "day", now)
+        self.assertEqual((hours[13], hours[14]), (0.4, None))
+
+
+class TestEnergyFetches(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        import runtime
+        self.old = (energy.HA_TOKEN, runtime.HASS)
+        energy.HA_TOKEN = "t"
+        self.runtime = runtime
+        today = datetime.now(TZ).replace(hour=0, minute=0, second=0, microsecond=0)
+        self.rows = {"sensor.pv_a": [{"start": today.timestamp() * 1000, "change": 3.0}],
+                     "sensor.pv_b": [{"start": today.isoformat(), "change": 1.5}],
+                     "sensor.bought_cost": [{"start": today.timestamp() * 1000, "change": 2.0}],
+                     "sensor.sold_compensation": [{"start": today.timestamp() * 1000, "change": 5.5}]}
+        runtime.HASS = FakeHass(rows=self.rows)
+
+        async def no_web(session, path, **kw):
+            return {"currency": "RON", "time_zone": "Europe/Bucharest"} if path == "/config" else {}
+        self.patches = [unittest.mock.patch.object(energy, "ha_json", no_web),
+                        unittest.mock.patch.object(energy, "get_home_timezone", unittest.mock.AsyncMock(return_value="Europe/Bucharest"))]
+        for p in self.patches:
+            p.start()
+        self.runtime.LIVE._entries.clear()
+
+    async def asyncTearDown(self):
+        for p in self.patches:
+            p.stop()
+        energy.HA_TOKEN, self.runtime.HASS = self.old
+        self.runtime.LIVE._entries.clear()
+
+    async def test_solar_adds_up_every_solar_source(self):
+        got = await energy.fetch_total.direct(None, "solar", "", "month")
+        self.assertEqual(got["total"], 4.5)
+        asked = [p for p in self.runtime.HASS.asked if p["type"] == "recorder/statistics_during_period"][0]
+        self.assertEqual((asked["period"], asked["units"]), ("day", {"energy": "kWh"}))
+
+    async def test_no_solar_in_the_dashboard_says_so(self):
+        self.runtime.HASS = FakeHass(prefs={"energy_sources": []})
+        got = await energy.fetch_total.direct(None, "solar", "", "day")
+        self.assertEqual(got["missing"], "solar")
+
+    async def test_cost_is_earned_minus_spent_in_home_assistants_currency(self):
+        got = await energy.fetch_cost.direct(None)
+        self.assertEqual((got["today"], got["month"], got["currency"], got["sells"]), (3.5, 3.5, "RON", True))
+
+
+class TestEnergyTotal(Sizes, unittest.TestCase):
+    element = {"type": "energy_total", "source": "solar", "period": "month", "x": 24, "y": 14, "w": 744, "h": 208}
+    value = {"total": 214.3, "bars": [8, 9, 7, 10, 3, None, None], "unit": "kWh"}
+
+    def test_numbers_read_well(self):
+        self.assertEqual([energy_draw.kwh(v) for v in (4.25, 214.3, 1830)], ["4.2 kWh", "214 kWh", "1.8 MWh"])
+        self.assertEqual([energy_draw.watts(v) for v in (-640, 1830)], ["640 W", "1.8 kW"])
+        self.assertEqual([energy_draw.money(4.2, c) for c in ("EUR", "USD", "CHF", "")], ["4.20 €", "$4.20", "4.20 CHF", "4.20"])
+
+    def test_nothing_set_up_says_where_to_set_it_up(self):
+        self.assertGreater(ink(render(self.element, {"total": None, "bars": [], "missing": "solar"})), 200)
+        self.assertEqual(ink(render(self.element, None)), 0)
+
+
+class TestGridNow(Sizes, unittest.TestCase):
+    element = {"type": "grid_now", "x": 24, "y": 14, "w": 744, "h": 208}
+    value = {"watts": -1830, "bars": [0.4, 0.3, -0.9, -1.8, None], "today": -2.0}
+
+    def test_selling_bars_go_down_and_buying_bars_up(self):
+        img = render(self.element, {"watts": None, "bars": [1.0, -1.0], "today": 0.0})
+        w, _ = img.size
+        right = img.crop((w // 2, 0, w, 220))
+        top, bottom = right.crop((0, 0, right.width, 110)), right.crop((0, 120, right.width, 220))
+        self.assertGreater(top.histogram()[0], 50)
+        self.assertGreater(bottom.histogram()[0], 50)
+
+
+class TestEnergyCost(Sizes, unittest.TestCase):
+    element = {"type": "energy_cost", "x": 24, "y": 14, "w": 744, "h": 208}
+    value = {"today": 4.2, "month": 38.9, "currency": "RON", "sells": True}
+
+    def test_no_prices_says_where_to_add_them(self):
+        self.assertGreater(ink(render(self.element, {"today": None, "month": None, "missing": "prices"})), 200)
+
+
+from test_editor_api import EditorClient  # noqa: E402
+
+
+class TestEnergyForTheEditor(EditorClient):
+    async def test_the_editor_learns_what_the_dashboard_has(self):
+        import runtime
+        runtime.LIVE._entries.clear()
+        r = await self.ed.get("/api/energy")
+        self.assertEqual(r.status, 200)
+        got = await r.json()
+        self.assertEqual(energy.stats_for(got, "solar"), ["sensor.solar_energy"])      # offline example
+        self.assertTrue(got["has_cost"])
+        self.assertIn("currency", got)

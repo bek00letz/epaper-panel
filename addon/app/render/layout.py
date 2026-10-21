@@ -27,6 +27,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from . import theme as T
 from . import binding
+from . import energy
 from . import sun
 from . import todo
 from . import units
@@ -2105,6 +2106,9 @@ def _widget(draw):
 # The widgets that size everything from their own box (render/hero.py).
 WIDGETS = {
     "sun_times": sun.draw,
+    "energy_total": energy.draw_total,
+    "grid_now": energy.draw_grid,
+    "energy_cost": energy.draw_cost,
 }
 DRAWERS.update({t: _widget(fn) for t, fn in WIDGETS.items()})
 

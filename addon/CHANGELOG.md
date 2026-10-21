@@ -59,6 +59,14 @@
   up. Next one first shows whichever comes next large and the other beside
   it, and turns round at sunrise and at sunset; Both alike shows them side
   by side. In the far north, a sunrise more than a day away says which day.
+- **Energy at a glance**, straight from your Energy dashboard, with nothing
+  to pick: Solar this month (the total and a bar for each day, from Home
+  Assistant's long-term statistics; also by day or year, and for what you
+  bought or sold), Grid now (buying or selling right now, with today's
+  hours as bars, up when buying and down when selling) and Energy cost
+  (earned or spent today and this month, from the prices in your Energy
+  dashboard, in Home Assistant's currency). If the dashboard doesn't have
+  what a page needs, the page says what to add there.
 - **Fixed:** a Race weekend page set to NASCAR or IndyCar showed Formula 1's
   race, drivers and status. Each series now reads its own results, and its
   page names it ("NASCAR · …"). Whether the page shows still followed the

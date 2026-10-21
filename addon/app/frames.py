@@ -21,6 +21,7 @@ from panel_ops import push_panel_update
 from sources.flights import fetch_overhead_aircraft, place_of
 from sources.geo import get_home_timezone
 from sources.ha_services import fetch_calendar_events, fetch_todo_items, fetch_weather_forecast, todo_list_id
+from sources import energy
 from sources.home import fetch_sun
 from sources.racing import compute_racing_active_window, fetch_racing_data
 from sources.sports import compute_sports_active_window, fetch_sports_match
@@ -125,6 +126,21 @@ async def enrich_page_values(session, page, vals):
             sun_data = await fetch_sun(session)
             if sun_data is not None:
                 vals[i] = {**sun_data, "tz": home_tz}
+        elif t == "energy_total":
+            got = await energy.fetch_total(session, str(el.get("source") or "solar"), str(el.get("entity") or ""),
+                                           str(el.get("period") or "month"))
+            if got is not None:
+                vals[i] = got
+        elif t == "grid_now":
+            ent, inv = str(el.get("entity") or ""), bool(el.get("invert"))
+            power = await energy.fetch_grid_power(session, ent, inv)
+            hours = await energy.fetch_grid_hours(session, ent, inv)
+            if power is not None or hours is not None:
+                vals[i] = {"watts": None, "bars": [], "today": None, **(hours or {}), **(power or {})}
+        elif t == "energy_cost":
+            got = await energy.fetch_cost(session)
+            if got is not None:
+                vals[i] = got
         elif t == "flight_tracker":
             custom_lat, custom_lon, radius, _ = place_of(el)
             fl_data = await fetch_overhead_aircraft(session, radius_km=radius, lat=custom_lat, lon=custom_lon)
