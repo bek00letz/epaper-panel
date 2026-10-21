@@ -11,6 +11,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Version | Date | What |
 |---|---|---|
+| 0.16.0 | 21 Oct | The editor shows what isn't sent yet, per page, with undo for each change; Duplicate and Delete on every page tile, larger strip sizes; a "changed in the last N minutes" condition for pages and alerts. Add-on only. |
 | 0.15.0 | 21 Oct | New page on shelves with new presets (sunrise and sunset, energy, Now playing, On TV, your own weather station, world clock, Countdown and Bin day without a calendar, to-do lists); alerts that end on a condition; "device" everywhere; zoom; 12/24-hour time; a sleeping device shows the date for a clock; the framework review's 14 fixes; the Wi-Fi network name. Firmware change. |
 | 0.14.0 | 21 Oct | The screen bar under the canvas, power first when adding a screen, rename in place, clearer refusals, Safari Fit; the integration sets itself up, Send to ESPHome, editable hotspot password; quiet-hours wake from Home Assistant fixed. Firmware change. |
 | 0.13.0 | 20 Oct | Update every and Rotate every replace Low Power Mode; no flash after a wake (untried); the 4.2" and 2.9" build, the 7.5" and 10.2" aren't offered; sleep survives the add-on being down; audits #9 and #14; the classic editor removed. Firmware change. |
@@ -23,24 +24,16 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 ## In flight
 
-| Work | Where | State |
-|---|---|---|
-| The editor shows what's not sent yet (changed pages outlined, a list from the pill, per-page undo); strip sizes moved up (Small = old Standard, Standard = old Large, a larger Large); two buttons on each page card, Duplicate and Delete (Delete offers "Delete page" or "Take out of rotation") (session "unsent-changes") | branch `unsent-changes` from main | Done 21 Oct: 7 commits, 684 tests pass, no firmware change; not seen by eye or on a phone |
-| A "changed in the last N minutes" condition, for Only when and alerts (e.g. show PawPaw's location for 30 min after it changes) (session "changed-condition") | branch `changed-condition` from main | Started 21 Oct; designs with the user first |
-
-Local main also carries the add-on description fix (sizes it offers), for the
-next release (user, 21 Oct).
-
-Next release (0.16.0): these two plus the description fix. The user approved
-pushing it once both are in and the full suite passes ("push when happy",
-21 Oct).
+Nothing.
 
 Worker notes are in the notes folders (`break-it-0.12.0.md`,
 `timers-addon.md`, `firmware-013.md`, `fixes-0131.md`, `editor-polish.md`,
 `alerts-todo.md` in the first coordinator's; `widgets-015.md`,
-`presets-015.md`, `framework-review.md`, `checklist-0.15.0.md` in this one's).
+`presets-015.md`, `framework-review.md`, `checklist-0.15.0.md`,
+`unsent-changes.md` in this one's).
 Merged worktrees kept until the user OKs removing them: `release-next`,
-`presets-015`, `widgets-015`, `editor-zoom`.
+`presets-015`, `widgets-015`, `editor-zoom`, `unsent-changes`,
+`changed-condition`.
 
 ## Framework review
 
