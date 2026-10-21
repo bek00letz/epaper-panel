@@ -8,6 +8,7 @@ import { TYPES, breakable, isWidget, hasText, elName, normalizeLineParity, GROUP
 import { OPS, parseShowIf, compileShowIf, evaluate, describe, syncWidgetShowIf, syncDynamicGridShowIf } from "./conditions.js";
 import { explodeWidget, getWidgetSensorId, suggestIconForEntity } from "./legacy.js";
 import { dateEditor, binsEditor } from "./countdown.js";
+import { zonesEditor } from "./zones.js";
 import { staleNote, changesEvery, pageChangesEvery } from "./presets.js";
 import { widget, leagueOptions, seriesOptions, sportWord } from "./catalog.js";
 
@@ -364,6 +365,8 @@ function typeSections(app, el, set, i) {
         : h("p", { class: "fnote" }, "The add-on publishes this widget's state as ", h("code", { class: "sel", text: getWidgetSensorId(el) }), ", for your own automations.")));
     else if (f.kind === "place") s.append(...placeRows(app, el, set));
     else if (f.kind === "countdown") s.append((el.to === "bins" ? binsEditor : dateEditor)(el, () => app.doc.commit()));
+    // A world clock's cities: adding, removing or reordering one redraws the canvas at once (each commit does).
+    else if (f.kind === "zones") s.append(field(f.label || "Cities", zonesEditor(el, () => app.doc.commit(), { most: f.most || 4 }), { wide: true }));
   }
   return [s];
 }

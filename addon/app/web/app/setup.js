@@ -11,7 +11,8 @@
 import { h, icon, api } from "./util.js";
 import { select, linkButton } from "./ui.js";
 import { dateEditor, binsEditor, ready as countsReady } from "./countdown.js";
-import { lookOf, asksOf, needsOf, pageFor, examplePage, rankSensors, groupName, sensorOf, freeSourceName, energyRoles, staleNote, presetChangesEvery } from "./presets.js";
+import { zonesEditor } from "./zones.js";
+import { sleepsBetweenUpdates, lookOf, asksOf, needsOf, pageFor, examplePage, rankSensors, groupName, sensorOf, freeSourceName, energyRoles, staleNote, presetChangesEvery } from "./presets.js";
 
 const WHAT = { calendar: "Which calendar should it show?", todo: "Which list should it show?", weather: "Which weather should it show?",
   binary_sensor: "Which sensor should it show?", sensor: "Which sensor should it show?", jellyfin: "Whose Jellyfin should it show?" };
@@ -104,7 +105,9 @@ export function setupStep(app, p, { thumb, add, foot, initialLook = 0, rememberL
     const group = h("div", { class: chips ? "chips" : "styles", role: "radiogroup", "aria-label": p.choose || "Style" });
     // A look that changes on its own says how, under the choice.
     const note = h("p", { class: "fnote", "aria-live": "polite" });
-    const drawNote = () => { note.textContent = look().note || ""; note.hidden = !look().note; };
+    // …and one that draws differently on a device that sleeps says how, there.
+    const asleep = () => (sleepsBetweenUpdates(app.screen) ? look().onSleeping || "" : "");
+    const drawNote = () => { const t = [look().note, asleep()].filter(Boolean).join(" "); note.textContent = t; note.hidden = !t; };
     const choose = (i) => {
       const before = [asksOf(p, look()), needsOf(p, look())].join();
       li = i; rememberLook && rememberLook(i); drawLooks(); drawNote();
@@ -150,7 +153,7 @@ export function setupStep(app, p, { thumb, add, foot, initialLook = 0, rememberL
 }
 
 /* ---------- what presets set up in place ---------- */
-const SETUPS = { wifi: wifiSetup, jellyfin: jellyfinSetup, energy: energySetup, players: playersSetup, date: countSetup("date"), bins: countSetup("bins"), parts: partsSetup };
+const SETUPS = { wifi: wifiSetup, jellyfin: jellyfinSetup, energy: energySetup, players: playersSetup, date: countSetup("date"), bins: countSetup("bins"), parts: partsSetup, zones: zonesSetup };
 
 /* Guest Wi-Fi: the network goes into the code, so it's asked for. */
 function wifiSetup({ changed }) {
@@ -410,5 +413,18 @@ function partsSetup({ app, p, changed }) {
     ready: () => Object.values(picks).some(Boolean),
     shows: () => (Object.values(picks).some(Boolean) ? { mine: true, extra: { ...picks }, caption: "With your sensors." } : { mine: false }),
     commit: async () => ({ extra: { ...picks } }),
+  };
+}
+
+/* A world clock's cities, picked in place: up to four, each found by its city and named as you like. */
+function zonesSetup({ changed }) {
+  const el = { zones: [{ tz: "", label: "" }] };
+  const extra = () => ({ zones: el.zones.map((z) => ({ tz: z.tz || "", label: String(z.label || "").trim() })) });
+  return {
+    node: h("div", { class: "stepsec" }, h("h3", { class: "slab", text: "Cities" }), zonesEditor(el, changed, { live: true }),
+      h("p", { class: "fnote", text: "Here is Home Assistant's own time zone. The cities share the page alike: one fills it, four make a grid." })),
+    ready: () => el.zones.length > 0,
+    shows: () => ({ mine: true, extra: extra(), caption: "With your cities." }),
+    commit: async () => ({ extra: extra() }),
   };
 }

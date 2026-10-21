@@ -754,3 +754,13 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
 @media (hover: hover) { .tilebox:hover .tileacts, .tilebox:focus-within .tileacts { opacity: 1; pointer-events: auto; transform: none; } }
 .tilebox.held .tileacts, .tilebox.passed .tileacts { opacity: 1; pointer-events: auto; transform: none; }
 .tile.lifted ~ .tileacts { opacity: 0; pointer-events: none; }
+
+/* A world clock's cities: a row each (grip, city, its name, remove), the search under the one being picked. */
+.zones { display: flex; flex-direction: column; gap: 8px; }
+.zones .group { margin: 0; }
+.zrow { gap: 8px; }
+.zrow .zcity { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zrow .inp { flex: 1; min-width: 0; max-width: none; }
+.zgrip { cursor: grab; touch-action: none; color: var(--fg-2); }
+.zrow.lifted { position: relative; z-index: 2; background: var(--surface); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18); border-radius: var(--r-ctl); transition: none; }
+.zpick .optlist { max-height: 260px; overflow-y: auto; overscroll-behavior: contain; }

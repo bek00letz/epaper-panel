@@ -56,14 +56,19 @@ const watchLook = (id, name, make) => ({ id, name, tier: "when", showIf: watchSh
 export const PRESETS = [
   /* ---------- your day ---------- */
   {
-    id: "clock", group: "day", title: "Clock", desc: "The time, very large, and today's date.", kw: "time date",
-    asks: "", onSleeping: "Shows the date here",
-    looks: [{ id: "clock", name: "Clock", make: () => [
+    id: "clock", group: "day", title: "Clock", desc: "The time, very large, and today's date; or the time in up to four cities.", kw: "time date world clock time zones cities",
+    asks: "", onSleeping: "Shows the date here", choose: "Style",
+    looks: [{ id: "clock", name: "Clock", onSleeping: "This device sleeps between updates, so it shows the date instead of a time that would stop.", make: () => [
       // The add-on's own clock (framework review #9): 12- or 24-hour as Settings › Time and language says.
       { type: "text", show: "now", format: "time", size: 110, bold: true, x: 40, y: 20, w: 450, h: 140, align: "left" },
       { type: "text", show: "now", format: "day_full", size: 36, bold: false, x: 44, y: 168, w: 500, h: 46, align: "left" },
       { type: "icon", icon: "mdi:clock-outline", x: 620, y: 40, w: 120, h: 120 },
-    ] }],
+    ] },
+    // A world clock (the world_clock widget): up to four cities, laid out alike by the renderer.
+    { id: "world_clock", name: "Time zones", needs: "zones",
+      onSleeping: "This device sleeps between updates, so each city shows how many hours it's ahead or behind, not a time that would stop.",
+      exampleExtra: () => ({ zones: [{ tz: "", label: "" }, { tz: "America/New_York", label: "" }, { tz: "Asia/Tokyo", label: "" }] }),
+      make: (_, x = {}) => [{ type: "world_clock", zones: x.zones?.length ? x.zones : [{ tz: "", label: "" }], x: 24, y: 14, w: 744, h: 208 }] }],
   },
   {
     // For anyone who wants only the day and date, on any device (framework review #10).
