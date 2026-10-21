@@ -100,6 +100,7 @@ SERVICES = {
     "opensky-network.org": "OpenSky",
     "raw.githubusercontent.com": "Racing calendar",
     "formulaecal.com": "Formula E calendar",
+    "www.fiaformulae.com": "Formula E",
 }
 
 

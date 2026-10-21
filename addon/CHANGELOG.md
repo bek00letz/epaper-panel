@@ -6,6 +6,16 @@
   ("HTTP 404" in its log, and its problem sensor), because next year's F1
   and Formula E calendars aren't published yet. A missing next year is now a
   normal answer; this year's calendar was never affected.
+- **Fixed:** between seasons, the race page showed the season's last race as
+  if it were still coming (Formula E's London race, in October). Each series
+  now reads its own calendar first where it publishes one (Formula E's
+  already has next season), then the community calendars, which add exact
+  session times once they catch up. A finished race's result stays for a few
+  hours, then the page moves on to the next race; NASCAR's no longer waits
+  for ESPN to move on. When Formula E's calendar page stops listing its
+  season, the add-on's problem sensor says so. Dates read "Fri 23 Oct", like
+  the rest of the panel.
+- **Fixed:** during a live Formula E session the badge said "runtime.LIVE".
 
 ## 0.18.0
 **Firmware change:** install the panel again (Settings › Install or update,
