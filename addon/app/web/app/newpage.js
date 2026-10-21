@@ -73,7 +73,8 @@ export function openPresets(app) {
     }
 
     function shelf(id, name, cards) {
-      const row = h("div", { class: "row", role: "list", "aria-label": name }, ...cards.map((c) => { c.setAttribute("role", "listitem"); return c; }));
+      // Each card sits in a list item, so it stays a button to VoiceOver.
+      const row = h("div", { class: "row", role: "list", "aria-label": name }, ...cards.map((c) => (c.classList.contains("pcard") ? (c.setAttribute("role", "listitem"), c) : h("div", { role: "listitem" }, c))));
       const wrap = h("div", { class: "rowwrap" });
       const page = (dir) => {
         const first = row.firstElementChild; if (!first) return;
@@ -105,8 +106,8 @@ export function openPresets(app) {
       });
       wrap.append(left, row, right);
       const hid = "shelf-" + id;
-      return h("section", { class: "shelf", "aria-labelledby": hid },
-        h("div", { class: "shelf-head" }, h("h3", { id: hid, text: name }), h("span", { class: "count", "aria-label": `${cards.length} presets`, text: `(${cards.length})` })),
+      return h("section", { class: "shelf", "aria-label": `${name}, ${cards.length} ${cards.length === 1 ? "preset" : "presets"}` },
+        h("div", { class: "shelf-head" }, h("h3", { id: hid, text: name }), h("span", { class: "count", "aria-hidden": "true", text: `(${cards.length})` })),
         wrap);
     }
 

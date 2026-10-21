@@ -382,7 +382,11 @@ class TestTheSheet(unittest.TestCase):
         self.assertIn('const foot = h("div", { class: "sheet-foot" }, blank,', self.js)
 
     def test_each_shelf_counts_its_presets(self):
-        self.assertIn('h("span", { class: "count", "aria-label": `${cards.length} presets`, text: `(${cards.length})` })', self.js)
+        self.assertIn('h("span", { class: "count", "aria-hidden": "true", text: `(${cards.length})` })', self.js)
+        self.assertIn('"aria-label": `${name}, ${cards.length} ${cards.length === 1 ? "preset" : "presets"}`', self.js, "and said aloud")
+
+    def test_a_card_stays_a_button_to_voiceover(self):
+        self.assertIn('h("div", { role: "listitem" }, c)', self.js)
 
     def test_your_own_get_a_shelf_first_when_you_have_some(self):
         self.assertIn('mine.length ? shelf("yours", "Yours", mine.map(ownCard)) : null,', self.js)
