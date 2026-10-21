@@ -52,7 +52,10 @@ Last review: v0.12.0 to `release-next` at e8e65c2 (21 Oct, session
 widgets-015, editor half with presets-015. User's calls: Solar today shows a
 running total's change today; times follow Home Assistant's 12/24-hour with
 a setting; New page offers Clock everywhere (a sleeping device draws the
-date). Next review when a good amount of work has piled up since e8e65c2.
+date). Server half done on widgets-015 (11 commits, byte-identical firmware
+files); editor half partly done on presets-015, the rest after the two
+branches are combined. Next review when a good amount of work has piled up
+since e8e65c2.
 
 ## Backlog, most important first
 
