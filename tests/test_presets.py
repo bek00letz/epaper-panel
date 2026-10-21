@@ -493,13 +493,9 @@ class TestDateOnASleepingDevice(unittest.TestCase):
         self.assertEqual(mixed, [{"type": "text", "id": "t", "value": "{{ now().strftime('%-d %B') }}"}, {"type": "number", "id": "n", "entity": "sensor.x"}])
         self.assertEqual(pages, ["a", "b"])
 
-    def test_new_page_and_switching_to_sleep_use_it(self):
+    def test_new_page_offers_the_date_on_a_sleeping_device(self):
         self.assertIn("const PRESETS = ALL_PRESETS.map((p) => forDevice(p, sleepsBetweenUpdates(app.screen)));", (APP_JS / "newpage.js").read_text())
-        src = (APP_JS / "sheets.js").read_text()
-        self.assertIn("if (!wasAsleep && sleepsBetweenUpdates(now) && offerTheDate(app, now)) return;", src, "only when it starts sleeping")
-        self.assertIn('label: "Show the date"', src)
-        self.assertIn('{ label: "Undo", run: () => doc.undo() }', src.split("function offerTheDate", 1)[1])
-        self.assertIn("changeTimers(app, scr,", (APP_JS / "screenbar.js").read_text(), "the screen bar goes through the same function")
+        # Switching a device to sleep changes no page: the renderer draws the date (test_clocktime).
 
 
 @unittest.skipUnless(shutil.which("node"), "no node to read the editor's presets")

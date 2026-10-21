@@ -496,14 +496,27 @@ async def design_state(session, design_id: str, spec: dict) -> DesignState:
     return DesignState(alert, live, plans)
 
 
+async def date_for_time(sleeps: bool) -> datetime | None:
+    """Now, in Home Assistant's time zone, for a device that sleeps between updates: it draws
+    the date where a page shows the time (render/clocktime.py). None for one that's always on."""
+    if not sleeps:
+        return None
+    from zoneinfo import ZoneInfo
+    try:
+        return datetime.now(ZoneInfo(await get_home_timezone(runtime.SESSION)))
+    except Exception:
+        return datetime.now().astimezone()
+
+
 async def draw_category(plan: dict, sub_count: int, page_no: int, *, footer: dict, page_def: dict, orient: int,
-                        display: str, only: int | None = None) -> list:
+                        display: str, only: int | None = None, today: datetime | None = None) -> list:
     """Every item of one page, drawn at a display's size and turned for its mounting.
 
     `page_def` is the page as placed on this screen (devices.view); its
     elements are the design's, in the same order as the plan's values.
     `footer` is the strip's theme.footer_plan(), and this is page `page_no` of it.
-    `only`: just that item (0-based) of the `sub_count`."""
+    `only`: just that item (0-based) of the `sub_count`. `today` (date_for_time): this
+    screen sleeps between updates, so it draws the date where the time would be."""
     page_vals, elements = plan["vals"], page_def.get("elements", [])
     sub_type, feed_items, feed_entity = plan["sub_type"], plan["feed_items"], plan["feed_entity"]
     page_imgs = []
@@ -557,7 +570,7 @@ async def draw_category(plan: dict, sub_count: int, page_no: int, *, footer: dic
         img = await asyncio.to_thread(
             layout.render_page, cloned_page, cloned_vals,
             footer=footer, page_no=page_no, item_no=s_idx, items=sub_count,
-            series=plan["series"], orientation=orient, display=display)
+            series=plan["series"], orientation=orient, display=display, date_for_time=today)
         page_imgs.append(T.orient_for_panel(T.to_1bit(img), orient, display=display))
     return page_imgs
 

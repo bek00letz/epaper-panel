@@ -43,7 +43,7 @@ import panel_ops
 import runtime
 import timing
 from config import HA_TOKEN, SLEEP_PAGE
-from kinds import Kind, device_for, register
+from kinds import Kind, device_for, of as kind_of, register
 from panel_link import PanelLink
 from render import epf, sleep, stripmeta, subitems, theme as T
 
@@ -198,6 +198,7 @@ class CrowPanel(Kind):
         cat_offsets, cat_sizes, cat_names, cat_pill_widths, cat_sub_keys = [], [], [], [], []
         clock = datetime.now().strftime("%H:%M")       # one clock for the whole strip
         kept = [(p, c) for p, c in zip(plans, counts) if c > 0]
+        today = await frames.date_for_time(self.sleeps(dev))    # it sleeps: the date where a time would be
         # One footer for the whole strip, drawn with the same numbers the panel
         # draws its highlight and padlocks with, in every orientation.
         fg = T.footer_plan(clock=clock, pages=[(p["name"], c) for p, c in kept], orientation=orient, display=display)
@@ -208,7 +209,7 @@ class CrowPanel(Kind):
             try:
                 page_imgs = await frames.draw_category(plan, sub_count, cat_i, footer=fg,
                                                        page_def=spec["pages"][cat_name], orient=orient,
-                                                       display=display)
+                                                       display=display, today=today)
             except Exception as exc:
                 print(f"page {cat_name} left out: {health.describe(exc)}", flush=True)
                 continue
@@ -379,7 +380,8 @@ class _Art(paging.Art):
         fg = T.footer_plan(clock=clock, pages=[(p["name"], max(1, p["want"])) for p in plans],
                            orientation=orient, display=display)
         imgs = await frames.draw_category(plan, count, pos, footer=fg, page_def=spec["pages"][plan["name"]],
-                                          orient=orient, display=display, only=item)
+                                          orient=orient, display=display, only=item,
+                                          today=await frames.date_for_time(kind_of(dev).sleeps(dev)))
         # The identities it has in the frame file of every page, so a press after this wake keeps its place.
         keys = [(p["sub_keys"] or [p["name"]])[:max(1, p["want"])] for p in plans]
         cat_ids, sub_ids = subitems.compute_identities([p["name"] for p in plans], keys)

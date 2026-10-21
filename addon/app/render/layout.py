@@ -31,6 +31,7 @@ from . import energy
 from . import media
 from . import sport
 from . import sun
+from . import clocktime
 from . import todo
 from . import units
 from .binding import template_for
@@ -2128,11 +2129,16 @@ def _hidden(vals, i) -> bool:
 
 
 def render_page(page, vals, *, clock="", label="", footer=None, page_no=None, item_no=0, items=1, series=None,
-                metrics=None, orientation=0, distance_m=3.0, display=None):
+                metrics=None, orientation=0, distance_m=3.0, display=None, date_for_time=None):
     """Draw one page. `vals` maps element index -> resolved template result.
 
     `footer` is the screen's theme.footer_plan(); page_no/item_no/items say
-    which pills this page shows. Without one, the footer has the clock and `label`."""
+    which pills this page shows. Without one, the footer has the clock and `label`.
+    `date_for_time`: now, in Home Assistant's time zone, for a device that sleeps
+    between updates: it draws the date where the page shows the time (clocktime.py)."""
+    swapped = set()
+    if date_for_time is not None:
+        page, vals, swapped = clocktime.date_for_time(page, vals, date_for_time)
     img, d = T.new_canvas(orientation=orientation, display=display)
     els = page.get("elements", [])
     # Groups: a style around several elements, shaped by the ones showing now.
@@ -2172,6 +2178,8 @@ def render_page(page, vals, *, clock="", label="", footer=None, page_no=None, it
                 drawer(img, d, el, element_text(el, vals, i), got, distance_m=distance_m, display=display)
                 if metrics is not None and got:
                     entry = {"i": i, **got[0]}
+                    if i in swapped:
+                        entry["date_for_time"] = True      # the editor says so on the element
                     if el["type"] == "number":
                         raw = vals.get(i, el.get("value", ""))
                         try:

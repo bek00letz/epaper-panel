@@ -102,6 +102,10 @@ function element(app, head, body, el, i) {
   if (el._auto) body.append(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: `Placed automatically for ${app.screen?.name || "this device"}. Move or resize it and this device keeps its own place for it.` })));
   const stale = staleNote(changesEvery(el, app.entMap), app.screen);
   if (stale) body.append(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: stale })));
+  // A device that sleeps draws the date where the time would be; the renderer says which elements
+  // it changed (render/clocktime.py, the one place that knows what shows the time).
+  if (app.canvas.metrics.find((x) => x.i === i)?.date_for_time) body.append(h("p", { class: "note info" }, icon("info", "sm"),
+    h("span", { text: `${app.screen?.name || "This device"} sleeps between updates, so it shows the date here.` })));
 
   if (hasText(el)) {
     body.append(shows(app, el, set));

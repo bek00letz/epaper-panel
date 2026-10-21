@@ -25,7 +25,7 @@ import runtime
 import timing
 from config import ADDON_VERSION, FRAME_PORT, HA_BASE, HA_TOKEN, INGRESS_GATEWAY, REFRESH, SLEEP_PAGE, WEB_DIR, valid_entity_id
 from fixture import load_fixture
-from frames import _png, as_int, enrich_page_values, refresh_frames, split_page_values
+from frames import _png, as_int, date_for_time, enrich_page_values, refresh_frames, split_page_values
 from ha import curve_series, ha_json, resolve_templates
 from layouts_store import clear_draft, layouts_etag, load_draft, load_layouts, load_sources, sanitize_layouts, save_draft, save_layouts
 from panel_ops import push_panel_update
@@ -385,7 +385,9 @@ async def api_preview(request):
     for i, el in enumerate(page.get("elements", [])):
         if el.get("type") in ("curve", "bar_chart") and el.get("entity"):
             series[i] = await curve_series(runtime.SESSION, el["entity"], as_int(el.get("hours"), 24))
-    return await _drawn(request, body, page, vals, series)
+    # The canvas is this device's own render: one that sleeps between updates shows the date for a time.
+    dev = _device(request)
+    return await _drawn(request, body, page, vals, series, today=await date_for_time(kinds.of(dev).sleeps(dev)))
 
 
 async def api_example(request):
@@ -399,7 +401,7 @@ async def api_example(request):
     return await _drawn(request, body, page, vals, series)
 
 
-async def _drawn(request, body: dict, page: dict, vals: dict, series: dict):
+async def _drawn(request, body: dict, page: dict, vals: dict, series: dict, today=None):
     """A preview's PNG at the device's size and orientation, with the text sizes it got (X-Metrics)."""
     view = load_layouts(_device(request)["id"])
     try:
@@ -419,7 +421,7 @@ async def _drawn(request, body: dict, page: dict, vals: dict, series: dict):
         clock=datetime.now().strftime("%H:%M"),
         label=str(body.get("label") or "preview")[:40],
         series=series, metrics=metrics, orientation=orient,
-        distance_m=dist, display=display)
+        distance_m=dist, display=display, date_for_time=today)
     # Effective font sizes ride back on a header so the editor can report
     # what you actually got, in millimetres, rather than what you asked for.
     return web.Response(body=_png(T.to_1bit(img)), content_type="image/png",

@@ -338,7 +338,10 @@ export function forDevice(p, sleeps) {
     desc: "Today's weekday and date, large. This device sleeps between updates, so a clock would stop at the time of its last one." };
 }
 
-/* A clock on a page: a text whose template shows the time of day. */
+/* Used only by the way back (sheets.offerTheDate, kept off): what shows the
+   time is render/clocktime.py's to say, and the editor reads it from the
+   render's metrics (date_for_time). A clock on a page: a text whose template
+   shows the time of day. */
 const TIME = /now\(\)[^}]*strftime\([^)]*%-?[HIklMp]/;
 export const showsTime = (el) => el?.type === "text" && TIME.test(String(el.value || ""));
 export const clockPages = (pages) => Object.keys(pages || {}).filter((n) => (pages[n].elements || []).some(showsTime));

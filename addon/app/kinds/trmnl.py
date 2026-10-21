@@ -48,7 +48,7 @@ import panel_setup
 import reach
 import runtime
 from entities import publish_entity
-from kinds import WRONG_KEYS, Kind, device_for, register, shown
+from kinds import WRONG_KEYS, Kind, device_for, of as kind_of, register, shown
 from render import sleep, theme as T
 
 PAIR_SECONDS = 600                      # how long "Add new device" listens for a new TRMNL
@@ -155,7 +155,8 @@ class _Art(paging.Art):
         fg = T.footer_plan(clock=clock, pages=[(p["name"], max(1, p["want"])) for p in plans],
                            orientation=orient, display=display)
         imgs = await frames.draw_category(plan, count, pos, footer=fg, page_def=spec["pages"][plan["name"]],
-                                          orient=orient, display=display, only=min(item, count - 1))
+                                          orient=orient, display=display, only=min(item, count - 1),
+                                          today=await frames.date_for_time(kind_of(dev).sleeps(dev)))
         return frames._png(imgs[0])
 
     async def sleep(self, dev, spec, text) -> bytes:

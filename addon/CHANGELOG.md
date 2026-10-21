@@ -185,15 +185,15 @@
 - **Fixed:** New page showed the word "null" above the shelves when you had
   no presets of your own, and in an energy preset's step.
 
-- **A large Date instead of a Clock on a device that sleeps.** A device
+- **A device that sleeps shows the date where a clock would be.** A device
   that sleeps between updates (Update every 2 minutes or more, and every
   TRMNL) shows what it got at its last update, so a clock there would stop
   at that time, and changing at every wake it would download and flash each
-  time. New page offers Date there instead: the weekday, large, and the
-  date. Switch a device with a clock page to sleeping and the editor says
-  why the time won't keep up, and offers to show the date (Undo puts the
-  clock back). Back to always on, a clock stays as it is.
-
+  time. Such a device now draws the date in place of any time on its pages,
+  on its own: your pages keep their clock, and a device that's always on,
+  even one showing the same pages, keeps showing the time. Switch it back
+  to always on and the clock returns. The editor's canvas shows the date
+  for that device, and the clock says why. New page offers Date there too.
 - **Pages that change faster than a sleeping device say so.** On a device
   that sleeps between updates, Planes overhead, Now playing, Scores, Grid
   now and Battery and solar are still offered, with one line: "Changes

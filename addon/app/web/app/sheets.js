@@ -7,7 +7,7 @@ import { sheet, popover, field, input, number, select, seg, toggle, toggleRow, s
 import { DISPLAYS, isWidget } from "./elements.js";
 import { describe, parseShowIf, syncDynamicGridShowIf } from "./conditions.js";
 import { reflowPageElements } from "./legacy.js";
-import { LOOKS as PRESETS, sleepsBetweenUpdates, clockPages, dateInstead } from "./presets.js";
+import { LOOKS as PRESETS, clockPages, dateInstead } from "./presets.js";
 import { thumbnail, statusSummary } from "./strip.js";
 
 const thumbImg = (app, key, page) => {
@@ -555,20 +555,21 @@ async function panelPane(app, pane, show) {
 /* The one way the editor changes a screen's timers: Settings › Device and the screen bar both use it. */
 export async function changeTimers(app, scr, body, said) {
   try {
-    const wasAsleep = sleepsBetweenUpdates(scr);
     const r = (await api(`api/devices/${encodeURIComponent(scr.id)}`, { method: "PATCH", body })).body;
     app.applyScreens(r);
     app.refresh();                                     // the inspector, the strip and the bar say how pages turn
-    const now = (r.devices || []).find((d) => d.id === scr.id) || app.screen;
-    if (!wasAsleep && sleepsBetweenUpdates(now) && offerTheDate(app, now)) return;
+    app.canvas?.preview(true);                         // asleep, it draws the date where a time is: the canvas shows its own render
+    // A clock needs nothing here: a device that sleeps draws the date in its place (render/clocktime.py).
+    // The 0.15 draft's offerTheDate, which changed the design for every device, is kept off as the way back.
     toast(r.note || said);
   } catch (e) { toast(`Couldn't change it: ${e.message}`); }
 }
 
-/* A device that starts sleeping between updates can't keep a clock: it
-   would stop at the time of its last update. Say so, and offer the date in
-   its place (one undo puts the clock back). Back to always on, a clock is
-   fine, so nothing changes then. */
+/* Not used: the way back. It offered to turn clock pages into the date when a
+   device started sleeping, but that changed the design for every device
+   showing it (the user's call, 21 Oct: per device and automatic instead, in
+   the renderer). Kept off until the renderer's way has proven itself. */
+// eslint-disable-next-line no-unused-vars
 function offerTheDate(app, scr) {
   const doc = app.doc, pages = clockPages(doc.spec.pages);
   if (!pages.length) return false;
