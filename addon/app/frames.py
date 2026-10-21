@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from email.utils import formatdate
 
 from render import binding, countdown, epf, layout, sleep, stripmeta, subitems, theme as T, todo
+import cadence
 import conditions
 import devices
 import health
@@ -579,7 +580,11 @@ async def refresh_frames(session) -> dict[str, Frames]:
     the pages as saved when it starts.
     """
     async with _render_lock():
-        return await _refresh_all(session)
+        began = time.monotonic()
+        try:
+            return await _refresh_all(session)
+        finally:
+            cadence.note_render(time.monotonic() - began)     # when devices should ask (cadence.py)
 
 
 async def _refresh_all(session) -> dict[str, Frames]:

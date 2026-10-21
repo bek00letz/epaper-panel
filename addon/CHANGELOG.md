@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+Firmware change: reinstall the panel's firmware to get the second half.
+
+- **The add-on draws just after each minute starts.** It used to draw every
+  minute counted from when it started, so a clock on a page could be most of
+  a minute old before a panel even asked for it. A render that runs long is
+  followed by another straight away, never a skipped minute, and the log
+  says so.
+
 ## 0.17.0
 Add-on only; no firmware change, so nothing to reinstall on the panel.
 
