@@ -23,7 +23,14 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 ## In flight
 
-Nothing. Worker notes are in the notes folders (`break-it-0.12.0.md`,
+| Work | Where | State |
+|---|---|---|
+| The editor shows what's not sent yet (changed pages outlined, a list from the pill, per-page undo); strip sizes moved up (Small = old Standard, Standard = old Large, a larger Large); two buttons on each page card, Duplicate and Delete (Delete offers "Delete page" or "Take out of rotation") (session "unsent-changes") | branch `unsent-changes` from main | Started 21 Oct; designs with the user first |
+
+Local main also carries the add-on description fix (sizes it offers), for the
+next release (user, 21 Oct).
+
+Worker notes are in the notes folders (`break-it-0.12.0.md`,
 `timers-addon.md`, `firmware-013.md`, `fixes-0131.md`, `editor-polish.md`,
 `alerts-todo.md` in the first coordinator's; `widgets-015.md`,
 `presets-015.md`, `framework-review.md`, `checklist-0.15.0.md` in this one's).
