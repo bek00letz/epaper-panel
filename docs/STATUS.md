@@ -27,7 +27,9 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 ## In flight
 
-Nothing.
+| Work | Where | State |
+|---|---|---|
+| Every inspector row moves its control under its label when it doesn't fit (the Countdown's "Close to the day" squeezed into four lines) (session "icon-follows") | branch `row-reflow` from main | Started 21 Oct |
 
 Worker notes are in the notes folders (`break-it-0.12.0.md`,
 `timers-addon.md`, `firmware-013.md`, `fixes-0131.md`, `editor-polish.md`,
