@@ -542,3 +542,17 @@ class TestSportWords(unittest.TestCase):
     def test_with_no_league_name_the_heading_is_the_sports_word(self):
         self.assertEqual(self._event("soccer/eng.1")["league"], "MATCH")
         self.assertEqual(self._event("hockey/nhl")["league"], "GAME")
+
+
+class TestRaceColumns(unittest.TestCase):
+    def test_a_wide_driver_code_never_runs_into_the_team(self):
+        import examples
+        data = examples.race("nascar")
+        data["standings"] = [{"pos": 1, "driver": "WWW", "team": "Team", "gap": "LEADER"}]
+        el = {"type": "sports_racing", "x": 24, "y": 14, "w": 744, "h": 208, "show_border": False}
+        img = render(el, data)
+        drv_f = T.font(layout._s(min(19, max(13, int((208 - 52) * 0.54))), 1.0, 12, 28), bold=True)
+        pos_f = T.font(layout._s(min(15, max(11, int((208 - 52) * 0.42))), 1.0, 10, 22), bold=True)
+        code_end = 24 + 15 + max(32, T.text_width("P10", pos_f) + 6) + T.text_width("WWW", drv_f)
+        gap = img.crop((code_end + 1, 60, code_end + 6, 200))       # between the code and the team: paper
+        self.assertEqual(gap.histogram()[0], 0)

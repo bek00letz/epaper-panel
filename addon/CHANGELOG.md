@@ -106,7 +106,8 @@
 - **Fixed:** a Race weekend page set to NASCAR or IndyCar showed Formula 1's
   race, drivers and status. Each series now reads its own results, and its
   page names it ("NASCAR · …"). Whether the page shows still followed the
-  right series before; only what it showed was wrong.
+  right series before; only what it showed was wrong. A wide driver code
+  (HAM) no longer runs into its team's name.
 
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,

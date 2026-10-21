@@ -1886,6 +1886,9 @@ def _draw_sports_racing(img, d, el, raw_val, display=None):
     gap_f = T.font(_s(min(15, max(11, int(row_h * 0.44))), fscale, 10, 24), bold=True)
     tyre_f = T.font(_s(11, fscale, 9, 16), bold=True)
 
+    # The code column is as wide as the widest code shown ("HAM" is wider than "VER").
+    code_w = max([T.text_width(str(dd.get("driver") or dd.get("code") or dd.get("name") or "DRV")[:3].upper(), drv_f)
+                  for dd in display_drivers] + [T.text_width("VER", drv_f)])
     for idx, drv in enumerate(display_drivers):
         is_right = idx >= n_rows
         cx0 = (x + 15) if not is_right else (mid_div + 15)
@@ -1904,7 +1907,7 @@ def _draw_sports_racing(img, d, el, raw_val, display=None):
         pos_w = max(32, T.text_width("P10", pos_f) + 6)
         d.text((cx0 + pos_w, ry_mid), code, font=drv_f, fill=T.BLACK, anchor="lm")
 
-        off_x = cx0 + pos_w + max(44, T.text_width("VER", drv_f) + 8)
+        off_x = cx0 + pos_w + max(44, code_w + 8)
         if tyre in ("S", "M", "H", "I", "W"):
             d.rounded_rectangle([(off_x, ry_mid - 8), (off_x + 16, ry_mid + 8)], radius=3, outline=T.BLACK, width=1)
             d.text((off_x + 8, ry_mid), tyre, font=tyre_f, fill=T.BLACK, anchor="mm")
