@@ -32,7 +32,7 @@ cloud service. The self-hosted servers for TRMNL (Terminus, LaraPaper) have
 no visual editor. Ours is the best editor for e-ink, at home, with no
 account. That's the position to grow from.
 
-## Next release (0.13): prove it and make it solid
+## 0.13 (released 20 Oct): prove it and make it solid
 
 | Item | You get | Size | Firmware | Depends on |
 |---|---|---|---|---|
@@ -64,6 +64,21 @@ browser setup stands on: a ready-made firmware per model has to build.
 | "How it went" report | One button copies a report (kind, size, firmware, errors; no names, addresses or entities) for a GitHub issue | small | no | – |
 | TRMNL-compatible screens | Seeed's reTerminal and other screens running TRMNL's firmware, listed and sized properly. The next kind of screen we grow toward | small | no | someone with one to try it |
 
+## The New page sheet and its presets (agreed with the user 21 Oct; when it lands is the user's call)
+
+Mockup: https://claude.ai/artifact/STc9a9gWKX7fgX511pmdE6 (private).
+
+| Item | You get | Size | Firmware | Depends on |
+|---|---|---|---|---|
+| Shelves | One shelf per group that slides sideways; the group's count beside its name ("Energy (5)"); arrows at the edges on hover, only towards more presets; the edge fades while there's more, under the arrow too. Phones swipe and keep the fade. Blank page stays pinned in the sheet's footer as a tinted "+ Blank page" button; your own presets get a shelf when you have some | small–medium | no | – |
+| One preset per thing a page shows | A preset's looks, leagues or series are picked next, not separate cards: Planes overhead (Nearest plane, Radar, Both), Calendar (Month, Month and agenda), New to watch (three styles), Match (league), Race weekend (series) | small | no | – |
+| Groups | Your day (with the To-do list from the alerts-todo branch, in three styles the user chose: By urgency (Overdue row inverted, Today row outlined, the rest plain), Inverted when due (Overdue and Today rows inverted, the rest outlined), Outlined (every row in a pill); the label sits inside its row), Home, Energy, Outside, Sports, Watch and listen. Planes leave the sports shelf for Outside, with Weather and a new Sunrise and sunset (two styles: the next one large with the other beside it, swapping at sunrise and sunset; or both alike) | small | no | – |
+| Clearer names | "Door or pet" becomes Status (any sensor's state in your words, and since when); "On now" becomes Dynamic status (the user's name: up to eight things, each shown only while in a state you choose); "Formula 1" becomes Race weekend | small | no | – |
+| Sensible sensor first | Energy presets open with the Energy dashboard's sensor picked and labelled; temperature presets list temperature sensors first; thumbnails use example values, never "--" | small | no | – |
+| More energy presets | Solar this month (long-term statistics), Grid now (buying or selling), Energy cost (today and this month, from the Energy dashboard's prices, in Home Assistant's currency) | medium | no | – |
+| A preset sets up what it needs, in place (a rule for every preset, the user's call: framework, not patch) | A preset that needs a data source asks for it in its own next step: New to watch asks for the Jellyfin address and API key (saying where to find the key), connects, then asks whose unwatched to show; Solar this month sets up its statistic the same way. It saves the same data source Settings > Data sources shows (one store, no second path), and a second Jellyfin page reuses it. With JellyHA installed, the address is filled in from it; the key is still typed, since JellyHA doesn't expose it | small-medium | no | - |
+| Watch and listen through Home Assistant | Now playing (any media player: Spotify, Sonos, Apple TV, Plex, Jellyfin through JellyHA) and On TV this week (any calendar of shows: Sonarr, Trakt through its add-on), beside New to watch. Jellyfin becomes one source among several. JellyHA (checked 21 Oct) gets no Jellyfin-specific path: it offers one latest episode, one latest movie and library-wide counts, not the lists New to watch draws, so the add-on keeps its own Jellyfin source; JellyHA's players already work in Now playing and its sensors in any sensor preset | medium | no | - |
+
 ## Later
 
 | Item | You get | Size | Firmware | Depends on |
@@ -73,6 +88,9 @@ browser setup stands on: a ready-made firmware per model has to build.
 | Battery reading on a CrowPanel | Battery sensors like a TRMNL's | small | yes | a board with a resistor divider soldered on |
 | Colour e-paper | Red or yellow accents on colour panels | large | depends | a colour panel |
 | 1.0 | Tested on what it claims, set up in minutes without YAML, in more than one language | – | – | the above |
+| Act from the panel (noted, not convinced) | A page that asks ("Bins out tonight?") and a press that answers, recorded in Home Assistant. The user finds the panel's buttons cumbersome and drives it with a scroll remote; it belongs with touch screens | medium | yes | a touch screen kind, if ever |
+| A first screen made for you (noted, not convinced) | Pages built from what Home Assistant knows for certain on first run. Picking entities for someone is a game of chance (calendars they don't use, an inverter's 185 sensors); the starter page and its guide stay the way in | medium | no | a reliable way to know what matters to someone |
+| A guide behind the starter page's QR code | A current guide with worked examples, at an address that won't move. Today the QR code opens the README's three-step "Your first page" | small–medium | no | – |
 
 ## Decided with the user (20 Oct)
 
