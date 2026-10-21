@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.14.0
+**Firmware change:** install the panel again (Settings › Install or update,
+then Send to ESPHome and Install in ESPHome) for the quiet-hours fix below.
+Restart Home Assistant once after updating the add-on, so it loads the new
+integration. Until you reinstall, the panel keeps working as before.
 
 - **"Through your own address" can be chosen again.** Picking it asked for
   an address it hadn't shown you yet and said "The add-on couldn't read

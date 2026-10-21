@@ -11,6 +11,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Version | Date | What |
 |---|---|---|
+| 0.14.0 | 21 Oct | The screen bar under the canvas, power first when adding a screen, rename in place, clearer refusals, Safari Fit; the integration sets itself up, Send to ESPHome, editable hotspot password; quiet-hours wake from Home Assistant fixed. Firmware change. |
 | 0.13.0 | 20 Oct | Update every and Rotate every replace Low Power Mode; no flash after a wake (untried); the 4.2" and 2.9" build, the 7.5" and 10.2" aren't offered; sleep survives the add-on being down; audits #9 and #14; the classic editor removed. Firmware change. |
 | 0.12.0 | 20 Oct | Low Power Mode for CrowPanels (untried on a real panel), TRMNL screens (untried on one), screens drawn ahead, footer and editor fixes, and the no-own-Wi-Fi compile fix. Firmware change. |
 | 0.11.0 | 20 Oct | Several screens, away from home, Wi-Fi setup from a phone, a footer that fits every size, group styles. Firmware change. |
@@ -21,23 +22,13 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 ## In flight
 
-| Work | Where | State |
-|---|---|---|
-| Editor: finding power and Add a screen, the Add a screen sheet, renaming, a screen overview (session "editor-polish") | branch `editor-polish`, worktree `~/Documents/HA/epaper-worktrees/editor-polish` | Started 21 Oct; designs with the user first |
-
-The 0.13.1 fixes (integration sets itself up, Restart row, Settings spacing,
-hotspot password, Send to ESPHome, the old Last render error) are merged into
-local main, not pushed; held to ship with the editor work (user, 21 Oct).
-Also merged locally: a firmware fix (a panel woken from Home Assistant in
-quiet hours went straight back to sleep), so the next release is a firmware
-change and the panel needs one reinstall.
-The 0.13 branches were merged and removed (user's OK, 20 Oct).
-Findings and worker notes are in the coordinator's notes
-folder (`break-it-0.12.0.md`, `timers-addon.md`, `firmware-013.md`).
+Nothing. Worker notes are in the coordinator's notes folder
+(`break-it-0.12.0.md`, `timers-addon.md`, `firmware-013.md`,
+`fixes-0131.md`, `editor-polish.md`).
 
 ## Backlog, most important first
 
-1. **0.13 on the real 5.79".** Always on first (nothing should change), then
+1. **Sleeping on the real 5.79" (since 0.13).** Always on first (nothing should change), then
    sleeping: sleep current through the USB meter (an upper bound), the
    change after a wake without a flash, a full refresh every 8th change,
    buttons waking it, a power cut. Steps in `firmware-013.md`. Way back if it
@@ -45,8 +36,9 @@ folder (`break-it-0.12.0.md`, `timers-addon.md`, `firmware-013.md`).
    First observation (20 Oct): always on, through Home Assistant's address,
    on an Anker power bank for 5+ hours with no visible drop (its time-left
    readout isn't reliable at this draw).
-2. **The editor's new parts by eye:** the always-on or sleeps choice when
-   adding a screen, and Power in Settings › Screen. Tested, never seen.
+2. **The editor's new parts by eye**, in Safari and inside Home Assistant:
+   the screen bar, Add a screen with power first, rename in place, and Fit
+   in Safari (reasoned from screenshots, not reproduced).
 3. **The 5.79" away from home:** fetching over HTTPS through Home
    Assistant's address and a Cloudflare tunnel works (20 Oct, once the
    integration's entry existed). Still untried: a second Wi-Fi network, and
@@ -63,7 +55,8 @@ second CrowPanel side by side; a 4.2" or 2.9" CrowPanel (they build, untried;
 the 4.2"'s UC8276 revision isn't supported); a battery reading on a CrowPanel
 (needs a resistor divider soldered on).
 
-The editor was checked by eye in Home Assistant on 19 Oct, before 0.13.
+The editor was checked by eye in Home Assistant on 19 Oct; the 0.13 power
+settings and 0.14 screen bar were first seen by the user on 21 Oct.
 
 ## Decisions
 
