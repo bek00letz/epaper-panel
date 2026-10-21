@@ -133,7 +133,7 @@ export function setupStep(app, p, { thumb, add, foot, initialLook = 0, rememberL
 }
 
 /* ---------- what presets set up in place ---------- */
-const SETUPS = { wifi: wifiSetup, jellyfin: jellyfinSetup, energy: energySetup };
+const SETUPS = { wifi: wifiSetup, jellyfin: jellyfinSetup, energy: energySetup, players: playersSetup };
 
 /* Guest Wi-Fi: the network goes into the code, so it's asked for. */
 function wifiSetup({ changed }) {
@@ -307,5 +307,30 @@ function energySetup({ app, p, changed }) {
       : ent ? { mine: true, extra: { entity: ent, invert }, caption: `With ${name(ent)}.` } : { mine: false }),
     commit: async () => ({ extra: has() || !ent ? undefined : { entity: ent, invert } }),
     dispose: () => clearTimeout(loading),
+  };
+}
+
+/* Now playing follows every media player, or the ones you tick. */
+function playersSetup({ app, changed }) {
+  const players = app.ents.filter((e) => e.entity_id.startsWith("media_player."));
+  const chosen = new Set();
+  const list = h("div", { class: "optlist", role: "group", "aria-label": "Which players" });
+  const entity = () => [...chosen].join(", ");
+  function draw() {
+    list.replaceChildren(...players.map((e) => h("button", { class: "opt", role: "checkbox", "aria-checked": String(chosen.has(e.entity_id)),
+      onclick: () => { chosen.has(e.entity_id) ? chosen.delete(e.entity_id) : chosen.add(e.entity_id); draw(); changed(); } },
+      h("span", { class: "ock", "aria-hidden": "true" }, chosen.has(e.entity_id) ? icon("check", "sm") : null),
+      h("span", { class: "otext" }, h("span", { class: "o1", text: e.name || e.entity_id }), h("span", { class: "o2", text: e.entity_id })),
+      h("span", { class: "ov", text: e.state ?? "" }))));
+    if (!players.length) list.append(h("p", { class: "empty-note", text: "No media players in Home Assistant yet. The page shows any you add later." }));
+    hint.textContent = chosen.size ? `Shows ${chosen.size === 1 ? "this one" : "these"} while ${chosen.size === 1 ? "it plays" : "one plays"}.` : "Shows whichever is playing. Tick some to follow only those.";
+  }
+  const hint = h("p", { class: "fnote", "aria-live": "polite" });
+  draw();
+  return {
+    node: h("div", { class: "stepsec" }, h("h3", { class: "slab", text: "Which players?" }), hint, list),
+    ready: () => true,
+    shows: () => (chosen.size ? { mine: true, extra: { entity: entity() }, caption: "With your players." } : { mine: false }),
+    commit: async () => ({ extra: { entity: entity() } }),
   };
 }

@@ -93,8 +93,8 @@ class TestCatalogue(unittest.TestCase):
         self.assertEqual((self.by_id["dynamic_status"]["title"], self.by_id["dynamic_status"]["was"]), ("Dynamic status", "On now"))
         self.assertEqual((self.by_id["race_weekend"]["title"], self.by_id["race_weekend"]["was"]), ("Race weekend", "Formula 1"))
         found = run_js("""console.log(JSON.stringify(["door", "on now", "formula 1", "f1", "plane overhead", "bundesliga", "shopping"]
-          .map((q) => P.PRESETS.filter((p) => P.matches(p, q)).map((p) => p.id))));""")
-        self.assertEqual(found, [["status"], ["dynamic_status"], ["race_weekend"], ["race_weekend"], ["planes"], ["match"], ["to_do"]])
+          .map((q) => P.search(q)[0].id)));""")
+        self.assertEqual(found, ["status", "dynamic_status", "race_weekend", "race_weekend", "planes", "match", "to_do"])
 
     def test_every_league_and_series_the_add_on_fetches(self):
         leagues = run_js("console.log(JSON.stringify(P.LEAGUES.map(([l]) => l)))")
@@ -256,7 +256,7 @@ class TestSetsUpWhatItNeeds(unittest.TestCase):
 
     def test_new_to_watch_needs_jellyfin(self):
         self.assertEqual(run_js('console.log(JSON.stringify(P.presetById("watch").needs))'), "jellyfin")
-        self.assertIn("const SETUPS = { wifi: wifiSetup, jellyfin: jellyfinSetup", self.js)
+        self.assertIn("const SETUPS = { wifi: wifiSetup, jellyfin: jellyfinSetup,", self.js)
 
     def test_one_store_the_one_settings_shows(self):
         self.assertIn('await api("api/sources", { method: "PUT", body: [...all, src] })', self.js)
@@ -331,8 +331,38 @@ class TestEnergy(unittest.TestCase):
 
     def test_it_says_where_to_set_the_dashboard_up(self):
         js = (APP_JS / "setup.js").read_text()
-        self.assertIn("const SETUPS = { wifi: wifiSetup, jellyfin: jellyfinSetup, energy: energySetup };", js)
+        self.assertIn("energy: energySetup", js)
         self.assertEqual(js.count("(in Home Assistant: Settings › Dashboards › Energy)"), 3)
+
+
+@unittest.skipUnless(shutil.which("node"), "no node to read the editor's presets")
+class TestWatchAndListen(unittest.TestCase):
+    def test_the_shelf(self):
+        titles = run_js('console.log(JSON.stringify(P.PRESETS.filter((p) => p.group === "media").map((p) => p.title)))')
+        self.assertEqual(titles, ["Now playing", "On TV this week", "New to watch"])
+
+    def test_now_playing_shows_while_its_players_play(self):
+        got = run_js("""const p = P.presetById("now_playing");
+          console.log(JSON.stringify([P.pageFor(p, p.looks[0], "", { entity: "media_player.kitchen, media_player.tv" }), P.pageFor(p, p.looks[0], "").show_if]))""")
+        page, every = got
+        self.assertEqual(page["tier"], "when")
+        self.assertEqual(page["elements"][0], {"type": "now_playing", "entity": "media_player.kitchen, media_player.tv", "x": 24, "y": 14, "w": 744, "h": 208})
+        self.assertEqual(page["show_if"], "{{ expand(['media_player.kitchen','media_player.tv']) | selectattr('state', 'eq', 'playing') | list | count > 0 }}")
+        self.assertEqual(every, "{{ states.media_player | selectattr('state', 'eq', 'playing') | list | count > 0 }}")
+        self.assertEqual(run_js('console.log(JSON.stringify(P.playingShowIf("x\'); bad, media_player.ok")))'),
+                         "{{ expand(['media_player.ok']) | selectattr('state', 'eq', 'playing') | list | count > 0 }}", "only real entity IDs reach the template")
+
+    def test_a_calendar_of_shows_first(self):
+        ents = [{"entity_id": "calendar.family", "name": "Family"}, {"entity_id": "calendar.sonarr", "name": "Sonarr"}, {"entity_id": "sensor.x"}]
+        got = run_js(f"console.log(JSON.stringify(P.rankSensors(P.presetById('tv_week'), {json.dumps(ents)}).map(({{ e }}) => e.entity_id)))")
+        self.assertEqual(got, ["calendar.sonarr", "calendar.family"])
+
+    def test_the_inspector_knows_them(self):
+        src = (APP_JS / "inspector.js").read_text()
+        self.assertIn('now_playing: [F.text("entity", "Players", "All of them")],', src)
+        self.assertIn('tv_week: [F.entity("entity", "Calendar of shows", ["calendar"])', src)
+        for key in ("now_entity", "temperature_sensor", "humidity_sensor", "wind_sensor", "rain_sensor", "pressure_sensor", "solar_sensor"):
+            self.assertIn(f'F.entity("{key}"', src, "weather from your own station (sources/station.SENSORS)")
 
 
 class TestTheSheet(unittest.TestCase):

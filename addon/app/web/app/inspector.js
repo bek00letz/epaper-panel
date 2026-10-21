@@ -286,7 +286,12 @@ const TYPE_FIELDS = {
     { kind: "sensorid" }],
   calendar_agenda: [F.entity("entity", "Calendar", ["calendar"]), F.text("title", "Title", "Coming up"), F.sel("max_events", "Events", [["2", "2, extra large"], ["3", "3, large"], ["4", "4"], ["5", "5"], ["6", "6"]], "4"), F.on("show_sub", "Times and places", true), BORDER_ON],
   weather_forecast: [F.entity("entity", "Weather", ["weather"]), F.sel("layout_mode", "Layout", [["auto", "Fit the box"], ["split", "Now and forecast side by side"], ["stacked", "Now above the forecast"], ["hero_only", "Now only, very large"], ["forecast_only", "Forecast only"]], "auto"),
-    F.sel("forecast_days", "Days", [["3", "3"], ["4", "4"], ["5", "5"]], "4"), F.on("show_details", "Humidity and wind", true), BORDER_ON],
+    F.sel("forecast_days", "Days", [["3", "3"], ["4", "4"], ["5", "5"]], "4"), F.on("show_details", "Humidity and wind", true), BORDER_ON,
+    // "Now" from your own station, each part optional (sources/station.py); the forecast keeps the days.
+    F.entity("now_entity", "Now from", ["weather"]), F.entity("temperature_sensor", "Temperature sensor", ["sensor"]),
+    F.entity("humidity_sensor", "Humidity sensor", ["sensor"]), F.entity("wind_sensor", "Wind sensor", ["sensor"]),
+    F.entity("rain_sensor", "Rain sensor", ["sensor", "binary_sensor"]), F.entity("pressure_sensor", "Pressure sensor", ["sensor"]),
+    F.entity("solar_sensor", "Sunlight sensor", ["sensor"])],
   sports_racing: [F.sel("series", "Series", SERIES, "f1"), F.entity("entity", "Sensor, if you have one"),
     F.sel("max_drivers", "Leaderboard", [["6", "Top 6, extra large"], ["8", "Top 8, large"], ["10", "Top 10"]], "10"),
     { kind: "window", label: "Only show around sessions" }, F.sel("window_mode", "Around", [["session", "Each session"], ["weekend", "The whole weekend"]], "session"),
@@ -304,6 +309,9 @@ const TYPE_FIELDS = {
     F.sel("period", "For", [["day", "Today"], ["month", "This month"], ["year", "This year"]], "month")],
   grid_now: [F.entity("entity", "Power sensor, if not the dashboard's"), F.on("invert", "Above zero when selling", false)],
   energy_cost: [],
+  // render/media.py: "a, b" follows those players; empty, all of them.
+  now_playing: [F.text("entity", "Players", "All of them")],
+  tv_week: [F.entity("entity", "Calendar of shows", ["calendar"]), F.num("days", "Days ahead", "7", 1, 31), F.text("title", "Title", "On TV this week")],
   flight_tracker: [F.sel("style", "Style", [["card", "Details"], ["split", "Radar and details"], ["radar", "Radar"]], "card"), { kind: "place" },
     F.num("radius", "Radius, km", "35", 5, 250), { kind: "window", label: "Only show while a plane is near" }, F.on("show_sub_metrics", "Second units", true), BORDER_ON, { kind: "sensorid" }],
 };

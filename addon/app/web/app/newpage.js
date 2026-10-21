@@ -8,7 +8,7 @@ import { h, icon, api, clone, slug, prefs } from "./util.js";
 import { sheet, toast } from "./ui.js";
 import { syncDynamicGridShowIf } from "./conditions.js";
 import { reflowPageElements } from "./legacy.js";
-import { PRESETS, GROUPS, lookOf, pageFor, examplePage, pageName, matches, rankSensors, fitToCanvas } from "./presets.js";
+import { PRESETS, GROUPS, lookOf, pageFor, examplePage, pageName, search, rankSensors, fitToCanvas } from "./presets.js";
 import { thumbnail } from "./strip.js";
 import { setupStep } from "./setup.js";
 
@@ -121,7 +121,7 @@ export function openPresets(app) {
     }
     function drawResults() {
       const s = query.trim().toLowerCase();
-      const hits = PRESETS.filter((p) => matches(p, s));
+      const hits = search(s);
       const mine = yours().map((cp, k) => [cp, k]).filter(([cp]) => `${cp.title || cp.name} ${cp.desc || ""}`.toLowerCase().includes(s));
       const n = hits.length + mine.length;
       results.replaceChildren(n

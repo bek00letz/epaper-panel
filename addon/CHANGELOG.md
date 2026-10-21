@@ -114,6 +114,15 @@
   Solar today opens with the dashboard's solar sensor picked. All three are
   under Insert › Widgets too.
 
+- **Now playing and On TV this week in New page**, under Watch and listen
+  beside New to watch. Now playing follows every media player, or the ones
+  you tick, and shows only while one plays; On TV this week lists calendars
+  of shows (Sonarr's, Trakt's) first. Both are under Insert › Widgets too.
+- **Weather's "now" from your own station** can be set in the inspector:
+  another weather entity, and sensors for temperature, humidity, wind,
+  rain, pressure and sunlight, each optional.
+- Search in New page puts presets whose name you typed first.
+
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) for the quiet-hours fix below.

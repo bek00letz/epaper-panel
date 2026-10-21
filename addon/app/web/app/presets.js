@@ -229,6 +229,19 @@ export const PRESETS = [
 
   /* ---------- watch and listen ---------- */
   {
+    id: "now_playing", group: "media", title: "Now playing", kw: "music spotify sonos media player song apple tv plex jellyfin chromecast",
+    desc: "What's playing on any media player in Home Assistant: Spotify, Sonos, Apple TV, Plex, Jellyfin through JellyHA. Only shows while something plays.",
+    asks: "", needs: "players", example: "media_player.living_room",
+    looks: [{ id: "now_playing", name: "Now playing", tier: "when", showIf: (_, x) => playingShowIf(x?.entity),
+      make: (_, x = {}) => [{ type: "now_playing", entity: x.entity || "", x: 24, y: 14, w: 744, h: 208 }] }],
+  },
+  {
+    id: "tv_week", group: "media", title: "On TV this week", kw: "episodes shows sonarr trakt upcoming series calendar",
+    desc: "The next episodes from any calendar of shows you follow, such as Sonarr's, or Trakt's through its add-on.",
+    asks: "calendar", prefer: { names: ["sonarr", "trakt", "tv", "show", "episode", "series"] }, example: "calendar.tv",
+    looks: [{ id: "tv_week", name: "On TV this week", make: (ent) => [{ type: "tv_week", entity: ent || "", days: 7, x: 24, y: 14, w: 744, h: 208 }] }],
+  },
+  {
     id: "watch", group: "media", title: "New to watch", kw: "jellyfin tv episodes films movies new unwatched",
     desc: "What's new and unwatched in your Jellyfin library. Only shows while there's something new.",
     asks: "jellyfin", needs: "jellyfin", choose: "Style", example: "sensor.epaper_watch",
@@ -288,6 +301,14 @@ export function fitToCanvas(elements, g, reflow) {
   return out;
 }
 
+/* Now playing shows while one of its players plays (all of them when none
+   are chosen). */
+export function playingShowIf(entity) {
+  const chosen = String(entity || "").split(",").map((e) => e.trim()).filter((e) => /^media_player\.[a-z0-9_]+$/.test(e));
+  const which = chosen.length ? `expand(${JSON.stringify(chosen).replace(/"/g, "'")})` : "states.media_player";
+  return `{{ ${which} | selectattr('state', 'eq', 'playing') | list | count > 0 }}`;
+}
+
 export const presetById = (id) => PRESETS.find((p) => p.id === id);
 export const groupName = (id) => (GROUPS.find(([g]) => g === id) || [id, id])[1];
 export const lookOf = (p, i = 0) => p.looks[Math.min(Math.max(0, i | 0), p.looks.length - 1)];
@@ -298,7 +319,7 @@ export const lookOf = (p, i = 0) => p.looks[Math.min(Math.max(0, i | 0), p.looks
 export function pageFor(p, look, ent, extra) {
   const page = { tier: look.tier || p.tier || "rotate", elements: look.make(ent, extra) };
   const showIf = look.showIf || p.showIf;
-  if (showIf) { const s = showIf(ent); if (s) page.show_if = s; }
+  if (showIf) { const s = showIf(ent, extra); if (s) page.show_if = s; }
   if (look.widget) {
     const w = page.elements[0], sid = getWidgetSensorId(w);
     page.show_if = w.type === "flight_tracker" ? `{{ states('${sid}') | int(0) > 0 }}` : `{{ is_state('${sid}','active') }}`;
@@ -322,12 +343,19 @@ export function pageName(p, look, ent, entName) {
   return p.title;
 }
 
-/* Search: every word somewhere in its title, old name, words, group or looks. */
+/* Search: every word somewhere in its title, old name, words, group or
+   looks. What you typed as a name comes first ("on now" finds Dynamic status,
+   then Now playing). */
 export function matches(p, query) {
   const words = String(query || "").trim().toLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return true;
   const hay = [p.title, p.was || "", p.desc, groupName(p.group), p.kw || "", ...p.looks.map((l) => l.name)].join(" ").toLowerCase();
   return words.every((w) => hay.includes(w));
+}
+export function search(query, list = PRESETS) {
+  const q = String(query || "").trim().toLowerCase();
+  const named = (p) => [p.title, p.was || "", ...p.looks.map((l) => l.name)].some((n) => n.toLowerCase().includes(q));
+  return list.filter((p) => matches(p, q)).map((p, k) => ({ p, k, s: named(p) ? 0 : 1 })).sort((a, b) => a.s - b.s || a.k - b.k).map(({ p }) => p);
 }
 
 /* Which entities a preset can show, sensible ones first: the Energy
@@ -340,9 +368,11 @@ export function rankSensors(p, ents, energy = {}) {
   const fits = (e) => (p.asks === "jellyfin" ? e.feed === "jellyfin" : domain(e) === p.asks || also.includes(domain(e)));
   const pref = p.prefer || {};
   const fromEnergy = new Set((pref.energy && energy[pref.energy]) || []);
+  const named = (e) => (pref.names || []).some((n) => `${e.entity_id} ${e.name || ""}`.toLowerCase().includes(n));
   const score = (e) => fromEnergy.has(e.entity_id) ? 0
-    : (pref.device_class || []).includes(e.device_class) ? 1
+    : (pref.device_class || []).includes(e.device_class) || named(e) ? 1
     : (pref.units || []).includes(e.unit) ? 2
+    : pref.names ? (domain(e) === p.asks ? 3 : 4)
     : p.asks === "jellyfin" || domain(e) === p.asks ? 3 : 4 + also.indexOf(domain(e));
   return ents.filter(fits)
     .map((e, k) => ({ e, k, s: score(e) }))

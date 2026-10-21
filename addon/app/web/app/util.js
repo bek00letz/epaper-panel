@@ -63,6 +63,7 @@ export const ICONS = {
   list: P('<path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/>', ' stroke-width="2"'),
   todo: P('<rect x="3" y="4" width="5" height="5" rx="1.2"/><rect x="3" y="15" width="5" height="5" rx="1.2"/><path d="M12 6.5h9M12 17.5h9"/>'),
   grid: P('<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>'),
+  play: P('<circle cx="12" cy="12" r="9"/><path d="M10 8.6v6.8l5.6-3.4z"/>'),
   plane: P('<path d="M10.5 21 12 18l1.5 3M12 3c1 0 1.5 1 1.5 2v4l7 4v2l-7-2v4l2 1.5v1.5L12 19l-3.5 1.5V19l2-1.5v-4l-7 2v-2l7-4V5c0-1 .5-2 1.5-2z"/>'),
   flag: P('<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>'),
   ball: P('<circle cx="12" cy="12" r="9"/><path d="m12 7 4 3-1.5 4.5h-5L8 10z"/>'),
