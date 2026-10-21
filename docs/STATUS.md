@@ -31,6 +31,10 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 Local main also carries the add-on description fix (sizes it offers), for the
 next release (user, 21 Oct).
 
+Next release (0.16.0): these two plus the description fix. The user approved
+pushing it once both are in and the full suite passes ("push when happy",
+21 Oct).
+
 Worker notes are in the notes folders (`break-it-0.12.0.md`,
 `timers-addon.md`, `firmware-013.md`, `fixes-0131.md`, `editor-polish.md`,
 `alerts-todo.md` in the first coordinator's; `widgets-015.md`,
