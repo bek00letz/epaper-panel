@@ -602,7 +602,8 @@ class TestDateOnASleepingDevice(unittest.TestCase):
         self.assertIn('select([["auto", `As in Home Assistant (${word(r.resolved)} here)`], ["12h", "12-hour, like 2:30 PM"], ["24h", "24-hour, like 14:30"]]', sheets)
         self.assertIn('api("api/settings/time", { method: "PUT", body: { format: v } })', sheets)
         insp = (APP_JS / "inspector.js").read_text()
-        self.assertIn('seg([["text", "Text"], ["sensor", "Sensor"], ["clock", "Time"], ["template", "Template"]]', insp)
+        self.assertIn('export const FROM = [["text", "Text"], ["sensor", "Sensor"], ["clock", "Time"], ["template", "Template"]];', (APP_JS / "shows.js").read_text())
+        self.assertIn("seg(FROM, source,", insp)
 
     def test_sleeping_is_read_from_the_timers_not_the_kind(self):
         got = run_js("""console.log(JSON.stringify([{ timing: { always_on: false } }, { timing: { always_on: true } }, { kind: "trmnl", timing: { always_on: false } },

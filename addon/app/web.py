@@ -412,6 +412,16 @@ def _fit(elements: list, from_canvas: str, display: str, orientation: int) -> li
     return [{**el, **arrange.auto_box(el, from_canvas, target)} if isinstance(el, dict) else el for el in elements]
 
 
+async def api_as_template(request):
+    """{"template"}: what an element shows, as a template (binding.as_template), for the editor's
+    From › Template; the editor keeps no copy of how a binding becomes Jinja."""
+    body = await _json(request)
+    el = body.get("element") if isinstance(body, dict) else None
+    if not isinstance(el, dict):
+        raise web.HTTPBadRequest(text="expected {element}")
+    return web.json_response({"template": binding.as_template(el)})
+
+
 async def api_fit(request):
     """POST {elements, from_canvas, display?, orientation?} -> {elements}: a page made on one size, placed
     for a device's (the editor's own device by default), for adding a preset's page."""
@@ -565,6 +575,21 @@ async def api_changed(request):
     if got is None:
         return web.json_response({"error": "Home Assistant didn't say when it last changed."}, status=502)
     return web.json_response({**got, "now": time.time()})
+
+
+async def api_entity_states(request):
+    """The states an icon that follows an entity offers, each with Home Assistant's icon for it
+    (sources.states_seen): {"states": [{"state", "word", "icon"}]}."""
+    from sources import states_seen
+    eid = (request.query.get("entity") or "").strip()
+    if not valid_entity_id(eid):
+        return web.json_response({"error": "That isn't an entity ID."}, status=400)
+    try:
+        got = await states_seen.fetch(runtime.SESSION, eid)
+    except Exception as exc:
+        print(f"states of {eid}: {health.describe(exc)}", flush=True)
+        return web.json_response({"error": "Home Assistant didn't say what states it has."}, status=502)
+    return web.json_response({"states": got})
 
 
 async def api_airport(request):
@@ -1148,6 +1173,7 @@ def make_apps():
         web.get("/api/aircraft", api_aircraft),
         web.get("/api/airport", api_airport),
         web.get("/api/changed", api_changed),
+        web.get("/api/entity_states", api_entity_states),
         web.get("/api/energy", api_energy),
         web.get("/api/catalog", api_catalog),
         web.get("/api/timezones", api_timezones),
@@ -1157,6 +1183,7 @@ def make_apps():
         web.post("/api/preview", api_preview),
         web.post("/api/example", api_example),
         web.post("/api/fit", api_fit),
+        web.post("/api/as_template", api_as_template),
         web.post("/api/push", api_push),
         web.get("/api/sources", api_sources_get),
         web.put("/api/sources", api_sources_put),

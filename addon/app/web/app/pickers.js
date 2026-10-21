@@ -2,7 +2,8 @@
 // insert. All searchable, all usable from the keyboard.
 
 import { h, icon, api } from "./util.js";
-import { popover, sheet } from "./ui.js";
+import { popover, sheet, seg } from "./ui.js";
+import { LOOKS } from "./follows.js";
 import { TYPES, INSERT_GROUPS } from "./elements.js";
 import { CATEGORY_TERMS } from "./legacy.js";
 
@@ -86,7 +87,9 @@ export function openAttributePicker(app, anchor, entity, onPick) {
 }
 
 /* Icons: the full Material Design set the panel draws with. */
-export function openIconPicker(app, current, onPick) {
+/* `look` ({ value, set }): an icon that changes with a sensor chooses each state's look here too
+   (follows.js LOOKS), applied at once; the grid shows the icons in it. */
+export function openIconPicker(app, current, onPick, look) {
   sheet("Choose an icon", (node, close) => {
     const q = h("input", { type: "search", placeholder: "Search 7,000 icons: cat, radiator, sun…", "aria-label": "Search icons", autocomplete: "off", spellcheck: "false" });
     const meta = h("p", { class: "fnote", role: "status", "aria-live": "polite" });
@@ -104,7 +107,13 @@ export function openIconPicker(app, current, onPick) {
     };
     q.addEventListener("input", draw);
     app.whenMdi(draw);
-    node.append(h("div", { class: "sheet-body" }, h("div", { class: "search" }, icon("search", "sm"), q), catRow, meta, grid));
+    const lookRow = look ? h("div", { class: "field" }, h("span", { class: "lab", text: "Look" })) : null;
+    const drawLook = () => {
+      lookRow.replaceChildren(lookRow.firstChild, seg(LOOKS, look.value, (v) => { look.value = v; look.set(v); drawLook(); lookRow.querySelector('[aria-checked="true"]')?.focus(); }, "Look"));
+      grid.dataset.look = look.value;
+    };
+    if (look) drawLook();
+    node.append(h("div", { class: "sheet-body" }, lookRow, h("div", { class: "search" }, icon("search", "sm"), q), catRow, meta, grid));
     draw();
   }, { cls: "wide tall", focus: "input" });
 }

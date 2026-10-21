@@ -118,6 +118,28 @@ def template_for(el):
     return "{{ " + core + " }}"
 
 
+def as_template(el) -> str:
+    """What an element shows, written out as a template: the editor's From › Template starts from
+    it, so switching shows the same thing (a sensor's detail and format, the clock, words you
+    replaced; text's Before and After, which a template's text doesn't add). A plain text becomes
+    itself as a string; "" for nothing at all."""
+    raw = el.get("value")
+    if isinstance(raw, str) and ("{{" in raw or "{%" in raw):
+        return raw
+    bound = {k: v for k, v in el.items() if k != "value"}
+    ent = str(el.get("entity") or "").strip()
+    tpl = template_for(bound)
+    if not tpl and ent:
+        tpl = "{{ states('" + _quote(ent) + "') }}"        # a total today comes from statistics, not a template
+    if not tpl:
+        text = str(raw if raw is not None else "")
+        return "{{ '" + _quote(text) + "' }}" if text else ""
+    if el.get("type") == "text":
+        lit = lambda t: ("{{ '" + _quote(t) + "' }}") if any(c in t for c in "{}%#") else t
+        tpl = lit(str(el.get("prefix") or "")) + tpl + lit(str(el.get("suffix") or ""))
+    return tpl
+
+
 LOCAL_SHOWS = ("state", "attribute", "unit")
 
 

@@ -805,7 +805,7 @@ class App {
   openPresets() { openPresets(this); }
   openEntityPicker(anchor, onPick, opts) { openEntityPicker(this, anchor, onPick, opts); }
   openAttributePicker(anchor, entity, onPick) { openAttributePicker(this, anchor, entity, onPick); }
-  openIconPicker(cur, onPick) { openIconPicker(this, cur, onPick); }
+  openIconPicker(cur, onPick, look) { openIconPicker(this, cur, onPick, look); }
 
   firstRun() {
     if (Object.keys(this.doc.spec.pages).length) return;

@@ -39,6 +39,11 @@ def run_js(body):
 
 @unittest.skipUnless(shutil.which("node"), "no node to run the editor's doc")
 class TestChanges(unittest.TestCase):
+    def test_nothing_pending_before_the_pages_load(self):
+        # The page strip asks as the add-on's status comes in, which can be before the pages have.
+        c = run_js("console.log(JSON.stringify(new D.Doc().pending().any));")
+        self.assertIs(c, False)
+
     def test_the_same_pages_have_nothing_pending(self):
         c = run_js("console.log(JSON.stringify(D.changes(live(), live())));")
         self.assertEqual(c, {"pages": {}, "placed": {}, "rotation": False, "settings": [], "any": False})

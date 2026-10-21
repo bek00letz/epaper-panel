@@ -390,6 +390,21 @@ up to v0.12.0). `app/legacy.js` keeps the pieces of it this one still uses.
   `GET /api/catalog` at start (`app/catalog.js`). Basic elements (text,
   value, icon, card, divider, gauge, charts, QR) stay the editor's; a new
   widget is a descriptor in `widgets.py`, nothing in the editor.
+- **An icon follows a sensor in its own Icon section** (the user's design,
+  21 Oct; `app/follows.js`): the switch "Changes with a sensor" comes
+  first, so it never moves under the pointer; off, the plain icon is under
+  it; on, the sensor, a row per state and the same icon as "Anything else",
+  one control and never two. States are offered, not filled in: chips you
+  tap, each with an icon already chosen, from `GET /api/entity_states`
+  (`render/states.offered`: the kind's words, `options`, the recorder's
+  last 10 days with the icon each state had), only icons the panel can draw
+  (`layout.can_draw_icon`). A state matches whatever its case
+  (`layout.icon_for_state`, the one lookup for icons and status spots).
+  Each state has its own look, Plain, Inverted or Outlined (the user's
+  call, 21 Oct), chosen at the top of the icon picker; the icon's own
+  Style is "Anything else"'s, so the Style row hides while it follows.
+  A row is `{icon, look}`, or just an icon (the first shape, which keeps
+  the icon's Style): `layout.icon_in_state` reads both.
 - **The inspector is ordered by how often things are touched**: what it shows,
   how it looks, arrange, then "More". Rare settings go under More, not away.
 - **Picking: smallest thing under the pointer first.** Clicking again without
@@ -430,6 +445,10 @@ up to v0.12.0). `app/legacy.js` keeps the pieces of it this one still uses.
   that. The right-click menu keeps the fuller list.
 - **One floating system** (`app/ui.js`): popover, menu, sheet, toast. No
   `prompt()`, `alert()` or `confirm()`; names are edited in place.
+- **A segmented control never cuts a choice off** (the user's call, 21
+  Oct): beside its label it goes under it, full width, when its choices
+  don't fit, measured live (`ui.seg`, `segFits`, `.field.stack`). Don't
+  shorten the words or shrink the text to make one fit.
 - **Hit targets are 44 pt.** Controls are 32 px with a padded hit area under a
   mouse and 44 px on touch. Don't shrink them to fit more in.
 - **The legibility note sits under the size field** it describes. It is the

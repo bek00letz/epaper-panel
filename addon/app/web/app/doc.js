@@ -389,7 +389,7 @@ export class Doc {
   /* What the panel doesn't have yet (`changes`), worked out once per version of the pages. */
   pending() {
     const key = this.hist[this.hpos];
-    if (this._pending?.key !== key || this._pending.live !== this.live) this._pending = { key, live: this.live, c: changes(this.live, this.spec) };
+    if (!this._pending || this._pending.key !== key || this._pending.live !== this.live) this._pending = { key, live: this.live, c: changes(this.live, this.spec) };
     return this._pending.c;
   }
 

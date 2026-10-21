@@ -10,7 +10,10 @@ import { explodeWidget, getWidgetSensorId, suggestIconForEntity } from "./legacy
 import { dateEditor, binsEditor } from "./countdown.js";
 import { zonesEditor } from "./zones.js";
 import { staleNote, changesEvery, pageChangesEvery, sleepsBetweenUpdates } from "./presets.js";
-import { widget, leagueOptions, seriesOptions, sportWord } from "./catalog.js";
+import { widget, leagueOptions, seriesOptions, sportWord, stateWords } from "./catalog.js";
+import { FROM, CLOCK_FORMATS, sourceOf, switchSource, isTemplate } from "./shows.js";
+import { isFollowing, startFollowing, stopFollowing, setEntity, addState, removeState, setStateIcon, setStateLook, suggestions, wordFor,
+  LOOKS, styleOf, setStyle, iconOf, lookOf, framed } from "./follows.js";
 
 const SHOWS = [["state", "Its value"], ["unit", "Its unit, following the value"], ["attribute", "One of its details"], ["last_changed", "When it last changed"], ["last_updated", "When it last updated"],
   ["days_until", "Days until it"], ["date_formatted", "Its date"], ["calendar_title", "The event's name"]];
@@ -44,7 +47,7 @@ function setter(app, el, after) {
 }
 function entityButton(app, entityId, onPick, opts = {}) {
   const e = entityId ? app.entMap.get(entityId) : null;
-  const b = h("button", { class: "entbtn", "aria-label": `${opts.label || "Sensor"}: ${e ? e.name : entityId || "none"}. Change` },
+  const b = h("button", { class: "entbtn" + (opts.cls ? " " + opts.cls : ""), "aria-label": `${opts.label || "Sensor"}: ${e ? e.name : entityId || "none"}. Change` },
     h("span", { class: "eb-text" }, h("span", { class: "e1", text: e ? (e.name || entityId) : entityId || opts.placeholder || "Choose a sensor" }),
       entityId ? h("span", { class: "e2", text: entityId }) : null),
     e ? h("span", { class: "ev", text: `${e.state}${e.unit ? " " + e.unit : ""}` }) : null,
@@ -52,11 +55,12 @@ function entityButton(app, entityId, onPick, opts = {}) {
   b.addEventListener("click", () => app.openEntityPicker(b, onPick, { domains: opts.domains, current: entityId, allowNone: opts.allowNone }));
   return b;
 }
-function iconButton(app, value, onPick, label = "Icon") {
-  const glyph = app.mdiGlyph(value);
-  const b = h("button", { class: "iconbtn", "aria-label": `${label}: ${value || "none"}. Change` },
-    h("span", { class: "glyph mdi", text: glyph || "?" }), h("span", { class: "e1", text: value ? String(value).replace(/^mdi:/, "") : "Choose an icon" }), icon("chev", "sm"));
-  b.addEventListener("click", () => app.openIconPicker(value, onPick));
+/* An icon to choose. With `look` (follows.js LOOKS), its tile shows it and the picker offers it too. */
+function iconButton(app, value, onPick, label = "Icon", look) {
+  const glyph = app.mdiGlyph(value), said = look ? LOOKS.find(([v]) => v === look.value)?.[1] : "";
+  const b = h("button", { class: "iconbtn", "aria-label": `${label}: ${value || "none"}${said && look.value !== "plain" ? `, ${said.toLowerCase()}` : ""}. Change` },
+    h("span", { class: "glyph mdi" + (look ? " look-" + look.value : ""), text: glyph || "?" }), h("span", { class: "e1", text: value ? String(value).replace(/^mdi:/, "") : "Choose an icon" }), icon("chev", "sm"));
+  b.addEventListener("click", () => app.openIconPicker(value, onPick, look));
   return b;
 }
 function legibility(app, i, el) {
@@ -79,13 +83,13 @@ function legibility(app, i, el) {
   return out;
 }
 function styleRows(app, el, set) {
-  const style = el.invert ? "invert" : el.pill ? "pill" : "plain";
-  const rows = [h("div", { class: "field" }, h("span", { class: "lab", text: "Style" }), seg([["plain", "Plain"], ["invert", "Inverted"], ["pill", "Outlined"]], style, (v) => {
-    delete el.invert; delete el.pill;
-    if (v === "invert") el.invert = true; if (v === "pill") el.pill = true;
+  // An icon that changes with a sensor has a look per state, its own Style being "Anything else"'s,
+  // chosen in the icon picker: one control for it, never two.
+  const rows = isFollowing(el) ? [] : [h("div", { class: "field" }, h("span", { class: "lab", text: "Style" }), seg(LOOKS, styleOf(el), (v) => {
+    setStyle(el, v);
     app.doc.commit();
   }, "Style"))];
-  if (el.invert || el.pill) rows.push(field("Corners", number(el.radius ?? 10, (v) => set("radius", v), { min: "0", max: "60", placeholder: "10" })));
+  if (framed(el)) rows.push(field("Corners", number(el.radius ?? 10, (v) => set("radius", v), { min: "0", max: "60", placeholder: "10" })));
   return rows;
 }
 
@@ -124,8 +128,7 @@ function element(app, head, body, el, i) {
       h("div", { class: "field" }, h("span", { class: "lab", text: "Align" }), seg([["left", "Left", "alignl"], ["center", "Centre", "centerh"], ["right", "Right", "alignr"]], el.align || "left", (v) => set("align", v === "left" ? "" : v), "Alignment")),
       styleRows(app, el, set)));
   } else if (el.type === "icon") {
-    body.append(section("Icon",
-      iconButton(app, el.icon, (ic) => set("icon", ic)),
+    body.append(section("Icon", ...iconRows(app, el, set),
       field("Size", number(el.size, (v) => set("size", v), { min: "8", max: "360", placeholder: "Fits the box" })),
       legibility(app, i, el), styleRows(app, el, set)));
   } else {
@@ -182,19 +185,109 @@ function element(app, head, body, el, i) {
     h("button", { class: "btn tinted danger", onclick: () => app.remove() }, icon("trash", "sm"), "Delete"))));
 }
 
+/* An icon, or one that changes with a sensor (follows.js): the switch first, so it never moves
+   under the pointer; on, the sensor, a row per state and its own icon as "Anything else", then
+   the states the sensor has that aren't added yet, each with Home Assistant's icon for it. */
+function iconRows(app, el, set) {
+  const doc = app.doc, on = isFollowing(el);
+  const sw = toggleRow("Changes with a sensor", on, (v) => {
+    if (!v) { stopFollowing(el); doc.commit(); return; }
+    startFollowing(el);
+    doc.commit();
+    // It needs a sensor before it can do anything: ask for it straight away (the commit redrew the inspector).
+    if (!el.entity) app.el.insp.querySelector(".follows .entbtn")?.click();
+  });
+  if (!on) return [sw, iconButton(app, el.icon, (ic) => set("icon", ic))];
+  const ent = app.entMap.get(el.entity);
+  const sensor = entityButton(app, el.entity, (id) => {
+    const was = ent?.name || el.entity, cleared = setEntity(el, id);
+    doc.commit();
+    if (cleared) toast(`Took off ${cleared === 1 ? "the state" : `the ${cleared} states`} of ${was}.`, { label: "Undo", run: () => doc.undo() });
+  }, { label: "Sensor" });
+  const asked = el.entity ? askStates(el.entity) : null;
+  const kind = el.entity ? stateWords(el.entity, ent?.device_class) : null;
+  const word = (st) => wordFor(st, asked?.got, kind);
+  const row = (label, sub, btn, end) => h("div", { class: "frow" },
+    h("span", { class: "fl", title: sub ? `${label} (${sub})` : label }, h("span", { class: "fw", text: label }), sub ? h("small", { text: sub }) : null), btn, end);
+  const rows = Object.entries(el.state_icons).map(([st, v]) => {
+    const w = word(st), sub = w.trim().toLowerCase() === st.trim().toLowerCase() ? "" : st;
+    const look = { value: lookOf(el, st), set: (l) => { setStateLook(el, st, l); doc.commit(); } };
+    return row(w, sub, iconButton(app, iconOf(v), (pick) => { setStateIcon(el, st, pick); doc.commit(); }, `Icon for ${w}`, look),
+      h("button", { class: "btn icon", "aria-label": `Remove ${w}`, title: `Remove ${w}`, onclick: () => {
+        removeState(el, st); doc.commit();
+        toast(`Removed ${w}.`, { label: "Undo", run: () => doc.undo() });
+      } }, icon("close", "sm")));
+  });
+  const own = { value: styleOf(el), set: (l) => { setStyle(el, l); doc.commit(); } };
+  const other = row("Anything else", "", iconButton(app, el.icon, (ic) => set("icon", ic), "Icon for anything else", own), h("span", { class: "fend", "aria-hidden": "true" }));
+  const out = [sw, h("div", { class: "follows" }, sensor, ...rows, other)];
+  if (!el.entity) { out.push(h("p", { class: "fnote", text: "Choose a sensor, then an icon for each of its states." })); return out; }
+  out.push(field("Add", addStates(app, el, asked, word)));
+  return out;
+}
+
+/* The states not added yet, as chips with their icons; "Other state" for one never seen. Held back
+   (its space kept) while Home Assistant answers, so nothing flashes on a quick answer. */
+function addStates(app, el, asked, word) {
+  const doc = app.doc;
+  const box = h("div", { class: "chips follows-add", role: "group", "aria-live": "polite" });
+  const typed = () => {
+    const inp = h("input", { class: "inp", placeholder: "As Home Assistant says it", "aria-label": "A state it has", autocomplete: "off", spellcheck: "false" });
+    const done = (keep) => {
+      const st = inp.value.trim(), offered = (asked?.got || []).find((o) => o.state.toLowerCase() === st.toLowerCase());
+      inp.blur();
+      if (keep && st && !addState(el, offered?.state || st, offered?.icon)) { toast(`${word(st)} is already there.`); fill(); return; }
+      if (keep && st) doc.commit(); else fill();
+    };
+    inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); done(true); } if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done(false); } });
+    inp.addEventListener("blur", () => { if (inp.isConnected && !inp.value.trim()) fill(); });
+    return inp;
+  };
+  const fill = () => {
+    const got = asked?.got;
+    if (got === undefined) return;
+    const chips = suggestions(el, got).map((o) => h("button", { class: "chipbtn add", "aria-label": `Add ${o.word}`, onclick: () => { addState(el, o.state, o.icon); doc.commit(); } },
+      h("span", { class: "glyph mdi", "aria-hidden": "true", text: app.mdiGlyph(o.icon) }), o.word));
+    const more = h("button", { class: "chipbtn add", onclick: () => { const inp = typed(); more.replaceWith(inp); inp.focus(); } }, icon("plus", "xs"), "Other state");
+    const said = got === null ? `${asked.error || "Home Assistant didn't say what states it has."} Type one it has instead.`
+      : !got.length && !Object.keys(el.state_icons).length ? "Home Assistant doesn't list states for it. Type one it has." : "";
+    box.replaceChildren(...chips, more, said ? h("p", { class: "fnote", text: said }) : "");
+    box.classList.remove("waiting");
+  };
+  fill();
+  if (asked && asked.got === undefined) {
+    setTimeout(() => { if (asked.got === undefined && box.isConnected) { box.classList.add("waiting"); box.replaceChildren(h("span", { class: "fnote", text: "Looking up its states…" })); } }, 600);
+    asked.done.then(() => { if (box.isConnected) fill(); });
+  }
+  return box;
+}
+
+// What a sensor's states are (api/entity_states), kept a minute so redrawing the inspector doesn't blink.
+const statesAsked = new Map();
+function askStates(ent) {
+  const had = statesAsked.get(ent);
+  if (had && (had.got === undefined || Date.now() - had.at < 60000)) return had;
+  const entry = { at: Date.now(), got: had?.got, error: "", done: null };
+  entry.done = api("api/entity_states?entity=" + encodeURIComponent(ent))
+    .then((r) => { entry.got = r.body?.states || []; return entry; }, (e) => { entry.got = entry.got ?? null; entry.error = e.message; return entry; });
+  statesAsked.set(ent, entry);
+  return entry;
+}
+
 /* What a text or value shows. */
 function shows(app, el, set) {
-  const tpl = typeof el.value === "string" && /\{[{%]/.test(el.value);
-  // "Time": the add-on's own clock (binding show "now"), 12- or 24-hour as Settings › Time and language says.
-  const clockish = el.type === "text" && el.show === "now" && !el.entity && !tpl;
-  const source = clockish ? "clock" : el.entity && !el.value ? "sensor" : tpl ? "template" : el.value !== undefined && !el.entity ? "text" : el.entity ? "sensor" : el.type === "number" ? "sensor" : "text";
-  const s = section("Shows", h("div", { class: "field" }, h("span", { class: "lab", text: "From" }), seg([["text", "Text"], ["sensor", "Sensor"], ["clock", "Time"], ["template", "Template"]], source, (v) => {
-    if (v !== "clock" && el.show === "now") delete el.show;
-    if (v === "clock") { el.type = "text"; el.show = "now"; el.format = CLOCK_FORMATS.some(([f]) => f === el.format) ? el.format : "time"; delete el.value; delete el.entity; }
-    if (v === "text") { el.value = el.value && !/\{[{%]/.test(el.value) ? el.value : "Label"; delete el.entity; }
-    if (v === "sensor") { delete el.value; }
-    if (v === "template") { el.value = el.value && /\{[{%]/.test(el.value) ? el.value : `{{ states('${el.entity || "sensor.example"}') }}`; }
+  const source = sourceOf(el);
+  const s = section("Shows", h("div", { class: "field" }, h("span", { class: "lab", text: "From" }), seg(FROM, source, async (v) => {
+    if (v === source) return;
+    // A template starts from what it shows now, written out by the add-on (binding.as_template).
+    let template = "";
+    if (v === "template" && !isTemplate(el.value)) {
+      try { template = (await api("api/as_template", { method: "POST", body: { element: el } })).body?.template || ""; } catch (_) { /* its own words, below */ }
+    }
+    const pick = switchSource(el, v, { known: app.entMap, template });
     app.doc.commit();
+    // No sensor it reads (or more than one): ask for it straight away (the commit redrew the inspector).
+    if (pick) app.el.insp.querySelector(".shows-sensor")?.click();
   }, "Shows")));
   if (source === "clock") {
     s.append(field("Looks like", select(CLOCK_FORMATS, el.format || "time", (v) => set("format", v))),
@@ -205,13 +298,14 @@ function shows(app, el, set) {
     s.append(field("Template", textarea(el.value, (v) => set("value", v)), { wide: true, note: "Anything Home Assistant can render." }));
   } else {
     s.append(entityButton(app, el.entity, (id) => {
+      if (!id) return;
       // The unit follows the sensor when it was the old sensor's own (or none); words you typed stay.
       const was = String(app.entMap.get(el.entity)?.unit || "").trim(), mine = String(el.suffix || "").trim();
       el.entity = id;
       const e = app.entMap.get(id);
       if (el.type === "number" && (!mine || mine === was)) { if (e?.unit) el.suffix = e.unit === "%" ? "%" : " " + e.unit; else if (mine) delete el.suffix; }
       app.doc.commit();
-    }));
+    }, { cls: "shows-sensor" }));
     const show = el.show || "state";
     s.append(field("Show", select(SHOWS, show, (v) => {
       if (v === "unit") { showUnit(app, el); return; }
@@ -282,8 +376,6 @@ function replacements(app, el) {
   return wrap;
 }
 
-// The add-on's own clock's formats (render/binding.TIME_FORMATS); "time" follows the 12/24-hour setting.
-const CLOCK_FORMATS = [["time", "The time"], ["day_full", "Weekday and date"], ["day_date", "Short weekday and date"], ["date", "Date"], ["datetime", "Date and time"]];
 
 /* ---------- per-type settings for everything that isn't text ---------- */
 const F = {
