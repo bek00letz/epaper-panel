@@ -13,9 +13,10 @@ from __future__ import annotations
 
 import calendar
 import urllib.parse
-from datetime import datetime, timedelta
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
+import examples
 import health
 import live_data
 import runtime
@@ -206,29 +207,13 @@ async def _now(session) -> datetime:
         return datetime.now().astimezone()
 
 
-def _offline_bars(period: str, now: datetime, scale: float, signed: bool = False) -> list[float | None]:
-    import math
-    n, cur = slots(period, now), _slot(period, now)
-    out = []
-    for k in range(n):
-        if k > cur:
-            out.append(None)
-        elif period == "day":
-            sun = max(0.0, math.sin(math.pi * (k - 6) / 13)) if 6 <= k <= 19 else 0.0
-            out.append(round((0.4 - sun * 1.6 if signed else sun) * scale, 2))
-        else:
-            out.append(round(scale * (0.55 + 0.45 * abs(math.sin(k * 1.7))), 2))
-    return out
-
-
 @runtime.live(300)
 async def fetch_total(session, source="solar", entity="", period="month"):
     """{"total", "bars", "unit"}: a source's energy over the period so far (kWh), with a bar per hour, day or month."""
     period = period if period in PERIODS else "month"
     now = await _now(session)
     if not HA_TOKEN:
-        bars = _offline_bars(period, now, {"day": 1.2, "month": 9.0, "year": 260.0}[period])
-        return {"total": round(sum(b for b in bars if b), 1), "bars": bars, "unit": "kWh"}
+        return examples.total(period, now)
     if source == "entity":
         ids = [entity] if valid_entity_id(str(entity or "")) else []
     else:
@@ -279,7 +264,7 @@ async def fetch_grid_power(session, entity="", invert=False):
     """{"watts"}: what the grid gives right now (negative: you're selling), from the Energy
     dashboard's grid power, or one power sensor. None when there's no power sensor."""
     if not HA_TOKEN:
-        return {"watts": -1830.0}
+        return {"watts": examples.grid(datetime.now().astimezone())["watts"]}
     if entity:
         w = _watts(await _state(session, entity))
         return {"watts": None if w is None else (-w if invert else w)}
@@ -293,8 +278,8 @@ async def fetch_grid_hours(session, entity="", invert=False):
     grid energy (kWh, and today's net), or one power sensor's hourly average (kW)."""
     now = await _now(session)
     if not HA_TOKEN:
-        bars = _offline_bars("day", now, 1.0, signed=True)
-        return {"bars": bars, "today": round(sum(b for b in bars if b), 2), "unit": "kWh"}
+        ex = examples.grid(now)
+        return {"bars": ex["bars"], "today": ex["today"], "unit": ex["unit"]}
     if entity:
         rows = await statistics([entity], "day", now, types=("mean",), units={"power": "kW"})
         bars = [None if b is None else (-b if invert else b) for b in buckets(rows, "day", now, field="mean")]
@@ -319,7 +304,7 @@ async def fetch_cost(session):
     Energy dashboard's cost statistics, in Home Assistant's currency."""
     now = await _now(session)
     if not HA_TOKEN:
-        return {"today": 4.2, "month": 38.9, "currency": "EUR", "sells": True}
+        return dict(examples.COST)
     dash = await dashboard(session)
     flows = [f for g in dash.get("grid") or [] for f in g["flows"]]
     costs = [f["cost"] for f in flows if f["cost"]]

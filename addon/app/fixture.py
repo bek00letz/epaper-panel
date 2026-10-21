@@ -40,10 +40,11 @@ def fixture_todo(entity_id: str) -> dict | None:
     return {"entity": entity_id, "name": name, "items": out}
 
 
-def eval_fixture_template(tpl: str) -> str:
-    """Evaluate common HA templates against fixture.json when running offline."""
+def eval_fixture_template(tpl: str, own: bool = True) -> str:
+    """Evaluate common HA templates against fixture.json when running offline.
+    `own`: the add-on's own values count too (not for examples, which never show someone's data)."""
     states = dict(load_fixture().get("states", {}))
-    for eid, info in runtime.PUBLISHED.items():
+    for eid, info in (runtime.PUBLISHED.items() if own else ()):
         attrs = dict(info.get("attributes") or {})
         attrs["state"] = info.get("state", "")
         states[eid] = attrs

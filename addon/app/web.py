@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from aiohttp import web
 
+import examples
 import feeds
 import live_data
 from render import binding, epf, layout, sleep, stripmeta, subitems, theme as T
@@ -375,14 +376,6 @@ async def api_preview(request):
     if not isinstance(body, dict) or not isinstance(body.get("page") or {}, dict):
         raise web.HTTPBadRequest(text="expected {page}")
     page = body.get("page") or {}
-    view = load_layouts(_device(request)["id"])
-    try:
-        orient = int(body.get("orientation") if "orientation" in body else view.get("orientation", 0))
-    except (TypeError, ValueError):
-        orient = 0
-    if orient not in (0, 90, 180, 270):
-        orient = 0
-    display = body.get("display") or view.get("display", T.DEFAULT_DISPLAY)
     vals, tpls = split_page_values(page)
     if tpls:
         vals.update(await resolve_templates(runtime.SESSION, tpls))
@@ -392,6 +385,30 @@ async def api_preview(request):
     for i, el in enumerate(page.get("elements", [])):
         if el.get("type") in ("curve", "bar_chart") and el.get("entity"):
             series[i] = await curve_series(runtime.SESSION, el["entity"], as_int(el.get("hours"), 24))
+    return await _drawn(request, body, page, vals, series)
+
+
+async def api_example(request):
+    """A page drawn with example values only (examples.py), for preset thumbnails: never the person's own
+    data, and nothing asked of Home Assistant, the internet or a data source. Same body as /api/preview."""
+    body = await _json(request)
+    if not isinstance(body, dict) or not isinstance(body.get("page") or {}, dict):
+        raise web.HTTPBadRequest(text="expected {page}")
+    page = body.get("page") or {}
+    vals, series = await asyncio.to_thread(examples.page_values, page)
+    return await _drawn(request, body, page, vals, series)
+
+
+async def _drawn(request, body: dict, page: dict, vals: dict, series: dict):
+    """A preview's PNG at the device's size and orientation, with the text sizes it got (X-Metrics)."""
+    view = load_layouts(_device(request)["id"])
+    try:
+        orient = int(body.get("orientation") if "orientation" in body else view.get("orientation", 0))
+    except (TypeError, ValueError):
+        orient = 0
+    if orient not in (0, 90, 180, 270):
+        orient = 0
+    display = body.get("display") or view.get("display", T.DEFAULT_DISPLAY)
     metrics = []
     try:
         dist = float(body.get("distance") or 3.0)
@@ -1003,6 +1020,7 @@ def make_apps():
         web.get("/api/airport", api_airport),
         web.get("/api/energy", api_energy),
         web.post("/api/preview", api_preview),
+        web.post("/api/example", api_example),
         web.post("/api/push", api_push),
         web.get("/api/sources", api_sources_get),
         web.put("/api/sources", api_sources_put),

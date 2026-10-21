@@ -1,10 +1,13 @@
 """The 0.15 widgets: what each shows, at every size a screen can have."""
 import asyncio
+import io
 import urllib.parse
 import unittest.mock
 import unittest
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
+
+from PIL import Image
 
 import support  # noqa: F401
 
@@ -240,6 +243,7 @@ class TestEnergyCost(Sizes, unittest.TestCase):
         self.assertGreater(ink(render(self.element, {"today": None, "month": None, "missing": "prices"})), 200)
 
 
+import web  # noqa: E402
 from test_editor_api import EditorClient  # noqa: E402
 
 
@@ -460,3 +464,51 @@ class TestEntitiesForPresets(EditorClient):
         self.assertEqual(rows["sensor.cat_location"]["device_class"], "")
         for eid in ("calendar.family", "calendar.bins", "calendar.tv", "weather.forecast_home", "media_player.living_room"):
             self.assertIn(eid, rows)
+
+
+# ---------------------------------------------------------------- example thumbnails
+
+import examples  # noqa: E402
+
+EVERY_WIDGET = [
+    {"type": "number", "entity": "sensor.solar_today_production", "show": "state", "x": 10, "y": 10, "w": 200, "h": 60},
+    {"type": "sun_times"}, {"type": "energy_total", "source": "solar", "period": "month"}, {"type": "grid_now"},
+    {"type": "energy_cost"}, {"type": "now_playing", "entity": "media_player.living_room"},
+    {"type": "tv_week", "entity": "calendar.tv"}, {"type": "weather_forecast", "entity": "weather.forecast_home"},
+    {"type": "todo_list", "entity": "todo.chores"}, {"type": "flight_tracker"},
+    {"type": "sports_match", "league": "basketball/nba"}, {"type": "sports_racing", "series": "nascar"},
+    {"type": "curve", "entity": "sensor.solar_pv_power"},
+]
+
+
+class TestExamples(EditorClient):
+    async def test_every_widget_has_an_example_and_nothing_is_asked_of_anyone(self):
+        import ha
+        import runtime
+        runtime.PUBLISHED["sensor.solar_today_production"] = {"state": "99.9", "attributes": {}}   # the person's own
+        boom = unittest.mock.AsyncMock(side_effect=AssertionError("an example asked Home Assistant or the internet"))
+        try:
+            with unittest.mock.patch.object(ha, "ha_json", boom), unittest.mock.patch.object(ha, "ha_template", boom), \
+                 unittest.mock.patch.object(runtime, "HASS", unittest.mock.Mock(ws=boom)), \
+                 unittest.mock.patch.object(runtime, "SESSION", unittest.mock.Mock(get=boom, request=boom)), \
+                 unittest.mock.patch.object(web, "enrich_page_values", boom), \
+                 unittest.mock.patch.object(web, "resolve_templates", boom), \
+                 unittest.mock.patch.object(web, "curve_series", boom):
+                for el in EVERY_WIDGET[1:]:
+                    page = {"elements": [{"x": 24, "y": 14, "w": 744, "h": 208, "show_if": "{{ false }}", **el}]}
+                    vals, _ = examples.page_values(page)
+                    self.assertIsNotNone(vals.get(0) if el["type"] != "curve" else True, el["type"])
+                    r = await self.ed.post("/api/example", json={"page": page})
+                    self.assertEqual(r.status, 200, el["type"])
+                    img = Image.open(io.BytesIO(await r.read())).convert("1")
+                    self.assertGreater(ink(img), 300, f"{el['type']} drew no example")
+                vals, _ = examples.page_values({"elements": EVERY_WIDGET[:1]})
+                self.assertEqual(vals[0], "10.6")                     # the fixture's, never the person's 99.9
+        finally:
+            runtime.PUBLISHED.pop("sensor.solar_today_production", None)
+
+    def test_each_league_and_series_has_its_own(self):
+        self.assertEqual(examples.match("basketball/nba")["home_team"], "LAKERS")
+        self.assertIn("'", examples.match("soccer/eng.1")["clock"])
+        self.assertEqual(examples.race("indycar")["series"], "INDYCAR")
+        self.assertEqual(examples.race("nascar")["standings"][0]["driver"], "LAR")

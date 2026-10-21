@@ -91,7 +91,9 @@
   made-up weather (8.5° and rain). It now stays empty until the real
   weather is back, like every other value. Race weekend and Match did the
   same with a made-up race and match, before their results arrived or
-  when there were none; they now stay empty too.
+  when there were none, and Planes overhead with two made-up aircraft;
+  they now stay empty too. The examples live in one place and are only
+  used for the New page sheet's pictures.
 - **New to watch connects Jellyfin where you add it.** The address and
   API key are tried before anything is saved, with a plain answer when
   something's wrong (the key, the address, or not Jellyfin at all), and

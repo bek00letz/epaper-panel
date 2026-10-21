@@ -5,8 +5,9 @@ a render never waits on Home Assistant. Without a token (running offline),
 example values from render/fixture.json stand in.
 """
 import json
-from datetime import datetime, timedelta
+from datetime import datetime
 
+import examples
 import runtime
 from config import HA_TOKEN, valid_entity_id
 from ha import ha_template
@@ -26,22 +27,11 @@ async def _json_template(session, tpl):
     return json.loads(out)
 
 
-def _offline_sun() -> dict:
-    now = datetime.now().astimezone()
-    rise = now.replace(hour=7, minute=41, second=0, microsecond=0)
-    set_ = now.replace(hour=18, minute=22, second=0, microsecond=0)
-    if rise <= now:
-        rise += timedelta(days=1)
-    if set_ <= now:
-        set_ += timedelta(days=1)
-    return {"rising": rise.isoformat(), "setting": set_.isoformat()}
-
-
 @runtime.live(300)
 async def fetch_sun(session):
     """{"rising", "setting"}: Home Assistant's next sunrise and sunset, in its time zone ("" if it has no sun)."""
     if not HA_TOKEN:
-        return _offline_sun()
+        return examples.sun(datetime.now().astimezone())
     got = await _json_template(session, SUN_TEMPLATE)
     return {"rising": str(got.get("rising") or ""), "setting": str(got.get("setting") or "")}
 
@@ -79,9 +69,7 @@ async def fetch_now_playing(session, entities=()):
     """What's playing, latest started first: [{"entity", "player", "title", "artist", "series",
     "season", "episode", "kind", "app", "since"}]. [] when nothing plays."""
     if not HA_TOKEN:
-        return [{"entity": "media_player.living_room", "player": "Living room", "title": "Clair de lune",
-                 "artist": "Debussy", "series": "", "season": "", "episode": "", "kind": "music", "app": "",
-                 "since": datetime.now().astimezone().isoformat()}]
+        return list(examples.PLAYING)
     got = await _json_template(session, _now_playing_template(list(entities)))
     rows = [r for r in got if isinstance(r, dict)] if isinstance(got, list) else []
     rows.sort(key=lambda r: str(r.get("since") or ""), reverse=True)
@@ -94,9 +82,6 @@ async def episodes(session, entity, days=7):
     """A calendar of shows' events for the next days (sources.ha_services, in the background).
     Offline, example episodes."""
     if not HA_TOKEN:
-        now = datetime.now().astimezone().replace(minute=0, second=0, microsecond=0)
-        shows = [("Severance - S02E05 - Trojan's Horse", 0, 21), ("The Bear - S04E01 - Groundhog", 2, 9),
-                 ("Slow Horses - S05E03 - Tall Tales", 4, 3)]
-        return [{"summary": s, "start": (now.replace(hour=hr) + timedelta(days=dd)).isoformat()} for s, dd, hr in shows]
+        return examples.episodes(datetime.now().astimezone())
     from sources.ha_services import fetch_calendar_events
     return await fetch_calendar_events(session, entity, days=days)

@@ -1648,32 +1648,7 @@ def _draw_flight_tracker(img, d, el, raw_val, display=None):
         aircraft_list = [val_parsed]
 
     if not aircraft_list and raw_val is None:
-        aircraft_list = [
-            {
-                "callsign": "BAW71LK",
-                "country": "United Kingdom • British Airways",
-                "icao24": "40089A",
-                "distance_km": 8.4,
-                "bearing_deg": 225.0,
-                "bearing_cardinal": "SW",
-                "altitude_m": 10370,
-                "velocity_ms": 233.2,
-                "track_deg": 302,
-                "vertical_rate": 0.0
-            },
-            {
-                "callsign": "THY41Y",
-                "country": "Turkey • Turkish Airlines",
-                "icao24": "4BA982",
-                "distance_km": 19.2,
-                "bearing_deg": 45.0,
-                "bearing_cardinal": "NE",
-                "altitude_m": 11887,
-                "velocity_ms": 253.3,
-                "track_deg": 140,
-                "vertical_rate": -1.5
-            }
-        ]
+        return                        # not fetched yet: never made-up aircraft (examples.py has them)
 
     style = str(el.get("style") or "card").lower()
     loc_name = str(el.get("location_name") or el.get("name") or "").strip()
