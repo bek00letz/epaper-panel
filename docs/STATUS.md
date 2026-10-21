@@ -77,6 +77,18 @@ The New page presets plan shipped in 0.15.0.
    NBA season brings 30+ game pages). Today extras are shared out silently
    apart from sensor.epaper_panel_pages; the editor should say what's left out.
 
+**ESPHome 2026.10.0 (checked 21 Oct):** our firmware builds with it, 5.79" and
+2.9", no new warnings. It switches off TLS a device doesn't need, but ours
+keeps HTTPS (client only; ECDHE kept; plain-RSA key exchange and session
+tickets dropped), so tunnels like Cloudflare and Home Assistant Cloud still
+work; a very old proxy offering only RSA key exchange wouldn't. Release checks
+still compile with 2026.9.1 locally. Worth a look: devices that dial Home
+Assistant themselves (#18919, could let a panel away from home keep its
+Home Assistant link and be woken), the device onboarding wizard (#19966, the
+browser setup's open question), suspend_loop / loop_interval (#18136, power),
+and ESPHome's own epaper_spi driver (could replace the unlicensed ESPBoards
+driver where it supports our controllers).
+
 **Waiting on hardware:** a TRMNL (pairing, pictures, HTTPS, battery); a
 second CrowPanel side by side; a 4.2" or 2.9" CrowPanel (they build, untried;
 the 4.2"'s UC8276 revision isn't supported); a battery reading on a CrowPanel
