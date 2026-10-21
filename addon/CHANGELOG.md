@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.17.0
+Add-on only; no firmware change, so nothing to reinstall on the panel.
+
+In short: any icon can change with a sensor, with its own icon and look
+(plain, inverted or outlined) for each state; a text's "From" switches from
+any choice to any other; no switcher in the inspector cuts off a choice.
+The details:
 - **Any icon can change with a sensor.** Select an icon and turn on
   "Changes with a sensor" in its Icon section, pick the sensor, then tap
   the states you want: each comes with Home Assistant's own icon for it,

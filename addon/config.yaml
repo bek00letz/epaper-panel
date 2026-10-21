@@ -1,5 +1,5 @@
 name: e-Paper Panel
-version: "0.16.0"
+version: "0.17.0"
 slug: epaper_panel
 description: 'Your Home Assistant on e-paper: Elecrow CrowPanels (5.79", 4.2", 2.9") and TRMNL devices, with a visual editor'
 url: https://github.com/bek00letz/epaper-panel
