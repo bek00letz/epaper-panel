@@ -78,9 +78,11 @@
 - **Weather from your own station.** The Weather page can take what it
   says about now (temperature, humidity, wind) from your station's own
   weather entity or from single sensors, while highs, lows and the coming
-  days stay with the forecast. With a rain sensor, the big icon shows rain
-  whenever it's raining at your house, whatever the forecast says. With a
-  pressure sensor, it says when pressure is rising or falling. A solar
+  days stay with the forecast. With a rain sensor (one that measures rain
+  per hour, or is on while it rains; a "rain today" total can't say it's
+  raining now), the big icon shows rain whenever it's raining at your
+  house, whatever the forecast says. With a pressure sensor in any unit
+  (hPa, kPa, inHg, mmHg), it says when pressure is rising or falling. A solar
   radiation sensor can decide sunny or cloudy in the daytime, but only if
   you choose one: a station in the shade would read cloudy in full sun.
 - **Fixed:** the Weather page drew over itself on the 4.2" and 2.9": the

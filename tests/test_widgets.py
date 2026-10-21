@@ -339,7 +339,13 @@ class TestStation(unittest.TestCase):
         self.assertEqual(station.raining({"state": "0.0", "attributes": {"unit_of_measurement": "mm/h"}}), None)
         self.assertEqual(station.raining({"state": "1.2", "attributes": {"unit_of_measurement": "mm/h"}}), "rainy")
         self.assertEqual(station.raining({"state": "0.4", "attributes": {"unit_of_measurement": "in/h"}}), "pouring")
-        self.assertEqual(station.raining({"state": "on"}), "rainy")
+        self.assertEqual(station.raining({"state": "on"}, "binary_sensor.rain"), "rainy")
+        self.assertEqual(station.raining({"state": "off"}, "binary_sensor.rain"), None)
+        # A total after one shower would say rain all day: never.
+        self.assertEqual(station.raining({"state": "3.2", "attributes": {"unit_of_measurement": "mm"}}), None)
+        self.assertEqual(station.rain_problem("sensor.rain_today", "mm"), station.RAIN_TOTAL)
+        self.assertEqual(station.rain_problem("sensor.rain_rate", "mm/h"), "")
+        self.assertEqual(station.rain_problem("binary_sensor.raining", ""), "")
         self.assertEqual(station.raining({"state": "unavailable"}), None)
 
     def test_sky_from_sunlight_only_when_the_sun_is_up_enough(self):
@@ -357,7 +363,10 @@ class TestStation(unittest.TestCase):
         self.assertEqual(station.trend(rows("1012.0", "1009.5"), now), "falling")
         self.assertEqual(station.trend(rows("1009.0", "1011.0"), now), "rising")
         self.assertEqual(station.trend(rows("1011.0", "1011.4"), now), "steady")
-        self.assertEqual(station.trend(rows("29.90", "29.80"), now), "falling")       # inHg
+        self.assertEqual(station.trend(rows("29.90", "29.80"), now, "inHg"), "falling")
+        self.assertEqual(station.trend(rows("101.3", "101.0"), now, "kPa"), "falling")    # 3 hPa, once read as 0.3
+        self.assertEqual(station.trend(rows("760.0", "758.0"), now, "mmHg"), "falling")
+        self.assertIsNone(station.trend(rows("1", "5"), now, "°C"))
         self.assertIsNone(station.trend(rows("1011", "1012")[1:], now))
 
     def test_now_goes_over_the_forecast_and_the_days_stay(self):

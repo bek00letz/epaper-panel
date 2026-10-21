@@ -32,6 +32,10 @@ SENSORS = ("temperature_sensor", "humidity_sensor", "wind_sensor", "rain_sensor"
 TREND_HOURS = 3
 TREND_HPA = 1.0              # less than this over three hours is steady
 POURING_MM_H = 7.6           # heavy rain, by the usual definition
+# A barometer's units, as hectopascals.
+TO_HPA = {"hpa": 1.0, "mbar": 1.0, "mb": 1.0, "kpa": 10.0, "pa": 0.01, "inhg": 33.8639, "mmhg": 1.33322, "psi": 68.9476}
+RAIN_TOTAL = ("This sensor counts rain over a day or longer, so it can't say whether it's raining now. "
+              "Choose one that measures rain per hour (mm/h or in/h), or a sensor that's on while it rains.")
 SKY_MIN_ELEVATION = 10.0     # below this the clear-sky estimate is too rough to judge by
 
 
@@ -74,21 +78,42 @@ def sky(radiation: float | None, elevation: float | None) -> str | None:
     return "partlycloudy" if share >= 0.35 else "cloudy"
 
 
-def raining(state: dict | None) -> str | None:
-    """"pouring" or "rainy" while a rain sensor says it rains (a rate above 0, or on); None otherwise."""
+def is_rate(unit: str) -> bool:
+    """A rain unit per hour ("mm/h", "in/h", "mm/hr")."""
+    return str(unit or "").strip().lower().replace(" ", "").endswith(("/h", "/hr"))
+
+
+def rain_problem(entity_id: str, unit: str) -> str:
+    """Why a sensor can't say whether it's raining now ("" when it can): a rate per hour, or on/off, can."""
+    if str(entity_id or "").startswith("binary_sensor.") or is_rate(unit):
+        return ""
+    return RAIN_TOTAL
+
+
+def raining(state: dict | None, entity_id: str = "") -> str | None:
+    """"pouring" or "rainy" while a rain sensor says it rains now: a rate above 0, or on. A total
+    ("rain today") never counts: after one shower it would say rain all day."""
     if not state:
         return None
-    if str(state.get("state")).lower() == "on":
-        return "rainy"
+    if entity_id.startswith("binary_sensor.") or str(state.get("state")).lower() in ("on", "off"):
+        return "rainy" if str(state.get("state")).lower() == "on" else None
+    if not is_rate(_unit(state)):
+        return None
     rate = _number(state)
     if rate is None or rate <= 0:
         return None
-    per_hour = rate * 25.4 if _unit(state).startswith("in") else rate
+    per_hour = rate * 25.4 if _unit(state).strip().lower().startswith("in") else rate
     return "pouring" if per_hour >= POURING_MM_H else "rainy"
 
 
-def trend(rows: list[dict], now: datetime) -> str | None:
-    """"rising", "falling" or "steady" from a pressure sensor's last three hours (hPa, mbar or inHg)."""
+def hpa(value: float, unit: str) -> float | None:
+    """A pressure in hectopascals, by its unit; None for a unit that isn't a pressure."""
+    factor = TO_HPA.get(str(unit or "").strip().lower().replace(" ", ""))
+    return None if factor is None else value * factor
+
+
+def trend(rows: list[dict], now: datetime, unit: str = "hPa") -> str | None:
+    """"rising", "falling" or "steady" from a pressure sensor's last three hours, in its own unit."""
     pts = []
     for r in rows or []:
         try:
@@ -97,9 +122,9 @@ def trend(rows: list[dict], now: datetime) -> str | None:
             continue
     if len(pts) < 2 or (now - pts[0][0]) < timedelta(hours=TREND_HOURS * 0.6):
         return None                      # not enough history to say
-    delta = pts[-1][1] - pts[0][1]
-    if pts[-1][1] < 40:                  # inHg
-        delta *= 33.8639
+    delta = hpa(pts[-1][1] - pts[0][1], unit)
+    if delta is None:
+        return None
     if abs(delta) < TREND_HPA:
         return "steady"
     return "rising" if delta > 0 else "falling"
@@ -145,7 +170,7 @@ async def fetch_station(session, **sources):
         if seen:
             out["condition"] = seen
     if sources.get("rain_sensor"):
-        wet = raining(await _state(session, sources["rain_sensor"]))
+        wet = raining(await _state(session, sources["rain_sensor"]), sources["rain_sensor"])
         if wet:
             out["condition"] = wet
     if sources.get("pressure_sensor"):
@@ -153,8 +178,9 @@ async def fetch_station(session, **sources):
         start = urllib.parse.quote((now - timedelta(hours=TREND_HOURS)).isoformat(), safe=":+")
         eid = urllib.parse.quote(sources["pressure_sensor"], safe=".")
         try:
+            unit = _unit(await _state(session, sources["pressure_sensor"]))      # history comes without it
             rows = await ha_json(session, f"/history/period/{start}?filter_entity_id={eid}&minimal_response&no_attributes")
-            got = trend(rows[0] if rows else [], now)
+            got = trend(rows[0] if rows else [], now, unit or "hPa")
             if got:
                 out["pressure_trend"] = got
         except Exception:
