@@ -1,3 +1,5 @@
+import { widget, widgets, isWidgetType } from "./catalog.js";
+
 // Element types, their starting values, their names, and the geometry of each
 // panel model. Panel pixels throughout: the numbers come from theme.py.
 
@@ -18,6 +20,7 @@ export function geometry(spec) {
   return { d, W: c.w, H: c.h, portrait, footer: c.band, safeH: c.h - c.band, margin: c.margin, mmPerPx: d.mm_w / d.w };
 }
 
+// The basic elements. A widget's name and icon come from its descriptor (catalog.js, applyCatalog).
 export const TYPES = {
   number: { name: "Value", icon: "value" },
   text: { name: "Text", icon: "text" },
@@ -28,21 +31,6 @@ export const TYPES = {
   curve: { name: "Sparkline", icon: "wave" },
   bar_chart: { name: "Bar chart", icon: "chart" },
   qr: { name: "QR code", icon: "qr" },
-  weather_forecast: { name: "Weather", icon: "cloud" },
-  dynamic_grid: { name: "Devices", icon: "grid" },
-  calendar_month: { name: "Month", icon: "calendar" },
-  calendar_agenda: { name: "Agenda", icon: "list" },
-  todo_list: { name: "To-do list", icon: "todo" },
-  flight_tracker: { name: "Flights", icon: "plane" },
-  sports_racing: { name: "Racing", icon: "flag" },
-  sports_match: { name: "Scores", icon: "ball" },
-  sun_times: { name: "Sunrise and sunset", icon: "sun" },
-  countdown: { name: "Countdown", icon: "calendar" },
-  energy_total: { name: "Energy total", icon: "chart" },
-  grid_now: { name: "Grid now", icon: "plug" },
-  energy_cost: { name: "Energy cost", icon: "value" },
-  now_playing: { name: "Now playing", icon: "play" },
-  tv_week: { name: "On TV this week", icon: "calendar" },
   group: { name: "Group", icon: "layers" },
 };
 export const GROUP_STYLES = [["outline", "Outline"], ["pill", "Pill"], ["invert", "Inverted"]];
@@ -61,11 +49,17 @@ export function groupBox(group, els) {
 export const INSERT_GROUPS = [
   ["Basics", ["text", "number", "icon", "box", "line"]],
   ["Charts", ["bar", "curve", "bar_chart"]],
-  ["Widgets", ["weather_forecast", "sun_times", "countdown", "energy_total", "grid_now", "energy_cost", "now_playing", "tv_week", "calendar_month", "calendar_agenda", "todo_list", "dynamic_grid", "flight_tracker", "sports_racing", "sports_match", "qr"]],
+  ["Widgets", ["qr"]],                                         // and every widget the add-on describes, first
 ];
-export const WIDGETS = ["dynamic_grid", "calendar_month", "calendar_agenda", "todo_list", "weather_forecast", "flight_tracker", "sports_racing", "sports_match", "sun_times", "countdown", "energy_total", "grid_now", "energy_cost", "now_playing", "tv_week"];
-export const BREAKABLE = ["weather_forecast", "flight_tracker", "calendar_agenda", "sports_match", "sports_racing"];
-export const isWidget = (el) => WIDGETS.includes(el.type);
+// Widgets are the add-on's (catalog.js): is it one, and can it be broken apart.
+export const isWidget = (el) => isWidgetType(el?.type);
+export const breakable = (el) => !!widget(el?.type)?.breakable;
+
+/* The catalog arrived: its widgets join the types (name, icon) and Insert › Widgets, in its order. */
+export function applyCatalog() {
+  for (const [type, w] of Object.entries(widgets())) TYPES[type] = { name: w.name, icon: w.icon };
+  INSERT_GROUPS[2][1] = [...Object.keys(widgets()), "qr"];
+}
 export const hasText = (el) => el.type === "text" || el.type === "number";
 
 /* A new element of a type, placed sensibly on this panel (from the 0.9 palette). */
@@ -81,23 +75,14 @@ export function makeElement(t, g) {
   if (t === "curve") Object.assign(base, { entity: "", hours: 24 });
   if (t === "bar_chart") Object.assign(base, { y: 36, w: Math.min(320, maxW), h: 140, entity: "", hours: 24, bars: 12, title: "Last 24 hours", show_labels: true, show_border: false });
   if (t === "qr") Object.assign(base, { y: 26, w: 148, h: 172, value: "https://www.home-assistant.io", title: "Scan me", show_border: false });
-  if (t === "dynamic_grid") Object.assign(base, { y: 16, w: maxW, h: g.safeH - 24, header_icon: "mdi:lightning-bolt", header_title: "On now", filter_state: "on", layout_mode: "grid", show_labels: "both", icon_size: "auto", secondary_mode: "runtime", items: [{ entity: "", name: "Spot 1", icon: "mdi:radiator" }, { entity: "", name: "Spot 2", icon: "mdi:radiator" }] });
-  if (t === "calendar_month") Object.assign(base, { x: 20, y: 14, w: Math.min(360, maxW), h: Math.min(230, g.safeH - 20), show_header: true, show_weekdays: true, first_weekday: 0, highlight_today: true, show_border: true, entity: "" });
-  if (t === "calendar_agenda") Object.assign(base, { x: m, y: 14, w: Math.min(380, maxW), h: Math.min(230, g.safeH - 20), title: "Coming up", max_events: 4, show_border: true, entity: "" });
-  if (t === "todo_list") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20, entity: "" });
-  // No guessed entity: with none, the add-on shows the first weather Home Assistant has.
-  if (t === "weather_forecast") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20, entity: "", show_border: true });
-  if (t === "flight_tracker") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20, radius: 35, style: "card", show_border: true });
-  if (t === "sports_racing") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20, series: "f1", entity: "", show_border: true });
-  if (t === "sports_match") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20, league: "soccer/eng.1", team: "", entity: "", show_border: true });
-  // The widgets that size everything from their own box (render/hero.py): the content area.
-  if (t === "sun_times") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20, style: "next" });
-  if (t === "countdown") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20, to: "date", name: "", at: "", yearly: false });
-  if (t === "energy_total") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20, source: "solar", entity: "", period: "month" });
-  if (t === "grid_now") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20, entity: "", invert: false });
-  if (t === "energy_cost") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20 });
-  if (t === "now_playing") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20, entity: "" });
-  if (t === "tv_week") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20, entity: "", days: 7 });
+  // A widget: its descriptor's box (fill: the content area less its inset) and starting settings.
+  const w = widget(t);
+  if (w) {
+    const bx = w.box || {};
+    const box = bx.fill ? { x: m, y: bx.y ?? 14, w: maxW, h: g.safeH - (bx.inset ?? 20) }
+      : { x: bx.x === "margin" ? m : bx.x ?? m, y: bx.y ?? 14, w: Math.min(bx.w ?? maxW, maxW), h: Math.min(bx.h ?? g.safeH - 20, g.safeH - (bx.y ?? 14)) };
+    Object.assign(base, box, JSON.parse(JSON.stringify(w.defaults || {})));
+  }
   base.x = Math.max(0, Math.min(g.W - base.w, base.x));
   base.y = Math.max(0, Math.min(g.H - base.h, base.y));
   return base;

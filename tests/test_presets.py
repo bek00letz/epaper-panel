@@ -45,9 +45,34 @@ def top_level(args):
     return out + [cur]
 
 
+_CATALOG = None
+
+
+def catalog_json():
+    """The add-on's own catalog (GET /api/catalog), as the editor reads it at its start."""
+    global _CATALOG
+    if _CATALOG is None:
+        import asyncio
+        import web
+        from aiohttp.test_utils import TestClient, TestServer
+
+        async def get():
+            _, editor = web.make_apps()
+            client = TestClient(TestServer(editor))
+            await client.start_server()
+            try:
+                return await (await client.get("/api/catalog")).json()
+            finally:
+                await client.close()
+        _CATALOG = asyncio.run(get())
+    return _CATALOG
+
+
 def run_js(body):
-    script = (f"import * as P from {json.dumps(str(APP_JS / 'presets.js'))};"
-              f"import * as L from {json.dumps(str(APP_JS / 'legacy.js'))};\n{body}")
+    script = (f"import * as Cat from {json.dumps(str(APP_JS / 'catalog.js'))};"
+              f"import * as P from {json.dumps(str(APP_JS / 'presets.js'))};"
+              f"import * as L from {json.dumps(str(APP_JS / 'legacy.js'))};"
+              f"Cat.setCatalog({json.dumps(catalog_json())});\n{body}")
     out = subprocess.run(["node", "--input-type=module", "-e", script], capture_output=True, text=True, check=True)
     return json.loads(out.stdout)
 
@@ -93,16 +118,11 @@ class TestCatalogue(unittest.TestCase):
     def test_sunrise_and_sunset_in_its_two_styles(self):
         p = self.by_id["sun_times"]
         self.assertEqual([l["name"] for l in p["looks"]], ["Next one first", "Both alike"])
-        styles = [l["page"]["elements"][0]["style"] for l in p["looks"]]
-        try:
-            from render import sun                  # widgets-015's renderer, once both are merged
-        except ImportError:
-            sun = None
-        self.assertEqual(styles, list(sun.STYLES) if sun else ["next", "both"])
+        from render import sun
+        self.assertEqual([l["page"]["elements"][0]["style"] for l in p["looks"]], list(sun.STYLES))
         self.assertEqual(p["asks"], "", "nothing to set up: Home Assistant's own sun")
-        src = (APP_JS / "inspector.js").read_text()
-        self.assertIn('sun_times: [F.sel("style", "Style", [["next", "Next one first"], ["both", "Both alike"]], "next")],', src)
-
+        style = next(f for f in catalog_json()["widgets"]["sun_times"]["fields"] if f["key"] == "style")
+        self.assertEqual([o[0] for o in style["options"]], list(sun.STYLES), "the inspector's choices are the descriptor's")
     def test_the_to_do_list_in_its_three_styles_by_urgency_first(self):
         p = self.by_id["to_do"]
         self.assertEqual(p["group"], "day")
@@ -122,44 +142,47 @@ class TestCatalogue(unittest.TestCase):
         self.assertEqual(found, ["status", "dynamic_status", "race_weekend", "race_weekend", "planes", "match", "to_do"])
 
     def test_scores_names_each_event_in_its_sports_own_word(self):
-        """The user's call: Scores, not Match; and a Premier League match is never a game."""
+        """The user's call: Scores, not Match; and a Premier League match is never a game. The words
+        are the add-on's (catalog: render/sport.py), the editor has none of its own."""
         p = self.by_id["match"]
         self.assertEqual((p["title"], p["was"]), ("Scores", "Match score"))
-        words = run_js("""console.log(JSON.stringify(Object.fromEntries(P.LEAGUES.map(([l, n]) => [n, P.sportWord(l)]))))""")
-        self.assertEqual({n for n, w in words.items() if w == "match"},
-                         {"Premier League", "Champions League", "La Liga", "Bundesliga", "Serie A", "MLS"})
-        self.assertEqual({n for n, w in words.items() if w == "game"}, {"NBA", "WNBA", "NFL", "College football", "MLB", "NHL"})
+        words = run_js("""console.log(JSON.stringify(Object.fromEntries(Cat.leagues().map((l) => [l.name, Cat.sportWord(l.path)]))))""")
+        self.assertEqual(words["Premier League"], "match")
+        self.assertEqual(words["NBA"], "game")
         notes = run_js('console.log(JSON.stringify(P.presetById("match").looks.map((l) => l.note)))')
         self.assertEqual(notes[0], "Shows on match days.")
         self.assertIn("Shows on game days.", notes)
-        self.assertNotRegex(p["looks"][0]["page"]["elements"][0].get("title", ""), "(?i)match|game")
-        js = (APP_JS / "inspector.js").read_text()
-        self.assertIn('{ kind: "window", label: (el) => `Only show on ${sportWord(el.league)} days` }', js)
-        self.assertIn('sports_match: { name: "Scores", icon: "ball" },', (APP_JS / "elements.js").read_text())
-        desc = p["looks"][0]["page"] and run_js('console.log(JSON.stringify(P.presetById("match").desc))')
+        window = next(f for f in catalog_json()["widgets"]["sports_match"]["fields"] if f["kind"] == "window")
+        self.assertIn("{event}", window["label"])
+        self.assertIn('out.label = (el) => f.label.replace("{event}", sportWord(el.league));', (APP_JS / "inspector.js").read_text())
+        desc = run_js('console.log(JSON.stringify(P.presetById("match").desc))')
         self.assertNotRegex(desc, r"(?i)\b(match|game)|kick-off|whistle", "the preset itself stays neutral")
         self.assertEqual(run_js('console.log(JSON.stringify(P.search("match score")[0].id))'), "match")
-
     def test_the_editor_and_the_panel_use_the_same_words(self):
-        try:
-            from render import sport                 # widgets-015's, once both are merged
-        except ImportError:
-            self.skipTest("the panel's words arrive with widgets-015")
+        from render import sport
         keys = list(sport.SPORTS) + ["unknown"]
-        got = run_js(f"console.log(JSON.stringify({json.dumps(keys)}.map((k) => P.sportWord(k + '/x'))))")
+        got = run_js(f"console.log(JSON.stringify({json.dumps(keys)}.map((k) => Cat.sportWord(k + '/x'))))")
         self.assertEqual(got, [sport.words(k + "/x").event for k in keys])
-
+        src = (APP_JS / "presets.js").read_text()
+        self.assertNotIn("SPORT_WORDS", src, "no copy of the table")
     def test_every_league_and_series_the_add_on_fetches(self):
-        leagues = run_js("console.log(JSON.stringify(P.LEAGUES.map(([l]) => l)))")
-        self.assertEqual(set(leagues), {k for k in sports.LEAGUE_SLUGS if "/" in k})
-        series = run_js("console.log(JSON.stringify(P.SERIES.map(([s]) => s)))")
-        self.assertEqual(sorted({racing.series_slug(s)[0] for s in series}), sorted(series), "each series names its own sensor")
-
+        """Framework review #5: what's offered is the add-on's own list, both ways round."""
+        got = run_js("""console.log(JSON.stringify([P.presetById("match").looks.map((l) => l.name), P.presetById("race_weekend").looks.map((l) => l.name)]))""")
+        self.assertEqual(got[0], [lg.name for lg in sports.LEAGUES])
+        self.assertEqual(got[1], [s.title for s in racing.SERIES.values()])
+        for name in ("presets.js", "legacy.js", "inspector.js"):
+            src = (APP_JS / name).read_text()
+            for copy in ("LEAGUE_TO_SLUG", "export const LEAGUES", "export const SERIES", '"premier_league"', '"nascar-premier"'):
+                self.assertNotIn(copy, src, f"{name} keeps no copy: {copy}")
     def test_the_inspector_offers_the_same_leagues_and_series(self):
         src = (APP_JS / "inspector.js").read_text()
-        self.assertIn('F.sel("league", "League", LEAGUES, "soccer/eng.1")', src)
-        self.assertIn('F.sel("series", "Series", SERIES, "f1")', src)
-
+        self.assertIn('if (f.options === "leagues") out.options = leagueOptions();', src)
+        self.assertIn('if (f.options === "series") out.options = seriesOptions();', src)
+        got = run_js("console.log(JSON.stringify([Cat.leagueOptions().length, Cat.seriesOptions().map(([s]) => s)]))")
+        self.assertEqual(got, [len(sports.LEAGUES), list(racing.SERIES)])
+        sensors = run_js("""console.log(JSON.stringify([L.getWidgetSensorId({ type: "sports_racing", series: "nascar_cup" }),
+          L.getWidgetSensorId({ type: "sports_match", league: "epl" })]))""")
+        self.assertEqual(sensors, ["sensor.epaper_racing_nascar", "sensor.epaper_sports_premier_league"], "aliases from the catalog (the review's nascar_cup)")
     def test_a_league_or_series_shows_by_its_own_sensor(self):
         for pid in ("match", "race_weekend"):
             for look in self.by_id[pid]["looks"]:
@@ -418,21 +441,23 @@ class TestWatchAndListen(unittest.TestCase):
         self.assertEqual(got, ["calendar.sonarr", "calendar.family"])
 
     def test_a_rain_total_is_refused_with_its_reason(self):
-        """Framework review #13: a rate or an on/off sensor; a total is refused in the field, plainly."""
+        """Framework review #13: a rate or an on/off sensor; a total is refused in the field, with the
+        add-on's own reason (the descriptor's "accepts")."""
+        rain = next(f for f in catalog_json()["widgets"]["weather_forecast"]["fields"] if f.get("key") == "rain_sensor")
+        self.assertTrue(rain["accepts"]["reason"])
         src = (APP_JS / "inspector.js").read_text()
-        self.assertIn('{ ...F.entity("rain_sensor", "Rain sensor", ["sensor", "binary_sensor"]), check: rainCheck }', src)
-        self.assertIn("if (/\\/\\s*h$/i.test(unit)) return \"\";", src)
-        self.assertIn("so the page would say it's raining all day after a shower. Pick a rain rate, in mm/h or in/h, or a sensor that's on while it rains.", src)
+        self.assertIn("if (f.accepts) out.check = (e) => {", src)
+        self.assertIn("return a.reason ||", src)
         self.assertIn('if (why) { s.querySelector(".note.refused")?.remove();', src, "and keeps what it had")
-
     def test_the_inspector_knows_them(self):
+        """Framework review #7: a widget's fields are its descriptor's, not a list in the editor."""
         src = (APP_JS / "inspector.js").read_text()
-        self.assertIn('now_playing: [F.text("entity", "Players", "All of them")],', src)
-        self.assertIn('tv_week: [F.entity("entity", "Calendar of shows", ["calendar"])', src)
-        self.assertIn('F.entity("solar_sensor", "Guess the sky from sunlight", ["sensor"])', src, "the sky guess is opt-in, and says so")
+        self.assertIn("const fields = fieldsFor(el.type);", src)
+        for t in ("now_playing", "tv_week", "sun_times", "todo_list", "sports_match", "weather_forecast"):
+            self.assertNotIn(f"  {t}: [", src, f"{t}'s fields come from its descriptor")
+        keys = {f.get("key") for f in catalog_json()["widgets"]["weather_forecast"]["fields"]}
         for key in ("now_entity", "temperature_sensor", "humidity_sensor", "wind_sensor", "rain_sensor", "pressure_sensor", "solar_sensor"):
-            self.assertIn(f'F.entity("{key}"', src, "weather from your own station (sources/station.SENSORS)")
-
+            self.assertIn(key, keys, "weather from your own station")
 
 @unittest.skipUnless(shutil.which("node"), "no node to read the editor's presets")
 class TestThumbnailsHaveValues(unittest.TestCase):
@@ -540,9 +565,10 @@ class TestNotedNeverHidden(unittest.TestCase):
     ASLEEP = {"timing": {"always_on": False, "update_minutes": 15}}
 
     def test_the_rule_finds_the_five(self):
+        """The user's five, and Race weekend (live timing, framework review #6), from each widget's
+        descriptor and the watts rule."""
         got = run_js("console.log(JSON.stringify(P.PRESETS.filter((p) => P.presetChangesEvery(p) != null).map((p) => p.title)))")
-        self.assertEqual(sorted(got), sorted(["Planes overhead", "Now playing", "Scores", "Grid now", "Battery and solar"]))
-
+        self.assertEqual(sorted(got), sorted(["Planes overhead", "Now playing", "Scores", "Race weekend", "Grid now", "Battery and solar"]))
     def test_the_line_names_the_devices_own_interval(self):
         got = run_js(f"""const asleep = {json.dumps(self.ASLEEP)};
           console.log(JSON.stringify([P.staleNote(1, asleep), P.staleNote(1, asleep, {{ short: true }}),

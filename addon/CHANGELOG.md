@@ -279,6 +279,12 @@
   and "updated". The Clock preset uses it, and any text can
   show the time or date the same way (Shows: Time, in the inspector).
 
+- **The editor reads the add-on's own lists.** Leagues, racing series, each
+  sport's words and every widget (its name, settings and how often what it
+  shows changes) come from the add-on, so a league or series it learns
+  appears in New page and the inspector by itself. Race weekend now says
+  when it can be older than a sleeping device's update, like Scores.
+
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) for the quiet-hours fix below.

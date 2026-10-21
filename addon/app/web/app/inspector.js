@@ -4,11 +4,12 @@
 
 import { h, icon, api, clone, pageTitle, slug, modKey, turning } from "./util.js";
 import { field, input, number, select, seg, textarea, toggle, toggleRow, section, linkButton, toast } from "./ui.js";
-import { TYPES, BREAKABLE, isWidget, hasText, elName, normalizeLineParity, GROUP_STYLES, GROUP_PAD } from "./elements.js";
+import { TYPES, breakable, isWidget, hasText, elName, normalizeLineParity, GROUP_STYLES, GROUP_PAD } from "./elements.js";
 import { OPS, parseShowIf, compileShowIf, evaluate, describe, syncWidgetShowIf, syncDynamicGridShowIf } from "./conditions.js";
 import { explodeWidget, getWidgetSensorId, suggestIconForEntity } from "./legacy.js";
 import { dateEditor, binsEditor } from "./countdown.js";
-import { LEAGUES, SERIES, sportWord, staleNote, changesEvery, pageChangesEvery } from "./presets.js";
+import { staleNote, changesEvery, pageChangesEvery } from "./presets.js";
+import { widget, leagueOptions, seriesOptions, sportWord } from "./catalog.js";
 
 const SHOWS = [["state", "Its value"], ["unit", "Its unit, following the value"], ["attribute", "One of its details"], ["last_changed", "When it last changed"], ["last_updated", "When it last updated"],
   ["days_until", "Days until it"], ["date_formatted", "Its date"], ["calendar_title", "The event's name"]];
@@ -135,7 +136,7 @@ function element(app, head, body, el, i) {
     r.addEventListener("change", () => set("font_scale", Number(r.value) === 1 ? "" : Number(r.value)));
     body.append(section("Text size", h("div", { class: "rangerow" }, h("span", { class: "rmin", "aria-hidden": "true", text: "A" }), r, h("span", { class: "rmax", "aria-hidden": "true", text: "A" }), pct),
       legibility(app, i, el),                       // for a widget whose renderer reports its size (a to-do list)
-      BREAKABLE.includes(el.type) ? h("div", { class: "btnrow" }, h("button", { class: "btn tinted", onclick: () => {
+      breakable(el) ? h("div", { class: "btnrow" }, h("button", { class: "btn tinted", onclick: () => {
         const parts = explodeWidget(el);
         if (!parts.length) return;
         doc.els().splice(i, 1, ...parts);
@@ -143,7 +144,7 @@ function element(app, head, body, el, i) {
         doc.commit();
         toast(`Broken into ${parts.length} elements you can move one by one.`, { label: "Undo", run: () => doc.undo() });
       } }, "Break apart")) : null,
-      BREAKABLE.includes(el.type) ? h("p", { class: "fnote", text: "Turns the widget into plain text, values and icons you can move and restyle one by one." }) : null));
+      breakable(el) ? h("p", { class: "fnote", text: "Turns the widget into plain text, values and icons you can move and restyle one by one." }) : null));
   }
 
   // Arrange
@@ -280,15 +281,6 @@ function replacements(app, el) {
 // The add-on's own clock's formats (render/binding.TIME_FORMATS); "time" follows the 12/24-hour setting.
 const CLOCK_FORMATS = [["time", "The time"], ["day_full", "Weekday and date"], ["day_date", "Short weekday and date"], ["date", "Date"], ["datetime", "Date and time"]];
 
-/* Rain now, not rain so far (sources/station.py): a rate (mm/h, in/h) or a sensor that's on while it
-   rains. A total keeps counting after the shower, so the page would say rain all day. */
-function rainCheck(e) {
-  if (e.entity_id.startsWith("binary_sensor.")) return "";
-  const unit = String(e.unit || "").trim();
-  if (/\/\s*h$/i.test(unit)) return "";
-  return `${e.name || e.entity_id} counts rain so far${unit ? ` (${unit})` : ""}, so the page would say it's raining all day after a shower. Pick a rain rate, in mm/h or in/h, or a sensor that's on while it rains.`;
-}
-
 /* ---------- per-type settings for everything that isn't text ---------- */
 const F = {
   entity: (key, label, domains) => ({ kind: "entity", key, label, domains }),
@@ -298,6 +290,8 @@ const F = {
   on: (key, label, def) => ({ kind: "toggle", key, label, def }),
 };
 const BORDER_ON = F.on("show_border", "Border", true);
+// The basic elements' settings. A widget's come from its descriptor in the add-on's catalog
+// (widgets.py, fieldsFor below), never a copy here.
 const TYPE_FIELDS = {
   box: [F.sel("fill", "Fill", [["outline", "Outline"], ["black", "Black"], ["screen", "Half tone"], ["white", "White"]], "outline"), F.num("radius", "Corners", "12", 0, 120), F.num("thickness", "Border", "3", 1, 20)],
   bar: [F.entity("entity", "Sensor"), F.text("title", "Title", "Battery"), F.sel("bar_style", "Style", [["solid", "Solid"], ["segmented", "Segments"], ["vertical", "Upright"]], "solid"),
@@ -305,53 +299,37 @@ const TYPE_FIELDS = {
     F.num("min_val", "From", "0"), F.num("max_val", "To", "100"), F.text("suffix", "Unit", "%"), F.num("decimals", "Decimals", "0", 0, 4), F.on("show_label", "Show the value", true)],
   curve: [F.entity("entity", "Sensor"), F.num("hours", "Hours", "24", 1, 168)],
   bar_chart: [F.entity("entity", "Sensor"), F.text("title", "Title", "Last 24 hours"), F.num("hours", "Hours", "24", 1, 168), F.num("bars", "Bars", "12", 2, 48), F.on("show_labels", "Lowest and highest", true), F.on("show_border", "Border", false)],
-  calendar_month: [F.entity("entity", "Calendar", ["calendar"]), F.sel("first_weekday", "Week starts", [["0", "Monday"], ["6", "Sunday"]], "0"), F.on("show_header", "Month name", true), F.on("show_weekdays", "Weekday names", true), F.on("highlight_today", "Mark today", true), BORDER_ON],
-  todo_list: [F.entity("entity", "List", ["todo"]), F.sel("show", "Shows", [["open", "Everything to do"], ["due", "Due today or overdue"]], "open"),
-    // render/todo.STYLES but "plain" (kept as the way back, not offered); the default is todo.DEFAULT_STYLE.
-    F.sel("style", "Style", [["urgency", "By urgency"], ["due", "Inverted when due"], ["outlined", "Outlined"]], "urgency"),
-    F.text("title", "Title", "The list's name"),
-    { kind: "window", label: (el) => (el.show === "due" ? "Only show when something's due" : "Only show when there's something to do") },
-    { kind: "sensorid" }],
-  calendar_agenda: [F.entity("entity", "Calendar", ["calendar"]), F.text("title", "Title", "Coming up"), F.sel("max_events", "Events", [["2", "2, extra large"], ["3", "3, large"], ["4", "4"], ["5", "5"], ["6", "6"]], "4"), F.on("show_sub", "Times and places", true), BORDER_ON],
-  weather_forecast: [F.entity("entity", "Weather", ["weather"]), F.sel("layout_mode", "Layout", [["auto", "Fit the box"], ["split", "Now and forecast side by side"], ["stacked", "Now above the forecast"], ["hero_only", "Now only, very large"], ["forecast_only", "Forecast only"]], "auto"),
-    F.sel("forecast_days", "Days", [["3", "3"], ["4", "4"], ["5", "5"]], "4"), F.on("show_details", "Humidity and wind", true), BORDER_ON,
-    // "Now" from your own station, each part optional (sources/station.py); the forecast keeps the days.
-    // The sky guess is opt-in: only a chosen sunlight sensor turns it on (the user doesn't trust theirs).
-    F.entity("now_entity", "Now from", ["weather"]), F.entity("temperature_sensor", "Temperature sensor", ["sensor"]),
-    F.entity("humidity_sensor", "Humidity sensor", ["sensor"]), F.entity("wind_sensor", "Wind sensor", ["sensor"]),
-    { ...F.entity("rain_sensor", "Rain sensor", ["sensor", "binary_sensor"]), check: rainCheck }, F.entity("pressure_sensor", "Pressure sensor", ["sensor"]),
-    F.entity("solar_sensor", "Guess the sky from sunlight", ["sensor"])],
-  sports_racing: [F.sel("series", "Series", SERIES, "f1"), F.entity("entity", "Sensor, if you have one"),
-    F.sel("max_drivers", "Leaderboard", [["6", "Top 6, extra large"], ["8", "Top 8, large"], ["10", "Top 10"]], "10"),
-    { kind: "window", label: "Only show around sessions" }, F.sel("window_mode", "Around", [["session", "Each session"], ["weekend", "The whole weekend"]], "session"),
-    F.num("pre_buffer_hours", "Hours before", "2", 0, 24, 0.5), F.num("post_buffer_hours", "Hours after", "2", 0, 24, 0.5),
-    F.on("show_teams", "Team names", true), F.text("timezone", "Time zone", "Home Assistant's"), BORDER_ON, { kind: "sensorid" }],
-  sports_match: [F.sel("league", "League", LEAGUES, "soccer/eng.1"),
-    F.text("team", "Team", "Any team"), F.entity("entity", "Team Tracker sensor"), { kind: "window", label: (el) => `Only show on ${sportWord(el.league)} days` },
-    F.num("pre_buffer_hours", "Hours before", "2", 0, 24, 0.5), F.num("post_buffer_hours", "Hours after", "2", 0, 24, 0.5),
-    F.text("timezone", "Time zone", "Home Assistant's"), F.on("show_stats", "Team stats", true), F.on("show_scorers", "Scorers", true), BORDER_ON, { kind: "sensorid" }],
-  // render/sun.STYLES; "next" turns round at sunrise and at sunset.
-  sun_times: [F.sel("style", "Style", [["next", "Next one first"], ["both", "Both alike"]], "next")],
-  // render/countdown.py counts from these: a date of yours, or your bins and their days.
-  countdown: [F.sel("to", "Counts down to", [["date", "A date"], ["bins", "Bin day"]], "date"), { kind: "countdown" }],
-  // The Energy dashboard's widgets (render/energy.py) read it themselves; a sensor only stands in for it.
-  energy_total: [F.sel("source", "Shows", [["solar", "Solar, from the Energy dashboard"], ["grid_import", "Bought from the grid"], ["grid_export", "Sold to the grid"], ["entity", "A sensor"]], "solar"),
-    { kind: "entity", key: "entity", label: "Sensor", when: (el) => el.source === "entity" },
-    F.sel("period", "For", [["day", "Today"], ["month", "This month"], ["year", "This year"]], "month")],
-  grid_now: [F.entity("entity", "Power sensor, if not the dashboard's"), F.on("invert", "Above zero when selling", false)],
-  energy_cost: [],
-  // render/media.py: "a, b" follows those players; empty, all of them.
-  now_playing: [F.text("entity", "Players", "All of them")],
-  tv_week: [F.entity("entity", "Calendar of shows", ["calendar"]), F.num("days", "Days ahead", "7", 1, 31), F.text("title", "Title", "On TV this week")],
-  flight_tracker: [F.sel("style", "Style", [["card", "Details"], ["split", "Radar and details"], ["radar", "Radar"]], "card"), { kind: "place" },
-    F.num("radius", "Radius, km", "35", 5, 250), { kind: "window", label: "Only show while a plane is near" }, F.on("show_sub_metrics", "Second units", true), BORDER_ON, { kind: "sensorid" }],
 };
+
+/* A widget's fields as its descriptor gives them (plain data), made ready for the form: a league
+   or series list from the catalog, a condition ({key, is}) as a test, a label with the sport's word
+   ("{event}") or by what the element shows, and what an entity field accepts, with the add-on's
+   own reason when it won't. */
+export function fieldsFor(type) {
+  const w = widget(type);
+  if (!w) return TYPE_FIELDS[type] || [];
+  return (w.fields || []).map((f) => {
+    const out = { ...f };
+    if (f.options === "leagues") out.options = leagueOptions();
+    if (f.options === "series") out.options = seriesOptions();
+    if (f.when && typeof f.when === "object") { const { key, is } = f.when; out.when = (el) => (Array.isArray(is) ? is.includes(el[key]) : el[key] === is); }
+    if (typeof f.label === "string" && f.label.includes("{event}")) out.label = (el) => f.label.replace("{event}", sportWord(el.league));
+    else if (f.label && typeof f.label === "object") out.label = (el) => (f.label.show || {})[el.show] ?? f.label.else ?? "";
+    if (f.accepts) out.check = (e) => {
+      const a = f.accepts, unit = String(e.unit || "").trim().toLowerCase();
+      if ((a.domains || []).some((d) => e.entity_id.startsWith(d + "."))) return "";
+      if ((a.unit_ends || []).some((x) => unit.endsWith(x.toLowerCase()))) return "";
+      return a.reason || "This sensor won't do here.";
+    };
+    return out;
+  });
+}
 
 function typeSections(app, el, set, i) {
   if (el.type === "line") return [lineSection(app, el)];
   if (el.type === "qr") return [qrSection(app, el, set)];
   if (el.type === "dynamic_grid") return gridSections(app, el, set);
-  const fields = TYPE_FIELDS[el.type] || [];
+  const fields = fieldsFor(el.type);
   const s = section(TYPES[el.type]?.name || "Settings");
   for (const f of fields) {
     if (f.when && !f.when(el)) continue;

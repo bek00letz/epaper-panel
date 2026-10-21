@@ -215,9 +215,11 @@ import("%s").then((L) => {
                          "the editor names the sensor the add-on publishes")
 
     def test_the_style_menu_offers_the_three_styles(self):
-        src = (support.APP / "web" / "app" / "inspector.js").read_text()
-        self.assertIn('F.sel("style", "Style", [["urgency", "By urgency"], ["due", "Inverted when due"], ["outlined", "Outlined"]], "%s")'
-                      % todo.DEFAULT_STYLE, src)
+        """The inspector's Style menu is the widget's descriptor (widgets.py), read from the catalog."""
+        import widgets
+        style = next(f for f in widgets.catalog()["todo_list"]["fields"] if f.get("key") == "style")
+        self.assertEqual(style["options"], [["urgency", "By urgency"], ["due", "Inverted when due"], ["outlined", "Outlined"]])
+        self.assertEqual(style["def"], todo.DEFAULT_STYLE)
 
     def test_new_page_names_it_after_the_list(self):
         src = (support.APP / "web" / "app" / "presets.js").read_text()

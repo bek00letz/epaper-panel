@@ -3,6 +3,7 @@
 // form can't express stays a custom template, untouched.
 
 import { getWidgetSensorId, todoShowIf } from "./legacy.js";
+import { widget } from "./catalog.js";
 
 const NO_VALUE = ["unavailable", "unknown"];
 
@@ -82,7 +83,8 @@ export function syncWidgetShowIf(page, widgetEl) {
     if (c) page.show_if = c; else delete page.show_if;
     return;
   }
-  widgetEl = widgetEl || (page.elements || []).find((x) => ["sports_match", "sports_racing", "flight_tracker"].includes(x.type));
+  // A widget that shows only around its events says so in its descriptor ("window": the add-on's).
+  widgetEl = widgetEl || (page.elements || []).find((x) => x.type !== "todo_list" && widget(x.type)?.window);
   if (!widgetEl) return;
   const cur = String(page.show_if || "").trim();
   if (cur && !BUILTIN_MARKERS.some((m) => cur.includes(m))) return;

@@ -16,7 +16,8 @@
 //   was      its old name, so search still finds it and the card can say so.
 // No imports from util.js: the tests read this file under node.
 
-import { getWidgetSensorId, todoShowIf, LEAGUE_TO_SLUG } from "./legacy.js";
+import { getWidgetSensorId, todoShowIf } from "./legacy.js";
+import { leagues, series, widgetChangesEvery } from "./catalog.js";
 
 export const GROUPS = [
   ["day", "Your day"],
@@ -35,23 +36,19 @@ const watchEnt = (ent) => ent || "sensor.epaper_watch";
 const watchShowIf = (ent) => `{{ states('${watchEnt(ent)}_count') | int(0) > 0 }}`;
 const boxed = (el) => ({ x: 18, y: 14, w: 756, h: 222, show_border: true, ...el });
 
-// The leagues and series the add-on fetches (sources/sports.py, sources/racing.py).
-export const LEAGUES = [
-  ["soccer/eng.1", "Premier League"], ["soccer/uefa.champions", "Champions League"], ["soccer/esp.1", "La Liga"],
-  ["soccer/ger.1", "Bundesliga"], ["soccer/ita.1", "Serie A"], ["soccer/usa.1", "MLS"],
-  ["basketball/nba", "NBA"], ["basketball/wnba", "WNBA"], ["football/nfl", "NFL"],
-  ["football/college-football", "College football"], ["baseball/mlb", "MLB"], ["hockey/nhl", "NHL"],
-];
-export const SERIES = [["f1", "Formula 1"], ["fe", "Formula E"], ["nascar", "NASCAR"], ["indycar", "IndyCar"]];
-
-/* What one sporting event is called, by sport (the user's call: a Premier
-   League match is never a game). The sport is the league's first part
-   ("soccer/eng.1"); ESPN's "football" is American football. Racing is a race.
-   A sport not listed reads as a match. The panel's words are render/sport.py,
-   keyed the same way; a test keeps the two the same. */
-export const SPORT_WORDS = { soccer: "match", rugby: "match", tennis: "match", cricket: "match",
-  basketball: "game", football: "game", baseball: "game", hockey: "game", racing: "race" };
-export const sportWord = (league) => SPORT_WORDS[String(league || "soccer/eng.1").trim().toLowerCase().split("/")[0]] || "match";
+// The leagues and series come from the add-on's catalog (catalog.js), never a copy here:
+// Scores and Race weekend offer exactly what it fetches, in its order.
+const memo = (fn) => { let key, val; return () => { const k = fn.key(); if (k !== key) { key = k; val = fn(); } return val; }; };
+const leagueLooks = Object.assign(() => leagues().map((lg) => ({
+  id: "sports_match_" + lg.slug, name: lg.name, tier: "when", widget: true,
+  note: `Shows on ${(lg.words || {}).event || "match"} days.`,
+  make: () => [boxed({ type: "sports_match", league: lg.path, team: "", entity: "", pre_buffer_hours: 2, post_buffer_hours: 2, auto_window: true })],
+})), { key: () => leagues() });
+const seriesLooks = Object.assign(() => series().map((sr) => ({
+  id: "sports_racing_" + sr.slug, name: sr.title, tier: "when", widget: true,
+  make: () => [boxed({ type: "sports_racing", series: sr.slug, entity: "", window_mode: "session", pre_buffer_hours: 2, post_buffer_hours: 2, auto_window: true })],
+})), { key: () => series() });
+const LEAGUE_LOOKS = memo(leagueLooks), SERIES_LOOKS = memo(seriesLooks);
 
 const calendarMonth = (ent, box) => ({ type: "calendar_month", ...box, show_header: true, show_weekdays: true, first_weekday: 0, highlight_today: true, show_border: true, entity: ent || "" });
 const watchLook = (id, name, make) => ({ id, name, tier: "when", showIf: watchShowIf, make });
@@ -233,23 +230,17 @@ export const PRESETS = [
   /* ---------- sports ---------- */
   {
     id: "match", group: "sports", title: "Scores", was: "Match score",
-    kw: "match game football soccer score " + LEAGUES.map(([, n]) => n).join(" ") + " basketball hockey baseball",
+    get kw() { return "match game football soccer score basketball hockey baseball " + leagues().map((l) => l.name).join(" "); },
     desc: "The live score and clock, and who scored where the sport says. Shows only around your league's days, from shortly before the start to just after the end.",
     asks: "", choose: "League", name: (look) => look.name,
-    looks: LEAGUES.map(([league, name]) => ({
-      id: "sports_match_" + (LEAGUE_TO_SLUG[league] || league), name, tier: "when", widget: true,
-      note: `Shows on ${sportWord(league)} days.`,
-      make: () => [boxed({ type: "sports_match", league, team: "", entity: "", pre_buffer_hours: 2, post_buffer_hours: 2, auto_window: true })],
-    })),
+    get looks() { return LEAGUE_LOOKS(); },
   },
   {
-    id: "race_weekend", group: "sports", title: "Race weekend", was: "Formula 1", kw: "racing f1 formula 1 formula e nascar indycar motorsport grand prix",
+    id: "race_weekend", group: "sports", title: "Race weekend", was: "Formula 1",
+    get kw() { return "racing motorsport grand prix f1 " + series().map((x) => `${x.title} ${x.code}`).join(" "); },
     desc: "The top ten with gaps and tyres while a session runs; the countdown to the next one the rest of the week.",
     asks: "", choose: "Series", name: (look) => look.name,
-    looks: SERIES.map(([series, name]) => ({
-      id: "sports_racing_" + series, name, tier: "when", widget: true,
-      make: () => [boxed({ type: "sports_racing", series, entity: "", window_mode: "session", pre_buffer_hours: 2, post_buffer_hours: 2, auto_window: true })],
-    })),
+    get looks() { return SERIES_LOOKS(); },
   },
 
   /* ---------- watch and listen ---------- */
@@ -381,18 +372,20 @@ export function dateInstead(elements) {
 }
 
 /* How fast what a page shows changes, as a rule rather than a list of
-   presets: live things (planes overhead, what's playing, a score, the grid
-   now) and any value in watts (power is always "now") change every minute.
+   presets: a widget says how often in its descriptor (planes overhead,
+   what's playing, a score, a race, the grid now), and any value in watts
+   (power is always "now") changes every minute.
    On a device that sleeps longer than that between updates, such a page is
    noted, never hidden (the user's call, 21 Oct: "14 minute old plane data
    isn't tragic"); a clock is the exception, it becomes the Date. In minutes;
    null when it changes slowly enough. */
-export const LIVE_TYPES = ["flight_tracker", "now_playing", "sports_match", "grid_now"];
 const POWER_UNIT = /^\s*[kMm]?W\s*$/;                    // W, kW, MW; never Wh
 export function changesEvery(el, entMap) {
   if (!el) return null;
-  if (LIVE_TYPES.includes(el.type)) return 1;
+  const live = widgetChangesEvery(el);                      // a widget's, from its descriptor (the add-on's)
+  if (live != null) return live;
   if (["number", "text", "bar", "curve", "bar_chart"].includes(el.type)) {
+    // A plain value: anything in watts is "now" (until /api/entities says how often each sensor changes).
     const unit = (el.entity && entMap?.get?.(el.entity)?.unit) || el.suffix || "";
     if (POWER_UNIT.test(unit)) return 1;
   }

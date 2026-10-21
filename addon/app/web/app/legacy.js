@@ -1,3 +1,5 @@
+import { leagueOf, seriesOf } from "./catalog.js";
+
 // Pieces of the 0.9 editor that the editor still uses, kept as they were: page reflow
 // between orientations, breaking a widget apart, the widgets' own sensors,
 // and icon suggestions.
@@ -299,48 +301,12 @@ export function reflowPageElements(p, toPortrait, disp) {
   }
 }
 
-export const LEAGUE_TO_SLUG = {
-  "soccer/eng.1": "premier_league",
-  "premier_league": "premier_league",
-  "epl": "premier_league",
-  "soccer/uefa.champions": "champions_league",
-  "champions_league": "champions_league",
-  "ucl": "champions_league",
-  "soccer/esp.1": "la_liga",
-  "la_liga": "la_liga",
-  "soccer/ger.1": "bundesliga",
-  "bundesliga": "bundesliga",
-  "soccer/ita.1": "serie_a",
-  "serie_a": "serie_a",
-  "soccer/usa.1": "mls",
-  "mls": "mls",
-  "basketball/nba": "nba",
-  "nba": "nba",
-  "basketball/wnba": "wnba",
-  "wnba": "wnba",
-  "football/nfl": "nfl",
-  "nfl": "nfl",
-  "football/college-football": "college_football",
-  "baseball/mlb": "mlb",
-  "mlb": "mlb",
-  "hockey/nhl": "nhl",
-  "nhl": "nhl"
-};
-
+// The sensor a widget's page shows by: a league's or series' own, from the add-on's catalog
+// (sources/sports.LEAGUES, sources/racing.SERIES; aliases included), never a copy of its own.
 export function getWidgetSensorId(el) {
   if (!el) return "";
-  if (el.type === "sports_match") {
-    const lg = String(el.league || "soccer/eng.1").trim().toLowerCase();
-    const slug = LEAGUE_TO_SLUG[lg] || lg.replace(/[^a-z0-9]+/g, "_");
-    return `sensor.epaper_sports_${slug}`;
-  }
-  if (el.type === "sports_racing") {
-    const raw = String(el.series || "f1").trim().toLowerCase();
-    const slug = ["fe", "formula_e", "formula-e", "formulae"].includes(raw) ? "fe"
-      : ["nascar", "nascar-premier"].includes(raw) ? "nascar"
-      : ["indycar", "irl"].includes(raw) ? "indycar" : "f1";
-    return `sensor.epaper_racing_${slug}`;
-  }
+  if (el.type === "sports_match") return leagueOf(el.league)?.sensor || "";
+  if (el.type === "sports_racing") return seriesOf(el.series)?.sensor || "";
   if (el.type === "flight_tracker") {
     return "sensor.epaper_flights_overhead";
   }

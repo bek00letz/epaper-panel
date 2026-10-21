@@ -11,7 +11,8 @@ import { renderInspector } from "./inspector.js";
 import { openEntityPicker, openAttributePicker, openIconPicker, openInsert } from "./pickers.js";
 import { openPresets } from "./newpage.js";
 import { savePresetSheet, openStatus, openSettings, resolveClashes, openShortcuts, openAddScreen, removeScreen } from "./sheets.js";
-import { geometry, setDisplays, makeElement, makeEntityElement, elName, TYPES, pairByType, LAYOUT_KEYS, normalizeLineParity } from "./elements.js";
+import { setCatalog } from "./catalog.js";
+import { geometry, setDisplays, applyCatalog, makeElement, makeEntityElement, elName, TYPES, pairByType, LAYOUT_KEYS, normalizeLineParity } from "./elements.js";
 import { syncDynamicGridShowIf, syncWidgetShowIf } from "./conditions.js";
 import { CATEGORY_TERMS } from "./legacy.js";
 import { unitsRows } from "./units.js";
@@ -101,6 +102,11 @@ class App {
     // The canvas's sizes come only from here; without them there's nothing safe to draw.
     if (!r || !r.displays || !Object.keys(r.displays).length || !(r.devices || []).length)
       throw new Error("The add-on didn't say which devices it has. Restart the add-on, then reload this page.");
+    // What the add-on knows (leagues, series, widgets, state words), once: read, never copied (catalog.js).
+    if (!this.catalogLoaded) {
+      try { setCatalog((await api("api/catalog")).body); applyCatalog(); this.catalogLoaded = true; }
+      catch (e) { this.notice(`Couldn't load the add-on's widgets: ${e.message} Reload the page to try again.`); }
+    }
     this.applyScreens(r, want);
   }
   applyScreens(r, want) {

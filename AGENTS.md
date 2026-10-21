@@ -378,6 +378,12 @@ up to v0.12.0). `app/legacy.js` keeps the pieces of it this one still uses.
   a clock is the add-on's own (`show: "now"`), 12- or 24-hour as Settings ›
   Time and language says. Clock is offered on every device; one that sleeps
   draws the date in its place (`render/clocktime.py`), never the editor.
+- **The editor keeps no copies of the add-on's tables** (framework review,
+  21 Oct): leagues, series, sport words, state words and every widget's
+  descriptor (name, icon, box, fields, `changes_every`) come from
+  `GET /api/catalog` at start (`app/catalog.js`). Basic elements (text,
+  value, icon, card, divider, gauge, charts, QR) stay the editor's; a new
+  widget is a descriptor in `widgets.py`, nothing in the editor.
 - **The inspector is ordered by how often things are touched**: what it shows,
   how it looks, arrange, then "More". Rare settings go under More, not away.
 - **Picking: smallest thing under the pointer first.** Clicking again without
