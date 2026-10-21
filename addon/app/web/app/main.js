@@ -4,9 +4,9 @@
 
 import { h, icon, api, prefs, clone, pageTitle, slug, modKey, isMac, setDevice } from "./util.js";
 import { menu, toast, closeAll, isOpen } from "./ui.js";
-import { Doc } from "./doc.js";
+import { Doc, SETTING_NAMES } from "./doc.js";
 import { Canvas } from "./canvas.js";
-import { renderStrip, statusSummary } from "./strip.js";
+import { renderStrip, statusSummary, unsentWords } from "./strip.js";
 import { renderInspector } from "./inspector.js";
 import { openEntityPicker, openAttributePicker, openIconPicker, openInsert } from "./pickers.js";
 import { openPresets } from "./newpage.js";
@@ -82,9 +82,22 @@ class App {
   applyStripPos() {
     const pos = prefs.get("strip_pos", "top");
     this.el.app.dataset.strip = ["top", "bottom", "side"].includes(pos) ? pos : "top";
-    const size = prefs.get("strip_size", "standard");
-    this.el.app.dataset.stripsize = ["small", "standard", "large"].includes(size) ? size : "standard";
+    this.el.app.dataset.stripsize = this.stripSize();
+    this.el.app.dataset.tilebuttons = this.tileButtons();
     this.renderStrip();
+  }
+  /* The page strip's size. Before 0.16 every size was smaller (the user's call, 21 Oct: large enough
+     for a tile's two buttons on its last third), so a choice saved then, under "strip_size", becomes
+     the new Small, the nearest to any of them. The old one is left as it was, so an older editor
+     still finds it. */
+  stripSize() {
+    let v = prefs.get("page_strip_size");
+    if (!v) {
+      const old = prefs.get("strip_size");
+      v = old ? "small" : "standard";
+      if (old) prefs.set("page_strip_size", v);
+    }
+    return ["small", "standard", "large"].includes(v) ? v : "standard";
   }
   stripVertical() { return this.el.app.dataset.strip === "side" && matchMedia("(min-width: 901px)").matches; }
   say(text) { this.el.live.textContent = ""; requestAnimationFrame(() => { this.el.live.textContent = text; }); }
@@ -574,6 +587,31 @@ class App {
     toast(`Deleted ${pageTitle(name)}.`, { label: "Undo", run: () => doc.undo() });
     if (!Object.keys(doc.spec.pages).length) this.firstRun();
   }
+  /* A page from "Not sent yet": opened, with what differs from the panel outlined on the canvas. */
+  showChanges(name) {
+    const doc = this.doc, pend = doc.pending(), p = pend.pages[name];
+    doc.openPage(name);
+    // A new page is new all over: nothing to single out.
+    if (p?.elements) {
+      const was = doc.live.pages[p.from || name]?.elements || [];
+      this.canvas.showChanges([...p.elements.added, ...p.elements.changed], was.filter((e) => e.type !== "group" && p.elements.removed.includes(e.id)));
+    }
+    this.say(`${pageTitle(name)}. Not sent yet: ${unsentWords(pend, name)}.`);
+    requestAnimationFrame(() => this.el.strip.querySelector('[aria-current="page"]')?.scrollIntoView({ inline: "nearest", block: "nearest" }));
+  }
+  /* A page, or a setting sent with the pages, back to what the panel has (doc.changes): an Undo, never a question. */
+  revertPage(name) {
+    const doc = this.doc, p = doc.pending().pages[name];
+    const back = p?.from || p?.to || name;
+    doc.revertPage(name); doc.emit("page");
+    toast(p?.status === "added" ? `Removed ${pageTitle(name)}. The panel doesn't have it.` : p?.status === "removed" && !p.to ? `Put ${pageTitle(name)} back.`
+      : `${pageTitle(p?.status === "renamed" ? back : name)} is back to what the panel has.`, { label: "Undo", run: () => doc.undo() });
+  }
+  revertSetting(k) {
+    const doc = this.doc;
+    doc.revertSetting(k);
+    toast(`${SETTING_NAMES[k] || k} back to what the panel has.`, { label: "Undo", run: () => doc.undo() });
+  }
   setTier(v) {
     const doc = this.doc, p = doc.page();
     p.tier = v;
@@ -737,10 +775,31 @@ class App {
       { label: "Open", run: () => doc.openPage(n) },
       { label: "Duplicate", icon: "dup", run: () => this.duplicatePage(n) },
       p.tier !== "alert" ? { label: times ? "Show again" : "Add to rotation", run: () => { doc.spec.rotation.push(n); doc.commit(); } } : null,
-      p.tier !== "alert" && times ? { label: times > 1 ? "Show once less" : "Take out of rotation", run: () => { doc.spec.rotation.splice(doc.spec.rotation.lastIndexOf(n), 1); doc.commit(); } } : null,
+      p.tier !== "alert" && times ? { label: times > 1 ? "Show once less" : "Take out of rotation", run: () => this.takeOut(n) } : null,
       "sep",
       { label: "Delete", icon: "trash", danger: true, run: () => this.deletePage(n) },
     ], { ...(anchor ? { align: "right" } : { at: { x: e.clientX, y: e.clientY } }), label: pageTitle(n) });
+  }
+  /* A tile's Delete: delete the page, or only take it out of the rotation (this place in it, for a
+     page shown twice). Choosing is the guard against a slip, not a question; both have an Undo. */
+  openDeleteMenu(n, anchor, slot) {
+    const p = this.doc.spec.pages[n], times = this.doc.spec.rotation.filter((x) => x === n).length;
+    menu(anchor, [
+      p.tier !== "alert" && times ? { label: times > 1 ? "Show once less" : "Take out of rotation", icon: "minus", run: () => this.takeOut(n, slot) } : null,
+      { label: "Delete page", icon: "trash", danger: true, run: () => this.deletePage(n) },
+    ], { align: "right", label: `Delete ${pageTitle(n)}` });
+  }
+  takeOut(n, slot) {
+    const doc = this.doc, r = doc.spec.rotation;
+    const i = Number.isInteger(slot) && r[slot] === n ? slot : r.lastIndexOf(n);
+    if (i < 0) return;
+    r.splice(i, 1); doc.commit();
+    toast(r.includes(n) ? `${pageTitle(n)} shows once less.` : `Took ${pageTitle(n)} out of the rotation. It's under Not in rotation.`, { label: "Undo", run: () => doc.undo() });
+  }
+  /* Where a tile's Duplicate and Delete sit, for each strip size: over the last third (the default),
+     or across the bottom half (the user's call, 21 Oct). */
+  tileButtons(size = this.stripSize()) {
+    return prefs.get("tile_buttons_" + size) === "half" ? "half" : "third";
   }
   openStatus(anchor) { openStatus(this, anchor); }
   openPresets() { openPresets(this); }

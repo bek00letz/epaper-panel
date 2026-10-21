@@ -8,7 +8,8 @@ import { DISPLAYS, isWidget } from "./elements.js";
 import { describe, parseShowIf, syncDynamicGridShowIf } from "./conditions.js";
 import { reflowPageElements } from "./legacy.js";
 import { LOOKS as PRESETS, clockPages, dateInstead } from "./presets.js";
-import { thumbnail, statusSummary, forgetThumbnails } from "./strip.js";
+import { thumbnail, statusSummary, forgetThumbnails, unsentWords } from "./strip.js";
+import { SETTING_NAMES } from "./doc.js";
 
 const thumbImg = (app, key, page) => {
   const img = h("img", { class: "thumb", alt: "", "data-thumb": key, draggable: "false" });
@@ -125,7 +126,10 @@ export function openStatus(app, anchor) {
     if (s.panel_link?.pending_refresh) lines.push(`The panel hasn't picked up the last change yet${s.panel_link.last_error ? `: ${s.panel_link.last_error}` : ""}. It keeps trying.`);
     if (s.panel_link?.problem && !s.panel_link?.node) lines.push(`No panel found: ${s.panel_link.problem}.`);
     if (s.error) lines.push(`The last render failed: ${s.error}`);
-    pop.append(h("div", { class: "sthead" }, h("span", { class: "led " + tone }), h("span", { text: line1 })), ...lines.map((l) => h("p", { class: "fnote", text: l })));
+    const notes = lines.map((l) => h("p", { class: "fnote", text: l }));
+    // What isn't sent comes right under the line that says so.
+    pop.append(h("div", { class: "sthead" }, h("span", { class: "led " + tone }), h("span", { text: line1 })), ...notes.slice(0, 1),
+      ...(doc.dirty && doc.saving !== "error" ? [unsentList(app, close)] : []), ...notes.slice(1));
 
     const live = s.pages || [];
     pop.append(h("div", { class: "poplab", text: "Rotating" }), h("p", { class: "fnote", text: live.length ? `${live.map(pageTitle).join(", ")}, ${turning(t)}.` : "Nothing at the moment." }));
@@ -144,10 +148,47 @@ export function openStatus(app, anchor) {
     if (dev.can_clear) actions.append(h("button", { class: "btn tinted", onclick: async () => { close(); await app.deviceSet({ clear_ghosting: true }, "The panel is clearing its ghosting."); } }, icon("sparkle", "sm"), "Clear ghosting"));
     actions.append(h("button", { class: "btn tinted", onclick: () => { close(); openFullStrip(app); } }, icon("eye", "sm"), app.screen?.picks_page === "addon" ? "See what it shows" : "See every page"));
     pop.append(actions);
-    if (doc.dirty) pop.append(h("button", { class: "btn tinted danger wide", onclick: () => { close(); doc.revert(); toast("Went back to what's on the panel.", { label: "Undo", run: () => doc.undo() }); } }, icon("revert", "sm"), "Throw away unsent changes"));
+    if (doc.dirty) pop.append(h("button", { class: "btn tinted danger wide", onclick: () => { close(); doc.revert(); toast("Went back to what's on the panel.", { label: "Undo", run: () => doc.undo() }); } }, icon("revert", "sm"), "Throw away all unsent changes"));
     // Fresh device state for next time; the buttons above use what's known now.
     app.loadDevice();
   }, { label: "Now on the panel", align: "left" });
+}
+
+/* What the panel doesn't have yet (doc.changes), a line each: a page and what's waiting for it, in
+   the strip's order, then the settings sent with the pages. A line opens its page with its changes
+   outlined; Undo puts that one thing back to what the panel has, with an Undo toast, and the list
+   stays open for the next, with focus where it was. */
+function unsentList(app, close) {
+  const doc = app.doc, box = h("div", { class: "ulist", role: "group", "aria-label": "Not sent yet" });
+  const draw = (focusAt = -1) => {
+    const pend = doc.pending();
+    if (!pend.any) { close(); return; }
+    const lines = [];
+    const names = [...new Set([...doc.spec.rotation, ...Object.keys(doc.spec.pages), ...Object.keys(pend.pages)])];
+    for (const n of names) {
+      const words = unsentWords(pend, n);
+      if (!words) continue;
+      const removed = pend.pages[n]?.status === "removed";
+      lines.push({ name: pageTitle(n), words, open: removed ? null : () => { close(); app.showChanges(n); }, undoLabel: removed ? "Put back" : "Undo", undo: () => app.revertPage(n) });
+    }
+    for (const s of pend.settings) {
+      // A new model or mounting placed every page for it: that goes back with Throw away, or in Settings.
+      const placing = s === "display" || s === "orientation";
+      const where = s === "quiet_hours" ? "quiet" : placing ? "panel" : null;
+      lines.push({ name: SETTING_NAMES[s] || s, words: placing ? "Changed. Change it back in Settings" : "Changed",
+        open: where ? () => { close(); openSettings(app, where); } : null, undoLabel: "Undo", undo: placing ? null : () => app.revertSetting(s) });
+    }
+    const rows = lines.map(({ name, words, open, undoLabel, undo }, i) => {
+      const what = [h("span", { class: "udot", "aria-hidden": "true" }), h("span", { class: "un", text: name }), h("span", { class: "uw", text: words })];
+      return h("div", { class: "urow" },
+        open ? h("button", { class: "uopen", "aria-label": `${name}: ${words}. Open it`, onclick: open }, ...what) : h("span", { class: "uopen" }, ...what),
+        undo ? h("button", { class: "btn tinted small", "aria-label": undoLabel === "Put back" ? `Put ${name} back` : `Undo ${name}: back to what the panel has`, onclick: () => { undo(); draw(i); } }, undoLabel) : null);
+    });
+    box.replaceChildren(...rows);
+    if (focusAt >= 0) box.querySelectorAll(".urow")[Math.min(focusAt, rows.length - 1)]?.querySelector("button:last-child")?.focus({ preventScroll: true });
+  };
+  draw();
+  return box;
 }
 
 export function openFullStrip(app) {
@@ -344,7 +385,7 @@ export function resolveClashes(app, clashes) {
           if (clashes.length > 1) body.append(h("h3", { class: "slab", text: pageTitle(c.name) }));
           body.append(h("div", { class: "cmpgrid", role: "radiogroup", "aria-label": pageTitle(c.name) }, mine, theirs));
         } else {
-          const label = c.kind === "rotation" ? "The rotation" : { quiet_hours: "Quiet hours", custom_presets: "Your presets", location_presets: "Saved places", display: "Panel model", orientation: "Mounting" }[c.name] || c.name;
+          const label = c.kind === "rotation" ? "The rotation" : SETTING_NAMES[c.name] || c.name;
           body.append(h("h3", { class: "slab", text: label }), seg([["mine", "Keep yours"], ["theirs", "Use the other one"]], "mine", (v) => { choice[c.name] = v; }, label));
         }
       });
@@ -932,10 +973,13 @@ async function timePane(app, pane) {
 }
 
 function editorPane(app, pane) {
+  const buttons = select([["third", "Over the last third"], ["half", "Across the bottom half"]], app.tileButtons(),
+    (v) => { app.prefs.set("tile_buttons_" + app.stripSize(), v); app.applyStripPos(); }, { "aria-label": "Where Duplicate and Delete sit" });
   pane.append(group(
     grow("Appearance", null, select([["system", "Match the system"], ["light", "Light"], ["dark", "Dark"]], app.prefs.get("theme", "system"), (v) => { app.prefs.set("theme", v); app.applyTheme(); })),
     grow("Page strip", "Down the side becomes a row again in narrow windows", select([["top", "Above the canvas"], ["bottom", "Below the canvas"], ["side", "Down the side"]], app.prefs.get("strip_pos", "top"), (v) => { app.prefs.set("strip_pos", v); app.applyStripPos(); })),
-    grow("Page strip size", "How large its pages are", select([["small", "Small"], ["standard", "Standard"], ["large", "Large"]], app.prefs.get("strip_size", "standard"), (v) => { app.prefs.set("strip_size", v); app.applyStripPos(); })),
+    grow("Page strip size", "How large its pages are", select([["small", "Small"], ["standard", "Standard"], ["large", "Large"]], app.stripSize(), (v) => { app.prefs.set("page_strip_size", v); app.applyStripPos(); buttons.value = app.tileButtons(); })),
+    grow("Duplicate and Delete", "On each page in the strip, for this size", buttons),
     grow("Check legibility from", "The size note under text uses this distance", select([["0.8", "0.8 m, a desk"], ["1.5", "1.5 m, a bedside"], ["3.0", "3 m, a sofa"], ["5.0", "5 m, across a room"], ["0", "Don't check"]], app.prefs.get("view_dist", "3.0"), (v) => { app.prefs.set("view_dist", v); app.canvas.preview(true); })),
     grow("Guides", "Where the footer is, and a faint outline around every element", toggle(app.prefs.get("guides") === "1", (v) => { app.prefs.set("guides", v ? "1" : "0"); app.refresh(); }, "Guides"))),
     group(grow("Keyboard shortcuts", null, h("button", { class: "btn tinted", onclick: () => openShortcuts() }, "Show"))));

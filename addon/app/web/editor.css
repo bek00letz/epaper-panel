@@ -194,6 +194,12 @@ kbd { font: 12px var(--font); background: var(--surface); border-radius: 5px; pa
 .ob.stk { outline: 1.5px dashed rgba(0, 0, 0, 0.45); outline-offset: -1.5px; animation: fadein 0.2s ease-out; }
 .ob.pick { box-shadow: inset 0 0 0 2px var(--accent), 0 0 0 4px color-mix(in srgb, var(--accent) 30%, transparent); background: color-mix(in srgb, var(--accent) 10%, transparent); animation: pop var(--t) var(--spring); }
 @keyframes pop { from { transform: scale(1.035); opacity: 0.5; } }
+/* Not sent yet, outlined when you come from the status card's list: changed and added elements, and
+   dashed where removed ones were. They fade at the first click or edit. */
+.ob.chg { box-shadow: inset 0 0 0 1.5px var(--orange); animation: fadein 0.2s ease-out; }
+.ob.chg.gone { box-shadow: none; outline: 1.5px dashed var(--orange); outline-offset: -1.5px; }
+.ob.chg.going { animation: fadeout 0.25s ease-out forwards; }
+@keyframes fadeout { to { opacity: 0; } }
 .hd { position: absolute; width: 11px; height: 11px; background: #fff; border: 1.5px solid var(--accent); border-radius: 50%; pointer-events: auto; touch-action: none; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); }
 .hd::after { content: ""; position: absolute; inset: -12px; }
 .hd.nw { left: -6px; top: -6px; cursor: nwse-resize; } .hd.se { right: -6px; bottom: -6px; cursor: nwse-resize; }
@@ -242,7 +248,7 @@ kbd { font: 12px var(--font); background: var(--surface); border-radius: 5px; pa
 /* ---------- the page strip ---------- */
 .stripwrap { display: flex; align-items: stretch; gap: 0; padding: 12px max(16px, env(safe-area-inset-right)) 6px max(16px, env(safe-area-inset-left)); min-width: 0; border-bottom: 0.5px solid var(--sep); }
 .strip { display: flex; align-items: flex-start; gap: 12px; min-width: 0; flex: 1; }
-.stripfront { flex: none; width: var(--tile-w); display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
+.stripfront { flex: none; width: min(var(--tile-w), 188px); display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
 .newpage { flex: 1 1 0; min-height: 0; display: flex; align-items: center; justify-content: center; gap: 5px; border: 1.5px dashed var(--fg-3); border-radius: var(--r-card);
   background: none; color: var(--fg-2); font-size: 12.5px; font-weight: 500; cursor: pointer; transition: color var(--t-fast), border-color var(--t-fast), transform var(--t) var(--spring); }
 .newpage:hover { color: var(--accent); border-color: var(--accent); }
@@ -259,15 +265,19 @@ kbd { font: 12px var(--font); background: var(--surface); border-radius: 5px; pa
 .tiles { display: flex; align-items: flex-start; gap: 10px; overflow-x: auto; padding: 2px 4px 6px; position: relative; min-width: 0; flex: 1; scroll-padding: 8px; scrollbar-width: none; }
 .tiles::-webkit-scrollbar { display: none; }
 /* Its size (Settings › Editor): Standard is the size it always was. */
-#app { --tile-w: 132px; --side-w: 184px; }
-#app[data-stripsize="small"] { --tile-w: 104px; --side-w: 152px; }
-#app[data-stripsize="large"] { --tile-w: 184px; --side-w: 236px; }
+/* Sized so the last third of the widest picture (the 5.79", 2.9 : 1) holds two buttons of 32 px. */
+#app { --tile-w: 248px; --side-w: 300px; }
+#app[data-stripsize="small"] { --tile-w: 188px; --side-w: 240px; }
+#app[data-stripsize="large"] { --tile-w: 320px; --side-w: 372px; }
 .strip > .slider { flex: 1; min-width: 0; display: flex; --fade: 48px; --arrow-y: calc(4px + var(--tile-w) / var(--aspect, 2.9) / 2); }
 .slider.still > .slides { transition: none; }
 .tile { flex: none; width: var(--tile-w); border: 0; background: none; padding: 0; text-align: left; cursor: pointer; border-radius: 9px; position: relative; transition: transform var(--t) var(--spring); }
 .tile:active { transform: scale(0.97); }
 .thumbwrap { display: block; width: 100%; border-radius: 6px; overflow: hidden; background: var(--paper); box-shadow: 0 0 0 0.5px var(--sep), 0 1px 2px rgba(0, 0, 0, 0.08); transition: box-shadow var(--t-fast); }
 .thumb { display: block; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity 0.25s; image-rendering: auto; }
+/* A page's picture is a control, not a photo: a hold on a phone shows the page's buttons, never
+   iOS's Save to Photos menu, and never selects. */
+.thumb, .tile, .tileact { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 .thumb.ready { opacity: 1; }
 .tile[aria-current="page"] .thumbwrap { box-shadow: 0 0 0 2.5px var(--accent); }
 .tile:focus-visible { outline: none; }
@@ -395,6 +405,18 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
 .pop.status .poplab { padding: 12px 0 2px; }
 .sthead { display: flex; align-items: center; gap: 8px; font: 600 15px var(--font-display); margin-bottom: 4px; }
 .pop.status .fnote { margin: 2px 0; }
+/* "Not sent yet" in the status card: a line per page or setting, hairlines between, Undo at the end. */
+.ulist { max-height: min(40vh, 320px); overflow-y: auto; margin: 6px -8px 2px; }
+.urow { display: flex; align-items: center; gap: 8px; padding: 0 8px; min-height: 44px; }
+.urow + .urow { box-shadow: inset 0 0.5px 0 var(--sep); }
+.uopen { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; min-height: 44px; border: 0; background: none; padding: 0 4px; margin: 0 -4px; text-align: left; color: var(--fg); font: inherit; border-radius: 8px; }
+button.uopen { cursor: pointer; transition: background-color var(--t-fast); }
+button.uopen:hover { background: var(--fill); }
+button.uopen:active { background: var(--fill-2); }
+button.uopen:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.uopen .un { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 3em; }
+.uopen .uw { color: var(--fg-2); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1 1 0; min-width: 0; }
+.urow .btn.small { flex: none; }
 .menu { width: auto; min-width: 220px; padding: 5px; }
 .mi { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 30px; padding: 4px 10px 4px 8px; border: 0; border-radius: var(--r-inner); background: none; text-align: left; cursor: default; font-size: 13px; }
 .mi .ml { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 280px; }
@@ -660,9 +682,9 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
   .canvasarea { padding: 12px; place-items: start center; }
   .device { padding: 7px; border-radius: 12px; width: 100%; }
   .layers { position: absolute; inset: auto 8px 8px 8px; width: auto; height: 55%; margin: 0; z-index: 6; box-shadow: var(--shadow-pop); }
-  #app { --tile-w: 108px; }
-  #app[data-stripsize="small"] { --tile-w: 88px; }
-  #app[data-stripsize="large"] { --tile-w: 144px; }
+  #app { --tile-w: 168px; }
+  #app[data-stripsize="small"] { --tile-w: 132px; }
+  #app[data-stripsize="large"] { --tile-w: 208px; }
   .inspector { position: fixed; left: 0; right: 0; bottom: 0; height: 72dvh; z-index: 20; border-left: 0; border-radius: var(--r-sheet) var(--r-sheet) 0 0;
     box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.16), 0 0 0 0.5px var(--sep); transform: translateY(calc(100% - 76px - env(safe-area-inset-bottom))); transition: transform var(--t) var(--spring); }
   .inspector.open { transform: none; }
@@ -726,34 +748,62 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
 .binlist .group { margin: 0; }
 .binlist .inline { display: flex; gap: 6px; align-items: center; }
 
-/* A countdown that has passed: kept, to reuse with another date, but plainly set apart. */
-.tile.passed .thumbwrap { box-shadow: 0 0 0 2px var(--orange); opacity: 0.55; }
-.tile.passed[aria-current="page"] .thumbwrap { box-shadow: 0 0 0 2.5px var(--orange), 0 0 0 5px color-mix(in srgb, var(--accent) 45%, transparent); }
+/* A countdown that has passed: kept, to reuse with another date, but plainly set apart: greyed,
+   and its line says so. No ring: an orange ring means only "not sent yet". */
+.tile.passed .thumbwrap { opacity: 0.55; }
 .tile.passed .tsub { color: var(--orange); font-weight: 600; }
+/* Not sent yet (doc.changes): an orange ring, a dot by the name like Send to panel's, and what's
+   waiting in the line under it. The open page keeps its blue ring outside the orange one. */
+.tile.unsent .thumbwrap { box-shadow: 0 0 0 2px var(--orange); }
+.tile.unsent[aria-current="page"] .thumbwrap { box-shadow: 0 0 0 2px var(--orange), 0 0 0 4.5px var(--accent); }
+.tile.unsent:focus-visible .thumbwrap { box-shadow: 0 0 0 2px var(--orange), 0 0 0 5px color-mix(in srgb, var(--accent) 55%, transparent); }
+.tile.unsent.lifted .thumbwrap { box-shadow: 0 0 0 2px var(--orange), 0 12px 28px rgba(0, 0, 0, 0.28); }
+.tile.unsent .tsub { color: var(--orange); }
+.udot { width: 7px; height: 7px; border-radius: 50%; background: var(--orange); flex: none; animation: dotin var(--t) var(--spring); }
+/* A page removed since the last send: what the panel still has, greyed, until it's sent or put back. */
+.tile.ghost .thumbwrap { position: relative; }
+.tile.ghost .thumb.ready { opacity: 0.4; }
+.ghostact { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 5px; font-size: 12px; font-weight: 600; color: var(--fg);
+  background: color-mix(in srgb, var(--raised) 70%, transparent); opacity: 0; transition: opacity var(--t-fast); }
+.ghostact .ic { width: 14px; height: 14px; }
+@media (hover: hover) { .tile.ghost:hover .ghostact { opacity: 1; } }
+.tile.ghost:focus-visible .ghostact { opacity: 1; }
 .note.passed { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: color-mix(in srgb, var(--orange) 10%, transparent); border: 1.5px solid var(--orange); border-radius: var(--r-card); padding: 10px 12px; }
 .note.passed > span { flex: 1; min-width: 12em; }
 .note.passed > .ic { color: var(--orange); }
 /* A tile's box: the tile, and its page's buttons over its picture (beside it, not inside). */
 .tilebox { position: relative; flex: none; display: flex; }
 #app[data-strip="side"] .tilebox { width: 100%; }
-/* A page's button over the right third of its picture: "…" for its menu, or Delete on a passed
-   countdown. Drawn the third's size; its hit area reaches 44 pt at every strip size (::before). */
-.tileacts { position: absolute; top: 0; right: 0; width: calc(100% / 3); display: flex; border-radius: 0 6px 6px 0;
-  background: color-mix(in srgb, var(--raised) 94%, transparent); box-shadow: inset 0.5px 0 0 var(--sep);
-  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
-  opacity: 0; pointer-events: none; transform: translateX(4px); transition: opacity var(--t-fast), transform var(--t) var(--spring); z-index: 2; }
-.tileact { position: relative; flex: 1 1 0; min-width: 0; border: 0; background: none; color: var(--fg); display: grid; place-items: center; cursor: pointer; padding: 0;
-  border-radius: inherit; transition: background-color var(--t-fast); }
-.tileact::before { content: ""; position: absolute; top: 50%; right: 0; width: max(100%, 44px); height: max(100%, 44px); transform: translateY(-50%); }
-.tileact:hover { background: var(--fill); }
-.tileact:active { background: var(--fill-2); }
+/* A page's two buttons over its picture: Duplicate above Delete over the last third, or side by side
+   across the bottom half (Settings › Editor, for each strip size). The box covers the picture and
+   lets clicks through; only the buttons take them, and only while they show. Each is drawn at least
+   32 px (the strip's sizes are made for it) and its tap area reaches 44 pt, out past the picture's
+   edge where it must: Duplicate's upwards, Delete's downwards, so the two never overlap. */
+.tileacts { position: absolute; top: 0; left: 0; width: 100%; display: grid; grid-template-columns: 2fr 1fr; grid-template-rows: 1fr 1fr; pointer-events: none;
+  opacity: 0; transform: translateX(4px); transition: opacity var(--t-fast), transform var(--t) var(--spring); z-index: 2; }
+#app[data-tilebuttons="half"] .tileacts { grid-template-columns: 1fr 1fr; transform: translateY(4px); }
+.tileact { position: relative; min-width: 0; border: 0; color: var(--fg); display: grid; place-items: center; cursor: pointer; padding: 0; pointer-events: none;
+  background: color-mix(in srgb, var(--raised) 94%, transparent); -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); transition: background-color var(--t-fast); }
+.tileact.dup { grid-area: 1 / 2; border-radius: 0 6px 0 0; box-shadow: inset 0.5px 0 0 var(--sep), inset 0 -0.5px 0 var(--sep); }
+.tileact.del { grid-area: 2 / 2; border-radius: 0 0 6px 0; box-shadow: inset 0.5px 0 0 var(--sep); color: var(--red); }
+#app[data-tilebuttons="half"] .tileact.dup { grid-area: 2 / 1; border-radius: 0 0 0 6px; box-shadow: inset 0 0.5px 0 var(--sep), inset -0.5px 0 0 var(--sep); }
+#app[data-tilebuttons="half"] .tileact.del { grid-area: 2 / 2; border-radius: 0 0 6px 0; box-shadow: inset 0 0.5px 0 var(--sep); }
+.tileact::before { content: ""; position: absolute; right: 0; width: max(100%, 44px); height: max(100%, 44px); }
+.tileact.dup::before { bottom: 0; }
+.tileact.del::before { top: 0; }
+#app[data-tilebuttons="half"] .tileact::before { top: 0; bottom: auto; }
+.tileact:hover { background: color-mix(in srgb, var(--raised) 80%, var(--fg) 8%); }
+.tileact:active { background: color-mix(in srgb, var(--raised) 70%, var(--fg) 16%); }
+.tileact:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .tileact .ic { width: 16px; height: 16px; }
-.tileact.del { color: var(--red); display: none; }
-.tilebox.passed .tileact.more { display: none; }
-.tilebox.passed .tileact.del { display: grid; }
-@media (hover: hover) { .tilebox:hover .tileacts, .tilebox:focus-within .tileacts { opacity: 1; pointer-events: auto; transform: none; } }
-.tilebox.held .tileacts, .tilebox.passed .tileacts { opacity: 1; pointer-events: auto; transform: none; }
-.tile.lifted ~ .tileacts { opacity: 0; pointer-events: none; }
+@media (hover: hover) {
+  .tilebox:hover .tileacts, .tilebox:focus-within .tileacts { opacity: 1; transform: none; }
+  .tilebox:hover .tileact, .tilebox:focus-within .tileact { pointer-events: auto; }
+}
+.tilebox.held .tileacts, .tilebox.passed .tileacts { opacity: 1; transform: none; }
+.tilebox.held .tileact, .tilebox.passed .tileact { pointer-events: auto; }
+.tile.lifted ~ .tileacts { opacity: 0; }
+.tile.lifted ~ .tileacts .tileact { pointer-events: none; }
 
 /* A world clock's cities: a row each (grip, city, its name, remove), the search under the one being picked. */
 .cities { display: flex; flex-direction: column; gap: 8px; }

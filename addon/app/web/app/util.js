@@ -142,7 +142,11 @@ export async function api(path, opts = {}) {
 }
 
 export const clone = (o) => JSON.parse(JSON.stringify(o));
-export const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+/* Equal as data: an object by its keys and values, whatever order its keys were written in (the
+   add-on and the editor write a page's in different orders, and that alone isn't a change);
+   an array keeps its order. */
+const sorted = (_, v) => (v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, v[k]])) : v);
+export const same = (a, b) => JSON.stringify(a ?? null, sorted) === JSON.stringify(b ?? null, sorted);
 export const slug = (s) => String(s || "").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 64);
 export const pageTitle = (n) => String(n || "").replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 export const isMac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);

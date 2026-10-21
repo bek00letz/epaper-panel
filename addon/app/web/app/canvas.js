@@ -114,7 +114,10 @@ export class Canvas {
       if (hv !== this.hover) { this.hover = hv; this.draw(); }
     });
     p.addEventListener("pointerleave", () => { if (!this.press && this.hover !== -1) { this.hover = -1; this.draw(); } });
+    this.doc.on("change", () => this.fadeChanges());
+    this.doc.on("page", () => { if (this.changes && this.changes.page !== this.doc.cur) { clearTimeout(this.changesT); this.changes = null; } });
     p.addEventListener("pointerdown", (e) => {
+      this.fadeChanges();
       if (e.button !== 0) return;
       p.focus({ preventScroll: true });
       const pt = this.toPanel(e);
@@ -310,6 +313,18 @@ export class Canvas {
   }
 
   /* ---------- outlines ---------- */
+  /* What differs from the panel on this page (doc.changes), outlined for a moment: `ids` are on the
+     page now, `gone` are the panel's elements no longer on it. Faded by the first click or edit. */
+  showChanges(ids, gone) {
+    clearTimeout(this.changesT);
+    this.changes = { page: this.doc.cur, ids: new Set(ids), gone };
+    this.draw();
+  }
+  fadeChanges() {
+    if (!this.changes || this.changes.going) return;
+    this.changes.going = true; this.draw();
+    this.changesT = setTimeout(() => { this.changes = null; this.draw(); }, 260);
+  }
   clearGuides() { this.ov.querySelectorAll(".guide").forEach((n) => n.remove()); }
   draw(guides) {
     const g = this.g, els = this.els(), sel = this.doc.sel;
@@ -319,6 +334,12 @@ export class Canvas {
     const box = (el, cls) => { const b = h("div", { class: "ob " + cls, style: pct(el) }); this.ov.append(b); return b; };
     if (this.app.prefs.get("guides") === "1") els.forEach((el, i) => { if (!sel.includes(i)) box(el, "all"); });
     els.forEach((el, i) => { if (el._auto && !sel.includes(i)) box(el, "auto"); });
+    const ch = this.changes?.page === this.doc.cur ? this.changes : null;
+    if (ch) {
+      const cls = "chg" + (ch.going ? " going" : "");
+      els.forEach((el, i) => { if (ch.ids.has(el.id) && !sel.includes(i)) box(el, cls); });
+      ch.gone.forEach((el) => box(el, cls + " gone"));
+    }
     if (this.stack) this.stack.hits.forEach((k) => { if (!sel.includes(k) && els[k]) box(els[k], "stk"); });
     const hv = this.rowHover >= 0 ? this.rowHover : this.hover;
     if (hv >= 0 && els[hv] && !sel.includes(hv) && !this.press?.dragging) box(els[hv], "hov");

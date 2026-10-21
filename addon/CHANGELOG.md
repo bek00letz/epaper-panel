@@ -1,5 +1,38 @@
 # Changelog
 
+## Unreleased
+- **Duplicate and Delete on every page in the strip.** Hover a page (or
+  hold it on a touch screen) and its last third shows two buttons:
+  Duplicate, and Delete, which asks which you mean, Delete page or Take out
+  of rotation, each with an Undo. They replace the "…" menu; right-click a
+  page for the full list, Show again included. If you'd rather have them
+  side by side across the bottom half of the picture, choose that in
+  Settings › Editor; it's kept for each strip size.
+- **Holding a page on a phone shows its buttons**, not the iPhone's "Save
+  to Photos" menu for its picture (and on Android, not the page menu on
+  top of them).
+- **Larger page strip sizes**, so those buttons fit: Small, Standard and
+  Large are now 188, 248 and 320 px wide (they were 104, 132 and 184). A
+  size you'd picked before becomes the new Small.
+- **"Not sent yet" no longer shows for pages you didn't change.** The
+  add-on and the editor write a page's details in a different order, and
+  after a reload that alone counted as a change.
+- **The page strip shows what isn't on the panel yet.** A page you've
+  changed since you last sent gets an orange outline and a dot by its name,
+  and the line under it says what's waiting: "2 changes, not sent", "New,
+  not sent", "Moved, not sent". A page you removed stays at the end of the
+  strip, greyed, under "Removed, not sent", until you send; click it to put
+  it back. A countdown that has passed is now greyed without an outline, so
+  an orange outline only ever means "not sent yet".
+- **"Not sent yet" says what isn't sent.** Click the pill at the head of
+  the page strip: under it, a line for each page with something waiting
+  ("Solar today · 2 changes", "Clock · Added", "Bins · Removed", "Cat ·
+  Moved in the rotation") and for quiet hours and the other settings sent
+  with your pages. Click a line to open that page with what changed
+  outlined in orange (dashed where something was removed) until your first
+  click; Undo puts just that page back to what the panel has, with an Undo
+  of its own.
+
 ## 0.15.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) to see which Wi-Fi network it's
