@@ -288,10 +288,11 @@ const TYPE_FIELDS = {
   weather_forecast: [F.entity("entity", "Weather", ["weather"]), F.sel("layout_mode", "Layout", [["auto", "Fit the box"], ["split", "Now and forecast side by side"], ["stacked", "Now above the forecast"], ["hero_only", "Now only, very large"], ["forecast_only", "Forecast only"]], "auto"),
     F.sel("forecast_days", "Days", [["3", "3"], ["4", "4"], ["5", "5"]], "4"), F.on("show_details", "Humidity and wind", true), BORDER_ON,
     // "Now" from your own station, each part optional (sources/station.py); the forecast keeps the days.
+    // The sky guess is opt-in: only a chosen sunlight sensor turns it on (the user doesn't trust theirs).
     F.entity("now_entity", "Now from", ["weather"]), F.entity("temperature_sensor", "Temperature sensor", ["sensor"]),
     F.entity("humidity_sensor", "Humidity sensor", ["sensor"]), F.entity("wind_sensor", "Wind sensor", ["sensor"]),
     F.entity("rain_sensor", "Rain sensor", ["sensor", "binary_sensor"]), F.entity("pressure_sensor", "Pressure sensor", ["sensor"]),
-    F.entity("solar_sensor", "Sunlight sensor", ["sensor"])],
+    F.entity("solar_sensor", "Guess the sky from sunlight", ["sensor"])],
   sports_racing: [F.sel("series", "Series", SERIES, "f1"), F.entity("entity", "Sensor, if you have one"),
     F.sel("max_drivers", "Leaderboard", [["6", "Top 6, extra large"], ["8", "Top 8, large"], ["10", "Top 10"]], "10"),
     { kind: "window", label: "Only show around sessions" }, F.sel("window_mode", "Around", [["session", "Each session"], ["weekend", "The whole weekend"]], "session"),

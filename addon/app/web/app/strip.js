@@ -10,7 +10,7 @@ import { describe, parseShowIf, evaluate } from "./conditions.js";
    cached by what the page contains. */
 const thumbCache = new Map();
 let queue = [], running = false;
-// `example`: drawn with the add-on's example values, never Home Assistant's (New page's presets).
+// `example`: drawn with the add-on's example values (api/example), never Home Assistant's (New page's presets).
 export function thumbnail(app, name, img, override, { example = false } = {}) {
   const page = override || app.doc.spec.pages[name];
   if (!page) return;
@@ -28,7 +28,8 @@ async function pump(app) {
     const job = queue.shift();
     if (!job.img.isConnected) continue;
     try {
-      const r = await api("api/preview", { method: "POST", raw: true, body: { page: job.page, label: job.name.replace(/^preset:(__blank)?/, "").split(":")[0], orientation: Number(app.doc.spec.orientation || 0), distance: 0, display: app.doc.spec.display, ...(job.example ? { example: true } : {}) } });
+      // An example is drawn by api/example: built-in example values, never Home Assistant's or the person's.
+      const r = await api(job.example ? "api/example" : "api/preview", { method: "POST", raw: true, body: { page: job.page, label: job.name.replace(/^preset:(__blank)?/, "").split(":")[0], orientation: Number(app.doc.spec.orientation || 0), distance: 0, display: app.doc.spec.display } });
       const url = URL.createObjectURL(await r.blob());
       thumbCache.set(job.key, url);
       if (thumbCache.size > 80) { const [k, u] = thumbCache.entries().next().value; URL.revokeObjectURL(u); thumbCache.delete(k); }

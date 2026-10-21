@@ -125,6 +125,10 @@
   rain, pressure and sunlight, each optional.
 - Search in New page puts presets whose name you typed first.
 
+- **Fixed:** in New page, every preset that shows a sensor had "--" in its
+  picture. They're drawn with example values now, never your own data, and
+  the next step says "Example values" until you pick yours.
+
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) for the quiet-hours fix below.

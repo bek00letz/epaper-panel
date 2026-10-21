@@ -380,6 +380,7 @@ class TestWatchAndListen(unittest.TestCase):
         src = (APP_JS / "inspector.js").read_text()
         self.assertIn('now_playing: [F.text("entity", "Players", "All of them")],', src)
         self.assertIn('tv_week: [F.entity("entity", "Calendar of shows", ["calendar"])', src)
+        self.assertIn('F.entity("solar_sensor", "Guess the sky from sunlight", ["sensor"])', src, "the sky guess is opt-in, and says so")
         for key in ("now_entity", "temperature_sensor", "humidity_sensor", "wind_sensor", "rain_sensor", "pressure_sensor", "solar_sensor"):
             self.assertIn(f'F.entity("{key}"', src, "weather from your own station (sources/station.SENSORS)")
 
@@ -389,6 +390,11 @@ class TestTheSheet(unittest.TestCase):
 
     def setUp(self):
         self.js = (APP_JS / "newpage.js").read_text()
+
+    def test_preset_thumbnails_are_examples_never_your_data(self):
+        self.assertIn('api(job.example ? "api/example" : "api/preview"', (APP_JS / "strip.js").read_text())
+        self.assertIn('thumb(app, `preset:${look.id}:example`, examplePage(p, look), { example: true })', self.js)
+        self.assertNotIn("guess(app", self.js, "no longer drawn from a guessed sensor (the -- bug)")
 
     def test_it_is_the_new_page_sheet(self):
         self.assertIn('import { openPresets } from "./newpage.js";', (APP_JS / "main.js").read_text())
