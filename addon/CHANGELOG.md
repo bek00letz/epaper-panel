@@ -56,6 +56,23 @@
   "back when someone's home". It's now woken once when the sleep screen's
   words change, and never more often than that.
 
+- **New page, on shelves.** One shelf per group (Your day, Home, Energy,
+  Outside, Sports, Watch and listen), each sliding sideways, with how many
+  it holds beside its name. Arrows show at the edges as you point at a
+  shelf, only where there's more, and the edge fades while there is; on a
+  phone you swipe. Your own presets get a shelf of their own, first. Search
+  finds a preset by any word, its old name too. "+ Blank page" sits in the
+  footer. The arrow keys move along a shelf, and Esc goes back a step.
+- **One preset per thing a page shows.** Its look is picked next: Planes
+  overhead (Nearest plane, Radar or Both, now under Outside with the
+  weather), Calendar (Month and agenda, or Month), New to watch (three
+  styles), To-do list (By urgency, Inverted when due, Outlined), Match (any
+  league the add-on follows) and Race weekend (Formula 1, Formula E, NASCAR,
+  IndyCar). It remembers the look you picked last.
+- **Clearer names.** "Door or pet" is now Status, "On now" is Dynamic status
+  and "Formula 1" is Race weekend. Pages you already have don't change. A new
+  Match or Race weekend page is named after its league or series.
+
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) for the quiet-hours fix below.

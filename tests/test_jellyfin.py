@@ -173,7 +173,7 @@ class TestPresets(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        script = (f"import {{ PRESETS }} from {json.dumps(str(support.APP / 'web/app/legacy.js'))};"
+        script = (f"import {{ LOOKS as PRESETS }} from {json.dumps(str(support.APP / 'web/app/presets.js'))};"
                   f"console.log(JSON.stringify(PRESETS.filter((p) => p.asks === 'jellyfin')"
                   f".map((p) => ({{ id: p.id, show_if: p.showIf({json.dumps(cls.ENT)}),"
                   f" elements: p.makeElements({json.dumps(cls.ENT)}) }}))))")
