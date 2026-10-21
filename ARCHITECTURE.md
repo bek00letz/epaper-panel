@@ -257,8 +257,19 @@ machine) with no ESP-IDF in it, and is compiled and tested on the host by
   first item, extra items are shared out in rotation order, and pages at the
   end are left out only if one each doesn't fit. Items within a page are in
   order of importance (your teams, live, upcoming, finished; the closest
-  aircraft; the newest episode). What was left out is in
-  `sensor.epaper_panel_pages` and `/api/status` (`fit`).
+  aircraft; the newest episode). A Scores page has every game of the day
+  (no cap; planes, players and feed items stop at five), so the panel's
+  room is the only limit. What was left out is in
+  `sensor.epaper_panel_pages` and `/api/status` (`fit`, each trimmed page
+  with what its items are called: `frames.items_word`), and the editor says
+  it only where it happened, never as a page count (the user's call, 21
+  Oct): "Showing 14 of 23 games" on the page's tile, a fuller line in its
+  inspector. Before it happens, while setting up Scores, `POST
+  /api/busy_day` shares out a busy day (each league's `busiest_day` in
+  `sources/sports.LEAGUES`, `subitems.busiest`) the same way, and the editor
+  says when it could pass what the device holds. Both only for a device that
+  keeps its whole rotation in memory (`Kind.room`: an always-on CrowPanel);
+  one that sleeps fetches a page a wake and never runs out.
 - **A failed download is owed** (`note_fetch`, `fetch_due`): retried after
   30 s, doubling to 10 min, even while resting, because only a download can
   tell a sleeping panel that quiet hours are over. A refresh asked for while a
