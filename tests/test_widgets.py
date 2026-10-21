@@ -805,6 +805,23 @@ class TestIconsFollowTheirState(unittest.TestCase):
         self.assertEqual(unknown.tobytes(), closed.tobytes(), "no match: its own icon")
         self.assertEqual(render(self.EL, None).tobytes(), closed.tobytes(), "not known yet: its own icon")
 
+    def test_a_state_matches_whatever_its_case(self):
+        # Home Assistant says "Outdoor Cat"; a row typed "outdoor cat" is the same state.
+        el = {**self.EL, "entity": "sensor.pawpaw_location", "icon": "mdi:help",
+              "state_icons": {"outdoor cat": "mdi:cat-outline", "Indoor Cat ": "mdi:cat"}}
+        out, in_, other = (render(el, v) for v in ("Outdoor Cat", "INDOOR CAT", "Away"))
+        self.assertEqual(out.tobytes(), render({**el, "state_icons": {"Outdoor Cat": "mdi:cat-outline"}}, "Outdoor Cat").tobytes())
+        self.assertNotEqual(out.tobytes(), other.tobytes())
+        self.assertNotEqual(in_.tobytes(), other.tobytes())
+        self.assertEqual(other.tobytes(), render({**el, "state_icons": {}}, "Away").tobytes(), "no match: its own icon")
+
+    def test_one_lookup_for_icons_and_status_spots(self):
+        si = {"Outdoor Cat": "mdi:cat-outline", "on": ""}
+        self.assertEqual(layout.icon_for_state(si, " outdoor cat "), "mdi:cat-outline")
+        self.assertEqual(layout.icon_for_state(si, "on"), "", "an empty icon is no icon")
+        self.assertEqual(layout.icon_for_state(None, "on"), "")
+        self.assertEqual(layout._resolve_spot_icon({"state_icons": si, "icon": "mdi:cat"}, "OUTDOOR CAT"), "mdi:cat-outline")
+
 
 # ---------------------------------------------------------------- world clock
 

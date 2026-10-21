@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+- **An icon that follows a sensor matches its state whatever the case.**
+  "outdoor cat" picks the same icon as "Outdoor Cat", as the Dynamic status
+  spots already did.
+
 ## 0.16.0
 Add-on only; no firmware change, so nothing to reinstall on the panel.
 

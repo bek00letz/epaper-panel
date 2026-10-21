@@ -576,14 +576,25 @@ def _draw_icon_glyph(d, name, cx, cy, sz):
         d.text((cx, cy), chr(cp), font=f, fill=T.BLACK, anchor="mm")
 
 
+def icon_for_state(state_icons, state) -> str:
+    """The icon a state_icons map gives a state, or "" when none does. Matched as Home Assistant's
+    state reads, ignoring case and spaces around it ("outdoor cat" is "Outdoor Cat"): the one
+    lookup for an icon element and a Dynamic status spot."""
+    st = str(state or "").strip().lower()
+    if not st or not isinstance(state_icons, dict):
+        return ""
+    for k, v in state_icons.items():
+        if str(k).strip().lower() == st and v:
+            return str(v)
+    return ""
+
+
 def _resolve_spot_icon(it, state):
     st = str(state or "").strip().lower()
     # 1. Custom state-to-icon mapping
-    si = it.get("state_icons")
-    if isinstance(si, dict):
-        for k, v in si.items():
-            if str(k).strip().lower() == st and v:
-                return str(v)
+    mapped = icon_for_state(it.get("state_icons"), st)
+    if mapped:
+        return mapped
     is_inactive = st in ("off", "idle", "closed", "locked", "disarmed", "standby", "0")
     if is_inactive and it.get("icon_off"):
         return str(it["icon_off"])
@@ -2180,8 +2191,7 @@ def render_page(page, vals, *, clock="", label="", footer=None, page_no=None, it
         try:
             if el["type"] == "icon" and isinstance(el.get("state_icons"), dict):
                 # Drawn by its entity's state, with its own icon when no state matches (or none yet).
-                state = str(vals.get(i, "") or "").strip()
-                el = {**el, "icon": el["state_icons"].get(state) or el.get("icon", "")}
+                el = {**el, "icon": icon_for_state(el["state_icons"], vals.get(i)) or el.get("icon", "")}
             if el["type"] in ("curve", "bar_chart"):
                 drawer(img, d, el, "", (series or {}).get(i), display=display)
             elif el["type"] == "todo_list":
