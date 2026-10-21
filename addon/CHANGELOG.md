@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Connection says which Wi-Fi network the panel is on**, as in "Connected
+  to Office, Wi-Fi −37 dBm" (Settings › Device). **Firmware change:** install
+  the panel again (Send to ESPHome, then Install) to see it; until then the
+  row shows the signal as before.
 - **Zoom to any size between actual size and Fit.** Fit and Actual size are
   now one zoom control: − and + around a menu of Fit, 75%, 100%, 125%, 150%
   and 200%. ⌘+ and ⌘− step, ⌘0 is 100%, and a trackpad pinch zooms smoothly

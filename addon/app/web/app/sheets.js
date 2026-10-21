@@ -542,7 +542,7 @@ async function panelPane(app, pane, show) {
   try {
     const r = (await api("api/panel-setup")).body;
     const p = r.panel || {};
-    conn.textContent = p.connected ? `Connected${p.rssi ? `, Wi-Fi ${p.rssi} dBm` : ""}` : p.node ? "Found, but offline. It picks up changes when it's back." : "No panel yet";
+    conn.textContent = p.connected ? `Connected${p.network ? ` to ${p.network}` : ""}${p.rssi ? `, Wi-Fi ${p.rssi} dBm` : ""}` : p.node ? "Found, but offline. It picks up changes when it's back." : "No panel yet";
   } catch (e) { conn.textContent = "Couldn't check"; }
 }
 

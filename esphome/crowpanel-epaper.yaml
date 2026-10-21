@@ -318,6 +318,10 @@ text_sensor:
     ip_address:
       id: wifi_ip
       name: Panel IP
+    # Which network it's on, for the editor's Connection row. Home Assistant only.
+    ssid:
+      id: wifi_ssid
+      name: Panel Wi-Fi network
 
 number:
   - platform: template

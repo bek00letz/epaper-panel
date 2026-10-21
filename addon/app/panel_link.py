@@ -29,6 +29,7 @@ ENTITY_KEYS = {
     "refresh": ("number", "Refresh interval"),
     "ip": ("text_sensor", "Panel IP"),
     "wifi": ("sensor", "Panel Wi-Fi"),
+    "network": ("text_sensor", "Panel Wi-Fi network"),      # firmware 0.14.1 and later
     # The panel's own settings, shown in the editor (firmware 0.9.5 and later).
     "sleep": ("switch", "Sleep"),
     "ghost_after": ("number", "Ghost clear after"),
@@ -292,8 +293,8 @@ class PanelLink:
 
     async def connection(self) -> dict:
         await self.discover()
-        out = {"connected": False, "ip": None, "rssi": None, "node": self.node, "problem": self.problem}
-        for key, field in (("ip", "ip"), ("wifi", "rssi")):
+        out = {"connected": False, "ip": None, "rssi": None, "network": None, "node": self.node, "problem": self.problem}
+        for key, field in (("ip", "ip"), ("wifi", "rssi"), ("network", "network")):
             ent = self.entities.get(key)
             if not ent:
                 continue

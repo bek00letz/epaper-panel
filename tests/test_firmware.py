@@ -318,6 +318,11 @@ class TestFirmwareYaml(unittest.TestCase):
         self.assertNotIn("online_image", text)
         self.assertNotRegex(text, r"@[A-Z][A-Z_]+@")
 
+    def test_it_names_its_network_to_home_assistant(self):
+        """The editor's Connection row says which Wi-Fi it's on (panel_link's "network")."""
+        text, _ = reference_yaml()
+        self.assertRegex(text, r"ssid:\n\s+id: wifi_ssid\n\s+name: Panel Wi-Fi network\n")
+
     def test_repository_copy_is_the_generator_output(self):
         text, _ = reference_yaml()
         self.assertEqual((ROOT / "esphome" / "crowpanel-epaper.yaml").read_text(), text,
