@@ -85,6 +85,12 @@
   New to watch's line at the top right and Battery and solar's heading no
   longer run over.
 
+- **The likely sensor first.** A preset lists the sensors it's for first:
+  temperature sensors for Room temperature, energy sensors for Solar today,
+  and the one your Energy dashboard uses is picked for you and says so.
+  Status takes any sensor's state now (a door, a person, a lock), door and
+  window sensors first.
+
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) for the quiet-hours fix below.

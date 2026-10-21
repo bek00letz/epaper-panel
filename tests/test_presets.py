@@ -194,6 +194,42 @@ class TestEverythingFits(unittest.TestCase):
                 self.assertEqual(got, want)
 
 
+@unittest.skipUnless(shutil.which("node"), "no node to read the editor's presets")
+class TestSensibleFirst(unittest.TestCase):
+    ENTS = [
+        {"entity_id": "sensor.power_meter", "unit": "W", "device_class": "power"},
+        {"entity_id": "sensor.solar_month", "unit": "kWh", "device_class": "energy"},
+        {"entity_id": "sensor.outdoor", "unit": "°F"},
+        {"entity_id": "sensor.living_room", "unit": "°C", "device_class": "temperature"},
+        {"entity_id": "sensor.pv_today", "unit": "kWh", "device_class": "energy"},
+        {"entity_id": "binary_sensor.front_door", "unit": ""},
+        {"entity_id": "person.sam", "unit": ""},
+        {"entity_id": "light.hall", "unit": ""},
+    ]
+
+    def rank(self, preset, energy=None):
+        return run_js(f"""console.log(JSON.stringify(P.rankSensors(P.presetById({json.dumps(preset)}), {json.dumps(self.ENTS)}, {json.dumps(energy or {})})
+          .map(({{ e, tag }}) => [e.entity_id, tag])));""")
+
+    def test_temperature_sensors_first(self):
+        got = [e for e, _ in self.rank("climate")]
+        self.assertEqual(got[:2], ["sensor.living_room", "sensor.outdoor"], "device class, then unit")
+        self.assertEqual(len(got), 5, "every other sensor is still there, after them")
+
+    def test_the_energy_dashboards_sensor_first_and_said_so(self):
+        got = self.rank("solar", {"solar": ["sensor.pv_today"]})
+        self.assertEqual(got[0], ["sensor.pv_today", "From your Energy dashboard"])
+        self.assertEqual(got[1], ["sensor.solar_month", ""])
+
+    def test_without_an_energy_dashboard_energy_sensors_first(self):
+        self.assertEqual([e for e, _ in self.rank("solar")][:2], ["sensor.solar_month", "sensor.pv_today"])
+
+    def test_status_shows_any_state_door_sensors_first(self):
+        got = [e for e, _ in self.rank("status")]
+        self.assertEqual(got[:2], ["binary_sensor.front_door", "person.sam"])
+        self.assertNotIn("light.hall", got)
+
+
 class TestTheSheet(unittest.TestCase):
     """New page's wiring and look, pinned in its source."""
 

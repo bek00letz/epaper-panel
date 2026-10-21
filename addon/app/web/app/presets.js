@@ -111,7 +111,8 @@ export const PRESETS = [
   {
     id: "status", group: "home", title: "Status", was: "Door or pet", kw: "door pet cat presence window state since open closed",
     desc: "Any sensor's state in your own words (Open, Home, Running) and how long it's been that way.",
-    asks: "binary_sensor", example: "binary_sensor.front_door", namedByEntity: true,
+    asks: "binary_sensor", alsoShows: ["person", "device_tracker", "lock", "cover", "input_boolean", "switch", "sensor"],
+    example: "binary_sensor.front_door", namedByEntity: true,
     looks: [{ id: "presence_door", name: "Status", make: (ent) => [
       { type: "icon", icon: "mdi:door", x: 32, y: 44, w: 116, h: 116 },
       { type: "text", entity: ent || "", show: "state", replace: { on: "Open", off: "Closed" }, size: 80, bold: true, x: 164, y: 30, w: 360, h: 128, align: "left" },
@@ -300,14 +301,18 @@ export function matches(p, query) {
 
 /* Which entities a preset can show, sensible ones first: the Energy
    dashboard's own (tagged), then the right kind (device class, then unit),
-   then the rest of the domain. Each comes back as { e, tag }. */
+   then the rest of its domain, then the other domains it can show
+   (`alsoShows`). Each comes back as { e, tag }. */
 export function rankSensors(p, ents, energy = {}) {
-  const fits = (e) => (p.asks === "jellyfin" ? e.feed === "jellyfin" : e.entity_id.startsWith(p.asks + "."));
+  const domain = (e) => e.entity_id.split(".")[0];
+  const also = p.alsoShows || [];
+  const fits = (e) => (p.asks === "jellyfin" ? e.feed === "jellyfin" : domain(e) === p.asks || also.includes(domain(e)));
   const pref = p.prefer || {};
   const fromEnergy = new Set((pref.energy && energy[pref.energy]) || []);
   const score = (e) => fromEnergy.has(e.entity_id) ? 0
     : (pref.device_class || []).includes(e.device_class) ? 1
-    : (pref.units || []).includes(e.unit) ? 2 : pref.device_class || pref.units ? 3 : 2;
+    : (pref.units || []).includes(e.unit) ? 2
+    : p.asks === "jellyfin" || domain(e) === p.asks ? 3 : 4 + also.indexOf(domain(e));
   return ents.filter(fits)
     .map((e, k) => ({ e, k, s: score(e) }))
     .sort((a, b) => a.s - b.s || a.k - b.k)
