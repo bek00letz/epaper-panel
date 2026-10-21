@@ -125,9 +125,10 @@ class TestNothingCutOff(unittest.TestCase):
         self.assertTrue(self.fits([28, 42, 30, 50], 258))
         self.assertTrue(self.fits([30, 45], 141), "Bold | Regular stays beside")
 
-    def test_every_segmented_control_is_measured(self):
+    def test_every_segmented_control_asks_for_its_choices(self):
+        # Since the row rule (test_rows): its need, set when it's made, decides where the row puts it.
         src = UI.read_text()
-        self.assertIn("fitting?.observe(c)", src[src.index("export function seg("):])
-        self.assertIn('f.classList.toggle("stack"', src)
-        self.assertRegex(CSS, r"\.field\.wide, \.field\.stack \{ grid-template-columns: 1fr; \}")
-        self.assertIn(".field.stack .segc button { flex: 1 1 auto; }", CSS, "under its label, each choice as wide as its words")
+        seg = src[src.index("export function seg("):]
+        self.assertIn('c.style.setProperty("--need", segNeed(', seg)
+        self.assertIn("if (SEG_LIVE) { fitting?.observe(c); return c; }", seg, "the live measuring kept as the way back")
+        self.assertIn("const SEG_LIVE = false;", src)

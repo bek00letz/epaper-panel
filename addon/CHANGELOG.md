@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+- **No row squeezes its label or its control.** In the inspector, Settings
+  and New page, a control that doesn't fit beside its label now goes under
+  it, full width, with any note kept under the label. "Close to the day" on
+  a Bin day read "Close / to / the / day" beside its menu, and "Starts
+  showing" squeezed its note; a label too long for two lines takes the row
+  too. Segmented controls follow the same rule.
+
 ## 0.19.0
 Add-on only; no firmware change, so nothing to reinstall on the panel.
 
