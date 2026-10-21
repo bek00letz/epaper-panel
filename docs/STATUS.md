@@ -42,7 +42,12 @@ Worker notes are in the coordinator's notes folder
 
 ## Backlog, most important first
 
-1. **Sleeping on the real 5.79" (since 0.13).** Always on first (nothing should change), then
+1. **Three bugs found by the presets mockup (21 Oct).** NASCAR and IndyCar
+   show Formula 1 data (`sources/racing.py` fetches only F1 and Formula E);
+   the Guest Wi-Fi preset's text runs under its QR code (no wrap,
+   `web/app/legacy.js`); New page thumbnails show "--" for every preset that
+   needs a sensor (they should draw example values, never your data).
+2. **Sleeping on the real 5.79" (since 0.13).** Always on first (nothing should change), then
    sleeping: sleep current through the USB meter (an upper bound), the
    change after a wake without a flash, a full refresh every 8th change,
    buttons waking it, a power cut. Steps in `firmware-013.md`. Way back if it
@@ -53,17 +58,17 @@ Worker notes are in the coordinator's notes folder
    12+ hours, battery still at 100%. Sub-second drops of Home Assistant's
    connection at 00:00:20 and 06:00:22, as quiet hours started and ended;
    harmless, watch whether they grow.
-2. **The editor's new parts by eye**, in Safari and inside Home Assistant:
+3. **The editor's new parts by eye**, in Safari and inside Home Assistant:
    the screen bar, Add a screen with power first, rename in place, and Fit
    in Safari (reasoned from screenshots, not reproduced).
-3. **The 5.79" away from home:** fetching over HTTPS through Home
+4. **The 5.79" away from home:** fetching over HTTPS through Home
    Assistant's address and a Cloudflare tunnel works (20 Oct, once the
    integration's entry existed). Still untried: a second Wi-Fi network, and
    "Through your own address".
-4. **Setup from the browser** (next month, large, firmware): a design pass
+5. **Setup from the browser** (next month, large, firmware): a design pass
    with the user first on how the panel keeps its Home Assistant actions and
    entities without a per-panel key (ROADMAP, open question).
-5. **The rest of next month** (ROADMAP): the screen's words in Home
+6. **The rest of next month** (ROADMAP): the screen's words in Home
    Assistant's language (which languages first is open), share a page, to-do
    lists, a "how it went" report, TRMNL-compatible screens.
 
