@@ -129,6 +129,9 @@
   picture. They're drawn with example values now, never your own data, and
   the next step says "Example values" until you pick yours.
 
+- **Fixed:** New page showed the word "null" above the shelves when you had
+  no presets of your own, and in an energy preset's step.
+
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) for the quiet-hours fix below.

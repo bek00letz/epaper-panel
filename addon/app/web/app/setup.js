@@ -285,9 +285,10 @@ function energySetup({ app, p, changed }) {
   function draw() {
     if (has()) {
       const ids = role.list(en);
-      node.replaceChildren(h("p", { class: "note good" }, icon("check", "sm"), h("span", { text: ids.length
+      // replaceChildren() takes nodes only: a null would show as the word "null".
+      node.replaceChildren(...[h("p", { class: "note good" }, icon("check", "sm"), h("span", { text: ids.length
         ? `From your Energy dashboard: ${ids.map(name).join(", ")}.` : "From your Energy dashboard." })),
-        p.energy === "grid" && !en.grid_power.length ? h("p", { class: "fnote", text: "Your dashboard has no grid power sensor, so the page shows today's balance instead." }) : null);
+        p.energy === "grid" && !en.grid_power.length ? h("p", { class: "fnote", text: "Your dashboard has no grid power sensor, so the page shows today's balance instead." }) : null].filter(Boolean));
       return;
     }
     const why = en.known ? role.missing : "Home Assistant didn't say how your Energy dashboard is set up." + (role.pick ? " Pick a sensor instead, or try again later." : " The page shows what it finds.");

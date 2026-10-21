@@ -113,12 +113,13 @@ export function openPresets(app) {
 
     function drawShelves() {
       const mine = yours();
-      shelves.replaceChildren(
+      // replaceChildren() takes nodes only: a null would show as the word "null".
+      shelves.replaceChildren(...[
         mine.length ? shelf("yours", "Yours", mine.map(ownCard)) : null,
         ...GROUPS.map(([id, name]) => {
           const list = PRESETS.filter((p) => p.group === id);
           return list.length ? shelf(id, name, list.map(card)) : null;
-        }));
+        })].filter(Boolean));
     }
     function drawResults() {
       const s = query.trim().toLowerCase();

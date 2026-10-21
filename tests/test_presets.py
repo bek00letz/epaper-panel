@@ -20,6 +20,31 @@ APP_JS = WEB / "app"
 CSS = re.sub(r"/\*.*?\*/", "", (WEB / "editor.css").read_text(), flags=re.S)
 
 
+def calls(src, opener):
+    """Each call's arguments, by matching brackets (a regex stops at the first ")" inside)."""
+    out, at = [], 0
+    while (at := src.find(opener, at)) >= 0:
+        k, depth = at + len(opener), 1
+        while depth and k < len(src):
+            depth += {"(": 1, ")": -1}.get(src[k], 0)
+            k += 1
+        out.append(src[at + len(opener):k - 1])
+        at = k
+    return out
+
+
+def top_level(args):
+    """A call's arguments split at its own commas, not those inside brackets."""
+    out, depth, cur = [], 0, ""
+    for ch in args:
+        depth += {"(": 1, "[": 1, "{": 1, ")": -1, "]": -1, "}": -1}.get(ch, 0)
+        if ch == "," and depth == 0:
+            out.append(cur); cur = ""
+        else:
+            cur += ch
+    return out + [cur]
+
+
 def run_js(body):
     script = (f"import * as P from {json.dumps(str(APP_JS / 'presets.js'))};"
               f"import * as L from {json.dumps(str(APP_JS / 'legacy.js'))};\n{body}")
@@ -385,6 +410,30 @@ class TestWatchAndListen(unittest.TestCase):
             self.assertIn(f'F.entity("{key}"', src, "weather from your own station (sources/station.SENSORS)")
 
 
+@unittest.skipUnless(shutil.which("node"), "no node to read the editor's presets")
+class TestThumbnailsHaveValues(unittest.TestCase):
+    """Every preset's thumbnail has a value for everything it shows: the example values
+    widgets-015's /api/example draws (examples.page_values), never "--"."""
+
+    def test_every_look_has_example_values(self):
+        try:
+            import examples                        # widgets-015's, once both are merged
+        except ImportError:
+            self.skipTest("the example values arrive with widgets-015")
+        cat = run_js(CATALOGUE)
+        for p in cat["presets"]:
+            for look in p["looks"]:
+                page = look["example"]
+                vals, series = examples.page_values(page)
+                for i, el in enumerate(page["elements"]):
+                    shows = el.get("entity") or "{{" in str(el.get("value", "")) or el["type"] in ("dynamic_grid", "weather_forecast")
+                    if not shows:
+                        continue
+                    with self.subTest(look=look["id"], element=i, type=el["type"]):
+                        got = series.get(i) if el["type"] in ("curve", "bar_chart") else vals.get(i)
+                        self.assertNotIn(got, (None, "", "--", "unknown", "unavailable", [], {}))
+
+
 class TestTheSheet(unittest.TestCase):
     """New page's wiring and look, pinned in its source."""
 
@@ -450,6 +499,14 @@ class TestTheSheet(unittest.TestCase):
     def test_close_stays_at_the_edge_in_a_step_on_a_phone(self):
         self.assertIn(".npsheet.stepping .sheet-head h2 { flex: 1; max-width: none; }", CSS)
         self.assertIn('node.classList.add("stepping")', self.js)
+
+    def test_no_stray_null_on_screen(self):
+        """replaceChildren() writes a null as the word "null": what's left out is filtered first."""
+        for name in ("newpage.js", "setup.js"):
+            src = (APP_JS / name).read_text()
+            for call in calls(src, ".replaceChildren("):
+                for arg in top_level(call):
+                    self.assertFalse(re.search(r":\s*null\s*$", arg.strip()), f"{name}: {arg.strip()[:80]}")
 
     def test_the_shelves_never_widen_the_sheet(self):
         self.assertIn(".shelfbody > * { min-width: 0; }", CSS)
