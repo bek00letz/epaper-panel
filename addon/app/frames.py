@@ -23,7 +23,7 @@ from ha import curve_series, ha_json, resolve_templates
 from panel_ops import push_panel_update
 from sources.flights import fetch_overhead_aircraft, place_of
 from sources.geo import get_home_locale, get_home_timezone
-from sources import energy
+from sources import changes, energy
 from sources.racing import compute_racing_active_window
 from sources.sports import compute_sports_active_window
 from runtime import Frames
@@ -277,10 +277,19 @@ async def _evaluate_widget_gate(session, widget: dict, home_tz: str) -> bool:
     return True
 
 
-async def resolve_conditions(session, conds: dict) -> dict:
+async def resolve_conditions(session, conds: dict, minutes: dict | None = None) -> dict:
     """Conditions' values: those on the add-on's own values answered here
-    (conditions.local), the rest by Home Assistant in one request."""
+    (conditions.local), "changed" ones from the sensor's history (sources.changes;
+    `minutes` replaces a condition's own window, as an alert's hold does), the
+    rest by Home Assistant in one request."""
     out = {k: v for k, c in conds.items() if (v := conditions.local(c, runtime.PUBLISHED)) is not None}
+    now = time.time()
+    for k, c in conds.items():
+        if k in out or (ch := conditions.changed(c)) is None:
+            continue
+        window = (minutes or {}).get(k) or ch.minutes
+        seen = await changes.fetch_change(session, ch.entity, window)
+        out[k] = "True" if conditions.changed_holds(ch, seen, now, window) else "False"
     rest = {k: c for k, c in conds.items() if k not in out}
     if rest:
         out.update(await resolve_templates(session, rest))
@@ -354,6 +363,9 @@ async def check_alerts(session, spec, state: dict):
     false, when its Until is met or at the limit, and it fires again when
     the Until is undone while the start still holds (the Watch unplugged at
     15%). An Until that can't be read isn't met.
+
+    One that fires when a sensor changes (`conditions.changed`) fires again
+    at each new change, even while the last one still holds it.
     """
     now = time.time()
     defs = spec.get("pages", {})
@@ -366,9 +378,17 @@ async def check_alerts(session, spec, state: dict):
     asks = {n: conditions.guarded(p["show_if"]) for n, p in alerts.items()}
     ends = {n: until for n, p in alerts.items() if (until := conditions.ending(p))}
     asks.update({f"{n}:until": conditions.guarded(until) for n, until in ends.items()})
-    states = await resolve_conditions(session, asks)
+    # One that fires when something changes holds from the change, as long as
+    # it holds (or at most, ending when something happens): its window is that.
+    changing = {n: ch for n, p in alerts.items() if (ch := conditions.changed(p["show_if"]))}
+    holds = {n: conditions.hold_minutes(alerts[n]) for n in changing}
+    states = await resolve_conditions(session, asks, holds)
     truthy = {n for n in alerts if conditions.is_true(states.get(n, ""))
               and not (n in ends and conditions.is_true(states.get(f"{n}:until", "")))}
+    # Each change is its own episode: a new one fires again while the last still holds.
+    episode = {n: True for n in truthy}
+    for n in truthy & changing.keys():
+        episode[n] = (await changes.fetch_change(session, changing[n].entity, holds[n]) or {}).get("at") or True
 
     # release an expired or no-longer-true alert
     if state["name"] and (now > state["until"] or state["name"] not in truthy):
@@ -376,11 +396,11 @@ async def check_alerts(session, spec, state: dict):
         state["name"], state["until"] = None, 0.0
 
     for name in truthy:
-        if state["fired"].get(name):
+        if state["fired"].get(name) == episode[name]:
             continue                                  # already handled this episode
         hold = conditions.hold_minutes(alerts[name]) * 60
         state.update(name=name, until=now + hold)
-        state["fired"][name] = True
+        state["fired"][name] = episode[name]
         print(f"alert {name} fired, holding {hold}s", flush=True)
         break
 

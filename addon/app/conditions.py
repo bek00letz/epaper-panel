@@ -10,6 +10,7 @@ Home Assistant started. The form used to write those without the guard;
 from __future__ import annotations
 
 import re
+from typing import NamedTuple
 
 TRUE = ("true", "on", "yes", "1")
 
@@ -79,6 +80,44 @@ def local(expr: str, registry: dict):
     b = float(m.group("nv"))
     held = {">": a > b, "<": a < b, ">=": a >= b, "<=": a <= b}[m.group("op")]
     return "True" if held else "False"
+
+
+# "Changed": the simple form's sensor took a new value in the last N minutes
+# (to a given one, if it says). Written as the Home Assistant template that
+# comes nearest, so it reads as itself under "Use a custom condition", but the
+# add-on answers it (frames.resolve_conditions, sources/changes.py): Home
+# Assistant's last_changed also moves when it restarts or a sensor comes back
+# from unavailable, and neither is a change.
+_CHANGED = re.compile(
+    r"^\{\{\s*(?:has_value\(\s*'(?P<g>[^']+)'\s*\)|is_state\(\s*'(?P<se>[^']+)'\s*,\s*'(?P<to>[^']*)'\s*\))"
+    r"\s+and\s+now\(\)\s*-\s*states\['(?P<e>[^']+)'\]\.last_changed\s*<\s*timedelta\(\s*minutes\s*=\s*(?P<m>\d+)\s*\)"
+    r"\s*\}\}$")
+CHANGED_DEFAULT = 30
+
+
+class Changed(NamedTuple):
+    entity: str
+    to: str | None             # None: any new value
+    minutes: int
+
+
+def changed(expr: str) -> Changed | None:
+    """The sensor, value and minutes of a "changed" condition, or None when it isn't one."""
+    m = _CHANGED.match(str(expr or "").strip())
+    if not m or (m.group("g") or m.group("se")) != m.group("e"):
+        return None
+    return Changed(m.group("e"), m.group("to") if m.group("se") else None,
+                   max(1, min(HOLD_MAX, int(m.group("m")))))
+
+
+def changed_holds(cond: Changed, seen: dict | None, now: float, minutes: int | None = None) -> bool:
+    """Whether it changed (to its value) within `minutes` (its own unless given), from
+    sources.changes: a sensor with no value now never meets it."""
+    if not seen or seen.get("at") is None or seen.get("state") in NO_VALUE:
+        return False
+    if cond.to is not None and str(seen.get("state")) != cond.to:
+        return False
+    return now - float(seen["at"]) < (minutes or cond.minutes) * 60
 
 
 # The add-on's own values, wherever a template asks for them (inline()).

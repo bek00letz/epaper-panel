@@ -32,6 +32,13 @@
   outlined in orange (dashed where something was removed) until your first
   click; Undo puts just that page back to what the panel has, with an Undo
   of its own.
+- **"Changed" conditions.** A page can show for a while after a sensor
+  changes ("Pawpaw Location changed to Outdoor Cat in the last 30 minutes"),
+  then leave on its own, and an alert can fire each time it changes. Only a
+  new value counts: Home Assistant restarting, or a sensor dropping out and
+  coming back with the same value, doesn't. No firmware change.
+- **A page's condition reads in one row** again ("is" next to its value);
+  it had picked up the look of Settings' choice cards.
 
 ## 0.15.0
 **Firmware change:** install the panel again (Settings › Install or update,

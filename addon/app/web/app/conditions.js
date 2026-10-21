@@ -7,12 +7,16 @@ import { widget } from "./catalog.js";
 
 const NO_VALUE = ["unavailable", "unknown"];
 
-export const OPS = [["eq", "is"], ["ne", "isn't"], ["gt", "is above"], ["lt", "is below"], ["ge", "is at least"], ["le", "is at most"]];
+export const OPS = [["eq", "is"], ["ne", "isn't"], ["gt", "is above"], ["lt", "is below"], ["ge", "is at least"], ["le", "is at most"], ["changed", "changed"]];
+// How long a page stays after a change, to start with (conditions.CHANGED_DEFAULT).
+export const CHANGED_MINUTES = 30;
 
 export function parseShowIf(expr) {
   const s = String(expr || "").trim();
   if (!s) return { mode: "simple", ent: "", op: "eq", val: "" };
   const inner = s.startsWith("{{") && s.endsWith("}}") ? s.slice(2, -2).trim() : s;
+  const c = parseChanged(inner);
+  if (c) return c;
   // The no-value guard compileShowIf adds, on the same sensor; conditions saved
   // before it read the same.
   const g = inner.match(/^has_value\(\s*'([^']+)'\s*\)\s+and\s+(.*)$/);
@@ -30,10 +34,25 @@ function parseSimple(inner) {
   return null;
 }
 
-export function compileShowIf({ ent, op, val }) {
+// "Changed": the add-on answers it from the sensor's history, so a restart or a
+// sensor coming back from unavailable with the same value isn't a change
+// (conditions.changed, sources/changes.py). Written as the nearest Home Assistant
+// template; "to" a value is optional.
+function parseChanged(inner) {
+  const m = inner.match(/^(?:has_value\(\s*'([^']+)'\s*\)|is_state\(\s*'([^']+)'\s*,\s*'([^']*)'\s*\))\s+and\s+now\(\)\s*-\s*states\['([^']+)'\]\.last_changed\s*<\s*timedelta\(\s*minutes\s*=\s*(\d+)\s*\)$/);
+  if (!m || (m[1] || m[2]) !== m[4]) return null;
+  return { mode: "simple", ent: m[4], op: "changed", val: m[2] ? m[3] : "", minutes: Number(m[5]) };
+}
+
+export function compileShowIf({ ent, op, val, minutes }) {
   ent = String(ent || "").trim().replace(/'/g, "");
   val = String(val ?? "").trim().replace(/'/g, "");
   if (!ent) return "";
+  if (op === "changed") {
+    const n = Math.max(1, Math.min(1440, Math.round(Number(minutes)) || CHANGED_MINUTES));
+    const which = val ? `is_state('${ent}','${val}')` : `has_value('${ent}')`;
+    return `{{ ${which} and now() - states['${ent}'].last_changed < timedelta(minutes=${n}) }}`;
+  }
   if (op === "eq") return `{{ is_state('${ent}','${val}') }}`;
   // A sensor with no value (unavailable, unknown) never meets "isn't" or a
   // number: float(0) would read it as 0, so "below 20" came true at every restart.
@@ -47,7 +66,7 @@ export function compileShowIf({ ent, op, val }) {
 export function evaluate(parsed, entMap) {
   if (!parsed || parsed.mode !== "simple" || !parsed.ent) return null;
   const e = entMap.get(parsed.ent);
-  if (!e) return null;
+  if (!e || parsed.op === "changed") return null;     // the add-on knows (changedLine)
   const s = String(e.state), v = parsed.val;
   if (parsed.op === "eq") return s === v;
   if (NO_VALUE.includes(s)) return false;
@@ -64,10 +83,37 @@ export function describe(showIf, entMap) {
   if (!p.ent) return { text: "Choose when it shows", why: "" };
   const e = entMap.get(p.ent);
   const name = e?.name || p.ent;
+  if (p.op === "changed") return { text: `Shows for ${minutesInWords(p.minutes)} after ${name} changes${p.val ? " to " + p.val : ""}`, why: "It hasn't changed in that time." };
   const op = OPS.find(([k]) => k === p.op)?.[1] || "is";
   const unit = e?.unit ? " " + e.unit : "";
   return { text: `Shows while ${name} ${op} ${p.val}${OPS.slice(2).some(([k]) => k === p.op) ? unit : ""}`,
     why: e ? `${name} is ${e.state}${unit} now.` : `${p.ent} isn't in Home Assistant.` };
+}
+
+const minutesInWords = (m) => (m === 1 ? "1 minute" : m < 60 || m % 60 ? `${m} minutes` : m === 60 ? "1 hour" : `${m / 60} hours`);
+const ago = (s) => (s < 60 ? "just now" : s < 3600 ? `${Math.floor(s / 60)} min ago` : `${Math.floor(s / 3600)} h ${Math.floor((s % 3600) / 60)} min ago`.replace(" 0 min", ""));
+
+/* The status line under a "changed" condition, from the add-on's answer (GET
+   api/changed: {state, at, to, history, now}, epoch seconds on its clock).
+   `minutes` is the window: the page's own, or an alert's hold. `alert` is
+   "time", "until" or "" (a page). {holds, text, note}; null for no answer. */
+export function changedLine(parsed, got, { minutes, alert = "" } = {}) {
+  if (!got || parsed?.op !== "changed") return null;
+  const n = minutes || parsed.minutes || CHANGED_MINUTES;
+  const since = got.at == null ? null : Math.max(0, got.now - got.at);
+  const noValue = NO_VALUE.includes(String(got.state)) || got.state == null;
+  const fits = since != null && since < n * 60 && !noValue && (!parsed.val || String(got.state) === parsed.val);
+  const note = got.history === false ? "Home Assistant keeps no history for this sensor, so its restarts count as changes too." : "";
+  if (fits) {
+    const left = Math.max(1, Math.ceil((n * 60 - since) / 60));
+    const more = left === 1 ? "1 more minute" : `${left} more minutes`;
+    const then = alert === "until" ? "it's showing until something happens" : `it shows for ${more}`;
+    return { holds: true, text: `Changed to ${got.to ?? got.state} ${ago(since)}, so ${then}.`, note };
+  }
+  const to = parsed.val ? ` to ${parsed.val}` : "";
+  if (alert) return { holds: false, text: `Waiting for a change${to}.`, note };
+  if (since != null && since < n * 60 && got.to) return { holds: false, text: `Hidden now: it changed to ${got.to} ${ago(since)}.`, note };
+  return { holds: false, text: `Hidden now: no change${to} in the last ${minutesInWords(n)}.`, note };
 }
 
 /* Widgets that bring their own "when" (from 0.9, unchanged in effect). */
