@@ -7,6 +7,7 @@ import { field, input, number, select, seg, textarea, toggle, toggleRow, section
 import { TYPES, BREAKABLE, isWidget, hasText, elName, normalizeLineParity, GROUP_STYLES, GROUP_PAD } from "./elements.js";
 import { OPS, parseShowIf, compileShowIf, evaluate, describe, syncWidgetShowIf, syncDynamicGridShowIf } from "./conditions.js";
 import { explodeWidget, getWidgetSensorId, suggestIconForEntity } from "./legacy.js";
+import { dateEditor, binsEditor } from "./countdown.js";
 import { LEAGUES, SERIES, sportWord, staleNote, changesEvery, pageChangesEvery } from "./presets.js";
 
 const SHOWS = [["state", "Its value"], ["unit", "Its unit, following the value"], ["attribute", "One of its details"], ["last_changed", "When it last changed"], ["last_updated", "When it last updated"],
@@ -310,6 +311,8 @@ const TYPE_FIELDS = {
     F.text("timezone", "Time zone", "Home Assistant's"), F.on("show_stats", "Team stats", true), F.on("show_scorers", "Scorers", true), BORDER_ON, { kind: "sensorid" }],
   // render/sun.STYLES; "next" turns round at sunrise and at sunset.
   sun_times: [F.sel("style", "Style", [["next", "Next one first"], ["both", "Both alike"]], "next")],
+  // render/countdown.py counts from these: a date of yours, or your bins and their days.
+  countdown: [F.sel("to", "Counts down to", [["date", "A date"], ["bins", "Bin day"]], "date"), { kind: "countdown" }],
   // The Energy dashboard's widgets (render/energy.py) read it themselves; a sensor only stands in for it.
   energy_total: [F.sel("source", "Shows", [["solar", "Solar, from the Energy dashboard"], ["grid_import", "Bought from the grid"], ["grid_export", "Sold to the grid"], ["entity", "A sensor"]], "solar"),
     { kind: "entity", key: "entity", label: "Sensor", when: (el) => el.source === "entity" },
@@ -358,6 +361,7 @@ function typeSections(app, el, set, i) {
         ? h("p", { class: "fnote" }, "The add-on counts what's due today or overdue as ", h("code", { class: "sel", text: getWidgetSensorId(el) || "sensor.epaper_todo_…_due" }), ". An alert can show by it, or your own automations.")
         : h("p", { class: "fnote" }, "The add-on publishes this widget's state as ", h("code", { class: "sel", text: getWidgetSensorId(el) }), ", for your own automations.")));
     else if (f.kind === "place") s.append(...placeRows(app, el, set));
+    else if (f.kind === "countdown") s.append((el.to === "bins" ? binsEditor : dateEditor)(el, () => app.doc.commit()));
   }
   return [s];
 }

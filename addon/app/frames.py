@@ -8,7 +8,7 @@ import urllib.parse
 from datetime import datetime, timedelta, timezone
 from email.utils import formatdate
 
-from render import binding, epf, layout, sleep, stripmeta, subitems, theme as T
+from render import binding, countdown, epf, layout, sleep, stripmeta, subitems, theme as T, todo
 import conditions
 import devices
 import health
@@ -127,6 +127,8 @@ async def enrich_page_values(session, page, vals):
                 todo_data = await fetch_todo_items(session, todo_list_id(el.get("entity")))
                 if todo_data:
                     vals[i] = {**todo_data, "tz": home_tz}   # "Today" is Home Assistant's today
+        elif t == "countdown":
+            vals[i] = {"tz": home_tz}           # it counts from the element itself (render/countdown.py)
         elif t == "sun_times":
             sun_data = await fetch_sun(session)
             if sun_data is not None:
@@ -380,9 +382,12 @@ async def eligible_pages(session, spec, linger):
     linger.forget_except(widget_gates)
 
     live = []
+    now_home = todo.now_in(home_tz)
     for name in rotation:
         page = defs.get(name)
         if page is None or page.get("tier") == "alert":
+            continue
+        if countdown.page_passed(page, now_home):          # a one-off date that's gone hides itself
             continue
         if name in widget_results:
             if not widget_results[name]:

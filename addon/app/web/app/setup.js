@@ -10,7 +10,8 @@
 
 import { h, icon, api } from "./util.js";
 import { select, linkButton } from "./ui.js";
-import { lookOf, pageFor, examplePage, rankSensors, groupName, sensorOf, freeSourceName, energyRoles, staleNote, presetChangesEvery } from "./presets.js";
+import { dateEditor, binsEditor, ready as countsReady } from "./countdown.js";
+import { lookOf, asksOf, needsOf, pageFor, examplePage, rankSensors, groupName, sensorOf, freeSourceName, energyRoles, staleNote, presetChangesEvery } from "./presets.js";
 
 const WHAT = { calendar: "Which calendar should it show?", todo: "Which list should it show?", weather: "Which weather should it show?",
   binary_sensor: "Which sensor should it show?", sensor: "Which sensor should it show?", jellyfin: "Whose Jellyfin should it show?" };
@@ -67,7 +68,7 @@ function sensorPicker(app, p, onPick, label) {
 }
 
 export function setupStep(app, p, { thumb, add, foot, initialLook = 0, rememberLook }) {
-  let li = Math.min(Number(initialLook) || 0, p.looks.length - 1), ent = "";
+  let li = Math.min(Number(initialLook) || 0, p.looks.length - 1), ent = "", need = null, asksEntity = false;
   const look = () => lookOf(p, li);
   const changed = () => { ready(); drawPreview(); };
   const node = h("div", { class: "stepin fade" });
@@ -78,8 +79,6 @@ export function setupStep(app, p, { thumb, add, foot, initialLook = 0, rememberL
   const stale = staleNote(presetChangesEvery(p), app.screen);
   if (stale) notes.push(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: stale })));
   node.append(h("div", { class: "lead" }, h("div", {}, preview, caption), h("div", { class: "leadtext" }, h("p", { class: "desc", text: p.desc }), ...notes)));
-  const need = p.needs && SETUPS[p.needs] ? SETUPS[p.needs]({ app, p, changed }) : null;
-  const asksEntity = p.asks && !need;           // a setup decides what its page shows
 
   const addBtn = h("button", { class: "btn primary", onclick: async () => {
     if (!need) { add(look(), ent); return; }
@@ -87,10 +86,10 @@ export function setupStep(app, p, { thumb, add, foot, initialLook = 0, rememberL
     const done = await need.commit();             // saves what it set up; says why if it couldn't
     if (done) add(look(), done.ent || "", done.extra); else ready();
   } }, "Add page");
-  const skip = asksEntity ? h("button", { class: "btn tinted", onclick: () => add(look(), "") }, "Skip for now") : null;
-  foot.append(...[skip, addBtn].filter(Boolean));
+  const skip = h("button", { class: "btn tinted", onclick: () => add(look(), "") }, "Skip for now");
+  foot.append(skip, addBtn);
 
-  function ready() { addBtn.disabled = need ? !need.ready() : asksEntity && !ent; }
+  function ready() { addBtn.disabled = need ? !need.ready() : asksEntity && !ent; skip.hidden = !asksEntity; }
   function drawPreview() {
     const shown = need ? need.shows() : { ent, mine: !!ent, caption: ent ? `With ${app.entMap.get(ent)?.name || ent}.` : "" };
     const page = shown.mine ? pageFor(p, look(), shown.ent || "", shown.extra) : examplePage(p, look());
@@ -106,7 +105,12 @@ export function setupStep(app, p, { thumb, add, foot, initialLook = 0, rememberL
     // A look that changes on its own says how, under the choice.
     const note = h("p", { class: "fnote", "aria-live": "polite" });
     const drawNote = () => { note.textContent = look().note || ""; note.hidden = !look().note; };
-    const choose = (i) => { li = i; rememberLook && rememberLook(i); drawLooks(); drawNote(); drawPreview(); };
+    const choose = (i) => {
+      const before = [asksOf(p, look()), needsOf(p, look())].join();
+      li = i; rememberLook && rememberLook(i); drawLooks(); drawNote();
+      if ([asksOf(p, look()), needsOf(p, look())].join() !== before) drawWhat();   // a countdown's date, bins or calendar
+      changed();
+    };
     const drawLooks = () => group.replaceChildren(...p.looks.map((l, i) => chips
       ? h("button", { class: "chipbtn", role: "radio", "aria-checked": String(i === li), tabindex: i === li ? "0" : "-1", onclick: () => choose(i), text: l.name })
       : h("button", { class: "pbtn", role: "radio", "aria-checked": String(i === li), tabindex: i === li ? "0" : "-1", "aria-label": l.name, onclick: () => choose(i) },
@@ -116,26 +120,37 @@ export function setupStep(app, p, { thumb, add, foot, initialLook = 0, rememberL
     node.append(h("div", { class: "stepsec" }, h("h3", { class: "slab", text: p.choose || "Style" }), group, note));
   }
 
-  /* What it shows: the right kind of entity first, sensibly picked. */
-  if (asksEntity) {
-    const picker = sensorPicker(app, p, (id) => { ent = id; changed(); });
-    node.append(h("div", { class: "stepsec" }, h("h3", { class: "slab", text: WHAT[p.asks] || "Which one should it show?" }), picker.node));
+  /* What it shows, or what it sets up: the look's own, or else the preset's. */
+  const what = h("div", { class: "stepwhat" });
+  node.append(what);
+  function drawWhat() {
+    need?.dispose?.();
+    ent = "";
+    const needs = needsOf(p, look()), asks = asksOf(p, look());
+    need = needs && SETUPS[needs] ? SETUPS[needs]({ app, p, look: look(), changed }) : null;
+    asksEntity = !!asks && !need;
+    what.replaceChildren();
+    if (need) { what.append(need.node); return; }
+    if (!asksEntity) return;
+    // The right kind of entity first, sensibly picked.
+    const q = { ...p, asks };
+    const picker = sensorPicker(app, q, (id) => { ent = id; changed(); });
+    what.append(h("div", { class: "stepsec" }, h("h3", { class: "slab", text: WHAT[asks] || "Which one should it show?" }), picker.node));
     // The Energy dashboard's own sensor is the answer already: picked, and said so.
-    if (p.prefer?.energy) energySensors().then((en) => { const first = picker.rank(en); if (!ent && first) picker.pick(first); });
+    if (q.prefer?.energy) energySensors().then((en) => { const first = picker.rank(en); if (!ent && first) picker.pick(first); });
   }
-
-  if (need) node.append(need.node);
+  drawWhat();
 
   ready(); drawPreview();
   return {
     node,
     focus: () => setTimeout(() => (node.querySelector('[role="radio"][aria-checked="true"], .stepsec input') || addBtn).focus({ preventScroll: true })),
-    dispose: () => { skip?.remove(); addBtn.remove(); need?.dispose?.(); },
+    dispose: () => { skip.remove(); addBtn.remove(); need?.dispose?.(); },
   };
 }
 
 /* ---------- what presets set up in place ---------- */
-const SETUPS = { wifi: wifiSetup, jellyfin: jellyfinSetup, energy: energySetup, players: playersSetup };
+const SETUPS = { wifi: wifiSetup, jellyfin: jellyfinSetup, energy: energySetup, players: playersSetup, date: countSetup("date"), bins: countSetup("bins") };
 
 /* Guest Wi-Fi: the network goes into the code, so it's asked for. */
 function wifiSetup({ changed }) {
@@ -335,5 +350,25 @@ function playersSetup({ app, changed }) {
     ready: () => true,
     shows: () => (chosen.size ? { mine: true, extra: { entity: entity() }, caption: "With your players." } : { mine: false }),
     commit: async () => ({ extra: { entity: entity() } }),
+  };
+}
+
+/* Countdown: a date of yours, or your bins and their days, in place: no
+   calendar needed (the user's call, 21 Oct). The page counts from what's
+   picked here (render/countdown.py). */
+function countSetup(to) {
+  return ({ changed }) => {
+    const el = { to, ...(to === "bins" ? { bins: [], today_until: "noon" } : { name: "", at: "", yearly: false }) };
+    const extra = () => (to === "bins" ? { bins: el.bins.filter((b) => b.from).map((b) => ({ ...b, name: b.name.trim() })), today_until: el.today_until }
+      : { name: el.name.trim(), at: el.at, yearly: !!el.yearly });
+    const editor = to === "bins" ? binsEditor(el, changed, { live: true }) : dateEditor(el, changed, { live: true });
+    return {
+      node: h("div", { class: "stepsec" }, h("h3", { class: "slab", text: to === "bins" ? "Your bins" : "The date" }), editor,
+        h("p", { class: "fnote", text: to === "bins" ? "Each bin comes on its next collection day and then every week, or every 2, 3 or 4. Alternating bins are two bins every 2 weeks, a week apart."
+          : "It counts the days, and the hours on the day if you give a time." })),
+      ready: () => countsReady(el),
+      shows: () => (countsReady(el) ? { mine: true, extra: extra(), caption: "With your dates." } : { mine: false }),
+      commit: async () => ({ extra: extra() }),
+    };
   };
 }

@@ -201,6 +201,18 @@
   min old." The same line shows in the inspector for a page like that.
   Anything showing watts counts, since power is always "now".
 
+- **Countdown and Bin day without a calendar.** New page › Countdown now
+  counts down to a date you pick (with a time if you like, and Every year
+  for birthdays), to your bins, or, as before, to a calendar's next event.
+  Bin day is now a Countdown: add each bin by name with its next collection
+  and how often it comes (every week, or 2, 3 or 4 weeks), so alternating
+  bins are two bins every 2 weeks. The evening before reads Tomorrow, the
+  day Today until noon (or midnight, or numbers only: your choice). On the
+  day of a date with a time it counts the hours, and once a one-off date
+  has passed its page hides itself. Nothing needs Home Assistant's
+  calendar, and it's all editable later in the inspector. Pages you made
+  from a calendar work as before.
+
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) for the quiet-hours fix below.

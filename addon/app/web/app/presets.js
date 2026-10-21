@@ -27,6 +27,9 @@ export const GROUPS = [
   ["media", "Watch and listen"],
 ];
 
+// A day counted from today, as a date field writes it (for example values).
+const isoDay = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+
 // The sensor a Jellyfin source makes; "watch" is the name it's seeded with.
 const watchEnt = (ent) => ent || "sensor.epaper_watch";
 const watchShowIf = (ent) => `{{ states('${watchEnt(ent)}_count') | int(0) > 0 }}`;
@@ -86,24 +89,24 @@ export const PRESETS = [
     })),
   },
   {
-    id: "event_countdown", group: "day", title: "Countdown", desc: "Days until the next event in a calendar, and its date.", kw: "days until",
-    asks: "calendar", example: "calendar.family",
-    looks: [{ id: "event_countdown", name: "Countdown", make: (ent) => [
-      { type: "icon", icon: "mdi:calendar-clock", x: 32, y: 40, w: 110, h: 110 },
-      { type: "number", entity: ent || "", show: "days_until", suffix: " days", decimals: 0, x: 160, y: 24, w: 340, h: 130, align: "left" },
-      { type: "text", value: "days until event", size: 30, bold: false, x: 164, y: 166, w: 320, h: 42, align: "left" },
-      { type: "text", entity: ent || "", show: "date_formatted", prefix: "date: ", format: "day_date", size: 28, bold: false, x: 450, y: 166, w: 300, h: 42, align: "right" },
-    ] }],
-  },
-  {
-    id: "bin_day", group: "day", title: "Bin day", desc: "Days until collection, and which bin.", kw: "trash rubbish recycling garbage waste",
-    asks: "calendar", example: "calendar.bins",
-    looks: [{ id: "bin_day", name: "Bin day", make: (ent) => [
-      { type: "icon", icon: "mdi:trash-can", x: 32, y: 40, w: 110, h: 110 },
-      { type: "number", entity: ent || "", show: "days_until", suffix: " days", decimals: 0, x: 160, y: 24, w: 340, h: 130, align: "left" },
-      { type: "text", value: "until collection", size: 30, bold: false, x: 164, y: 166, w: 320, h: 42, align: "left" },
-      { type: "text", entity: ent || "", show: "calendar_title", prefix: "type: ", size: 28, bold: false, x: 450, y: 166, w: 300, h: 42, align: "right" },
-    ] }],
+    // Bin day is a countdown that repeats (the user's call, 21 Oct): one preset, what it counts to picked next.
+    id: "countdown", group: "day", title: "Countdown", sub: "A date, bin day or an event", kw: "days until date birthday holiday bin bins trash rubbish recycling garbage waste collection",
+    desc: "Days until a date of yours, or until the bins go out. No calendar needed; one from Home Assistant works too.",
+    asks: "", choose: "Counts down to", name: (look, extra) => (look.id === "countdown_bins" ? "Bin day" : extra?.name || "Countdown"),
+    looks: [
+      { id: "countdown_date", name: "A date", needs: "date",
+        exampleExtra: () => ({ name: "Holiday", at: isoDay(12) }),
+        make: (_, x = {}) => [{ type: "countdown", to: "date", name: x.name || "", at: x.at || "", yearly: !!x.yearly, x: 24, y: 14, w: 744, h: 208 }] },
+      { id: "countdown_bins", name: "Bin day", needs: "bins",
+        exampleExtra: () => ({ bins: [{ name: "Recycling", from: isoDay(1), every: 2 }, { name: "General waste", from: isoDay(8), every: 2 }], today_until: "noon" }),
+        make: (_, x = {}) => [{ type: "countdown", to: "bins", today_until: x.today_until || "noon", bins: x.bins || [], x: 24, y: 14, w: 744, h: 208 }] },
+      { id: "event_countdown", name: "A calendar event", asks: "calendar", example: "calendar.bins", make: (ent) => [
+        { type: "icon", icon: "mdi:calendar-clock", x: 32, y: 40, w: 110, h: 110 },
+        { type: "number", entity: ent || "", show: "days_until", suffix: " days", decimals: 0, x: 160, y: 24, w: 340, h: 130, align: "left" },
+        { type: "text", entity: ent || "", show: "calendar_title", size: 30, bold: false, x: 164, y: 166, w: 300, h: 42, align: "left" },
+        { type: "text", entity: ent || "", show: "date_formatted", format: "day_date", size: 28, bold: false, x: 470, y: 166, w: 290, h: 42, align: "right" },
+      ] },
+    ],
   },
 
   /* ---------- home ---------- */
@@ -401,6 +404,9 @@ export const presetChangesEvery = (p) => {
 export const presetById = (id) => PRESETS.find((p) => p.id === id);
 export const groupName = (id) => (GROUPS.find(([g]) => g === id) || [id, id])[1];
 export const lookOf = (p, i = 0) => p.looks[Math.min(Math.max(0, i | 0), p.looks.length - 1)];
+/* What a look asks for or sets up: its own, or else its preset's. */
+export const asksOf = (p, look) => (look.asks !== undefined ? look.asks : p.asks);
+export const needsOf = (p, look) => (look.needs !== undefined ? look.needs : p.needs);
 
 /* What a look's page is: its elements and when it shows. A widget's own
    condition comes from the widget (conditions.syncWidgetShowIf), so a league
@@ -418,7 +424,8 @@ export function pageFor(p, look, ent, extra) {
 
 /* The page a thumbnail draws: the look with the add-on's example values. */
 export function examplePage(p, look) {
-  const ex = typeof p.example === "function" ? p.example(look) : p.example;
+  if (look.exampleExtra) return pageFor(p, look, "", look.exampleExtra());
+  const ex = look.example || (typeof p.example === "function" ? p.example(look) : p.example);
   if (Array.isArray(ex)) return pageFor(p, look, ex[0], ex);
   if (p.needs === "wifi") return pageFor(p, look, "", { ssid: "Guests", password: "example-only", auth: "WPA" });
   return pageFor(p, look, ex || "");
@@ -426,9 +433,9 @@ export function examplePage(p, look) {
 
 /* What a new page is called: the list or sensor it shows, the league or
    series, or else the preset. */
-export function pageName(p, look, ent, entName) {
+export function pageName(p, look, ent, entName, extra) {
   if (p.namedByEntity && ent) return entName || ent.split(".")[1];
-  if (p.name) return p.name(look);
+  if (p.name) return p.name(look, extra);
   return p.title;
 }
 

@@ -222,7 +222,7 @@ import("%s").then((L) => {
     def test_new_page_names_it_after_the_list(self):
         src = (support.APP / "web" / "app" / "presets.js").read_text()
         self.assertIn('if (p.namedByEntity && ent) return entName || ent.split(".")[1];', src)
-        self.assertIn('app.addPage(slug(pageName(p, look, ent, entName)) || p.id, page);', (support.APP / "web" / "app" / "newpage.js").read_text())
+        self.assertIn('app.addPage(slug(pageName(p, look, ent, entName, extra)) || p.id, page);', (support.APP / "web" / "app" / "newpage.js").read_text())
 
     def test_the_condition_follows_the_list_but_never_replaces_your_own(self):
         got = self.run_js("""

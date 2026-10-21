@@ -171,6 +171,8 @@ def page_values(page: dict, now: datetime | None = None) -> tuple[dict, dict]:
             vals[i] = race(el.get("series") or "f1")
         elif t == "sun_times":
             vals[i] = {**sun(now), "tz": tz}
+        elif t == "countdown":
+            vals[i] = {"tz": tz}                    # counts from the element itself, like the panel
         elif t == "energy_total":
             vals[i] = total(str(el.get("period") or "month"), now)
         elif t == "grid_now":

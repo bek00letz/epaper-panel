@@ -13,7 +13,7 @@ import { thumbnail } from "./strip.js";
 import { setupStep } from "./setup.js";
 
 const UNITS = { Style: ["style", "styles"], League: ["league", "leagues"], Series: ["series", "series"] };
-const count = (p) => (p.looks.length > 1 ? `${p.looks.length} ${UNITS[p.choose || "Style"][1]}` : "");
+const count = (p) => (p.sub ? p.sub : p.looks.length > 1 && UNITS[p.choose || "Style"] ? `${p.looks.length} ${UNITS[p.choose || "Style"][1]}` : "");
 // Something to pick or set up before the page exists; otherwise a click adds it.
 const hasStep = (p) => p.looks.length > 1 || !!p.asks || !!p.needs;
 
@@ -177,7 +177,7 @@ export function openPresets(app) {
     page.elements = fitToCanvas(page.elements, g, reflowPageElements);
     if (page.tier === "when") syncDynamicGridShowIf(page);
     const entName = ent ? app.entMap.get(ent)?.name : "";
-    app.addPage(slug(pageName(p, look, ent, entName)) || p.id, page);
+    app.addPage(slug(pageName(p, look, ent, entName, extra)) || p.id, page);
   }
 }
 

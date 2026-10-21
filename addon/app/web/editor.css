@@ -701,3 +701,8 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
 .pairdone { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 24px 8px; text-align: center; animation: fadein var(--t) var(--spring); }
 .pairdone .ic { width: 40px; height: 40px; color: var(--green); }
 .pairdone h3 { margin: 0; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+
+/* A countdown's bins: one card each, and the add button under them. */
+.binlist { display: flex; flex-direction: column; gap: 8px; }
+.binlist .group { margin: 0; }
+.binlist .inline { display: flex; gap: 6px; align-items: center; }

@@ -32,6 +32,7 @@ from . import media
 from . import sport
 from . import sun
 from . import clocktime
+from . import countdown
 from . import todo
 from . import units
 from .binding import template_for
@@ -2060,6 +2061,7 @@ def _widget(draw):
 # The widgets that size everything from their own box (render/hero.py).
 WIDGETS = {
     "sun_times": sun.draw,
+    "countdown": countdown.draw,
     "energy_total": energy.draw_total,
     "grid_now": energy.draw_grid,
     "energy_cost": energy.draw_cost,
