@@ -13,11 +13,11 @@ turns showing them, and a page appears only when it has something to say.
 
 ## What it's good for
 
-- **The game you're missing at work.** A live score with the clock and the
+- **The score you're missing at work.** A live score with the clock and the
   scorers, for the Premier League, Champions League, La Liga, Bundesliga,
-  Serie A, NBA, NFL, MLB or NHL: every match, your team, or a few of them
-  ("Arsenal, Lakers"). The page turns up before kick-off and leaves after the
-  final whistle on its own.
+  Serie A, MLS, NBA, WNBA, NFL, college football, MLB or NHL: every match or
+  game, your team, or a few of them ("Arsenal, Lakers"). The page turns up
+  shortly before it starts and leaves just after it ends, on its own.
 - **Race weekends.** Formula 1, Formula E, NASCAR and IndyCar: the top ten
   with gaps and tyres while a session runs, and the countdown to the next one
   the rest of the week.
@@ -231,7 +231,7 @@ the firmware it has.
 ### 3. Your first page
 
 1. Choose **New page** at the front of the page strip.
-2. Pick a preset, say **Match** or **Solar today**, then its league or your
+2. Pick a preset, say **Scores** or **Solar today**, then its league or your
    sensor if it asks for one.
 3. Choose **Add page**, then **Send to panel**.
 
@@ -242,7 +242,7 @@ the firmware it has.
 Select the page, then click an empty part of the canvas. Under **Shows**,
 choose **Only when** and pick a sensor and its state, like a timer that's
 `active`. The sports, racing and flights widgets set this up for you with
-one switch ("Only show on match days"). **As an alert** takes over the panel
+one switch ("Only show on match days", or game days, or around sessions). **As an alert** takes over the panel
 the moment the condition turns true and hands it back after the minutes you
 set. Or, under **Ends**, choose **When something happens** and an **Until**:
 "Watch battery is below 20" until "Watch battery state is charging" holds
@@ -349,7 +349,7 @@ Meanwhile its entities stay in Home Assistant instead of disappearing.
   the order.
 - Long text can **wrap onto more lines**.
 - Widgets have a **Text size** slider, and **Break apart** turns weather,
-  flights, agenda, racing and match widgets into pieces you can move.
+  flights, agenda, racing and scores widgets into pieces you can move.
 - Nothing asks "are you sure?": everything has **Undo**.
 
 ## On the panel

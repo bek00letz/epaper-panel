@@ -41,6 +41,14 @@ export const LEAGUES = [
 ];
 export const SERIES = [["f1", "Formula 1"], ["fe", "Formula E"], ["nascar", "NASCAR"], ["indycar", "IndyCar"]];
 
+/* What one sporting event is called, by sport (the user's call: a Premier
+   League match is never a game). The sport is the league's first part
+   ("soccer/eng.1"); ESPN's "football" is American football. Racing is a race.
+   Anything not listed is neutral. */
+export const SPORT_WORDS = { soccer: "match", rugby: "match", tennis: "match", cricket: "match",
+  basketball: "game", football: "game", baseball: "game", hockey: "game", racing: "race" };
+export const sportWord = (league) => SPORT_WORDS[String(league || "soccer/eng.1").split("/")[0]] || "event";
+
 const calendarMonth = (ent, box) => ({ type: "calendar_month", ...box, show_header: true, show_weekdays: true, first_weekday: 0, highlight_today: true, show_border: true, entity: ent || "" });
 const watchLook = (id, name, make) => ({ id, name, tier: "when", showIf: watchShowIf, make });
 
@@ -209,11 +217,13 @@ export const PRESETS = [
 
   /* ---------- sports ---------- */
   {
-    id: "match", group: "sports", title: "Match", kw: "football soccer score " + LEAGUES.map(([, n]) => n).join(" ") + " basketball hockey baseball",
-    desc: "The live score, clock and scorers. Shows on match days, from before kick-off to after the whistle.",
+    id: "match", group: "sports", title: "Scores", was: "Match score",
+    kw: "match game football soccer score " + LEAGUES.map(([, n]) => n).join(" ") + " basketball hockey baseball",
+    desc: "The live score and clock, and who scored where the sport says. Shows only around your league's days, from shortly before the start to just after the end.",
     asks: "", choose: "League", name: (look) => look.name,
     looks: LEAGUES.map(([league, name]) => ({
       id: "sports_match_" + (LEAGUE_TO_SLUG[league] || league), name, tier: "when", widget: true,
+      note: `Shows on ${sportWord(league)} days.`,
       make: () => [boxed({ type: "sports_match", league, team: "", entity: "", pre_buffer_hours: 2, post_buffer_hours: 2, auto_window: true })],
     })),
   },

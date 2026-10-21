@@ -66,12 +66,14 @@
 - **One preset per thing a page shows.** Its look is picked next: Planes
   overhead (Nearest plane, Radar or Both, now under Outside with the
   weather), Calendar (Month and agenda, or Month), New to watch (three
-  styles), To-do list (By urgency, Inverted when due, Outlined), Match (any
+  styles), To-do list (By urgency, Inverted when due, Outlined), Scores (any
   league the add-on follows) and Race weekend (Formula 1, Formula E, NASCAR,
   IndyCar). It remembers the look you picked last.
-- **Clearer names.** "Door or pet" is now Status, "On now" is Dynamic status
-  and "Formula 1" is Race weekend. Pages you already have don't change. A new
-  Match or Race weekend page is named after its league or series.
+- **Clearer names.** "Door or pet" is now Status, "On now" is Dynamic status,
+  "Formula 1" is Race weekend and "Match score" is Scores, since an NBA or
+  MLB game isn't a match. Where a single event is named, each sport keeps
+  its own word: a match in football, a game in the NBA, a race in racing. Pages you already have don't change. A new
+  Scores or Race weekend page is named after its league or series.
 
 - **Guest Wi-Fi asks for your network.** Its next step asks for the
   network's name, password and security, and the code guests scan joins
@@ -97,7 +99,7 @@
   unwatched to show. The connection is saved under Settings › Data sources
   like one you add there, and the next Jellyfin page offers it.
 
-- **Fixed:** a Match's League menu offered nine leagues, though the add-on
+- **Fixed:** the scores widget's League menu offered nine leagues, though the add-on
   also follows MLS, the WNBA and college football. It offers all twelve now,
   the same list as New page.
 

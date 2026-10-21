@@ -35,7 +35,7 @@ export const TYPES = {
   todo_list: { name: "To-do list", icon: "todo" },
   flight_tracker: { name: "Flights", icon: "plane" },
   sports_racing: { name: "Racing", icon: "flag" },
-  sports_match: { name: "Match", icon: "ball" },
+  sports_match: { name: "Scores", icon: "ball" },
   sun_times: { name: "Sunrise and sunset", icon: "sun" },
   energy_total: { name: "Energy total", icon: "chart" },
   grid_now: { name: "Grid now", icon: "plug" },

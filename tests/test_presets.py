@@ -96,6 +96,25 @@ class TestCatalogue(unittest.TestCase):
           .map((q) => P.search(q)[0].id)));""")
         self.assertEqual(found, ["status", "dynamic_status", "race_weekend", "race_weekend", "planes", "match", "to_do"])
 
+    def test_scores_names_each_event_in_its_sports_own_word(self):
+        """The user's call: Scores, not Match; and a Premier League match is never a game."""
+        p = self.by_id["match"]
+        self.assertEqual((p["title"], p["was"]), ("Scores", "Match score"))
+        words = run_js("""console.log(JSON.stringify(Object.fromEntries(P.LEAGUES.map(([l, n]) => [n, P.sportWord(l)]))))""")
+        self.assertEqual({n for n, w in words.items() if w == "match"},
+                         {"Premier League", "Champions League", "La Liga", "Bundesliga", "Serie A", "MLS"})
+        self.assertEqual({n for n, w in words.items() if w == "game"}, {"NBA", "WNBA", "NFL", "College football", "MLB", "NHL"})
+        notes = run_js('console.log(JSON.stringify(P.presetById("match").looks.map((l) => l.note)))')
+        self.assertEqual(notes[0], "Shows on match days.")
+        self.assertIn("Shows on game days.", notes)
+        self.assertNotRegex(p["looks"][0]["page"]["elements"][0].get("title", ""), "(?i)match|game")
+        js = (APP_JS / "inspector.js").read_text()
+        self.assertIn('{ kind: "window", label: (el) => `Only show on ${sportWord(el.league)} days` }', js)
+        self.assertIn('sports_match: { name: "Scores", icon: "ball" },', (APP_JS / "elements.js").read_text())
+        desc = p["looks"][0]["page"] and run_js('console.log(JSON.stringify(P.presetById("match").desc))')
+        self.assertNotRegex(desc, r"(?i)\b(match|game)|kick-off|whistle", "the preset itself stays neutral")
+        self.assertEqual(run_js('console.log(JSON.stringify(P.search("match score")[0].id))'), "match")
+
     def test_every_league_and_series_the_add_on_fetches(self):
         leagues = run_js("console.log(JSON.stringify(P.LEAGUES.map(([l]) => l)))")
         self.assertEqual(set(leagues), {k for k in sports.LEAGUE_SLUGS if "/" in k})
