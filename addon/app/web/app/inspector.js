@@ -652,7 +652,8 @@ function endRows(app, p) {
   };
   const minutes = (label, note) => field(label, number(p.hold_minutes ?? HOLD[ends], (v) => { p.hold_minutes = Math.max(1, Math.min(1440, Math.round(Number(v)) || HOLD[ends])); doc.commit(); }, { min: "1", max: "1440", step: "1" }), { note });
   const rows = [field("Ends", select([["time", "After a time"], ["until", "When something happens"]], ends, pick))];
-  if (ends === "time") rows.push(minutes("Holds for", "Minutes. It takes over the panel when its condition turns true, then gives it back."));
+  const onChange = parseShowIf(p.show_if).op === "changed";
+  if (ends === "time") rows.push(minutes("Holds for", onChange ? "Minutes. It takes over the panel each time it changes, then gives it back." : "Minutes. It takes over the panel when its condition turns true, then gives it back."));
   else rows.push(conditionRows(app, p, UNTIL), minutes("At most", "Minutes. It gives the panel back sooner if this happens or its start stops being true, and comes back if this is undone."));
   return rows;
 }

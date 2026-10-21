@@ -334,3 +334,8 @@ class TestTheEndpoint(unittest.IsolatedAsyncioTestCase):
         with mock.patch.object(changes, "fetch_change", mock.AsyncMock(return_value=None)):
             r = await self.ed.get(f"/api/changed?entity={CAT}")
         self.assertEqual(r.status, 502)
+
+
+class TestHoldsForSaysEachChange(unittest.TestCase):
+    def test_the_note(self):
+        self.assertIn("It takes over the panel each time it changes, then gives it back.", INSPECTOR_JS)
