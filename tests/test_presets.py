@@ -721,14 +721,17 @@ class TestTheSheet(unittest.TestCase):
         self.assertIn(".stripfront { flex: none; width: var(--tile-w);", CSS)
         self.assertIn('this.el.app.dataset.stripsize = ["small", "standard", "large"].includes(size) ? size : "standard";', (APP_JS / "main.js").read_text())
 
-    def test_a_pages_buttons_on_its_picture(self):
+    def test_a_pages_button_on_its_picture(self):
+        """The user's choice (21 Oct): one "…" over the right third of the picture for the page's menu,
+        Delete itself on a passed countdown; its hit area 44 pt at every strip size (AGENTS.md)."""
         strip = (APP_JS / "strip.js").read_text()
         self.assertIn('style: { aspectRatio: `${g.W} / ${3 * g.H}` }', strip, "the right third of the picture, not the name under it")
-        self.assertIn('again ? act("minus", "Take out this turn"', strip, "a repeat takes only that turn out")
-        self.assertIn("timer = setTimeout(() => {", strip.split("function holdToReveal", 1)[1], "a hold shows them on a touch screen")
+        self.assertIn("app.openPageMenu(ev, n, more)", strip, "the same menu as a right-click")
+        self.assertIn("timer = setTimeout(() => {", strip.split("function holdToReveal", 1)[1], "a hold shows it on a touch screen")
         self.assertIn('if (!drag) { if (it.dataset.held) delete it.dataset.held; else onOpen(idx); return; }', strip, "and the hold doesn't open the page")
+        self.assertIn(".tileact::before { content: \"\"; position: absolute; top: 50%; right: 0; width: max(100%, 44px); height: max(100%, 44px);", CSS)
+        self.assertIn(".tilebox.passed .tileact.del { display: grid; }", CSS)
         self.assertIn("@media (hover: hover) { .tilebox:hover .tileacts, .tilebox:focus-within .tileacts { opacity: 1;", CSS)
-        self.assertIn("takeOutTurn(slot) {", (APP_JS / "main.js").read_text())
 
     def test_one_slider_for_the_shelves_and_the_page_strip(self):
         self.assertIn("const wrap = slider(row, { name });", self.js)

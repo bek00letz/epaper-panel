@@ -222,12 +222,11 @@
   you point at it; down the side it fades top and bottom.
 - **The page strip's size is yours to choose** in Settings › Editor, next to
   where it sits: Small, Standard (as it was) or Large.
-- **Duplicate and Delete on a page's picture.** Point at a page in the strip,
-  or hold it on a phone, and the right third of its picture turns into two
-  buttons, Duplicate above Delete (on a page that's in the rotation twice,
-  the lower one takes just that turn out). A countdown that has passed
-  shows them all the time. Undo works as everywhere.
-
+- **A page's menu on its picture.** Point at a page in the strip, or hold
+  it on a phone, and a "…" button shows on the right of its picture: it
+  opens the page's menu (Duplicate, Delete and the rest, as a right-click
+  does). On a countdown that has passed, it's Delete itself, showing all
+  the time.
 - **Fixed:** with the page strip down the side, New page shrank to a sliver
   and, with this release's sliding strip, the pages ran under the canvas.
 

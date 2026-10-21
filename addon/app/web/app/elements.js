@@ -85,7 +85,8 @@ export function makeElement(t, g) {
   if (t === "calendar_month") Object.assign(base, { x: 20, y: 14, w: Math.min(360, maxW), h: Math.min(230, g.safeH - 20), show_header: true, show_weekdays: true, first_weekday: 0, highlight_today: true, show_border: true, entity: "" });
   if (t === "calendar_agenda") Object.assign(base, { x: m, y: 14, w: Math.min(380, maxW), h: Math.min(230, g.safeH - 20), title: "Coming up", max_events: 4, show_border: true, entity: "" });
   if (t === "todo_list") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20, entity: "" });
-  if (t === "weather_forecast") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20, entity: "weather.forecast_home", show_border: true });
+  // No guessed entity: with none, the add-on shows the first weather Home Assistant has.
+  if (t === "weather_forecast") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20, entity: "", show_border: true });
   if (t === "flight_tracker") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20, radius: 35, style: "card", show_border: true });
   if (t === "sports_racing") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20, series: "f1", entity: "", show_border: true });
   if (t === "sports_match") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20, league: "soccer/eng.1", team: "", entity: "", show_border: true });

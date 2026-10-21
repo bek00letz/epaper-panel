@@ -559,14 +559,6 @@ class App {
     doc.commit(); doc.emit("page");
     toast(`Duplicated as ${pageTitle(n)}. Rename it in the inspector.`, { label: "Undo", run: () => doc.undo() });
   }
-  // One turn of a page that's in the rotation more than once (a tile marked Again).
-  takeOutTurn(slot) {
-    const doc = this.doc, n = doc.spec.rotation[slot];
-    if (n === undefined) return;
-    doc.spec.rotation.splice(slot, 1);
-    doc.commit();
-    toast(`Took out one turn of ${pageTitle(n)}.`, { label: "Undo", run: () => doc.undo() });
-  }
   deletePage(name = this.doc.cur) {
     const doc = this.doc;
     delete doc.spec.pages[name];
@@ -733,16 +725,16 @@ class App {
       { label: "Send to back", kb: `⌥${modKey}[`, icon: "back2", disabled: doc.sel.length !== 1, run: () => this.order("back") });
     menu(null, items, { at: { x: e.clientX, y: e.clientY }, label: "Element" });
   }
-  openPageMenu(e, n) {
+  openPageMenu(e, n, anchor) {
     const doc = this.doc, p = doc.spec.pages[n], times = doc.spec.rotation.filter((x) => x === n).length;
-    menu(null, [
+    menu(anchor || null, [
       { label: "Open", run: () => doc.openPage(n) },
       { label: "Duplicate", icon: "dup", run: () => this.duplicatePage(n) },
       p.tier !== "alert" ? { label: times ? "Show again" : "Add to rotation", run: () => { doc.spec.rotation.push(n); doc.commit(); } } : null,
       p.tier !== "alert" && times ? { label: times > 1 ? "Show once less" : "Take out of rotation", run: () => { doc.spec.rotation.splice(doc.spec.rotation.lastIndexOf(n), 1); doc.commit(); } } : null,
       "sep",
       { label: "Delete", icon: "trash", danger: true, run: () => this.deletePage(n) },
-    ], { at: { x: e.clientX, y: e.clientY }, label: pageTitle(n) });
+    ], { ...(anchor ? { align: "right" } : { at: { x: e.clientX, y: e.clientY } }), label: pageTitle(n) });
   }
   openStatus(anchor) { openStatus(this, anchor); }
   openPresets() { openPresets(this); }

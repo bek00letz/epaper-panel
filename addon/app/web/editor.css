@@ -736,18 +736,21 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
 /* A tile's box: the tile, and its page's buttons over its picture (beside it, not inside). */
 .tilebox { position: relative; flex: none; display: flex; }
 #app[data-strip="side"] .tilebox { width: 100%; }
-/* A page's buttons over the right third of its picture: Duplicate above Delete. */
-.tileacts { position: absolute; top: 0; right: 0; width: calc(100% / 3); display: flex; flex-direction: column; overflow: hidden;
-  border-radius: 0 6px 6px 0; background: color-mix(in srgb, var(--raised) 94%, transparent); box-shadow: inset 0.5px 0 0 var(--sep);
+/* A page's button over the right third of its picture: "…" for its menu, or Delete on a passed
+   countdown. Drawn the third's size; its hit area reaches 44 pt at every strip size (::before). */
+.tileacts { position: absolute; top: 0; right: 0; width: calc(100% / 3); display: flex; border-radius: 0 6px 6px 0;
+  background: color-mix(in srgb, var(--raised) 94%, transparent); box-shadow: inset 0.5px 0 0 var(--sep);
   -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
   opacity: 0; pointer-events: none; transform: translateX(4px); transition: opacity var(--t-fast), transform var(--t) var(--spring); z-index: 2; }
-.tileact { flex: 1 1 0; min-height: 0; border: 0; background: none; color: var(--fg); display: grid; place-items: center; cursor: pointer; padding: 0;
-  transition: background-color var(--t-fast); }
-.tileact + .tileact { box-shadow: inset 0 0.5px 0 var(--sep); }
+.tileact { position: relative; flex: 1 1 0; min-width: 0; border: 0; background: none; color: var(--fg); display: grid; place-items: center; cursor: pointer; padding: 0;
+  border-radius: inherit; transition: background-color var(--t-fast); }
+.tileact::before { content: ""; position: absolute; top: 50%; right: 0; width: max(100%, 44px); height: max(100%, 44px); transform: translateY(-50%); }
 .tileact:hover { background: var(--fill); }
 .tileact:active { background: var(--fill-2); }
-.tileact:last-child { color: var(--red); }
-.tileact .ic { width: 15px; height: 15px; }
+.tileact .ic { width: 16px; height: 16px; }
+.tileact.del { color: var(--red); display: none; }
+.tilebox.passed .tileact.more { display: none; }
+.tilebox.passed .tileact.del { display: grid; }
 @media (hover: hover) { .tilebox:hover .tileacts, .tilebox:focus-within .tileacts { opacity: 1; pointer-events: auto; transform: none; } }
 .tilebox.held .tileacts, .tilebox.passed .tileacts { opacity: 1; pointer-events: auto; transform: none; }
 .tile.lifted ~ .tileacts { opacity: 0; pointer-events: none; }

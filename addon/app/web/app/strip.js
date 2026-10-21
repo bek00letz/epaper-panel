@@ -141,17 +141,17 @@ function tile(app, n, { again, out, slot }) {
     t.setAttribute("aria-label", `${pageTitle(n)}. ${said}`);
   });
   requestAnimationFrame(() => thumbnail(app, n, img));
-  // The tile and, beside it, its page's buttons: over the right third of its picture, Duplicate and
-  // Delete (a repeat of a page takes just that turn out). They show on hover or focus, on a hold on
-  // a touch screen, and all the time on a countdown that has passed. Beside the tile, not inside:
-  // the tile is a button, and a button can't hold others. Dragging moves the tile alone.
+  // The tile and, beside it, its page's button over the right third of its picture (the user's
+  // design, 21 Oct): "…" opens the page's menu (Duplicate, Delete and the rest, the same menu as a
+  // right-click); a countdown that has passed shows Delete itself. It shows on hover or focus and on
+  // a hold on a touch screen, and stays on a passed countdown. Its hit area is at least 44 pt at
+  // every strip size. Beside the tile, not inside: the tile is a button, and a button can't hold others.
   const g = app.geometry();
-  const act = (ic, label, said, run) => h("button", { class: "tileact", "aria-label": said, title: label, tabindex: "-1",
-    onclick: (ev) => { ev.stopPropagation(); box.classList.remove("held"); run(); } }, icon(ic, "sm"));
-  const acts = h("span", { class: "tileacts", style: { aspectRatio: `${g.W} / ${3 * g.H}` } },
-    act("dup", "Duplicate", `Duplicate ${pageTitle(n)}`, () => app.duplicatePage(n)),
-    again ? act("minus", "Take out this turn", `Take out this turn of ${pageTitle(n)}`, () => app.takeOutTurn(slot))
-      : act("trash", "Delete", `Delete ${pageTitle(n)}`, () => app.deletePage(n)));
+  const more = h("button", { class: "tileact more", "aria-label": `More for ${pageTitle(n)}`, title: "More", "aria-haspopup": "menu", tabindex: "-1",
+    onclick: (ev) => { ev.stopPropagation(); box.classList.remove("held"); app.openPageMenu(ev, n, more); } }, icon("more", "sm"));
+  const del = h("button", { class: "tileact del", "aria-label": `Delete ${pageTitle(n)}`, title: "Delete", tabindex: "-1",
+    onclick: (ev) => { ev.stopPropagation(); app.deletePage(n); } }, icon("trash", "sm"));
+  const acts = h("span", { class: "tileacts", style: { aspectRatio: `${g.W} / ${3 * g.H}` } }, more, del);
   const box = h("span", { class: "tilebox" }, t, acts);
   holdToReveal(t, box);
   t.box = box;
