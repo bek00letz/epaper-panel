@@ -212,7 +212,8 @@
   countdown off the panel until it's near: set a trip six months ahead and
   have it show from a month before (its tile says "Shows from …"). Once a
   one-off date has passed the panel leaves it out, and it stays among your
-  pages, outlined and marked Passed, to give another date or delete.
+  pages, outlined and marked Passed, with Delete on its tile, to give
+  another date or delete.
   Nothing needs Home Assistant's calendar, and it's all editable later in
   the inspector. Pages you made from a calendar work as before.
 

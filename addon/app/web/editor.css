@@ -713,3 +713,12 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
 .tile.passed .tsub { color: var(--orange); font-weight: 600; }
 .note.passed { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: color-mix(in srgb, var(--orange) 10%, transparent); border: 1.5px solid var(--orange); border-radius: var(--r-card); padding: 10px 12px; }
 .note.passed > span { flex: 1; min-width: 12em; }
+/* A tile's box: the tile, and a passed countdown's Delete over its corner (beside it, not inside). */
+.tilebox { position: relative; flex: none; display: flex; }
+#app[data-strip="side"] .tilebox { width: 100%; }
+.tdel { position: absolute; top: 4px; right: 4px; width: 28px; min-width: 28px; min-height: 28px; border-radius: 50%; background: var(--raised); color: var(--red);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2); transition: opacity var(--t-fast), transform var(--t) var(--spring); }
+.tdel::before { content: ""; position: absolute; inset: -8px; }            /* a 44 pt hit area */
+.tdel:active { transform: scale(0.9); }
+.tile.lifted + .tdel { opacity: 0; pointer-events: none; }
+@media (pointer: coarse) { .tdel { width: 36px; min-width: 36px; min-height: 36px; } }

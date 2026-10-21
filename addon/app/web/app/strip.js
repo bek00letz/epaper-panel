@@ -79,7 +79,7 @@ export function renderStrip(app) {
     const again = seen.has(n); seen.add(n);
     return tile(app, n, { again, slot: i });
   }).filter(Boolean);
-  slots.forEach((t) => list.append(t));
+  slots.forEach((t) => list.append(t.box));
   reorderable(list, slots, (from, to) => {
     const r = spec.rotation; const [x] = r.splice(from, 1); r.splice(to > from ? to - 1 : to, 0, x);
     doc.commit();
@@ -91,11 +91,11 @@ export function renderStrip(app) {
   const alerts = Object.keys(spec.pages).filter((n) => spec.pages[n].tier === "alert");
   if (out.length) {
     list.append(h("span", { class: "groupsep", role: "presentation" }), h("span", { class: "grouplab", text: "Not in rotation" }));
-    out.forEach((n) => { const t = tile(app, n, { out: true }); t.addEventListener("click", () => doc.openPage(n)); list.append(t); });
+    out.forEach((n) => { const t = tile(app, n, { out: true }); t.addEventListener("click", () => doc.openPage(n)); list.append(t.box); });
   }
   if (alerts.length) {
     list.append(h("span", { class: "groupsep", role: "presentation" }), h("span", { class: "grouplab", text: "Alerts" }));
-    alerts.forEach((n) => { const t = tile(app, n, {}); t.addEventListener("click", () => doc.openPage(n)); list.append(t); });
+    alerts.forEach((n) => { const t = tile(app, n, {}); t.addEventListener("click", () => doc.openPage(n)); list.append(t.box); });
   }
   strip.append(list);
   return strip;
@@ -128,6 +128,11 @@ function tile(app, n, { again, out }) {
   img.addEventListener("thumbmeta", (e) => {
     const c = (e.detail || []).find((m) => m.countdown)?.countdown;
     t.classList.toggle("passed", c?.state === "passed");
+    // Delete right on a passed tile. It sits beside the tile in its box, over its corner: a tile is a
+    // button, and a button inside a button can't be pressed or read on its own.
+    box.querySelector(".tdel")?.remove();
+    if (c?.state === "passed" && !again) box.append(h("button", { class: "btn icon tdel", "aria-label": `Delete ${pageTitle(n)}`, title: "Delete",
+      onclick: (ev) => { ev.stopPropagation(); app.deletePage(n); } }, icon("trash", "sm")));
     if (!c || c.state === "showing" || again || out) return;
     const said = c.state === "passed" ? `Passed · ${c.on}` : `Shows from ${c.from}`;
     t.querySelector(".tsub").textContent = said;
@@ -135,6 +140,9 @@ function tile(app, n, { again, out }) {
     t.setAttribute("aria-label", `${pageTitle(n)}. ${said}`);
   });
   requestAnimationFrame(() => thumbnail(app, n, img));
+  // The tile and anything that belongs beside it (a passed countdown's Delete); dragging moves the tile.
+  const box = h("span", { class: "tilebox" }, t);
+  t.box = box;
   return t;
 }
 
