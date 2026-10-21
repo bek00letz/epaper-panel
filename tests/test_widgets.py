@@ -436,3 +436,6 @@ class TestWeatherAtEverySize(Sizes, unittest.TestCase):
         img = render(self.element, self.value, "crowpanel_290")
         divider = box["x"] + int(box["w"] * 0.42)              # the split layout's line between now and the days
         self.assertGreater(ink(img, (divider, box["y"], divider + 1, box["y"] + box["h"])), box["h"] // 2)
+
+    def test_no_weather_from_home_assistant_draws_none_rather_than_made_up_weather(self):
+        self.assertEqual(ink(render({**self.element, "show_border": False}, "")), 0)

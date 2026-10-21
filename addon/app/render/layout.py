@@ -1331,21 +1331,8 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
 
     data = _parse_val_json(raw_val)
     if not isinstance(data, dict):
-        data = {
-            "condition": "rainy",
-            "temperature": 8.5,
-            "unit": "°C",
-            "humidity": 95,
-            "wind_speed": 6.1,
-            "wind_unit": "km/h",
-            "forecast": [
-                {"datetime": "2026-10-17T09:00:00+00:00", "condition": "rainy", "temperature": 11.2, "templow": 8.5, "precipitation": 1.0, "precipitation_probability": 85},
-                {"datetime": "2026-10-18T09:00:00+00:00", "condition": "partlycloudy", "temperature": 15.5, "templow": 4.6, "precipitation": 0.0, "precipitation_probability": 10},
-                {"datetime": "2026-10-19T09:00:00+00:00", "condition": "partlycloudy", "temperature": 17.3, "templow": 7.7, "precipitation": 0.0, "precipitation_probability": 5},
-                {"datetime": "2026-10-20T09:00:00+00:00", "condition": "cloudy", "temperature": 15.1, "templow": 7.8, "precipitation": 0.1, "precipitation_probability": 30},
-                {"datetime": "2026-10-21T09:00:00+00:00", "condition": "rainy", "temperature": 22.7, "templow": 10.6, "precipitation": 0.6, "precipitation_probability": 70}
-            ]
-        }
+        # No weather from Home Assistant (it's restarting, say): blank says so. Made-up weather wouldn't.
+        return
 
     cond = str(data.get("condition") or "partlycloudy").lower()
     cond_label = _WEATHER_LABEL_MAP.get(cond, cond.replace("-", " ").replace("_", " ").title())
