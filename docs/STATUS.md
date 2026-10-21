@@ -25,7 +25,9 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 ## In flight
 
-Nothing.
+| Work | Where | State |
+|---|---|---|
+| Icons from the user's Home Assistant (the whole set copied locally, custom ones included, the shipped set as fallback, never fetched per icon or from the internet); the condition suggestions read the catalog instead of KNOWN_STATES (session "ha-icons") | branch `ha-icons` from main | Started 21 Oct |
 
 Worker notes are in the notes folders (`break-it-0.12.0.md`,
 `timers-addon.md`, `firmware-013.md`, `fixes-0131.md`, `editor-polish.md`,
