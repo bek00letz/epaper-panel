@@ -75,7 +75,7 @@ def update_seconds(dev: dict) -> int:
 
 def rotate_updates(dev: dict) -> int:
     """Rotate every, as a number of updates."""
-    return timers.rotate_updates(dev, _kind(dev).stays_on)
+    return timers.rotate_updates(dev, **_kind(dev).timers)
 
 
 # ---------------------------------------------------------------- drawn ahead

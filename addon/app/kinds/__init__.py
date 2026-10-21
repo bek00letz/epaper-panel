@@ -49,6 +49,13 @@ class Kind:
     setup_flow = "install"
     # Whether it can stay connected (Update every 1 minute, always on), or always sleeps between updates.
     stays_on = True
+    # The shortest Update every, in minutes, of a kind that can't stay connected (a TRMNL: 5).
+    shortest_update = timing.ASLEEP_FROM
+
+    @property
+    def timers(self) -> dict:
+        """What timing.py needs to know about this kind: whether it can stay on, and its shortest update."""
+        return {"stays_on": self.stays_on, "shortest": self.shortest_update}
 
     def enabled(self) -> bool:
         """Whether this kind is on (an optional kind has an add-on option)."""
@@ -72,7 +79,7 @@ class Kind:
 
     def update_minutes(self, dev: dict) -> int:
         """Update every: minutes between fetches (timing.py). 1 is always on."""
-        return timing.update_minutes(dev, self.stays_on)
+        return timing.update_minutes(dev, **self.timers)
 
     def describe(self, dev: dict) -> dict:
         """What the editor shows about the device beyond the core's fields. Never its key."""
@@ -91,7 +98,7 @@ class Kind:
     def sleeps(self, dev: dict) -> bool:
         """Whether this screen sleeps between updates, the add-on picking its page and when it
         wakes (paging.py): anything but always on. Its Update every says, never its kind."""
-        return timing.sleeps(dev, self.stays_on)
+        return timing.sleeps(dev, **self.timers)
 
     async def switched(self, old: dict, dev: dict) -> str | None:
         """The screen started or stopped sleeping between updates (`sleeps`). What the editor should

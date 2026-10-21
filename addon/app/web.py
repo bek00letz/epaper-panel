@@ -490,7 +490,7 @@ def _screen(dev: dict, everyone: list[dict]) -> dict:
         "can_wake": kind.link(dev) is not None, "picks_page": kind.picks_page,
         # A screen that sleeps between updates (paging.py) wakes when the add-on says, whatever its kind.
         "owns_interval": "addon" if kind.sleeps(dev) else kind.owns_interval, "sleeps": kind.sleeps(dev),
-        "timing": timing.describe(dev, kind.stays_on),
+        "timing": timing.describe(dev, **kind.timers),
         "setup": kind.setup_flow, "info": kind.describe(dev),
         "entity_suffix": dev.get("entity_suffix") or "",
         # Enough to offer "the same quiet hours as …" when adding a screen.
@@ -509,7 +509,7 @@ def _screens() -> dict:
     return {"devices": [_screen(d, everyone) for d in everyone],
             "kinds": [{"id": k.id, "name": k.name, "setup": k.setup_flow,
                        # What Update every offers a new screen of this kind, and where sleeping starts.
-                       "update_choices": timing.update_choices(k.stays_on), "asleep_default": timing.ASLEEP_DEFAULT,
+                       "update_choices": timing.update_choices(**k.timers), "asleep_default": timing.ASLEEP_DEFAULT,
                        "displays": [{"id": d, "name": T.get_display(d)["name"], "w": T.get_display(d)["w"],
                                      "h": T.get_display(d)["h"]} for d in k.displays()]}
                       for k in on],
@@ -573,7 +573,7 @@ async def api_devices_add(request):
     mode = body.get("pages") or "new"
     try:
         # Its timers (always on or sleeping, from the cards) and its kind's own settings, checked before it exists.
-        extra = {**timing.settings({"kind": kind.id}, body, kind.stays_on), **kind.settings({"kind": kind.id}, body)}
+        extra = {**timing.settings({"kind": kind.id}, body, **kind.timers), **kind.settings({"kind": kind.id}, body)}
     except ValueError as exc:
         raise web.HTTPBadRequest(text=str(exc))
     try:
@@ -608,7 +608,7 @@ async def api_devices_update(request):
         fields["name"] = _clean_name(body["name"], exclude_id=dev["id"])
     kind = kinds.of(dev)
     try:
-        fields.update(timing.settings(dev, body, kind.stays_on))
+        fields.update(timing.settings(dev, body, **kind.timers))
         fields.update(kind.settings(dev, body))
     except ValueError as exc:
         raise web.HTTPBadRequest(text=str(exc))
