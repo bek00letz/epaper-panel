@@ -10,7 +10,8 @@ import { explodeWidget, getWidgetSensorId, suggestIconForEntity } from "./legacy
 import { dateEditor, binsEditor } from "./countdown.js";
 import { zonesEditor } from "./zones.js";
 import { staleNote, changesEvery, pageChangesEvery, sleepsBetweenUpdates } from "./presets.js";
-import { widget, leagueOptions, seriesOptions, sportWord } from "./catalog.js";
+import { widget, leagueOptions, seriesOptions, sportWord, stateWords } from "./catalog.js";
+import { isFollowing, startFollowing, stopFollowing, setEntity, addState, removeState, setStateIcon, suggestions, wordFor } from "./follows.js";
 
 const SHOWS = [["state", "Its value"], ["unit", "Its unit, following the value"], ["attribute", "One of its details"], ["last_changed", "When it last changed"], ["last_updated", "When it last updated"],
   ["days_until", "Days until it"], ["date_formatted", "Its date"], ["calendar_title", "The event's name"]];
@@ -124,8 +125,7 @@ function element(app, head, body, el, i) {
       h("div", { class: "field" }, h("span", { class: "lab", text: "Align" }), seg([["left", "Left", "alignl"], ["center", "Centre", "centerh"], ["right", "Right", "alignr"]], el.align || "left", (v) => set("align", v === "left" ? "" : v), "Alignment")),
       styleRows(app, el, set)));
   } else if (el.type === "icon") {
-    body.append(section("Icon",
-      iconButton(app, el.icon, (ic) => set("icon", ic)),
+    body.append(section("Icon", ...iconRows(app, el, set),
       field("Size", number(el.size, (v) => set("size", v), { min: "8", max: "360", placeholder: "Fits the box" })),
       legibility(app, i, el), styleRows(app, el, set)));
   } else {
@@ -180,6 +180,93 @@ function element(app, head, body, el, i) {
   body.append(section(null, h("div", { class: "btnrow" },
     h("button", { class: "btn tinted", onclick: () => app.duplicate() }, icon("dup", "sm"), "Duplicate"),
     h("button", { class: "btn tinted danger", onclick: () => app.remove() }, icon("trash", "sm"), "Delete"))));
+}
+
+/* An icon, or one that changes with a sensor (follows.js): the switch first, so it never moves
+   under the pointer; on, the sensor, a row per state and its own icon as "Anything else", then
+   the states the sensor has that aren't added yet, each with Home Assistant's icon for it. */
+function iconRows(app, el, set) {
+  const doc = app.doc, on = isFollowing(el);
+  const sw = toggleRow("Changes with a sensor", on, (v) => {
+    if (!v) { stopFollowing(el); doc.commit(); return; }
+    startFollowing(el);
+    doc.commit();
+    // It needs a sensor before it can do anything: ask for it straight away (the commit redrew the inspector).
+    if (!el.entity) app.el.insp.querySelector(".follows .entbtn")?.click();
+  });
+  if (!on) return [sw, iconButton(app, el.icon, (ic) => set("icon", ic))];
+  const ent = app.entMap.get(el.entity);
+  const sensor = entityButton(app, el.entity, (id) => {
+    const was = ent?.name || el.entity, cleared = setEntity(el, id);
+    doc.commit();
+    if (cleared) toast(`Took off ${cleared === 1 ? "the state" : `the ${cleared} states`} of ${was}.`, { label: "Undo", run: () => doc.undo() });
+  }, { label: "Sensor" });
+  const asked = el.entity ? askStates(el.entity) : null;
+  const kind = el.entity ? stateWords(el.entity, ent?.device_class) : null;
+  const word = (st) => wordFor(st, asked?.got, kind);
+  const row = (label, sub, btn, end) => h("div", { class: "frow" },
+    h("span", { class: "fl", title: sub ? `${label} (${sub})` : label }, h("span", { class: "fw", text: label }), sub ? h("small", { text: sub }) : null), btn, end);
+  const rows = Object.entries(el.state_icons).map(([st, ic]) => {
+    const w = word(st), sub = w.trim().toLowerCase() === st.trim().toLowerCase() ? "" : st;
+    return row(w, sub, iconButton(app, ic, (pick) => { setStateIcon(el, st, pick); doc.commit(); }, `Icon for ${w}`),
+      h("button", { class: "btn icon", "aria-label": `Remove ${w}`, title: `Remove ${w}`, onclick: () => {
+        removeState(el, st); doc.commit();
+        toast(`Removed ${w}.`, { label: "Undo", run: () => doc.undo() });
+      } }, icon("close", "sm")));
+  });
+  const other = row("Anything else", "", iconButton(app, el.icon, (ic) => set("icon", ic), "Icon for anything else"), h("span", { class: "fend", "aria-hidden": "true" }));
+  const out = [sw, h("div", { class: "follows" }, sensor, ...rows, other)];
+  if (!el.entity) { out.push(h("p", { class: "fnote", text: "Choose a sensor, then an icon for each of its states." })); return out; }
+  out.push(field("Add", addStates(app, el, asked, word)));
+  return out;
+}
+
+/* The states not added yet, as chips with their icons; "Other state" for one never seen. Held back
+   (its space kept) while Home Assistant answers, so nothing flashes on a quick answer. */
+function addStates(app, el, asked, word) {
+  const doc = app.doc;
+  const box = h("div", { class: "chips follows-add", role: "group", "aria-live": "polite" });
+  const typed = () => {
+    const inp = h("input", { class: "inp", placeholder: "As Home Assistant says it", "aria-label": "A state it has", autocomplete: "off", spellcheck: "false" });
+    const done = (keep) => {
+      const st = inp.value.trim(), offered = (asked?.got || []).find((o) => o.state.toLowerCase() === st.toLowerCase());
+      inp.blur();
+      if (keep && st && !addState(el, offered?.state || st, offered?.icon)) { toast(`${word(st)} is already there.`); fill(); return; }
+      if (keep && st) doc.commit(); else fill();
+    };
+    inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); done(true); } if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); done(false); } });
+    inp.addEventListener("blur", () => { if (inp.isConnected && !inp.value.trim()) fill(); });
+    return inp;
+  };
+  const fill = () => {
+    const got = asked?.got;
+    if (got === undefined) return;
+    const chips = suggestions(el, got).map((o) => h("button", { class: "chipbtn add", "aria-label": `Add ${o.word}`, onclick: () => { addState(el, o.state, o.icon); doc.commit(); } },
+      h("span", { class: "glyph mdi", "aria-hidden": "true", text: app.mdiGlyph(o.icon) }), o.word));
+    const more = h("button", { class: "chipbtn add", onclick: () => { const inp = typed(); more.replaceWith(inp); inp.focus(); } }, icon("plus", "xs"), "Other state");
+    const said = got === null ? `${asked.error || "Home Assistant didn't say what states it has."} Type one it has instead.`
+      : !got.length && !Object.keys(el.state_icons).length ? "Home Assistant doesn't list states for it. Type one it has." : "";
+    box.replaceChildren(...chips, more, said ? h("p", { class: "fnote", text: said }) : "");
+    box.classList.remove("waiting");
+  };
+  fill();
+  if (asked && asked.got === undefined) {
+    setTimeout(() => { if (asked.got === undefined && box.isConnected) { box.classList.add("waiting"); box.replaceChildren(h("span", { class: "fnote", text: "Looking up its states…" })); } }, 600);
+    asked.done.then(() => { if (box.isConnected) fill(); });
+  }
+  return box;
+}
+
+// What a sensor's states are (api/entity_states), kept a minute so redrawing the inspector doesn't blink.
+const statesAsked = new Map();
+function askStates(ent) {
+  const had = statesAsked.get(ent);
+  if (had && (had.got === undefined || Date.now() - had.at < 60000)) return had;
+  const entry = { at: Date.now(), got: had?.got, error: "", done: null };
+  entry.done = api("api/entity_states?entity=" + encodeURIComponent(ent))
+    .then((r) => { entry.got = r.body?.states || []; return entry; }, (e) => { entry.got = entry.got ?? null; entry.error = e.message; return entry; });
+  statesAsked.set(ent, entry);
+  return entry;
 }
 
 /* What a text or value shows. */

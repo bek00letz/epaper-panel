@@ -1,6 +1,14 @@
 # Changelog
 
 ## Unreleased
+- **Any icon can change with a sensor.** Select an icon and turn on
+  "Changes with a sensor" in its Icon section, pick the sensor, then tap
+  the states you want: each comes with Home Assistant's own icon for it,
+  from what kind of sensor it is, the choices it lists, or the icons it had
+  in the last 10 days (so a cat's "Indoor Cat" brings its cat icon). "Other
+  state" adds one it hasn't been yet, and "Anything else" is the icon for
+  the rest. Turn it off and the icon stays as it was. An icon Home
+  Assistant uses that the panel can't draw isn't offered.
 - **An icon that follows a sensor matches its state whatever the case.**
   "outdoor cat" picks the same icon as "Outdoor Cat", as the Dynamic status
   spots already did.

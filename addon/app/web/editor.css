@@ -392,6 +392,20 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
 .spot { background: var(--surface-2); border-radius: var(--r-card); padding: 8px 10px 10px; display: flex; flex-direction: column; gap: 6px; box-shadow: 0 0 0 0.5px var(--sep); }
 .spothead { display: flex; align-items: center; justify-content: space-between; font-weight: 600; font-size: 12.5px; }
 .spot .entbtn, .spot .iconbtn { background: var(--surface); }
+/* An icon that changes with a sensor: a row per state, its name then its icon, the remove button
+   in a column of its own so every icon lines up, "Anything else" included. */
+.follows { display: flex; flex-direction: column; gap: 6px; }
+.frow { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr) var(--ctl); gap: 6px; align-items: center; }
+.frow .fl { min-width: 0; display: flex; flex-direction: column; }
+.frow .fw { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.frow small { font: 11px var(--mono); color: var(--fg-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.frow .iconbtn { min-height: var(--ctl); padding: 2px 8px 2px 4px; gap: 6px; }
+.frow .iconbtn .e1 { font-size: 12.5px; }
+.follows-add { min-height: 32px; align-items: center; }
+.follows-add .glyph { font-size: 16px; line-height: 1; }
+.follows-add .inp { flex: 1 1 12em; min-width: 0; }
+.follows-add .fnote { flex-basis: 100%; margin: 0; }
+.follows-add.waiting .fnote { animation: fadein var(--t) var(--spring); }
 
 /* ---------- floating: popovers, menus, sheets, toast ---------- */
 #layer { position: fixed; inset: 0; pointer-events: none; z-index: 50; }

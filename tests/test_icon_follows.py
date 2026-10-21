@@ -2,6 +2,9 @@
 offers, each with Home Assistant's own icon (render/states.offered, sources/states_seen,
 GET /api/entity_states), and the inspector's wiring (web/app/follows.js under node)."""
 import asyncio
+import json
+import re
+import subprocess
 import unittest
 from unittest import mock
 
@@ -116,6 +119,84 @@ class TestTheRoute(EditorClient):
             r = await self.ed.get("/api/entity_states?entity=sensor.cat_location")
         self.assertEqual(r.status, 502)
         self.assertIn("didn't say", (await r.json())["error"])
+
+
+FOLLOWS = support.APP / "web" / "app" / "follows.js"
+INSPECTOR = (support.APP / "web" / "app" / "inspector.js").read_text()
+
+
+def run_js(body):
+    script = f"import * as F from {json.dumps(str(FOLLOWS))};\n{body}"
+    return json.loads(subprocess.run(["node", "--input-type=module", "-e", script], capture_output=True, text=True, check=True).stdout)
+
+
+class TestTheEditorsSide(unittest.TestCase):
+    def test_on_and_off_keep_the_plain_icon(self):
+        got = run_js("""
+const el = { type: "icon", icon: "mdi:cat" };
+const before = F.isFollowing(el);
+F.startFollowing(el); F.setEntity(el, "sensor.pawpaw_location");
+F.addState(el, "Outdoor Cat", "mdi:cat-outline");
+const on = JSON.parse(JSON.stringify(el));
+F.stopFollowing(el);
+console.log(JSON.stringify({ before, on, off: el, text: F.isFollowing({ type: "text", state_icons: {} }) }));""")
+        self.assertFalse(got["before"])
+        self.assertEqual(got["on"], {"type": "icon", "icon": "mdi:cat", "entity": "sensor.pawpaw_location", "state_icons": {"Outdoor Cat": "mdi:cat-outline"}})
+        self.assertEqual(got["off"], {"type": "icon", "icon": "mdi:cat"}, "off: the plain icon, nothing else")
+        self.assertFalse(got["text"], "only an icon follows")
+
+    def test_the_cat_in_a_few_clicks(self):
+        # Pick the sensor, tap its two suggested states: each comes with Home Assistant's icon.
+        offered = [{"state": "Outdoor Cat", "word": "Outdoor Cat", "icon": "mdi:cat-outline"}, {"state": "Indoor Cat", "word": "Indoor Cat", "icon": "mdi:cat"}]
+        got = run_js(f"""
+const offered = {json.dumps(offered)};
+const el = {{ type: "icon", icon: "mdi:help" }};
+F.startFollowing(el); F.setEntity(el, "sensor.pawpaw_location");
+const first = F.suggestions(el, offered);
+for (const o of first) F.addState(el, o.state, o.icon);
+console.log(JSON.stringify({{ first, after: F.suggestions(el, offered), map: el.state_icons }}));""")
+        self.assertEqual([(o["word"], o["icon"]) for o in got["first"]], [("Outdoor Cat", "mdi:cat-outline"), ("Indoor Cat", "mdi:cat")])
+        self.assertEqual(got["after"], [], "an added state isn't offered again")
+        self.assertEqual(got["map"], {"Outdoor Cat": "mdi:cat-outline", "Indoor Cat": "mdi:cat"})
+
+    def test_a_state_is_one_row_whatever_its_case(self):
+        got = run_js("""
+const el = { type: "icon", icon: "mdi:cat" }; F.startFollowing(el);
+const a = F.addState(el, "Outdoor Cat", "mdi:cat-outline"), b = F.addState(el, " outdoor cat ", "mdi:x"), c = F.addState(el, "  ");
+F.setStateIcon(el, "OUTDOOR CAT", "mdi:cat-off"); const typed = F.addState(el, "Away");
+const offer = F.suggestions(el, [{ state: "outdoor CAT", icon: "mdi:y" }, { state: "Home" }]);
+F.removeState(el, "away");
+console.log(JSON.stringify({ a, b, c, typed, offer, map: el.state_icons }));""")
+        self.assertEqual((got["a"], got["b"], got["c"], got["typed"]), ("Outdoor Cat", "", "", "Away"))
+        self.assertEqual(got["map"], {"Outdoor Cat": "mdi:cat-off"})
+        self.assertEqual(got["offer"], [{"state": "Home", "word": "Home", "icon": "mdi:cat"}], "no icon known: its own")
+
+    def test_another_sensor_clears_the_states_of_the_one_before(self):
+        got = run_js("""
+const el = { type: "icon", icon: "mdi:cat" }; F.startFollowing(el);
+const none = F.setEntity(el, "sensor.a"); F.addState(el, "x"); F.addState(el, "y");
+const same = F.setEntity(el, "sensor.a"), other = F.setEntity(el, "sensor.b");
+console.log(JSON.stringify({ none, same, other, map: el.state_icons, entity: el.entity }));""")
+        self.assertEqual((got["none"], got["same"], got["other"]), (0, 0, 2))
+        self.assertEqual((got["map"], got["entity"]), ({}, "sensor.b"))
+
+    def test_a_row_says_home_assistants_word(self):
+        got = run_js("""
+const kind = { on: { word: "Open" }, off: { word: "Closed" } };
+console.log(JSON.stringify([F.wordFor("on", null, kind), F.wordFor("off", [{ state: "off", word: "Shut" }], kind), F.wordFor("Outdoor Cat", null, null)]));""")
+        self.assertEqual(got, ["Open", "Shut", "Outdoor Cat"])
+
+    def test_the_inspector_wiring(self):
+        rows = INSPECTOR[INSPECTOR.index("function iconRows"):INSPECTOR.index("function addStates")]
+        self.assertIn('toggleRow("Changes with a sensor"', rows)
+        self.assertLess(rows.index("const sw = toggleRow"), rows.index("iconButton(app, el.icon"), "the switch first, so it never moves")
+        self.assertIn('if (!on) return [sw, iconButton(app, el.icon', rows, "off: the plain icon right under the switch")
+        self.assertIn('row("Anything else"', rows, "on: its own icon is the last row")
+        self.assertEqual(rows.count("iconButton(app, el.icon"), 2, "one control for its own icon in each case, never two")
+        self.assertIn("api/entity_states?entity=", INSPECTOR, "the states come from the add-on")
+        self.assertIn('section("Icon", ...iconRows(app, el, set)', INSPECTOR)
+        self.assertNotRegex(rows, r"KNOWN_STATES", "no editor copy of the states")
+        self.assertIn('label: "Undo"', rows, "removing a row has an Undo")
 
 
 if __name__ == "__main__":

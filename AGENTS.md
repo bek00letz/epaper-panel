@@ -390,6 +390,16 @@ up to v0.12.0). `app/legacy.js` keeps the pieces of it this one still uses.
   `GET /api/catalog` at start (`app/catalog.js`). Basic elements (text,
   value, icon, card, divider, gauge, charts, QR) stay the editor's; a new
   widget is a descriptor in `widgets.py`, nothing in the editor.
+- **An icon follows a sensor in its own Icon section** (the user's design,
+  21 Oct; `app/follows.js`): the switch "Changes with a sensor" comes
+  first, so it never moves under the pointer; off, the plain icon is under
+  it; on, the sensor, a row per state and the same icon as "Anything else",
+  one control and never two. States are offered, not filled in: chips you
+  tap, each with an icon already chosen, from `GET /api/entity_states`
+  (`render/states.offered`: the kind's words, `options`, the recorder's
+  last 10 days with the icon each state had), only icons the panel can draw
+  (`layout.can_draw_icon`). A state matches whatever its case
+  (`layout.icon_for_state`, the one lookup for icons and status spots).
 - **The inspector is ordered by how often things are touched**: what it shows,
   how it looks, arrange, then "More". Rare settings go under More, not away.
 - **Picking: smallest thing under the pointer first.** Clicking again without
