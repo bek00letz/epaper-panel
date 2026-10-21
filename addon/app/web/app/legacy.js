@@ -372,7 +372,7 @@ export function explodeWidget(el) {
   const newEls = [];
 
   if (el.type === "weather_forecast") {
-    const ent = el.entity || "weather.forecast_home";
+    const ent = el.entity || "";                       // never a guessed entity
     const mode = el.layout_mode || "auto";
     const isSplit = mode === "split" || (mode === "auto" && w >= 420 && w > h * 1.4);
     const leftW = isSplit ? Math.floor(w * 0.44) : w;
