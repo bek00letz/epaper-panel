@@ -8,12 +8,13 @@ import { h, icon, api, clone, slug, prefs } from "./util.js";
 import { sheet, toast } from "./ui.js";
 import { syncDynamicGridShowIf } from "./conditions.js";
 import { reflowPageElements } from "./legacy.js";
-import { PRESETS as ALL_PRESETS, GROUPS, forDevice, sleepsBetweenUpdates, staleNote, presetChangesEvery, lookOf, pageFor, examplePage, pageName, search, rankSensors, fitToCanvas } from "./presets.js";
+import { PRESETS as ALL_PRESETS, GROUPS, sleepsBetweenUpdates, staleNote, presetChangesEvery, lookOf, pageFor, examplePage, pageName, search, rankSensors, fitToCanvas } from "./presets.js";
 import { thumbnail } from "./strip.js";
+import { slider } from "./slider.js";
 import { setupStep } from "./setup.js";
 
 const UNITS = { Style: ["style", "styles"], League: ["league", "leagues"], Series: ["series", "series"] };
-const count = (p) => (p.looks.length > 1 ? `${p.looks.length} ${UNITS[p.choose || "Style"][1]}` : "");
+const count = (p) => (p.sub ? p.sub : p.looks.length > 1 && UNITS[p.choose || "Style"] ? `${p.looks.length} ${UNITS[p.choose || "Style"][1]}` : "");
 // Something to pick or set up before the page exists; otherwise a click adds it.
 const hasStep = (p) => p.looks.length > 1 || !!p.asks || !!p.needs;
 
@@ -31,8 +32,8 @@ function thumb(app, key, page, { example = false, fit = true, cls = "" } = {}) {
 
 export function openPresets(app) {
   const g = app.geometry();
-  // What this device can show well: a Date, not a Clock, on one that sleeps between updates.
-  const PRESETS = ALL_PRESETS.map((p) => forDevice(p, sleepsBetweenUpdates(app.screen)));
+  // Every preset on every device; one that draws differently on a device that sleeps says so on its card.
+  const PRESETS = ALL_PRESETS, sleeps = sleepsBetweenUpdates(app.screen);
   const tall = g.W / g.H < 1;
   let query = "", step = null;
 
@@ -59,8 +60,9 @@ export function openPresets(app) {
     function card(p) {
       // Noted, never hidden: on a device that sleeps, what changes faster than it updates says how old it can be.
       const stale = staleNote(presetChangesEvery(p), app.screen, { short: true });
-      const look = lookOf(p, 0), sub = stale || count(p) || (p.was ? `Was “${p.was}”` : "");
-      return h("button", { class: "pbtn", "aria-label": `${p.title}${count(p) ? `, ${count(p)}` : ""}. ${p.desc}${stale ? " " + staleNote(presetChangesEvery(p), app.screen) : ""}`, onclick: () => pick(p) },
+      const asleep = sleeps && p.onSleeping ? p.onSleeping : "";
+      const look = lookOf(p, 0), sub = asleep || stale || count(p) || (p.was ? `Was “${p.was}”` : "");
+      return h("button", { class: "pbtn", "aria-label": `${p.title}${count(p) ? `, ${count(p)}` : ""}. ${p.desc}${stale ? " " + staleNote(presetChangesEvery(p), app.screen) : ""}${asleep ? ` ${asleep}.` : ""}`, onclick: () => pick(p) },
         thumb(app, `preset:${look.id}:example`, examplePage(p, look), { example: true }),
         h("span", { class: "pt", text: p.title }), h("span", { class: "sub", text: sub || " ", "aria-hidden": "true" }));
     }
@@ -79,24 +81,7 @@ export function openPresets(app) {
     function shelf(id, name, cards) {
       // Each card sits in a list item, so it stays a button to VoiceOver.
       const row = h("div", { class: "row", role: "list", "aria-label": name }, ...cards.map((c) => (c.classList.contains("pcard") ? (c.setAttribute("role", "listitem"), c) : h("div", { role: "listitem" }, c))));
-      const wrap = h("div", { class: "rowwrap" });
-      const page = (dir) => {
-        const first = row.firstElementChild; if (!first) return;
-        const pad = parseFloat(getComputedStyle(row).paddingLeft) || 0, gap = parseFloat(getComputedStyle(row).columnGap) || 12;
-        const cw = first.getBoundingClientRect().width + gap;
-        row.scrollBy({ left: dir * Math.max(cw, Math.floor((row.clientWidth - 2 * pad + gap) / cw) * cw) });
-      };
-      const left = h("button", { class: "arrow l", tabindex: "-1", "aria-label": `Earlier in ${name}`, onclick: () => page(-1) }, icon("back", "sm"));
-      const right = h("button", { class: "arrow r", tabindex: "-1", "aria-label": `More in ${name}`, onclick: () => page(1) }, icon("chev", "sm"));
-      // The edge fades, and its arrow shows, only towards more.
-      const sync = () => {
-        const max = row.scrollWidth - row.clientWidth;
-        wrap.classList.toggle("more-l", row.scrollLeft > 2);
-        wrap.classList.toggle("more-r", row.scrollLeft < max - 2);
-      };
-      row.addEventListener("scroll", sync, { passive: true });
-      new ResizeObserver(sync).observe(row);
-      setTimeout(sync);                                   // once it is in the sheet
+      const wrap = slider(row, { name });
       // Arrow keys move along the shelf; Tab moves on to the next one.
       row.addEventListener("keydown", (e) => {
         if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
@@ -108,7 +93,6 @@ export function openPresets(app) {
         next.focus({ preventScroll: true });
         next.scrollIntoView({ inline: "nearest", block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
       });
-      wrap.append(left, row, right);
       const hid = "shelf-" + id;
       return h("section", { class: "shelf", "aria-label": `${name}, ${cards.length} ${cards.length === 1 ? "preset" : "presets"}` },
         h("div", { class: "shelf-head" }, h("h3", { id: hid, text: name }), h("span", { class: "count", "aria-hidden": "true", text: `(${cards.length})` })),
@@ -173,11 +157,11 @@ export function openPresets(app) {
   }, { cls: "wide tall", focus: "input[type=search]" });
 
   function add(p, look, ent, extra) {
-    const page = pageFor(p, look, ent, extra);
+    const page = pageFor(p, look, ent, extra, (id) => app.entMap.get(id) || "");
     page.elements = fitToCanvas(page.elements, g, reflowPageElements);
     if (page.tier === "when") syncDynamicGridShowIf(page);
     const entName = ent ? app.entMap.get(ent)?.name : "";
-    app.addPage(slug(pageName(p, look, ent, entName)) || p.id, page);
+    app.addPage(slug(pageName(p, look, ent, entName, extra)) || p.id, page);
   }
 }
 

@@ -33,6 +33,7 @@ from . import sport
 from . import sun
 from . import clock
 from . import clocktime
+from . import countdown
 from . import todo
 from . import units
 from .binding import template_for
@@ -334,13 +335,19 @@ def _draw_bar(img, d, el, raw_val, display=None):
         hi = 100.0
     span = (hi - lo) or 100.0
 
-    raw_str = str(raw_val if raw_val is not None else el.get("value", "68")).strip()
+    # No value (no sensor yet, or none from it) draws an empty gauge and no number:
+    # never a made-up one (it used to read 68).
+    raw_str = str(raw_val if raw_val is not None else el.get("value", "")).strip()
     try:
         cleaned = "".join(ch for ch in raw_str if ch in "0123456789.-")
-        val = float(cleaned) if cleaned else 68.0
+        val = float(cleaned) if cleaned not in ("", "-", ".") else None
     except (ValueError, TypeError):
-        val = 68.0
-    pct = max(0.0, min(1.0, (val - lo) / span))
+        val = None
+    pct = max(0.0, min(1.0, (val - lo) / span)) if val is not None else 0.0
+    try:
+        places = max(0, min(4, int(el.get("decimals") or 0)))
+    except (TypeError, ValueError):
+        places = 0
 
     style = str(el.get("bar_style") or ("vertical" if h > w * 1.3 else "solid")).lower()
     show_label = el.get("show_label") not in (False, "false", 0, "0")
@@ -352,8 +359,9 @@ def _draw_bar(img, d, el, raw_val, display=None):
         tf = T.font(max(11, min(20, int(h * 0.30))), bold=True)
         d.text((x + 2, y + 2), title.upper(), font=tf, fill=T.BLACK, anchor="lt")
         if show_label:
-            lbl = f"{val:.0f}{suffix}"
-            d.text((x + w - 2, y + 2), lbl, font=tf, fill=T.BLACK, anchor="rt")
+            if val is not None:
+                lbl = f"{val:.{places}f}{suffix}"
+                d.text((x + w - 2, y + 2), lbl, font=tf, fill=T.BLACK, anchor="rt")
         hdr_off = max(16, int(h * 0.42))
         bar_y += hdr_off
         bar_h = max(12, h - hdr_off)
@@ -383,7 +391,7 @@ def _draw_bar(img, d, el, raw_val, display=None):
         if fill_w > 2:
             d.rounded_rectangle([(bar_x + 3, bar_y + 3), (bar_x + 3 + fill_w, bar_y + bar_h - 3)], radius=max(2, rad - 2), fill=T.BLACK)
         if show_label and bar_h >= 20:
-            lbl = f"{title + ' · ' if title else ''}{val:.0f}{suffix}"
+            lbl = f"{title + ' · ' if title else ''}{'' if val is None else f'{val:.{places}f}{suffix}'}"
             lf = T.font(max(11, min(24, int(bar_h * 0.56))), bold=True)
             cx = bar_x + bar_w // 2
             cy = bar_y + bar_h // 2
@@ -2061,6 +2069,7 @@ def _widget(draw):
 # The widgets that size everything from their own box (render/hero.py).
 WIDGETS = {
     "sun_times": sun.draw,
+    "countdown": countdown.draw,
     "energy_total": energy.draw_total,
     "grid_now": energy.draw_grid,
     "energy_cost": energy.draw_cost,
@@ -2194,6 +2203,10 @@ def render_page(page, vals, *, clock="", label="", footer=None, page_no=None, it
                     metrics.append(entry)
             elif el["type"] in WIDGETS:
                 drawer(img, d, el, vals.get(i), display=display)
+                if el["type"] == "countdown" and metrics is not None:
+                    # What its page does now (showing, waiting, passed), for the editor to say.
+                    data = vals.get(i) if isinstance(vals.get(i), dict) else {}
+                    metrics.append({"i": i, "countdown": countdown.status(el, todo.now_in(data.get("tz")))})
             elif el["type"] in ("bar", "qr", "dynamic_grid", "calendar_month", "calendar_agenda", "weather_forecast", "flight_tracker", "sports_racing", "sports_match"):
                 drawer(img, d, el, vals.get(i), display=display)
             else:

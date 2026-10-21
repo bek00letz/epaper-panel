@@ -728,6 +728,7 @@ class TestWidgetDescriptors(unittest.TestCase):
         self.assertEqual(widgets.get("sports_racing").changes_every(), racing.fetch_racing_data.interval)
         self.assertEqual(widgets.get("weather_forecast").changes_every(), 60)       # your station's, the faster
         self.assertIsNone(widgets.get("dynamic_grid").changes_every())               # as Home Assistant's states do
+        self.assertIsNone(widgets.get("countdown").changes_every())
 
     def test_every_widget_with_a_fetch_has_an_example(self):
         for t, w in widgets.WIDGETS.items():

@@ -5,10 +5,16 @@
 
 import { h, icon, api, pageTitle, span, seconds } from "./util.js";
 import { describe, parseShowIf, evaluate } from "./conditions.js";
+import { slider } from "./slider.js";
 
 /* Thumbnails come from the same renderer as everything else, one at a time,
    cached by what the page contains. */
 const thumbCache = new Map();
+// What the render said about each picture (its metrics): a countdown's state, for the tile to show.
+const thumbMeta = new Map();
+/* Drawn again from scratch, after a change that isn't in the page (the 12/24-hour setting). */
+export function forgetThumbnails() { for (const u of thumbCache.values()) URL.revokeObjectURL(u); thumbCache.clear(); thumbMeta.clear(); }
+const tell = (img, metrics) => img.dispatchEvent(new CustomEvent("thumbmeta", { detail: metrics || [] }));
 let queue = [], running = false;
 // `example`: drawn with the add-on's example values (api/example), never Home Assistant's (New page's presets).
 export function thumbnail(app, name, img, override, { example = false } = {}) {
@@ -16,7 +22,7 @@ export function thumbnail(app, name, img, override, { example = false } = {}) {
   if (!page) return;
   const key = JSON.stringify([page, app.doc.spec.orientation, app.doc.spec.display, name, example]);
   const hit = thumbCache.get(key);
-  if (hit) { img.src = hit; img.classList.add("ready"); return; }
+  if (hit) { img.src = hit; img.classList.add("ready"); tell(img, thumbMeta.get(key)); return; }
   queue = queue.filter((q) => q.img.isConnected && q.img !== img);
   queue.push({ key, page, name, img, example });
   pump(app);
@@ -30,10 +36,12 @@ async function pump(app) {
     try {
       // An example is drawn by api/example: built-in example values, never Home Assistant's or the person's.
       const r = await api(job.example ? "api/example" : "api/preview", { method: "POST", raw: true, body: { page: job.page, label: job.name.replace(/^preset:(__blank)?/, "").split(":")[0], orientation: Number(app.doc.spec.orientation || 0), distance: 0, display: app.doc.spec.display } });
+      let metrics = [];
+      try { metrics = JSON.parse(r.headers.get("X-Metrics") || "[]"); } catch (_) {}
       const url = URL.createObjectURL(await r.blob());
-      thumbCache.set(job.key, url);
-      if (thumbCache.size > 80) { const [k, u] = thumbCache.entries().next().value; URL.revokeObjectURL(u); thumbCache.delete(k); }
-      document.querySelectorAll(`img[data-thumb="${CSS.escape(job.name)}"]`).forEach((im) => { im.src = url; im.classList.add("ready"); });
+      thumbCache.set(job.key, url); thumbMeta.set(job.key, metrics);
+      if (thumbCache.size > 80) { const [k, u] = thumbCache.entries().next().value; URL.revokeObjectURL(u); thumbCache.delete(k); thumbMeta.delete(k); }
+      document.querySelectorAll(`img[data-thumb="${CSS.escape(job.name)}"]`).forEach((im) => { im.src = url; im.classList.add("ready"); tell(im, metrics); });
     } catch (_) { /* the tile keeps its blank paper */ }
   }
   running = false;
@@ -74,7 +82,7 @@ export function renderStrip(app) {
     const again = seen.has(n); seen.add(n);
     return tile(app, n, { again, slot: i });
   }).filter(Boolean);
-  slots.forEach((t) => list.append(t));
+  slots.forEach((t) => list.append(t.box));
   reorderable(list, slots, (from, to) => {
     const r = spec.rotation; const [x] = r.splice(from, 1); r.splice(to > from ? to - 1 : to, 0, x);
     doc.commit();
@@ -86,17 +94,19 @@ export function renderStrip(app) {
   const alerts = Object.keys(spec.pages).filter((n) => spec.pages[n].tier === "alert");
   if (out.length) {
     list.append(h("span", { class: "groupsep", role: "presentation" }), h("span", { class: "grouplab", text: "Not in rotation" }));
-    out.forEach((n) => { const t = tile(app, n, { out: true }); t.addEventListener("click", () => doc.openPage(n)); list.append(t); });
+    out.forEach((n) => { const t = tile(app, n, { out: true }); t.addEventListener("click", () => doc.openPage(n)); list.append(t.box); });
   }
   if (alerts.length) {
     list.append(h("span", { class: "groupsep", role: "presentation" }), h("span", { class: "grouplab", text: "Alerts" }));
-    alerts.forEach((n) => { const t = tile(app, n, {}); t.addEventListener("click", () => doc.openPage(n)); list.append(t); });
+    alerts.forEach((n) => { const t = tile(app, n, {}); t.addEventListener("click", () => doc.openPage(n)); list.append(t.box); });
   }
-  strip.append(list);
+  // It slides like New page's shelves: edges that fade while there's more, arrows towards more.
+  strip.style.setProperty("--aspect", String(app.geometry().W / app.geometry().H));
+  strip.append(slider(list, { name: "the pages", vertical: () => app.stripVertical() }));
   return strip;
 }
 
-function tile(app, n, { again, out }) {
+function tile(app, n, { again, out, slot }) {
   const doc = app.doc, p = doc.spec.pages[n];
   if (!p) return null;
   const live = (app.status?.pages || []).includes(n);
@@ -118,8 +128,55 @@ function tile(app, n, { again, out }) {
     h("span", { class: "thumbwrap", style: { aspectRatio: `${app.geometry().W} / ${app.geometry().H}` } }, img),
     h("span", { class: "tname" }, h("span", { class: "tn", text: pageTitle(n) }), badge), h("span", { class: "tsub", text: sub }));
   t.addEventListener("contextmenu", (e) => { e.preventDefault(); app.openPageMenu(e, n); });
+  // A countdown says what its page does (render/countdown.status): Passed is outlined and greyed,
+  // to reuse with another date or delete; one waiting says when it starts showing.
+  img.addEventListener("thumbmeta", (e) => {
+    const c = (e.detail || []).find((m) => m.countdown)?.countdown;
+    t.classList.toggle("passed", c?.state === "passed");
+    box.classList.toggle("passed", c?.state === "passed");       // its buttons stay showing
+    if (!c || c.state === "showing" || again || out) return;
+    const said = c.state === "passed" ? `Passed · ${c.on}` : `Shows from ${c.from}`;
+    t.querySelector(".tsub").textContent = said;
+    t.classList.add("dim");
+    t.setAttribute("aria-label", `${pageTitle(n)}. ${said}`);
+  });
   requestAnimationFrame(() => thumbnail(app, n, img));
+  // The tile and, beside it, its page's buttons: over the right third of its picture, Duplicate and
+  // Delete (a repeat of a page takes just that turn out). They show on hover or focus, on a hold on
+  // a touch screen, and all the time on a countdown that has passed. Beside the tile, not inside:
+  // the tile is a button, and a button can't hold others. Dragging moves the tile alone.
+  const g = app.geometry();
+  const act = (ic, label, said, run) => h("button", { class: "tileact", "aria-label": said, title: label, tabindex: "-1",
+    onclick: (ev) => { ev.stopPropagation(); box.classList.remove("held"); run(); } }, icon(ic, "sm"));
+  const acts = h("span", { class: "tileacts", style: { aspectRatio: `${g.W} / ${3 * g.H}` } },
+    act("dup", "Duplicate", `Duplicate ${pageTitle(n)}`, () => app.duplicatePage(n)),
+    again ? act("minus", "Take out this turn", `Take out this turn of ${pageTitle(n)}`, () => app.takeOutTurn(slot))
+      : act("trash", "Delete", `Delete ${pageTitle(n)}`, () => app.deletePage(n)));
+  const box = h("span", { class: "tilebox" }, t, acts);
+  holdToReveal(t, box);
+  t.box = box;
   return t;
+}
+
+/* On a touch screen, holding a tile without moving shows its buttons (and a
+   tap anywhere else puts them away); the hold doesn't open the page. */
+function holdToReveal(t, box) {
+  let timer = null, at = null;
+  const stop = () => { clearTimeout(timer); timer = null; };
+  t.addEventListener("pointerdown", (e) => {
+    if (e.pointerType !== "touch") return;
+    at = { x: e.clientX, y: e.clientY };
+    timer = setTimeout(() => {
+      timer = null; t.dataset.held = "1"; box.classList.add("held");
+      navigator.vibrate?.(8);
+      const away = (ev) => { if (!box.contains(ev.target)) { box.classList.remove("held"); document.removeEventListener("pointerdown", away, true); } };
+      document.addEventListener("pointerdown", away, true);
+    }, 480);
+  });
+  t.addEventListener("pointermove", (e) => { if (timer && at && Math.hypot(e.clientX - at.x, e.clientY - at.y) > 10) stop(); });
+  t.addEventListener("pointerup", stop); t.addEventListener("pointercancel", stop);
+  // The click a hold ends with isn't an open.
+  t.addEventListener("click", (e) => { if (t.dataset.held) { e.stopImmediatePropagation(); e.preventDefault(); delete t.dataset.held; } }, true);
 }
 
 /* Drag to reorder with an insertion mark; a plain click opens. Alt+arrows move.
@@ -154,7 +211,7 @@ function reorderable(list, items, onMove, onOpen) {
         it.removeEventListener("pointermove", move); it.removeEventListener("pointerup", up); it.removeEventListener("pointercancel", up);
         if (mark) mark.remove();
         it.style.transform = ""; it.classList.remove("lifted");
-        if (!drag) { onOpen(idx); return; }
+        if (!drag) { if (it.dataset.held) delete it.dataset.held; else onOpen(idx); return; }   // a hold showed its buttons
         if (target !== idx && target !== idx + 1) onMove(idx, target);
       };
       it.addEventListener("pointermove", move); it.addEventListener("pointerup", up); it.addEventListener("pointercancel", up);

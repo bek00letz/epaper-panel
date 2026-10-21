@@ -8,7 +8,7 @@ import urllib.parse
 from datetime import datetime, timedelta, timezone
 from email.utils import formatdate
 
-from render import binding, epf, layout, sleep, stripmeta, subitems, theme as T
+from render import binding, countdown, epf, layout, sleep, stripmeta, subitems, theme as T, todo
 import conditions
 import devices
 import health
@@ -323,9 +323,12 @@ async def eligible_pages(session, spec, linger):
     linger.forget_except(widget_gates)
 
     live = []
+    now_home = todo.now_in(home_tz)
     for name in rotation:
         page = defs.get(name)
         if page is None or page.get("tier") == "alert":
+            continue
+        if countdown.page_hidden(page, now_home):          # past a one-off date, or not yet its time to show
             continue
         if name in widget_results:
             if not widget_results[name]:

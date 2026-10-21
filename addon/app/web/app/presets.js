@@ -27,6 +27,9 @@ export const GROUPS = [
   ["media", "Watch and listen"],
 ];
 
+// A day counted from today, as a date field writes it (for example values).
+const isoDay = (n) => { const d = new Date(); d.setDate(d.getDate() + n); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+
 // The sensor a Jellyfin source makes; "watch" is the name it's seeded with.
 const watchEnt = (ent) => ent || "sensor.epaper_watch";
 const watchShowIf = (ent) => `{{ states('${watchEnt(ent)}_count') | int(0) > 0 }}`;
@@ -57,12 +60,18 @@ export const PRESETS = [
   /* ---------- your day ---------- */
   {
     id: "clock", group: "day", title: "Clock", desc: "The time, very large, and today's date.", kw: "time date",
-    asks: "",
+    asks: "", onSleeping: "Shows the date here",
     looks: [{ id: "clock", name: "Clock", make: () => [
-      { type: "text", value: "{{ now().strftime('%H:%M') }}", size: 110, bold: true, x: 40, y: 20, w: 450, h: 140, align: "left" },
-      { type: "text", value: "{{ now().strftime('%A, %-d %B') }}", size: 36, bold: false, x: 44, y: 168, w: 500, h: 46, align: "left" },
+      // The add-on's own clock (framework review #9): 12- or 24-hour as Settings › Time and language says.
+      { type: "text", show: "now", format: "time", size: 110, bold: true, x: 40, y: 20, w: 450, h: 140, align: "left" },
+      { type: "text", show: "now", format: "day_full", size: 36, bold: false, x: 44, y: 168, w: 500, h: 46, align: "left" },
       { type: "icon", icon: "mdi:clock-outline", x: 620, y: 40, w: 120, h: 120 },
     ] }],
+  },
+  {
+    // For anyone who wants only the day and date, on any device (framework review #10).
+    id: "date", group: "day", title: "Date", desc: "Today's weekday, large, and the date.", kw: "day weekday today",
+    asks: "", looks: [{ id: "date", name: "Date", make: () => DATE_LOOK.make() }],
   },
   {
     id: "calendar", group: "day", title: "Calendar", kw: "agenda month events",
@@ -86,24 +95,24 @@ export const PRESETS = [
     })),
   },
   {
-    id: "event_countdown", group: "day", title: "Countdown", desc: "Days until the next event in a calendar, and its date.", kw: "days until",
-    asks: "calendar", example: "calendar.family",
-    looks: [{ id: "event_countdown", name: "Countdown", make: (ent) => [
-      { type: "icon", icon: "mdi:calendar-clock", x: 32, y: 40, w: 110, h: 110 },
-      { type: "number", entity: ent || "", show: "days_until", suffix: " days", decimals: 0, x: 160, y: 24, w: 340, h: 130, align: "left" },
-      { type: "text", value: "days until event", size: 30, bold: false, x: 164, y: 166, w: 320, h: 42, align: "left" },
-      { type: "text", entity: ent || "", show: "date_formatted", prefix: "date: ", format: "day_date", size: 28, bold: false, x: 450, y: 166, w: 300, h: 42, align: "right" },
-    ] }],
-  },
-  {
-    id: "bin_day", group: "day", title: "Bin day", desc: "Days until collection, and which bin.", kw: "trash rubbish recycling garbage waste",
-    asks: "calendar", example: "calendar.bins",
-    looks: [{ id: "bin_day", name: "Bin day", make: (ent) => [
-      { type: "icon", icon: "mdi:trash-can", x: 32, y: 40, w: 110, h: 110 },
-      { type: "number", entity: ent || "", show: "days_until", suffix: " days", decimals: 0, x: 160, y: 24, w: 340, h: 130, align: "left" },
-      { type: "text", value: "until collection", size: 30, bold: false, x: 164, y: 166, w: 320, h: 42, align: "left" },
-      { type: "text", entity: ent || "", show: "calendar_title", prefix: "type: ", size: 28, bold: false, x: 450, y: 166, w: 300, h: 42, align: "right" },
-    ] }],
+    // Bin day is a countdown that repeats (the user's call, 21 Oct): one preset, what it counts to picked next.
+    id: "countdown", group: "day", title: "Countdown", sub: "A date, bin day or an event", kw: "days until date birthday holiday bin bins trash rubbish recycling garbage waste collection",
+    desc: "Days until a date of yours, or until the bins go out. No calendar needed; one from Home Assistant works too.",
+    asks: "", choose: "Counts down to", name: (look, extra) => (look.id === "countdown_bins" ? "Bin day" : extra?.name || "Countdown"),
+    looks: [
+      { id: "countdown_date", name: "A date", needs: "date",
+        exampleExtra: () => ({ name: "Holiday", at: isoDay(12) }),
+        make: (_, x = {}) => [{ type: "countdown", to: "date", name: x.name || "", at: x.at || "", yearly: !!x.yearly, show_before: x.show_before || 0, x: 24, y: 14, w: 744, h: 208 }] },
+      { id: "countdown_bins", name: "Bin day", needs: "bins",
+        exampleExtra: () => ({ bins: [{ name: "Recycling", from: isoDay(1), every: 2 }, { name: "General waste", from: isoDay(8), every: 2 }], today_until: "noon" }),
+        make: (_, x = {}) => [{ type: "countdown", to: "bins", today_until: x.today_until || "noon", bins: x.bins || [], show_before: x.show_before || 0, x: 24, y: 14, w: 744, h: 208 }] },
+      { id: "event_countdown", name: "A calendar event", asks: "calendar", example: "calendar.bins", make: (ent) => [
+        { type: "icon", icon: "mdi:calendar-clock", x: 32, y: 40, w: 110, h: 110 },
+        { type: "number", entity: ent || "", show: "days_until", suffix: " days", decimals: 0, x: 160, y: 24, w: 340, h: 130, align: "left" },
+        { type: "text", entity: ent || "", show: "calendar_title", size: 30, bold: false, x: 164, y: 166, w: 300, h: 42, align: "left" },
+        { type: "text", entity: ent || "", show: "date_formatted", format: "day_date", size: 28, bold: false, x: 470, y: 166, w: 290, h: 42, align: "right" },
+      ] },
+    ],
   },
 
   /* ---------- home ---------- */
@@ -112,7 +121,7 @@ export const PRESETS = [
     asks: "sensor", prefer: { device_class: ["temperature"], units: ["°C", "°F", "K"] }, example: "sensor.indoor_temperature",
     looks: [{ id: "climate", name: "Room temperature", make: (ent) => [
       { type: "icon", icon: "mdi:thermometer", x: 32, y: 44, w: 116, h: 116 },
-      { type: "number", entity: ent || "", show: "state", suffix: " °C", decimals: 1, x: 160, y: 30, w: 320, h: 128, align: "left" },
+      { type: "number", entity: ent || "", show: "state", unit: "entity", decimals: 1, x: 160, y: 30, w: 320, h: 128, align: "left" },
       { type: "text", value: "room climate", size: 30, bold: false, x: 164, y: 170, w: 320, h: 40, align: "left" },
       { type: "curve", entity: ent || "", hours: 24, x: 490, y: 100, w: 270, h: 86 },
     ] }],
@@ -152,7 +161,7 @@ export const PRESETS = [
     asks: "sensor", prefer: { energy: "solar", device_class: ["energy"], units: ["kWh", "Wh", "MWh"] }, example: "sensor.solar_today_production",
     looks: [{ id: "solar", name: "Solar today", make: (ent) => [
       { type: "icon", icon: "mdi:white-balance-sunny", x: 32, y: 44, w: 116, h: 116 },
-      { type: "number", entity: ent || "", show: "state", suffix: " kWh", decimals: 1, x: 160, y: 30, w: 310, h: 128, align: "left" },
+      { type: "number", entity: ent || "", show: "state", unit: "entity", total: "today", decimals: 1, x: 160, y: 30, w: 310, h: 128, align: "left" },
       { type: "text", value: "produced today", size: 30, bold: false, x: 164, y: 170, w: 320, h: 40, align: "left" },
       { type: "curve", entity: ent || "", hours: 24, x: 490, y: 100, w: 270, h: 86 },
     ] }],
@@ -166,17 +175,22 @@ export const PRESETS = [
     ] }],
   },
   {
-    id: "energy_gauges", group: "energy", title: "Battery and solar", desc: "Home battery and house load as gauges, with today's solar as bars.", kw: "load gauges storage",
-    asks: "sensor", prefer: { device_class: ["battery"], units: ["%"] }, example: "sensor.home_battery",
-    looks: [{ id: "energy_gauges", name: "Battery and solar", make: (ent) => [
+    id: "energy_gauges", group: "energy", title: "Battery and solar", desc: "Home battery and house power as gauges, with today's solar as bars.", kw: "load gauges storage battery house power",
+    asks: "", needs: "parts",
+    // Each part it shows is asked for in its step (a preset sets up what it needs); the Energy dashboard's first.
+    parts: [
+      { key: "battery", label: "Home battery", prefer: { device_class: ["battery"], units: ["%"] } },
+      { key: "load", label: "House power", prefer: { device_class: ["power"], units: ["W", "kW"], names: ["house", "home", "load", "consumption"] } },
+      { key: "solar", label: "Solar power", prefer: { energy: "solar_power", device_class: ["power"], units: ["W", "kW"] } },
+    ],
+    looks: [{ id: "energy_gauges", name: "Battery and solar", make: (_, x = {}) => [
       { type: "box", x: 18, y: 14, w: 356, h: 218, fill: "outline", radius: 14, thickness: 3 },
       { type: "text", value: "ENERGY & STORAGE", size: 18, bold: true, invert: true, radius: 8, x: 34, y: 28, w: 280, h: 32, align: "center" },
-      { type: "bar", entity: ent || "", title: "HOME BATTERY", bar_style: "segmented", segments: 10, min_val: 0, max_val: 100, suffix: "%", decimals: 0, show_label: true, x: 34, y: 74, w: 324, h: 66 },
-      { type: "bar", entity: "", title: "HOUSE LOAD", bar_style: "solid", min_val: 0, max_val: 5000, suffix: " W", decimals: 0, show_label: true, x: 34, y: 152, w: 324, h: 64 },
-      { type: "bar_chart", entity: "", title: "24H GENERATION", hours: 24, bars: 12, show_labels: true, show_border: true, x: 390, y: 14, w: 384, h: 218 },
+      { type: "bar", entity: x.battery || "", title: "HOME BATTERY", bar_style: "segmented", segments: 10, min_val: 0, max_val: 100, unit: "entity", decimals: 0, show_label: true, x: 34, y: 74, w: 324, h: 66 },
+      { type: "bar", entity: x.load || "", title: "HOUSE POWER", bar_style: "solid", min_val: 0, max_val: "power", unit: "entity", decimals: 0, show_label: true, x: 34, y: 152, w: 324, h: 64 },
+      { type: "bar_chart", entity: x.solar || "", title: "24H GENERATION", hours: 24, bars: 12, show_labels: true, show_border: true, x: 390, y: 14, w: 384, h: 218 },
     ] }],
   },
-
   {
     id: "grid_now", group: "energy", title: "Grid now", kw: "import export buying selling power electricity",
     desc: "Buying or selling right now, and today's hours, from your Energy dashboard's grid sensors.",
@@ -332,6 +346,10 @@ export const DATE_LOOK = { id: "date", name: "Date", make: () => [
   { type: "text", value: "{{ now().strftime('%-d %B %Y') }}", size: 40, bold: false, x: 44, y: 152, w: 560, h: 52, align: "left" },
   { type: "icon", icon: "mdi:calendar-today", x: 620, y: 40, w: 120, h: 120 },
 ] };
+/* The 0.15 draft's Clock-becomes-Date at creation, kept off as the way back:
+   it changed a design shared with an always-on device (framework review #10).
+   New page now offers Clock everywhere, says "Shows the date here" on a device
+   that sleeps, and the renderer does the rest (render/clocktime.py). */
 export function forDevice(p, sleeps) {
   if (p.id !== "clock" || !sleeps) return p;
   return { ...p, title: "Date", kw: `${p.kw} clock day weekday`, looks: [DATE_LOOK],
@@ -394,19 +412,22 @@ export function staleNote(minutes, screen, { short = false } = {}) {
 }
 /* A preset's, from what its looks show. */
 export const presetChangesEvery = (p) => {
-  const all = p.looks.map((l) => pageChangesEvery(l.make(""))).filter((m) => m != null);
+  const all = p.looks.map((l) => pageChangesEvery(examplePage(p, l).elements)).filter((m) => m != null);   // with real units
   return all.length ? Math.min(...all) : null;
 };
 
 export const presetById = (id) => PRESETS.find((p) => p.id === id);
 export const groupName = (id) => (GROUPS.find(([g]) => g === id) || [id, id])[1];
 export const lookOf = (p, i = 0) => p.looks[Math.min(Math.max(0, i | 0), p.looks.length - 1)];
+/* What a look asks for or sets up: its own, or else its preset's. */
+export const asksOf = (p, look) => (look.asks !== undefined ? look.asks : p.asks);
+export const needsOf = (p, look) => (look.needs !== undefined ? look.needs : p.needs);
 
 /* What a look's page is: its elements and when it shows. A widget's own
    condition comes from the widget (conditions.syncWidgetShowIf), so a league
    or series always shows by its own sensor. */
-export function pageFor(p, look, ent, extra) {
-  const page = { tier: look.tier || p.tier || "rotate", elements: look.make(ent, extra) };
+export function pageFor(p, look, ent, extra, unitOf = () => "") {
+  const page = { tier: look.tier || p.tier || "rotate", elements: withUnits(look.make(ent, extra), unitOf) };
   const showIf = look.showIf || p.showIf;
   if (showIf) { const s = showIf(ent, extra); if (s) page.show_if = s; }
   if (look.widget) {
@@ -416,19 +437,50 @@ export function pageFor(p, look, ent, extra) {
   return page;
 }
 
+/* A preset never writes a unit (framework review #1): an element marked
+   unit: "entity" shows its sensor's own unit, or none when it has none, so a
+   °F home reads °F. A gauge marked max_val: "power" goes to 5000 in watts,
+   5 in kW. `unitOf(entityId)` is the editor's entity list; the thumbnails'
+   examples use the example sensors' own units (render/fixture.json). */
+/* The example sensors' units (and, for a running total, its state class) as the fixture has them. */
+export const EXAMPLE_UNITS = { "sensor.indoor_temperature": "°C", "sensor.solar_today_production": "kWh", "sensor.home_battery": "%",
+  "sensor.house_power": "W", "sensor.solar_pv_power": "W" };
+const EXAMPLE_PARTS = { battery: "sensor.home_battery", load: "sensor.house_power", solar: "sensor.solar_pv_power" };
+const exampleUnit = (id) => EXAMPLE_UNITS[id] || "";
+const POWER_MAX = { W: 5000, kW: 5, MW: 0.005 };
+/* `total: "today"` (Solar today, framework review #3): a running total (state class total or
+   total_increasing: an inverter's lifetime meter, or a daily one) shows how much it went up
+   today (binding show "change_today", from long-term statistics), never "18,532 kWh today";
+   anything else shows its state. The sensor is still the one you pick. */
+const RUNNING = ["total", "total_increasing"];
+export function withUnits(elements, infoOf = () => "") {
+  const info = (id) => { const r = id ? infoOf(id) : ""; return typeof r === "string" ? { unit: r } : r || {}; };
+  return elements.map((el) => {
+    if (el.unit !== "entity" && el.max_val !== "power" && !el.total) return el;
+    const e = { ...el }, about = info(e.entity), u = String(about.unit || "");
+    if (e.total) { if (RUNNING.includes(about.state_class)) e.show = "change_today"; delete e.total; }
+    // No unit is an empty suffix, not a missing one: a gauge with none would add its own "%".
+    if (e.unit === "entity") { delete e.unit; e.suffix = !u ? "" : u === "%" ? "%" : ` ${u}`; }
+    if (e.max_val === "power") { e.max_val = POWER_MAX[u] ?? 5000; if (u === "kW" || u === "MW") e.decimals = 1; }
+    return e;
+  });
+}
+
 /* The page a thumbnail draws: the look with the add-on's example values. */
 export function examplePage(p, look) {
-  const ex = typeof p.example === "function" ? p.example(look) : p.example;
-  if (Array.isArray(ex)) return pageFor(p, look, ex[0], ex);
+  if (look.exampleExtra) return pageFor(p, look, "", look.exampleExtra(), exampleUnit);
+  if (p.needs === "parts") return pageFor(p, look, "", EXAMPLE_PARTS, exampleUnit);
+  const ex = look.example || (typeof p.example === "function" ? p.example(look) : p.example);
+  if (Array.isArray(ex)) return pageFor(p, look, ex[0], ex, exampleUnit);
   if (p.needs === "wifi") return pageFor(p, look, "", { ssid: "Guests", password: "example-only", auth: "WPA" });
-  return pageFor(p, look, ex || "");
+  return pageFor(p, look, ex || "", undefined, exampleUnit);
 }
 
 /* What a new page is called: the list or sensor it shows, the league or
    series, or else the preset. */
-export function pageName(p, look, ent, entName) {
+export function pageName(p, look, ent, entName, extra) {
   if (p.namedByEntity && ent) return entName || ent.split(".")[1];
-  if (p.name) return p.name(look);
+  if (p.name) return p.name(look, extra);
   return p.title;
 }
 
@@ -480,6 +532,7 @@ export function energyRoles(body) {
     known: true, has_cost: !!body.has_cost, currency: body.currency || "",
     solar: ids(solar.flatMap((x) => [x.energy, x.power])),
     solar_energy: ids(solar.map((x) => x.energy)),
+    solar_power: ids(solar.map((x) => x.power)),
     grid: ids(grid.flatMap((x) => [...(x.flows || []).flatMap((f) => [f.import, f.export]), x.power?.plus, x.power?.minus])),
     grid_power: ids(grid.flatMap((x) => [x.power?.plus, x.power?.minus])),
   };

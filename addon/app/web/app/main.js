@@ -81,6 +81,8 @@ class App {
   applyStripPos() {
     const pos = prefs.get("strip_pos", "top");
     this.el.app.dataset.strip = ["top", "bottom", "side"].includes(pos) ? pos : "top";
+    const size = prefs.get("strip_size", "standard");
+    this.el.app.dataset.stripsize = ["small", "standard", "large"].includes(size) ? size : "standard";
     this.renderStrip();
   }
   stripVertical() { return this.el.app.dataset.strip === "side" && matchMedia("(min-width: 901px)").matches; }
@@ -398,7 +400,7 @@ class App {
     // In a row, status and New page together are exactly one page preview tall.
     const front = this.el.strip.querySelector(".stripfront"), first = this.el.strip.querySelector(".tile");
     if (front) front.style.height = !this.stripVertical() && first ? first.offsetHeight + "px" : "";
-    if (n) { n.scrollLeft = scroll[0]; n.scrollTop = scroll[1]; }
+    if (n) { n.scrollLeft = scroll[0]; n.scrollTop = scroll[1]; n.closest(".slider")?.sync(); }   // edges as they were, no fade-in
     if (fi >= 0) { const t = this.el.strip.querySelectorAll(".tile")[fi]; if (t) t.focus({ preventScroll: true }); }
     if (n && !this.didScroll) { const c = n.querySelector('[aria-current="page"]'); if (c) { c.scrollIntoView({ inline: "nearest", block: "nearest" }); this.didScroll = true; } }
   }
@@ -420,7 +422,13 @@ class App {
   }
   inspectorKey() { return `${this.doc.cur}|${this.doc.sel.join(",")}`; }
   inspectorSoon() { cancelAnimationFrame(this.inspRaf); this.inspRaf = requestAnimationFrame(() => this.renderInspector()); }
-  onMetrics() { if (this.doc.sel.length === 1) this.renderInspector(); }
+  onMetrics(m) {
+    // The page's own note follows a countdown's state; redrawn only when that changes, so typing isn't lost.
+    const cd = JSON.stringify((m || []).find((x) => x.countdown)?.countdown || null);
+    const redrawPage = !this.doc.sel.length && cd !== this._countdown;
+    this._countdown = cd;
+    if (this.doc.sel.length === 1 || redrawPage) this.renderInspector();
+  }
   liveFields(el) {
     const q = this.el.insp.querySelectorAll(".quad input");
     if (q.length === 4) ["x", "y", "w", "h"].forEach((k, i) => { q[i].value = el[k]; });
@@ -550,6 +558,14 @@ class App {
     doc.cur = n; doc.sel = [];
     doc.commit(); doc.emit("page");
     toast(`Duplicated as ${pageTitle(n)}. Rename it in the inspector.`, { label: "Undo", run: () => doc.undo() });
+  }
+  // One turn of a page that's in the rotation more than once (a tile marked Again).
+  takeOutTurn(slot) {
+    const doc = this.doc, n = doc.spec.rotation[slot];
+    if (n === undefined) return;
+    doc.spec.rotation.splice(slot, 1);
+    doc.commit();
+    toast(`Took out one turn of ${pageTitle(n)}.`, { label: "Undo", run: () => doc.undo() });
   }
   deletePage(name = this.doc.cur) {
     const doc = this.doc;

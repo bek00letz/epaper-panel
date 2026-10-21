@@ -108,19 +108,10 @@
   NFL game is a game, and the time before one starts reads "Kick-off
   20:00", "Tip-off 20:00", "First pitch 20:00" or "Puck drop 20:00". Home
   Assistant's sensor for a league says Matchday or Game day to match.
-- **12- or 24-hour time on every device.** Sunrise, to-do due times,
-  kick-offs, race sessions, the clock in the corner and "updated" all
-  follow one setting: Automatic (the way clocks read in Home Assistant's
-  country, so 2:05 PM in the US and 14:05 in Romania), 12-hour or 24-hour.
 - **A clock is a clock however it's written.** A device that sleeps shows
   the date instead of the time it went to sleep with, now also for clocks
   written as `as_timestamp(now()) | timestamp_custom(...)`, the Time & Date
   sensor, or `now().hour`.
-- **A meter that only counts up shows today's share.** A value on a
-  sensor that's a running total (an inverter's lifetime production, a gas
-  or water meter) can show how much it went up today, from Home
-  Assistant's long-term statistics, in the sensor's own unit, instead of
-  "18,532 kWh produced today".
 - **A Weather widget with no weather chosen shows the first one Home
   Assistant has**, instead of assuming it's called "Forecast Home".
 - **Fixed:** a Race weekend page set to NASCAR or IndyCar showed Formula 1's
@@ -220,6 +211,74 @@
   faster than this device updates (every 15 min), so it can be up to 15
   min old." The same line shows in the inspector for a page like that.
   Anything showing watts counts, since power is always "now".
+
+- **Countdown and Bin day without a calendar.** New page › Countdown now
+  counts down to a date you pick (with a time if you like, and Every year
+  for birthdays), to your bins, or, as before, to a calendar's next event.
+  Bin day is now a Countdown: add each bin by name with its next collection
+  and how often it comes (every week, or 2, 3 or 4 weeks), so alternating
+  bins are two bins every 2 weeks. The evening before reads Tomorrow, the
+  day Today until noon (or midnight, or numbers only: your choice). On the
+  day of a date with a time it counts the hours. Starts showing keeps a
+  countdown off the panel until it's near: set a trip six months ahead and
+  have it show from a month before (its tile says "Shows from …"). Once a
+  one-off date has passed the panel leaves it out, and it stays among your
+  pages, outlined and marked Passed, its Delete showing on its tile, to
+  give another date or delete.
+  Nothing needs Home Assistant's calendar, and it's all editable later in
+  the inspector. Pages you made from a calendar work as before.
+
+- **The page strip slides like New page's shelves.** Its edges fade while
+  there are more pages to see, with arrows at an edge only towards more as
+  you point at it; down the side it fades top and bottom.
+- **The page strip's size is yours to choose** in Settings › Editor, next to
+  where it sits: Small, Standard (as it was) or Large.
+- **Duplicate and Delete on a page's picture.** Point at a page in the strip,
+  or hold it on a phone, and the right third of its picture turns into two
+  buttons, Duplicate above Delete (on a page that's in the rotation twice,
+  the lower one takes just that turn out). A countdown that has passed
+  shows them all the time. Undo works as everywhere.
+
+- **Fixed:** with the page strip down the side, New page shrank to a sliver
+  and, with this release's sliding strip, the pages ran under the canvas.
+
+- **Fixed:** presets wrote their own units, so a temperature in °F read
+  "71.6 °C" and a solar meter in Wh read kWh. A value now shows its sensor's
+  own unit, and changing a value's sensor in the inspector changes its unit
+  too (words you typed yourself stay).
+- **Battery and solar asks for each part it shows**: the home battery, the
+  house power and the solar power, the Energy dashboard's own picked first.
+  Before, two of its three gauges started empty.
+
+- **Clock is offered on every device**, and on one that sleeps between
+  updates its card says "Shows the date here": the device draws the date in
+  place of the time by itself, so pages shared with an always-on device keep
+  their clock there. **Date** is a preset of its own for anyone who wants
+  only the day and date.
+
+- **Fixed:** a gauge with no sensor showed a made-up "68%", and a gauge whose
+  sensor has no unit added "%" of its own. With no value it now shows an
+  empty gauge and no number; it shows its sensor's unit, or none, and its
+  decimals ("1.8 kW").
+
+- **Weather's rain field takes rain now, not rain so far.** Pick a rain total
+  (mm, in) and it says plainly that the page would then say it's raining
+  all day after a shower, and asks for a rate (mm/h, in/h) or a sensor
+  that's on while it rains.
+
+- **Solar today reads today, even from a lifetime meter.** It still shows the
+  sensor you pick (your Energy dashboard's first), but when that sensor is a
+  running total, as most inverters' are, the page shows how much it went up
+  today rather than "18,532 kWh produced today", from Home Assistant's
+  long-term statistics, in the sensor's own unit. Any value on a running
+  total (a gas or water meter) can do the same.
+
+- **12- or 24-hour time, in Settings › Time and language.** It starts as in
+  Home Assistant (the way clocks read in its country: 2:05 PM in the US,
+  14:05 in Romania) and changes every time on every device: clocks, sunrise
+  and sunset, due times, kick-offs, race sessions, the clock in the corner
+  and "updated". The Clock preset uses it, and any text can
+  show the time or date the same way (Shows: Time, in the inspector).
 
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,

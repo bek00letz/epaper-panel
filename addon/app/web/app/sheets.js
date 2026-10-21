@@ -8,7 +8,7 @@ import { DISPLAYS, isWidget } from "./elements.js";
 import { describe, parseShowIf, syncDynamicGridShowIf } from "./conditions.js";
 import { reflowPageElements } from "./legacy.js";
 import { LOOKS as PRESETS, clockPages, dateInstead } from "./presets.js";
-import { thumbnail, statusSummary } from "./strip.js";
+import { thumbnail, statusSummary, forgetThumbnails } from "./strip.js";
 
 const thumbImg = (app, key, page) => {
   const img = h("img", { class: "thumb", alt: "", "data-thumb": key, draggable: "false" });
@@ -384,6 +384,7 @@ export function openSettings(app, sectionName = "panel") {
       quiet: ["Quiet hours", "moon", () => quietPane(app, pane)],
       reach: ["Reaching home", "globe", () => reachPane(app, pane)],
       sources: ["Data sources", "plug", () => sourcesPane(app, pane)],
+      time: ["Time and language", "clock", () => timePane(app, pane)],
       editor: ["Editor", "gear", () => editorPane(app, pane)],
     };
     function show(k) {
@@ -906,10 +907,31 @@ async function sourcesPane(app, pane) {
   draw();
 }
 
+/* ---------- time and language ---------- */
+// One setting for every device's times (render/clock.py): clocks, sunrise, "Today 14:00", kick-off.
+// The screen's language goes here too when it comes.
+async function timePane(app, pane) {
+  const box = h("div", {}, h("p", { class: "fnote", text: "Checking…" }));
+  pane.append(box);
+  let r;
+  try { r = (await api("api/settings/time")).body || {}; } catch (e) { box.replaceChildren(h("p", { class: "fnote bad", text: `Couldn't read it: ${e.message}` })); return; }
+  const word = (f) => (f === "12h" ? "12-hour" : "24-hour");
+  const draw = () => box.replaceChildren(group(grow("Time", "On every device: clocks, sunrise and sunset, due times, kick-offs",
+    select([["auto", `As in Home Assistant (${word(r.resolved)} here)`], ["12h", "12-hour, like 2:30 PM"], ["24h", "24-hour, like 14:30"]], r.format || "auto", async (v) => {
+      try {
+        r = (await api("api/settings/time", { method: "PUT", body: { format: v } })).body || r;
+        draw(); forgetThumbnails(); app.canvas?.preview(true); app.renderStrip();
+        toast(`Times read ${word(r.resolved)} now, on every device from its next update.`);
+      } catch (e) { toast(`Couldn't change it: ${e.message}`); }
+    }, { "aria-label": "Time" }))));
+  draw();
+}
+
 function editorPane(app, pane) {
   pane.append(group(
     grow("Appearance", null, select([["system", "Match the system"], ["light", "Light"], ["dark", "Dark"]], app.prefs.get("theme", "system"), (v) => { app.prefs.set("theme", v); app.applyTheme(); })),
     grow("Page strip", "Down the side becomes a row again in narrow windows", select([["top", "Above the canvas"], ["bottom", "Below the canvas"], ["side", "Down the side"]], app.prefs.get("strip_pos", "top"), (v) => { app.prefs.set("strip_pos", v); app.applyStripPos(); })),
+    grow("Page strip size", "How large its pages are", select([["small", "Small"], ["standard", "Standard"], ["large", "Large"]], app.prefs.get("strip_size", "standard"), (v) => { app.prefs.set("strip_size", v); app.applyStripPos(); })),
     grow("Check legibility from", "The size note under text uses this distance", select([["0.8", "0.8 m, a desk"], ["1.5", "1.5 m, a bedside"], ["3.0", "3 m, a sofa"], ["5.0", "5 m, across a room"], ["0", "Don't check"]], app.prefs.get("view_dist", "3.0"), (v) => { app.prefs.set("view_dist", v); app.canvas.preview(true); })),
     grow("Guides", "Where the footer is, and a faint outline around every element", toggle(app.prefs.get("guides") === "1", (v) => { app.prefs.set("guides", v ? "1" : "0"); app.refresh(); }, "Guides"))),
     group(grow("Keyboard shortcuts", null, h("button", { class: "btn tinted", onclick: () => openShortcuts() }, "Show"))));

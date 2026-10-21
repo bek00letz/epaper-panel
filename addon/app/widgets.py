@@ -130,6 +130,10 @@ async def _sun(session, el, ctx):
     return None if got is None else {**got, "tz": ctx.home_tz}
 
 
+async def _countdown(session, el, ctx):
+    return {"tz": ctx.home_tz}                  # it counts from the element itself (render/countdown.py)
+
+
 async def _energy_total(session, el, ctx):
     return await energy.fetch_total(session, str(el.get("source") or "solar"), str(el.get("entity") or ""),
                                     str(el.get("period") or "month"))
@@ -206,6 +210,10 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
     Widget("sun_times", "Sunrise and sunset", "sun", _sun, lambda el, now: {**examples.sun(now), "tz": None},
            readers=(home.fetch_sun,), defaults={"style": "next"},
            fields=[sel("style", "Style", [["next", "Next one first"], ["both", "Both alike"]], "next")]),
+    # A date of yours or your bins, no calendar needed; nothing fetched, so it changes only as the day does.
+    Widget("countdown", "Countdown", "calendar", _countdown, lambda el, now: {"tz": None},
+           defaults={"to": "date", "name": "", "at": "", "yearly": False, "show_before": 0},
+           fields=[sel("to", "Counts down to", [["date", "A date"], ["bins", "Bin day"]], "date"), {"kind": "countdown"}]),
     Widget("energy_total", "Energy total", "chart", _energy_total,
            lambda el, now: examples.total(str(el.get("period") or "month"), now),
            readers=(energy.fetch_total,), defaults={"source": "solar", "entity": "", "period": "month"},

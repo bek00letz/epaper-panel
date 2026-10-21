@@ -373,6 +373,11 @@ up to v0.12.0). `app/legacy.js` keeps the pieces of it this one still uses.
   (`rankSensors`: the Energy dashboard's sensor picked and said so, then
   the right device class and unit). `tests/test_presets.py` draws every
   look at every offered size and fails on words wider than their box.
+  A preset never writes a unit or a time format (framework review, 21 Oct):
+  a value takes its sensor's own unit (`unit: "entity"`, `withUnits`), and
+  a clock is the add-on's own (`show: "now"`), 12- or 24-hour as Settings ›
+  Time and language says. Clock is offered on every device; one that sleeps
+  draws the date in its place (`render/clocktime.py`), never the editor.
 - **The inspector is ordered by how often things are touched**: what it shows,
   how it looks, arrange, then "More". Rare settings go under More, not away.
 - **Picking: smallest thing under the pointer first.** Clicking again without

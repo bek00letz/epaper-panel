@@ -7,6 +7,7 @@ import { field, input, number, select, seg, textarea, toggle, toggleRow, section
 import { TYPES, BREAKABLE, isWidget, hasText, elName, normalizeLineParity, GROUP_STYLES, GROUP_PAD } from "./elements.js";
 import { OPS, parseShowIf, compileShowIf, evaluate, describe, syncWidgetShowIf, syncDynamicGridShowIf } from "./conditions.js";
 import { explodeWidget, getWidgetSensorId, suggestIconForEntity } from "./legacy.js";
+import { dateEditor, binsEditor } from "./countdown.js";
 import { LEAGUES, SERIES, sportWord, staleNote, changesEvery, pageChangesEvery } from "./presets.js";
 
 const SHOWS = [["state", "Its value"], ["unit", "Its unit, following the value"], ["attribute", "One of its details"], ["last_changed", "When it last changed"], ["last_updated", "When it last updated"],
@@ -179,22 +180,31 @@ function element(app, head, body, el, i) {
 /* What a text or value shows. */
 function shows(app, el, set) {
   const tpl = typeof el.value === "string" && /\{[{%]/.test(el.value);
-  const source = el.entity && !el.value ? "sensor" : tpl ? "template" : el.value !== undefined && !el.entity ? "text" : el.entity ? "sensor" : el.type === "number" ? "sensor" : "text";
-  const s = section("Shows", h("div", { class: "field" }, h("span", { class: "lab", text: "From" }), seg([["text", "Text"], ["sensor", "Sensor"], ["template", "Template"]], source, (v) => {
+  // "Time": the add-on's own clock (binding show "now"), 12- or 24-hour as Settings › Time and language says.
+  const clockish = el.type === "text" && el.show === "now" && !el.entity && !tpl;
+  const source = clockish ? "clock" : el.entity && !el.value ? "sensor" : tpl ? "template" : el.value !== undefined && !el.entity ? "text" : el.entity ? "sensor" : el.type === "number" ? "sensor" : "text";
+  const s = section("Shows", h("div", { class: "field" }, h("span", { class: "lab", text: "From" }), seg([["text", "Text"], ["sensor", "Sensor"], ["clock", "Time"], ["template", "Template"]], source, (v) => {
+    if (v !== "clock" && el.show === "now") delete el.show;
+    if (v === "clock") { el.type = "text"; el.show = "now"; el.format = CLOCK_FORMATS.some(([f]) => f === el.format) ? el.format : "time"; delete el.value; delete el.entity; }
     if (v === "text") { el.value = el.value && !/\{[{%]/.test(el.value) ? el.value : "Label"; delete el.entity; }
     if (v === "sensor") { delete el.value; }
     if (v === "template") { el.value = el.value && /\{[{%]/.test(el.value) ? el.value : `{{ states('${el.entity || "sensor.example"}') }}`; }
     app.doc.commit();
   }, "Shows")));
-  if (source === "text") {
+  if (source === "clock") {
+    s.append(field("Looks like", select(CLOCK_FORMATS, el.format || "time", (v) => set("format", v))),
+      h("p", { class: "fnote", text: "12- or 24-hour as in Settings › Time and language. A device that sleeps shows the date instead of the time." }));
+  } else if (source === "text") {
     s.append(field("Text", input(el.value, (v) => set("value", v), { placeholder: "What it says" })));
   } else if (source === "template") {
     s.append(field("Template", textarea(el.value, (v) => set("value", v)), { wide: true, note: "Anything Home Assistant can render." }));
   } else {
     s.append(entityButton(app, el.entity, (id) => {
+      // The unit follows the sensor when it was the old sensor's own (or none); words you typed stay.
+      const was = String(app.entMap.get(el.entity)?.unit || "").trim(), mine = String(el.suffix || "").trim();
       el.entity = id;
       const e = app.entMap.get(id);
-      if (el.type === "number" && e && e.unit && !el.suffix) el.suffix = " " + e.unit;
+      if (el.type === "number" && (!mine || mine === was)) { if (e?.unit) el.suffix = e.unit === "%" ? "%" : " " + e.unit; else if (mine) delete el.suffix; }
       app.doc.commit();
     }));
     const show = el.show || "state";
@@ -267,6 +277,18 @@ function replacements(app, el) {
   return wrap;
 }
 
+// The add-on's own clock's formats (render/binding.TIME_FORMATS); "time" follows the 12/24-hour setting.
+const CLOCK_FORMATS = [["time", "The time"], ["day_full", "Weekday and date"], ["day_date", "Short weekday and date"], ["date", "Date"], ["datetime", "Date and time"]];
+
+/* Rain now, not rain so far (sources/station.py): a rate (mm/h, in/h) or a sensor that's on while it
+   rains. A total keeps counting after the shower, so the page would say rain all day. */
+function rainCheck(e) {
+  if (e.entity_id.startsWith("binary_sensor.")) return "";
+  const unit = String(e.unit || "").trim();
+  if (/\/\s*h$/i.test(unit)) return "";
+  return `${e.name || e.entity_id} counts rain so far${unit ? ` (${unit})` : ""}, so the page would say it's raining all day after a shower. Pick a rain rate, in mm/h or in/h, or a sensor that's on while it rains.`;
+}
+
 /* ---------- per-type settings for everything that isn't text ---------- */
 const F = {
   entity: (key, label, domains) => ({ kind: "entity", key, label, domains }),
@@ -297,7 +319,7 @@ const TYPE_FIELDS = {
     // The sky guess is opt-in: only a chosen sunlight sensor turns it on (the user doesn't trust theirs).
     F.entity("now_entity", "Now from", ["weather"]), F.entity("temperature_sensor", "Temperature sensor", ["sensor"]),
     F.entity("humidity_sensor", "Humidity sensor", ["sensor"]), F.entity("wind_sensor", "Wind sensor", ["sensor"]),
-    F.entity("rain_sensor", "Rain sensor", ["sensor", "binary_sensor"]), F.entity("pressure_sensor", "Pressure sensor", ["sensor"]),
+    { ...F.entity("rain_sensor", "Rain sensor", ["sensor", "binary_sensor"]), check: rainCheck }, F.entity("pressure_sensor", "Pressure sensor", ["sensor"]),
     F.entity("solar_sensor", "Guess the sky from sunlight", ["sensor"])],
   sports_racing: [F.sel("series", "Series", SERIES, "f1"), F.entity("entity", "Sensor, if you have one"),
     F.sel("max_drivers", "Leaderboard", [["6", "Top 6, extra large"], ["8", "Top 8, large"], ["10", "Top 10"]], "10"),
@@ -310,6 +332,8 @@ const TYPE_FIELDS = {
     F.text("timezone", "Time zone", "Home Assistant's"), F.on("show_stats", "Team stats", true), F.on("show_scorers", "Scorers", true), BORDER_ON, { kind: "sensorid" }],
   // render/sun.STYLES; "next" turns round at sunrise and at sunset.
   sun_times: [F.sel("style", "Style", [["next", "Next one first"], ["both", "Both alike"]], "next")],
+  // render/countdown.py counts from these: a date of yours, or your bins and their days.
+  countdown: [F.sel("to", "Counts down to", [["date", "A date"], ["bins", "Bin day"]], "date"), { kind: "countdown" }],
   // The Energy dashboard's widgets (render/energy.py) read it themselves; a sensor only stands in for it.
   energy_total: [F.sel("source", "Shows", [["solar", "Solar, from the Energy dashboard"], ["grid_import", "Bought from the grid"], ["grid_export", "Sold to the grid"], ["entity", "A sensor"]], "solar"),
     { kind: "entity", key: "entity", label: "Sensor", when: (el) => el.source === "entity" },
@@ -332,6 +356,9 @@ function typeSections(app, el, set, i) {
   for (const f of fields) {
     if (f.when && !f.when(el)) continue;
     if (f.kind === "entity") s.append(field(f.label, entityButton(app, el[f.key], (id) => {
+      // A field that takes only some sensors says plainly why it won't take this one, and keeps what it had.
+      const why = id && f.check ? f.check(app.entMap.get(id) || { entity_id: id }) : "";
+      if (why) { s.querySelector(".note.refused")?.remove(); s.append(h("p", { class: "note warn refused", role: "status" }, icon("info", "sm"), h("span", { text: why }))); return; }
       // A to-do list's page shows by its list: follow it, in the same undo step.
       if (el.type === "todo_list" && app.doc.page().tier === "when") { el[f.key] = id; syncWidgetShowIf(app.doc.page(), el); }
       set(f.key, id);
@@ -358,6 +385,7 @@ function typeSections(app, el, set, i) {
         ? h("p", { class: "fnote" }, "The add-on counts what's due today or overdue as ", h("code", { class: "sel", text: getWidgetSensorId(el) || "sensor.epaper_todo_…_due" }), ". An alert can show by it, or your own automations.")
         : h("p", { class: "fnote" }, "The add-on publishes this widget's state as ", h("code", { class: "sel", text: getWidgetSensorId(el) }), ", for your own automations.")));
     else if (f.kind === "place") s.append(...placeRows(app, el, set));
+    else if (f.kind === "countdown") s.append((el.to === "bins" ? binsEditor : dateEditor)(el, () => app.doc.commit()));
   }
   return [s];
 }
@@ -544,6 +572,12 @@ function page(app, head, body) {
   name.addEventListener("keydown", (e) => { if (e.key === "Enter") name.blur(); if (e.key === "Escape") { name.value = cur; err.textContent = ""; name.blur(); } });
   name.addEventListener("change", () => app.renamePage(cur, name.value));
   head.append(h("div", { class: "ttl" }, h("span", { class: "kind", text: "Page" }), name), err);
+  // A countdown's page: passed (reuse it with another date, or delete it), or not showing yet.
+  const cd = app.canvas.metrics.find((m) => m.countdown)?.countdown;
+  if (cd?.state === "passed") body.append(h("div", { class: "note passed", role: "note" }, icon("info", "sm"),
+    h("span", { text: `Passed on ${cd.on}, so the panel leaves it out. Give it another date to use it again.` }),
+    h("button", { class: "btn tinted danger", onclick: () => app.deletePage() }, icon("trash", "sm"), "Delete")));
+  else if (cd?.state === "waiting") body.append(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: `It starts showing on ${cd.from}.` })));
   // What changes faster than a sleeping device updates is noted, never hidden (presets.staleNote).
   const stale = staleNote(pageChangesEvery(p.elements, app.entMap), app.screen);
   if (stale) body.append(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: stale })));

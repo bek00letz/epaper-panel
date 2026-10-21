@@ -292,6 +292,13 @@ class TestSensibleFirst(unittest.TestCase):
         self.assertEqual(got[0], ["sensor.pv_today", "From your Energy dashboard"])
         self.assertEqual(got[1], ["sensor.solar_month", ""])
 
+    def test_a_running_total_shows_its_change_today(self):
+        """Framework review #3: still the sensor you pick, but a lifetime meter reads today's share."""
+        got = run_js("""const p = P.presetById("solar");
+          console.log(JSON.stringify(["total_increasing", "total", "measurement", ""].map((sc) =>
+            P.pageFor(p, p.looks[0], "sensor.pv", undefined, () => ({ unit: "kWh", state_class: sc })).elements[1].show)))""")
+        self.assertEqual(got, ["change_today", "change_today", "state", "state"])
+
     def test_without_an_energy_dashboard_energy_sensors_first(self):
         self.assertEqual([e for e, _ in self.rank("solar")][:2], ["sensor.solar_month", "sensor.pv_today"])
 
@@ -410,6 +417,14 @@ class TestWatchAndListen(unittest.TestCase):
         got = run_js(f"console.log(JSON.stringify(P.rankSensors(P.presetById('tv_week'), {json.dumps(ents)}).map(({{ e }}) => e.entity_id)))")
         self.assertEqual(got, ["calendar.sonarr", "calendar.family"])
 
+    def test_a_rain_total_is_refused_with_its_reason(self):
+        """Framework review #13: a rate or an on/off sensor; a total is refused in the field, plainly."""
+        src = (APP_JS / "inspector.js").read_text()
+        self.assertIn('{ ...F.entity("rain_sensor", "Rain sensor", ["sensor", "binary_sensor"]), check: rainCheck }', src)
+        self.assertIn("if (/\\/\\s*h$/i.test(unit)) return \"\";", src)
+        self.assertIn("so the page would say it's raining all day after a shower. Pick a rain rate, in mm/h or in/h, or a sensor that's on while it rains.", src)
+        self.assertIn('if (why) { s.querySelector(".note.refused")?.remove();', src, "and keeps what it had")
+
     def test_the_inspector_knows_them(self):
         src = (APP_JS / "inspector.js").read_text()
         self.assertIn('now_playing: [F.text("entity", "Players", "All of them")],', src)
@@ -448,11 +463,28 @@ class TestDateOnASleepingDevice(unittest.TestCase):
     """The user's call (21 Oct): on a device that sleeps between updates a clock would stop at its
     last update and flash at every wake, so Clock is a large Date there."""
 
-    def test_clock_is_a_date_where_the_device_sleeps(self):
-        got = run_js("""const c = P.presetById("clock");
-          console.log(JSON.stringify([P.forDevice(c, true).title, P.forDevice(c, true).looks.map((l) => l.id), P.forDevice(c, false).title,
-            P.PRESETS.filter((p) => p.id !== "clock").every((p) => P.forDevice(p, true) === p)]))""")
-        self.assertEqual(got, ["Date", ["date"], "Clock", True])
+    def test_clock_everywhere_saying_so_where_it_sleeps(self):
+        """Framework review #10, the user's call: New page offers Clock on every device; on one that
+        sleeps its card says so and the renderer draws the date (render/clocktime.py)."""
+        got = run_js("""console.log(JSON.stringify([P.presetById("clock").onSleeping, P.presetById("date").looks[0].make()[0].value]))""")
+        self.assertEqual(got, ["Shows the date here", "{{ now().strftime('%A') }}"])
+        js = (APP_JS / "newpage.js").read_text()
+        self.assertIn("const PRESETS = ALL_PRESETS, sleeps = sleepsBetweenUpdates(app.screen);", js)
+        self.assertIn('const asleep = sleeps && p.onSleeping ? p.onSleeping : "";', js)
+        self.assertNotIn("forDevice(", js, "the design is never made differently for one device")
+
+    def test_the_clock_is_the_add_ons_own_in_your_12_or_24_hours(self):
+        """Framework review #9: the Clock preset uses the time helper (binding show "now"), and the
+        12/24-hour setting lives in Settings › Time and language (the user's call)."""
+        els = run_js('console.log(JSON.stringify(P.presetById("clock").looks[0].make()))')
+        self.assertEqual([(e.get("show"), e.get("format")) for e in els if e["type"] == "text"], [("now", "time"), ("now", "day_full")])
+        self.assertFalse(any("strftime('%H" in str(e.get("value", "")) for e in els), "no 24-hour clock of its own")
+        sheets = (APP_JS / "sheets.js").read_text()
+        self.assertIn('time: ["Time and language", "clock", () => timePane(app, pane)],', sheets)
+        self.assertIn('select([["auto", `As in Home Assistant (${word(r.resolved)} here)`], ["12h", "12-hour, like 2:30 PM"], ["24h", "24-hour, like 14:30"]]', sheets)
+        self.assertIn('api("api/settings/time", { method: "PUT", body: { format: v } })', sheets)
+        insp = (APP_JS / "inspector.js").read_text()
+        self.assertIn('seg([["text", "Text"], ["sensor", "Sensor"], ["clock", "Time"], ["template", "Template"]]', insp)
 
     def test_sleeping_is_read_from_the_timers_not_the_kind(self):
         got = run_js("""console.log(JSON.stringify([{ timing: { always_on: false } }, { timing: { always_on: true } }, { kind: "trmnl", timing: { always_on: false } },
@@ -482,7 +514,10 @@ class TestDateOnASleepingDevice(unittest.TestCase):
                 self.assertEqual([m for m in metrics if m.get("overflow")], [])
 
     def test_a_clock_page_turns_into_the_date_where_it_was(self):
-        got = run_js("""const clock = P.presetById("clock").looks[0].make().map((e, k) => ({ ...e, id: "e" + k }));
+        # The way back (kept off) knew 0.14's template clock; the preset now uses the add-on's own clock.
+        got = run_js("""const clock = [{ type: "text", value: "{{ now().strftime('%H:%M') }}", size: 110, bold: true, x: 40, y: 20, w: 450, h: 140, align: "left" },
+            { type: "text", value: "{{ now().strftime('%A, %-d %B') }}", size: 36, bold: false, x: 44, y: 168, w: 500, h: 46, align: "left" },
+            { type: "icon", icon: "mdi:clock-outline", x: 620, y: 40, w: 120, h: 120 }].map((e, k) => ({ ...e, id: "e" + k }));
           const small = P.fitToCanvas(clock, { W: 400, H: 300, safeH: 268, portrait: false });
           const mixed = [{ type: "text", id: "t", value: "{{ now().strftime('%I:%M %p') }}" }, { type: "number", id: "n", entity: "sensor.x" }];
           console.log(JSON.stringify([P.dateInstead(clock), P.dateInstead(small), P.dateInstead(mixed), P.clockPages({ a: { elements: clock }, b: { elements: mixed }, c: { elements: [] } })]))""")
@@ -494,7 +529,7 @@ class TestDateOnASleepingDevice(unittest.TestCase):
         self.assertEqual(pages, ["a", "b"])
 
     def test_new_page_offers_the_date_on_a_sleeping_device(self):
-        self.assertIn("const PRESETS = ALL_PRESETS.map((p) => forDevice(p, sleepsBetweenUpdates(app.screen)));", (APP_JS / "newpage.js").read_text())
+        self.assertIn('id: "date", group: "day", title: "Date"', (APP_JS / "presets.js").read_text())
         # Switching a device to sleep changes no page: the renderer draws the date (test_clocktime).
 
 
@@ -533,6 +568,105 @@ class TestNotedNeverHidden(unittest.TestCase):
         self.assertNotIn("presetChangesEvery(p) != null && sleeps", js, "never filtered out")
 
 
+@unittest.skipUnless(shutil.which("node"), "no node to read the editor's presets")
+class TestUnitsAreTheSensors(unittest.TestCase):
+    """Framework review #1: a preset never writes a unit; a °F home reads °F, a Wh meter Wh."""
+    UNITS = ("°C", "°F", "K", "kWh", "Wh", "MWh", "W", "kW", "%")
+
+    def made(self, unit):
+        return run_js(f"""const unitOf = () => {json.dumps(unit)};
+          const parts = {{ battery: "sensor.a", load: "sensor.b", solar: "sensor.c" }};
+          console.log(JSON.stringify(P.PRESETS.flatMap((p) => p.looks.map((l) => [l.id,
+            P.pageFor(p, l, "sensor.picked", p.needs === "parts" ? parts : undefined, unitOf).elements]))))""")
+
+    def test_every_value_shows_its_sensors_unit(self):
+        for unit in ("°F", "Wh"):
+            for look, els in self.made(unit):
+                for el in els:
+                    if el.get("type") in ("number", "bar") and str(el.get("entity", "")).startswith("sensor.") and el.get("show", "state") == "state":
+                        with self.subTest(look=look, unit=unit):
+                            self.assertEqual(el.get("suffix", "").strip(), unit)
+
+    def test_none_when_the_sensor_has_none(self):
+        for look, els in self.made(""):
+            for el in els:
+                self.assertNotIn(el.get("suffix", "").strip(), self.UNITS, look)
+                self.assertNotIn("unit", el, f"{look}: the marker never reaches a page")
+
+    def test_no_preset_writes_a_unit_of_its_own(self):
+        src = (APP_JS / "presets.js").read_text()
+        looks = src.split("export const PRESETS", 1)[1].split("/* Guest Wi-Fi", 1)[0]
+        for unit in self.UNITS:
+            self.assertNotIn(f'suffix: " {unit}"', looks)
+            self.assertNotIn(f'suffix: "{unit}"', looks)
+
+    def test_changing_a_values_sensor_changes_its_unit(self):
+        src = (APP_JS / "inspector.js").read_text()
+        self.assertIn('if (el.type === "number" && (!mine || mine === was)) { if (e?.unit) el.suffix', src, "your own words stay")
+
+    def test_a_power_gauge_follows_its_unit(self):
+        got = run_js("""console.log(JSON.stringify(["W", "kW"].map((u) => P.withUnits([{ type: "bar", entity: "sensor.x", unit: "entity", max_val: "power" }], () => u)[0])))""")
+        self.assertEqual([(g["max_val"], g["suffix"]) for g in got], [(5000, " W"), (5, " kW")])
+
+    def test_the_examples_units_are_the_example_sensors(self):
+        states = json.loads((support.APP / "render" / "fixture.json").read_text())["states"]
+        units = run_js("console.log(JSON.stringify(P.EXAMPLE_UNITS))")
+        for ent, unit in units.items():
+            if ent in states:
+                self.assertEqual(states[ent].get("unit"), unit, ent)
+
+
+@unittest.skipUnless(shutil.which("node"), "no node to read the editor's presets")
+class TestBatteryAndSolarAsksForEachPart(unittest.TestCase):
+    """Framework review #4: every part it shows is asked for, the Energy dashboard's first."""
+
+    def test_three_parts_and_each_lands_in_its_place(self):
+        got = run_js("""const p = P.presetById("energy_gauges");
+          console.log(JSON.stringify([p.needs, p.parts.map((x) => x.key), P.pageFor(p, p.looks[0], "", { battery: "sensor.b", load: "sensor.l", solar: "sensor.s" }).elements.map((e) => e.entity || null)]))""")
+        needs, keys, ents = got
+        self.assertEqual((needs, keys), ("parts", ["battery", "load", "solar"]))
+        self.assertEqual([e for e in ents if e], ["sensor.b", "sensor.l", "sensor.s"])
+
+    def test_the_dashboards_solar_power_first(self):
+        roles = run_js("""console.log(JSON.stringify(P.energyRoles({ solar: [{ energy: "sensor.pv_kwh", power: "sensor.pv_w" }] })))""")
+        self.assertEqual(roles["solar_power"], ["sensor.pv_w"])
+        ents = [{"entity_id": "sensor.other_w", "unit": "W", "device_class": "power"}, {"entity_id": "sensor.pv_w", "unit": "W", "device_class": "power"}]
+        first = run_js(f"""const p = P.presetById("energy_gauges"), part = p.parts.find((x) => x.key === "solar");
+          console.log(JSON.stringify(P.rankSensors({{ asks: "sensor", prefer: part.prefer }}, {json.dumps(ents)}, {json.dumps(roles)})[0]))""")
+        self.assertEqual((first["e"]["entity_id"], first["tag"]), ("sensor.pv_w", "From your Energy dashboard"))
+
+    def test_asked_in_place(self):
+        self.assertIn("parts: partsSetup", (APP_JS / "setup.js").read_text())
+
+
+class TestAGaugeNeverMakesUpAValue(unittest.TestCase):
+    """The user saw "House power 68%" for a gauge with no sensor: the renderer drew a made-up 68,
+    and a gauge with no unit added its own "%"."""
+    BAR = {"type": "bar", "title": "HOUSE POWER", "min_val": 0, "max_val": 5000, "show_label": True, "x": 34, "y": 152, "w": 324, "h": 64}
+
+    def drawn(self, el, vals):
+        from unittest import mock
+        from PIL import ImageDraw
+        said, real = [], ImageDraw.ImageDraw.text
+        def spy(self_, xy, text, *a, **kw):
+            said.append(text)
+            return real(self_, xy, text, *a, **kw)
+        with mock.patch.object(ImageDraw.ImageDraw, "text", spy):
+            layout.render_page({"elements": [el]}, vals)
+        return said
+
+    def test_no_sensor_no_number(self):
+        said = self.drawn({**self.BAR, "entity": "", "suffix": ""}, {})
+        self.assertIn("HOUSE POWER", said)
+        self.assertFalse([t for t in said if "68" in t or "%" in t], said)
+
+    def test_its_own_unit_and_decimals(self):
+        said = self.drawn({**self.BAR, "entity": "sensor.house", "suffix": " kW", "decimals": 1, "max_val": 5}, {0: "1.84"})
+        self.assertIn("1.8 kW", said)
+        said = self.drawn({**self.BAR, "entity": "sensor.house", "suffix": ""}, {0: "640"})
+        self.assertIn("640", said, "no unit stays no unit, not %")
+
+
 class TestTheSheet(unittest.TestCase):
     """New page's wiring and look, pinned in its source."""
 
@@ -567,17 +701,43 @@ class TestTheSheet(unittest.TestCase):
     def test_arrows_on_hover_only_towards_more(self):
         arrow = next(b for s, b in re.findall(r"([^{}]+)\{([^{}]*)\}", CSS) if s.strip() == ".arrow")
         self.assertIn("opacity: 0", arrow)
-        hover = re.search(r"@media \(hover: hover\) \{\s*([^{}]+)\{([^{}]*)\}", CSS)
-        self.assertIn(".rowwrap.more-l:is(:hover, :focus-within) .arrow.l", hover.group(1))
-        self.assertIn(".rowwrap.more-r:is(:hover, :focus-within) .arrow.r", hover.group(1))
+        hover = re.search(r"@media \(hover: hover\) \{\s*([^{}]+)\{([^{}]*)\}", CSS[CSS.index(".slider"):])
+        self.assertIn(".slider:not(.vertical).more-l:is(:hover, :focus-within) > .arrow.l", hover.group(1))
+        self.assertIn(".slider:not(.vertical).more-r:is(:hover, :focus-within) > .arrow.r", hover.group(1))
         self.assertIn("opacity: 1", hover.group(2))
         self.assertRegex(CSS, r"@media \(hover: none\) \{ \.arrow \{ display: none; \} \}")
 
     def test_the_edge_fades_while_there_is_more_under_the_arrow_too(self):
-        self.assertIn(".rowwrap.more-l .row { --fl: var(--fade); }", CSS)
-        self.assertIn(".rowwrap.more-r .row { --fr: var(--fade); }", CSS)
+        self.assertIn(".slider.more-l > .slides { --fl: var(--fade); }", CSS)
+        self.assertIn(".slider.more-r > .slides { --fr: var(--fade); }", CSS)
         self.assertIn("mask-image: linear-gradient(to right, transparent 0, #000 var(--fl), #000 calc(100% - var(--fr)), transparent 100%)", CSS)
         self.assertIn("transition: --fl var(--t) var(--spring), --fr var(--t) var(--spring);", CSS)
+
+    def test_the_page_strip_has_three_sizes_standard_as_it_was(self):
+        sheets = (APP_JS / "sheets.js").read_text()
+        self.assertIn('grow("Page strip size", "How large its pages are", select([["small", "Small"], ["standard", "Standard"], ["large", "Large"]], app.prefs.get("strip_size", "standard")', sheets)
+        self.assertIn("#app { --tile-w: 132px; --side-w: 184px; }", CSS, "Standard is the size it always was")
+        self.assertIn(".tile { flex: none; width: var(--tile-w);", CSS)
+        self.assertIn(".stripfront { flex: none; width: var(--tile-w);", CSS)
+        self.assertIn('this.el.app.dataset.stripsize = ["small", "standard", "large"].includes(size) ? size : "standard";', (APP_JS / "main.js").read_text())
+
+    def test_a_pages_buttons_on_its_picture(self):
+        strip = (APP_JS / "strip.js").read_text()
+        self.assertIn('style: { aspectRatio: `${g.W} / ${3 * g.H}` }', strip, "the right third of the picture, not the name under it")
+        self.assertIn('again ? act("minus", "Take out this turn"', strip, "a repeat takes only that turn out")
+        self.assertIn("timer = setTimeout(() => {", strip.split("function holdToReveal", 1)[1], "a hold shows them on a touch screen")
+        self.assertIn('if (!drag) { if (it.dataset.held) delete it.dataset.held; else onOpen(idx); return; }', strip, "and the hold doesn't open the page")
+        self.assertIn("@media (hover: hover) { .tilebox:hover .tileacts, .tilebox:focus-within .tileacts { opacity: 1;", CSS)
+        self.assertIn("takeOutTurn(slot) {", (APP_JS / "main.js").read_text())
+
+    def test_one_slider_for_the_shelves_and_the_page_strip(self):
+        self.assertIn("const wrap = slider(row, { name });", self.js)
+        strip = (APP_JS / "strip.js").read_text()
+        self.assertIn('strip.append(slider(list, { name: "the pages", vertical: () => app.stripVertical() }));', strip)
+        self.assertIn(".slider.vertical > .slides {", CSS, "down the side it fades top and bottom")
+        self.assertIn(".slider.still > .slides { transition: none; }", CSS, "a strip drawn again doesn't fade in each time")
+        self.assertIn('n.closest(".slider")?.sync();', (APP_JS / "main.js").read_text())
+        self.assertIn('#app[data-strip="side"] .strip > .slider { flex: 1 1 0; min-height: 0; flex-direction: column;', CSS, "down the side, the column scrolls")
 
     def test_phones_swipe(self):
         row = next(b for s, b in re.findall(r"([^{}]+)\{([^{}]*)\}", CSS) if s.strip() == ".row")
@@ -606,6 +766,14 @@ class TestTheSheet(unittest.TestCase):
             for call in calls(src, ".replaceChildren("):
                 for arg in top_level(call):
                     self.assertFalse(re.search(r":\s*null\s*$", arg.strip()), f"{name}: {arg.strip()[:80]}")
+
+    def test_the_sheets_styles_stay_the_sheets(self):
+        """.npsheet is New page's sheet; .newpage is the strip's New page button and the pickers' row.
+        A rename once reached both, and New page down the side shrank to 5 px."""
+        self.assertIn('#app[data-strip="side"] .stathead, #app[data-strip="side"] .newpage { flex: none; min-height: 40px; }', CSS)
+        self.assertIn(".opt.newpage {", CSS)
+        self.assertNotIn(".opt.npsheet", CSS)
+        self.assertNotRegex(CSS, r'data-strip="side"\] \.npsheet')
 
     def test_the_shelves_never_widen_the_sheet(self):
         self.assertIn(".shelfbody > * { min-width: 0; }", CSS)
