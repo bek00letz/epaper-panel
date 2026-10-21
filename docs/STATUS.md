@@ -29,6 +29,9 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 Merged into local main, not pushed, for the next release: a sleeping panel
 is woken once when its sleep screen's words change (21 Oct). The editor-zoom
 work and the "device everywhere" wording ship with it (user, 21 Oct).
+0.14.1 is put together in `release-next` (worktree
+`~/Documents/HA/epaper-worktrees/release-next`): 374 tests pass, no firmware
+change since 0.14.0. Held by the user ("not yet", 21 Oct).
 
 Worker notes are in the coordinator's notes folder
 (`break-it-0.12.0.md`, `timers-addon.md`, `firmware-013.md`,
