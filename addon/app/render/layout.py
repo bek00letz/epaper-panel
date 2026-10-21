@@ -2210,7 +2210,9 @@ def render_page(page, vals, *, clock="", label="", footer=None, page_no=None, it
             elif el["type"] in WIDGETS:
                 drawer(img, d, el, vals.get(i), display=display)
                 if i in swapped and metrics is not None:
-                    metrics.append({"i": i, "date_for_time": True})   # a sleeping device: the editor says what it shows
+                    # A sleeping device: the editor says what it shows instead. Only a world clock is a widget
+                    # that shows the time, and it shows each city's hours ahead or behind, not the date.
+                    metrics.append({"i": i, "hours_apart": True} if el["type"] == "world_clock" else {"i": i, "date_for_time": True})
                 if el["type"] == "countdown" and metrics is not None:
                     # What its page does now (showing, waiting, passed), for the editor to say.
                     data = vals.get(i) if isinstance(vals.get(i), dict) else {}

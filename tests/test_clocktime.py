@@ -143,8 +143,18 @@ class TestTheEditor(unittest.TestCase):
 
     def test_the_note_on_the_clock_comes_from_the_render(self):
         src = (support.APP / "web" / "app" / "inspector.js").read_text()
-        self.assertIn("if (app.canvas.metrics.find((x) => x.i === i)?.date_for_time)", src)
+        self.assertIn("const asleep = app.canvas.metrics.find((x) => x.i === i);", src)
+        self.assertIn("if (asleep?.date_for_time)", src)
         self.assertIn("sleeps between updates, so it shows the date here.", src)
+
+    def test_a_world_clock_is_said_to_show_hours_apart_not_the_date(self):
+        metrics = []
+        layout.render_page({"elements": [WORLD, CLOCK[0]]}, {1: "12:34"}, metrics=metrics, date_for_time=WED)
+        self.assertEqual([m["i"] for m in metrics if m.get("hours_apart")], [0])
+        self.assertEqual([m["i"] for m in metrics if m.get("date_for_time")], [1])
+        src = (support.APP / "web" / "app" / "inspector.js").read_text()
+        self.assertIn("if (asleep?.hours_apart)", src)
+        self.assertIn("so each city shows how many hours it's ahead or behind.", src)
 
     def test_no_prompt_and_the_old_conversion_is_kept_off(self):
         src = (support.APP / "web" / "app" / "sheets.js").read_text()

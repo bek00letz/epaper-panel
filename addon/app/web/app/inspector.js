@@ -107,8 +107,11 @@ function element(app, head, body, el, i) {
   if (stale) body.append(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: stale })));
   // A device that sleeps draws the date where the time would be; the renderer says which elements
   // it changed (render/clocktime.py, the one place that knows what shows the time).
-  if (app.canvas.metrics.find((x) => x.i === i)?.date_for_time) body.append(h("p", { class: "note info" }, icon("info", "sm"),
+  const asleep = app.canvas.metrics.find((x) => x.i === i);
+  if (asleep?.date_for_time) body.append(h("p", { class: "note info" }, icon("info", "sm"),
     h("span", { text: `${app.screen?.name || "This device"} sleeps between updates, so it shows the date here.` })));
+  if (asleep?.hours_apart) body.append(h("p", { class: "note info" }, icon("info", "sm"),
+    h("span", { text: `${app.screen?.name || "This device"} sleeps between updates, so each city shows how many hours it's ahead or behind.` })));
 
   if (hasText(el)) {
     body.append(shows(app, el, set));
