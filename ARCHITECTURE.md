@@ -344,7 +344,8 @@ all read it, so nothing offers an icon that draws as nothing.
 - **Custom sets are copied whole when their files change**
   (`iconsets.copy_custom`), from the mapped configuration folder: Custom
   Icons' SVG folder (`local:`) and Iconify sets, the ones switched on in its
-  settings; and script sets HACS installs (custom-brand-icons' `phu:` and
+  settings (asked of Home Assistant: `custom_icons/activesets`; the last
+  answer, else Custom Icons' own defaults, while it can't say); and script sets HACS installs (custom-brand-icons' `phu:` and
   those written like it). A custom SVG becomes outlines only: shapes,
   groups, transforms, fill and stroke; scripts, links, pictures and text are
   never kept, and nothing of the file is shown as it is.

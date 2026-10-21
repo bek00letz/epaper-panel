@@ -531,6 +531,11 @@ When touching display code, `it.image()` at a negative offset is a trap: see
   (`frame_token.py`, the option or a generated one). Its frames switch to
   requiring it the first time the panel uses it, so a reinstall never leaves
   the panel blank. Actions always need a key.
+- **Never read Home Assistant's own storage folder** (`.storage` in its
+  configuration): it holds every integration's credentials. Ask Home
+  Assistant through its API instead (as `iconsets.collections_on` asks
+  Custom Icons which collections are on); `tests/test_icon_sets.py` fails
+  if any code names it.
 - **No built-in location or timezone.** Home Assistant's settings are the
   source; a default would be someone's real home.
 

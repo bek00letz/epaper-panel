@@ -260,7 +260,7 @@ class TestCopyingHomeAssistantsSet(IconTest):
         health._services.pop(iconsets.HEALTH, None)
 
         async def go():
-            with mock.patch.object(iconsets, "CHECK_EVERY", 3600), mock.patch.object(iconsets, "copy_custom", lambda: "unchanged"):
+            with mock.patch.object(iconsets, "CHECK_EVERY", 3600), mock.patch.object(iconsets, "copy_custom", lambda *a: "unchanged"):
                 task = asyncio.create_task(iconsets.keep_in_step(FakeFrontend(down=True), FakeHass()))
                 await asyncio.sleep(0.05)
                 task.cancel()
@@ -303,9 +303,7 @@ def write(path: Path, text: str) -> Path:
     return path
 
 
-def custom_icons_entry(cfg: Path, on: dict):
-    write(cfg / ".storage" / "core.config_entries", json.dumps({"data": {"entries": [
-        {"domain": "custom_icons", "data": on, "disabled_by": None}]}}))
+LOCAL = frozenset({"local"})
 
 
 CAT_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
@@ -347,8 +345,7 @@ class TestCustomSets(IconTest):
         write(self.cfg / "custom_icons" / "pets" / "Dog.svg", CAT_SVG)
         write(self.cfg / "custom_icons" / "broken.svg", "<svg><path d='nonsense'/></svg>")
         write(self.cfg / "custom_icons" / "rpg-webfont.svg", CAT_SVG)
-        custom_icons_entry(self.cfg, {"local": True})
-        said = iconsets.copy_custom(self.cfg)
+        said = iconsets.copy_custom(self.cfg, LOCAL)
         self.assertEqual(said, "local: 2")
         self.assertTrue(layout.can_draw_icon("local:cat-outside") and layout.can_draw_icon("local:pets/Dog"))
         self.assertFalse(layout.can_draw_icon("local:broken") or layout.can_draw_icon("local:rpg-webfont"))
@@ -357,23 +354,68 @@ class TestCustomSets(IconTest):
 
     def test_only_what_custom_icons_has_switched_on(self):
         write(self.cfg / "custom_icons" / "cat-outside.svg", CAT_SVG)
-        self.assertEqual(iconsets.copy_custom(self.cfg), "none", "Custom Icons isn't set up")
-        custom_icons_entry(self.cfg, {"local": False})
-        self.assertEqual(iconsets.copy_custom(self.cfg), "none")
-        custom_icons_entry(self.cfg, {"local": True})
-        self.assertEqual(iconsets.copy_custom(self.cfg), "local: 1")
+        self.assertEqual(iconsets.copy_custom(self.cfg, frozenset()), "none", "Custom Icons isn't set up, or Local is off")
+        self.assertEqual(iconsets.copy_custom(self.cfg, LOCAL), "local: 1", "switched on: copied")
+        self.assertEqual(iconsets.copy_custom(self.cfg, frozenset()), "none", "switched off: taken out")
+        # Home Assistant can't say: the last answer stands.
+        self.assertEqual(iconsets.copy_custom(self.cfg, None), "unchanged")
+        self.assertFalse(layout.can_draw_icon("local:cat-outside"))
+
+    def test_never_heard_uses_custom_icons_defaults(self):
+        write(self.cfg / "custom_icons" / "cat-outside.svg", CAT_SVG)
+        self.assertEqual(iconsets.copy_custom(self.cfg, None), "local: 1", "Local is on when Custom Icons is set up")
+        self.assertIn("local", iconsets.CUSTOM_ICONS_DEFAULTS)
+
+    def test_which_collections_are_on_comes_from_home_assistant(self):
+        from hass import HassError
+
+        class Ws(FakeHass):
+            def __init__(self, answer):
+                super().__init__()
+                self.answer = answer
+
+            async def ws(self, payload, timeout=10):
+                self.asked.append(payload)
+                if isinstance(self.answer, Exception):
+                    raise self.answer
+                return self.answer
+        on = lambda h: asyncio.run(iconsets.collections_on(h))  # noqa: E731
+        h = Ws(["local", "ph", 3])
+        self.assertEqual(on(h), {"local", "ph"})
+        self.assertEqual(h.asked, [{"type": "custom_icons/activesets"}])
+        self.assertEqual(on(Ws(None)), set(), "installed, not set up")
+        self.assertEqual(on(Ws(HassError("Unknown command.", code="unknown_command"))), set(), "not installed")
+        self.assertIsNone(on(Ws(HassError("Cannot connect to host"))), "can't say")
+        self.assertIsNone(on(None))
+
+    def test_nothing_reads_home_assistants_storage(self):
+        # Home Assistant's own storage holds every integration's credentials: never read, by any code.
+        for f in sorted(support.APP.rglob("*.py")) + sorted((support.APP / "web").rglob("*.js")):
+            self.assertNotIn(".storage", f.read_text(), f.relative_to(support.APP).as_posix())
+        write(self.cfg / ".storage" / "core.config_entries", '{"secret": "token"}')
+        write(self.cfg / "custom_icons" / "cat-outside.svg", CAT_SVG)
+        real_open = open
+        seen = []
+
+        def watch(path, *a, **k):
+            seen.append(str(path))
+            return real_open(path, *a, **k)
+        with mock.patch("builtins.open", watch), mock.patch("io.open", watch):
+            iconsets.copy_custom(self.cfg, None)
+            iconsets.copy_custom(self.cfg, LOCAL)
+        self.assertFalse([p for p in seen if ".storage" in p])
+        self.assertTrue(any("cat-outside.svg" in p for p in seen), "the watch sees what's read")
 
     def test_copied_whole_only_when_the_files_change(self):
         write(self.cfg / "custom_icons" / "a.svg", CAT_SVG)
-        custom_icons_entry(self.cfg, {"local": True})
-        self.assertEqual(iconsets.copy_custom(self.cfg), "local: 1")
+        self.assertEqual(iconsets.copy_custom(self.cfg, LOCAL), "local: 1")
         with mock.patch.object(iconsets, "read_custom_sets", side_effect=AssertionError("read again")):
-            self.assertEqual(iconsets.copy_custom(self.cfg), "unchanged")
+            self.assertEqual(iconsets.copy_custom(self.cfg, LOCAL), "unchanged")
         write(self.cfg / "custom_icons" / "b.svg", CAT_SVG)
-        self.assertEqual(iconsets.copy_custom(self.cfg), "local: 2")
+        self.assertEqual(iconsets.copy_custom(self.cfg, LOCAL), "local: 2")
         (self.cfg / "custom_icons" / "a.svg").unlink()
         (self.cfg / "custom_icons" / "b.svg").unlink()
-        self.assertEqual(iconsets.copy_custom(self.cfg), "none")
+        self.assertEqual(iconsets.copy_custom(self.cfg, LOCAL), "none")
         self.assertFalse(layout.can_draw_icon("local:a"), "a set that's gone isn't offered any more")
 
     def test_an_iconify_set_custom_icons_downloaded(self):
@@ -384,8 +426,7 @@ class TestCustomSets(IconTest):
             zf.writestr("icon-sets-master/json/other.json", json.dumps({"prefix": "other", "icons": {"x": {"body": "<path d='M0 0H9V9Z'/>"}}}))
         write(self.cfg / "custom_icons" / "x.svg", CAT_SVG)
         (self.cfg / "custom_icons" / "iconify-icon-sets-master.zip").write_bytes(buf.getvalue())
-        custom_icons_entry(self.cfg, {"ph": True, "other": False})
-        self.assertEqual(iconsets.copy_custom(self.cfg), "ph: 1")
+        self.assertEqual(iconsets.copy_custom(self.cfg, frozenset({"ph"})), "ph: 1")
         self.assertTrue(layout.can_draw_icon("ph:cat"))
         self.assertEqual(icons.set_for("ph")["name"], "Phosphor")
 

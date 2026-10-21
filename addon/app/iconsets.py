@@ -16,7 +16,7 @@ This keeps what it draws the same as Home Assistant's (the user's design,
   - Custom Icons (thomasloven/hass-custom_icons): SVG files in
     `<config>/custom_icons` (prefix `local:`), and the Iconify sets it
     downloaded (`iconify-icon-sets-master.zip`, one prefix each), the ones
-    switched on in its settings, as Home Assistant shows them.
+    switched on in its settings, as Home Assistant says (`collections_on`).
   - Script sets that HACS installs under `<config>/www/community`, written
     the way custom-brand-icons (`phu:`) and its kin are: a `var icons = {}`
     of name -> [x, y, w, h, path] and `window.customIcons["prefix"]`.
@@ -337,17 +337,26 @@ def svg_record(text: str):
     return rec if vector.check(rec) else None
 
 
-def _custom_icons_on(config_dir: Path) -> set[str] | None:
-    """The collections Custom Icons has switched on (its settings: {prefix: true}), or None when it
-    isn't set up in Home Assistant."""
-    try:
-        entries = json.loads((config_dir / ".storage" / "core.config_entries").read_text())["data"]["entries"]
-    except (OSError, ValueError, KeyError, TypeError):
+# What Custom Icons switches on when it's set up (its config flow): when Home Assistant can't say
+# which collections are on, and the add-on never heard before.
+CUSTOM_ICONS_DEFAULTS = frozenset({"local", "fa6-regular", "fa6-solid", "fa6-brands"})
+
+
+async def collections_on(hass) -> frozenset[str] | None:
+    """The collections Custom Icons has switched on, as Home Assistant says (its websocket command
+    custom_icons/activesets): empty when it isn't installed or set up; None when Home Assistant
+    can't say (unreachable, no key), and then `copy_custom` keeps the last answer it had. Never from
+    Home Assistant's own storage files, which hold every integration's credentials."""
+    from hass import HassError
+    if hass is None or not hass.available:
         return None
-    for e in entries:
-        if isinstance(e, dict) and e.get("domain") == "custom_icons" and not e.get("disabled_by"):
-            return {str(k) for k, v in (e.get("data") or {}).items() if v is True}
-    return None
+    try:
+        got = await hass.ws({"type": "custom_icons/activesets"})
+    except HassError as exc:
+        if exc.code == "unknown_command":           # Custom Icons isn't installed
+            return frozenset()
+        return None
+    return frozenset(str(x) for x in got if isinstance(x, str)) if isinstance(got, list) else frozenset()
 
 
 def _read_local(folder: Path) -> dict:
@@ -444,8 +453,9 @@ def _script_files(config_dir: Path):
     return sorted(p for p in root.glob("*/*.js") if p.is_file() and p.stat().st_size <= MAX_SCRIPT)
 
 
-def custom_signature(config_dir: Path) -> str:
-    """What the custom sets' files are now (names, sizes, times), so a change is noticed cheaply."""
+def custom_signature(config_dir: Path, on: frozenset[str]) -> str:
+    """What the custom sets are now (their files' names, sizes, times, and the collections switched
+    on), so a change is noticed cheaply."""
     bits = []
     folder = config_dir / "custom_icons"
     if folder.is_dir():
@@ -453,19 +463,18 @@ def custom_signature(config_dir: Path) -> str:
             if p.is_file() and (p.suffix in (".svg", ".zip")):
                 s = p.stat()
                 bits.append(f"{p.relative_to(folder).as_posix()}:{s.st_size}:{int(s.st_mtime)}")
-    on = _custom_icons_on(config_dir)
-    bits.append("off" if on is None else "on:" + ",".join(sorted(on)))
+    bits.append("on:" + ",".join(sorted(on)))
     for p in _script_files(config_dir):
         s = p.stat()
         bits.append(f"{p.relative_to(config_dir).as_posix()}:{s.st_size}:{int(s.st_mtime)}")
     return "|".join(bits)
 
 
-def read_custom_sets(config_dir: Path) -> dict:
-    """Every custom set on this Home Assistant: {prefix: {"name", "from", "icons"}}. Sets that
-    can't be read are left out (and said in the log); the first of two with one prefix wins."""
+def read_custom_sets(config_dir: Path, on: frozenset[str] = frozenset()) -> dict:
+    """Every custom set on this Home Assistant: {prefix: {"name", "from", "icons"}}, Custom Icons'
+    collections as far as `on` has them switched on. Sets that can't be read are left out (and said
+    in the log); the first of two with one prefix wins."""
     sets: dict[str, dict] = {}
-    on = _custom_icons_on(config_dir)
     folder = config_dir / "custom_icons"
     if on and folder.is_dir():
         if "local" in on:
@@ -498,15 +507,20 @@ def read_custom_sets(config_dir: Path) -> dict:
     return sets
 
 
-def copy_custom(config_dir: Path | None = None, *, force: bool = False) -> str:
-    """Copy every custom set again when their files changed (whole), and use them. Blocking: run
-    it off the event loop."""
+def copy_custom(config_dir: Path | None = None, on: frozenset[str] | None = None, *, force: bool = False) -> str:
+    """Copy every custom set again when their files or Custom Icons' switches changed (whole), and
+    use them. `on`: the collections switched on (`collections_on`); None when Home Assistant
+    couldn't say, which keeps the last answer, else Custom Icons' own defaults. Blocking: run it
+    off the event loop."""
     config_dir = config_dir or config.HA_CONFIG_DIR
     state = _read_state()
-    sig = custom_signature(config_dir)
+    if on is None:
+        known = state.get("custom_on")
+        on = frozenset(known) if isinstance(known, list) else CUSTOM_ICONS_DEFAULTS
+    sig = custom_signature(config_dir, on)
     if not force and state.get("custom_signature") == sig:
         return "unchanged"
-    sets = read_custom_sets(config_dir)
+    sets = read_custom_sets(config_dir, on)
     _write_json(icon_dir() / "custom.json.gz", sets, compress=True)
     for s in icons.sets():
         if s["prefix"] not in RESERVED and s["prefix"] not in sets:
@@ -514,7 +528,7 @@ def copy_custom(config_dir: Path | None = None, *, force: bool = False) -> str:
     for prefix, data in sets.items():
         icons.install(prefix, data)
     state = _read_state()
-    state["custom_signature"] = sig
+    state.update(custom_signature=sig, custom_on=sorted(on))
     _write_json(_state_path(), state)
     return ", ".join(f"{p}: {len(d['icons'])}" for p, d in sets.items()) or "none"
 
@@ -527,7 +541,8 @@ async def keep_in_step(session, hass) -> None:
     loop = asyncio.get_running_loop()
     while True:
         try:
-            said = await loop.run_in_executor(None, copy_custom)
+            on = await collections_on(hass)
+            said = await loop.run_in_executor(None, lambda: copy_custom(None, on))
             if said != "unchanged":
                 print(f"icons: custom sets: {said}", flush=True)
         except Exception as exc:                    # noqa: BLE001 -- a bad file never stops the add-on
