@@ -58,6 +58,12 @@ Next one when a good amount of work has piled up since v0.15.0.
    12+ hours, battery still at 100%. Sub-second drops of Home Assistant's
    connection at 00:00:20 and 06:00:22, as quiet hours started and ended;
    harmless, watch whether they grow.
+   After 24 hours (21 Oct): still 100% on the Anker. Its app shows ~0.5 W for
+   1–2 s each minute (the fetch and redraw) and nothing it can measure in
+   between (the bank's floor is roughly 0.1 W; an ESP32 idling on Wi-Fi is
+   ~0.05–0.15 W). Estimate: ~1.5–3.5 Wh/day, so weeks, not months, always on;
+   the USB meter or the days from 99% to 90% will tell. The bank stays on at
+   that draw thanks to its trickle-charge mode; many banks switch off.
 4. **The editor's new parts by eye**, in Safari and inside Home Assistant:
    the screen bar, Add a screen with power first, rename in place, and Fit
    in Safari (reasoned from screenshots, not reproduced).
