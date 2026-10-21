@@ -15,6 +15,7 @@ from unittest import mock
 
 import support
 import config
+import hass as hass_api
 import health
 import iconsets
 from render import icons, layout, vector
@@ -89,12 +90,12 @@ class FakeFrontend:
         return Hanging()
 
 
-class FakeHass:
-    def __init__(self, version="2026.11.0"):
-        self.version = version
+class FakeHass(hass_api.Hass):
+    """The add-on's own Home Assistant client, with its calls answered here."""
 
-    def available(self):
-        return True
+    def __init__(self, version="2026.11.0", active=None):
+        super().__init__("http://supervisor/core", "token", lambda: object())
+        self.version, self.active, self.asked = version, active, []
 
     async def rest(self, method, path, json=None, timeout=15):
         assert (method, path) == ("GET", "/config")

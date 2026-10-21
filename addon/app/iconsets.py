@@ -532,7 +532,7 @@ async def keep_in_step(session, hass) -> None:
                 print(f"icons: custom sets: {said}", flush=True)
         except Exception as exc:                    # noqa: BLE001 -- a bad file never stops the add-on
             print(f"icons: custom sets not copied: {health.describe(exc)}", flush=True)
-        if hass is not None and hass.available():
+        if hass is not None and hass.available:
             try:
                 said = await copy_home_assistant(session, hass)
                 if said != "unchanged":
