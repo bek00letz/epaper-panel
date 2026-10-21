@@ -50,7 +50,10 @@ def _template(el: dict) -> str:
 
 
 def shows_time(el: dict) -> bool:
-    """Whether a text element shows the time of day, however it's written: the one place that says."""
+    """Whether an element shows the time of day, however it's written: the one place that says.
+    A world clock does; a text does when its template or binding reads the time."""
+    if isinstance(el, dict) and el.get("type") == "world_clock":
+        return True
     if not isinstance(el, dict) or el.get("type") != "text":
         return False
     if el.get("show") == "now" and not (isinstance(el.get("value"), str) and el["value"].strip()):
@@ -82,11 +85,16 @@ def date_for_time(page: dict, vals: dict, now: datetime) -> tuple[dict, dict, se
     times = {i for i, el in enumerate(els) if shows_time(el)}
     if not times:
         return page, vals, set()
-    dated = {i for i, el in enumerate(els) if i not in times and el.get("type") == "text" and DAY.search(_format(el))}
+    # A date beside a clock stops repeating the weekday; a world clock alone changes no date.
+    dated = {i for i, el in enumerate(els) if i not in times and el.get("type") == "text" and DAY.search(_format(el))} \
+        if any(els[i].get("type") == "text" for i in times) else set()
     out_els, out_vals = [dict(el) for el in els], dict(vals)
     for i in times:
-        text = _strftime(now, "%A" if dated else "%A %-d %B")
         el = out_els[i]
+        if el.get("type") == "world_clock":
+            el["asleep"] = True                 # each city: hours ahead or behind (render/worldclock.py)
+            continue
+        text = _strftime(now, "%A" if dated else "%A %-d %B")
         out_vals[i] = text
         if el.get("size"):
             # The box was sized for "12:34"; the day must fit it too, never larger than the clock was.

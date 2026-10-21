@@ -763,3 +763,104 @@ class TestNoGuessedWeather(unittest.IsolatedAsyncioTestCase):
              unittest.mock.patch.dict(runtime.ENTITY_CACHE, {"items": []}):
             self.assertEqual(await ha_services.default_weather(None), "weather.home")
         self.assertNotIn(0, layout.collect_templates({"elements": [{"type": "weather_forecast"}]}))
+
+
+# ---------------------------------------------------------------- presets-015's asks: fit, a sensor's pace, state icons
+
+class TestFitForADevice(EditorClient):
+    async def test_a_page_made_on_the_579_placed_for_the_29(self):
+        el = {"type": "text", "value": "Hi", "x": 24, "y": 14, "w": 744, "h": 208}
+        r = await self.ed.post("/api/fit", json={"elements": [el], "from_canvas": "792x272", "display": "crowpanel_290"})
+        got = (await r.json())["elements"][0]
+        target = arrange.canvas_key(*T.canvas_dims(0, "crowpanel_290"))
+        self.assertEqual({k: got[k] for k in ("x", "y", "w", "h")}, arrange.auto_box(el, "792x272", target))
+        self.assertEqual(got["value"], "Hi")
+        r = await self.ed.post("/api/fit", json={"elements": [el], "from_canvas": "big"})
+        self.assertEqual(r.status, 400)
+
+    async def test_preview_and_example_take_from_canvas(self):
+        page = {"elements": [{"type": "sun_times", "x": 24, "y": 14, "w": 744, "h": 208}]}
+        for route in ("/api/preview", "/api/example"):
+            r = await self.ed.post(route, json={"page": page, "from_canvas": "792x272", "display": "crowpanel_290"})
+            self.assertEqual(r.status, 200, route)
+            self.assertEqual(Image.open(io.BytesIO(await r.read())).size, T.canvas_dims(0, "crowpanel_290"))
+
+    async def test_a_power_sensor_changes_every_minute(self):
+        rows = {r["entity_id"]: r for r in await (await self.ed.get("/api/entities")).json()}
+        self.assertEqual(rows["sensor.solar_pv_power"]["changes_every"], 60)
+        self.assertIsNone(rows["sensor.indoor_temperature"]["changes_every"])
+
+
+class TestIconsFollowTheirState(unittest.TestCase):
+    EL = {"type": "icon", "entity": "binary_sensor.front_door", "icon": "mdi:door-closed",
+          "state_icons": {"on": "mdi:door-open", "off": "mdi:door-closed"}, "x": 300, "y": 40, "w": 160, "h": 160}
+
+    def test_the_state_picks_the_icon_and_its_own_is_the_fallback(self):
+        self.assertIn(0, layout.collect_templates({"elements": [self.EL]}))
+        open_, closed, unknown = (render(self.EL, v) for v in ("on", "off", "jammed"))
+        self.assertNotEqual(open_.tobytes(), closed.tobytes())
+        self.assertEqual(unknown.tobytes(), closed.tobytes(), "no match: its own icon")
+        self.assertEqual(render(self.EL, None).tobytes(), closed.tobytes(), "not known yet: its own icon")
+
+
+# ---------------------------------------------------------------- world clock
+
+from datetime import timezone as dt_timezone  # noqa: E402
+
+from render import clocktime, worldclock  # noqa: E402
+
+CITIES = [{"tz": "", "label": ""}, {"tz": "America/New_York", "label": "New York"},
+          {"tz": "Asia/Kolkata", "label": "Mumbai"}, {"tz": "Australia/Sydney", "label": "Sydney"}]
+
+
+class TestWorldClock(Sizes, unittest.TestCase):
+    element = {"type": "world_clock", "zones": CITIES[:3], "x": 24, "y": 14, "w": 744, "h": 208}
+    value = {"tz": "Europe/Bucharest"}
+
+    def test_times_from_the_database_with_daylight_saving_and_a_day_mark(self):
+        el = {"zones": CITIES}
+        winter = datetime(2026, 1, 15, 14, 0, tzinfo=dt_timezone.utc)
+        summer = datetime(2026, 7, 15, 14, 0, tzinfo=dt_timezone.utc)
+        w, s = worldclock.slots(el, "Europe/Bucharest", winter), worldclock.slots(el, "Europe/Bucharest", summer)
+        self.assertEqual([x[:2] for x in w], [("Bucharest", "16:00"), ("New York", "09:00"), ("Mumbai", "19:30"), ("Sydney", "01:00")])
+        self.assertEqual(w[3][2], "+1")
+        self.assertEqual(s[1][1], "10:00", "New York in summer time")
+        # 23:30 UTC: Los Angeles is still the 15th, Bucharest already the 16th.
+        self.assertEqual(worldclock.slots({"zones": [{"tz": "America/Los_Angeles"}]}, "Europe/Bucharest",
+                                          datetime(2026, 1, 15, 23, 30, tzinfo=dt_timezone.utc))[0][2], "−1")
+
+    def test_asleep_each_city_says_how_far_it_is(self):
+        el = {"zones": CITIES, "asleep": True}
+        got = worldclock.slots(el, "Europe/Bucharest", datetime(2026, 1, 15, 20, 0, tzinfo=dt_timezone.utc))
+        self.assertEqual([x[1] for x in got], ["Same time", "−7 h", "+3:30 h", "+9 h"])
+        self.assertEqual(got[3][2], "Fri", "Sydney is on another day")
+
+    def test_a_sleeping_device_marks_it_and_leaves_a_date_beside_it_alone(self):
+        page = {"elements": [{"type": "world_clock", "zones": CITIES[:2]},
+                             {"type": "text", "value": "{{ now().strftime('%A, %-d %B') }}"}]}
+        got, vals, times = clocktime.date_for_time(page, {1: "Thursday, 15 January"}, datetime(2026, 1, 15, 12, 0))
+        self.assertEqual(times, {0})
+        self.assertTrue(got["elements"][0]["asleep"])
+        self.assertEqual(vals[1], "Thursday, 15 January")
+        self.assertNotIn("asleep", page["elements"][0], "the design keeps its clock")
+
+    def test_cities_fill_the_box_however_many(self):
+        for n in (1, 2, 3, 4):
+            el = {**self.element, "zones": CITIES[:n]}
+            self.assertGreater(ink(render(el, self.value)), 500 * n)
+        rows, cols, _, _ = worldclock.layout(2, 744, 208, worldclock.slots({"zones": CITIES[:2]}, "UTC", datetime.now(dt_timezone.utc)))
+        self.assertEqual((rows, cols), (1, 2), "side by side on the wide 5.79\"")
+        rows, cols, _, _ = worldclock.layout(2, 260, 420, worldclock.slots({"zones": CITIES[:2]}, "UTC", datetime.now(dt_timezone.utc)))
+        self.assertEqual((rows, cols), (2, 1), "stacked when upright")
+
+    def test_an_unknown_zone_is_left_out_and_none_says_what_to_do(self):
+        self.assertEqual(len(worldclock.zones({"zones": [{"tz": "Mars/Olympus"}, {"tz": "Asia/Tokyo"}]}, "UTC")), 1)
+        self.assertGreater(ink(render({**self.element, "zones": []}, self.value)), 200)
+
+    def test_the_editor_gets_every_city_and_the_descriptor(self):
+        cities = {z["tz"]: z for z in worldclock.catalog(datetime(2026, 1, 15, tzinfo=dt_timezone.utc))}
+        self.assertEqual(cities["America/New_York"]["city"], "New York")
+        self.assertEqual(cities["Asia/Kolkata"]["offset"], "+05:30")
+        self.assertNotIn("US/Eastern", cities)
+        self.assertEqual(widgets.get("world_clock").changes_every(), 60)
+        self.assertTrue(clocktime.shows_time({"type": "world_clock"}))
