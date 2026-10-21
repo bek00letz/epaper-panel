@@ -30,7 +30,7 @@ row styles (merged in), plus:
 
 | Work | Where | State |
 |---|---|---|
-| Racing fix and the new presets' widgets: Sunrise and sunset, Solar this month, Grid now, Energy cost, Now playing, On TV this week (session "widgets-015") | branch `widgets-015` from `release-next` | Started 21 Oct |
+| Racing fix and the new presets' widgets: Sunrise and sunset, Solar this month, Grid now, Energy cost, Now playing, On TV this week, and Weather from your own station (session "widgets-015") | branch `widgets-015` from `release-next` | Racing fix done; widgets in progress. Its editor fields go to presets-015 |
 | The New page sheet: shelves, groups, renames, one preset per thing, sensible sensor first, example thumbnails, setup in place, Guest Wi-Fi text (session "presets-015") | branch `presets-015` from `release-next` | Started 21 Oct |
 | Screen menu and zoom, "device" everywhere (editor-polish) | `editor-zoom`, already in `release-next` | Its worktree can go once 0.15.0 ships |
 
