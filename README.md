@@ -3,7 +3,7 @@
 # e-Paper Panel
 
 A Home Assistant add-on for Elecrow's CrowPanel e-paper displays, and for
-TRMNL screens if you turn them on. It turns
+TRMNL devices if you turn them on. It turns
 whatever you care about into calm, glanceable pages: on your desk under the
 monitor, by the bed, on the wall, or across the room from the sofa. You design
 the pages in a visual editor in Home Assistant's sidebar; the panel takes
@@ -75,37 +75,38 @@ board (SSD1683 on the 4.2" and 5.79", SSD1680 on the 2.9"). Some later 4.2"
 boards are said to carry a UC8276 controller instead; that version isn't
 supported yet. The 1.54", 2.13" and 3.7" CrowPanels aren't offered yet.
 
-## More than one screen
+## More than one device
 
-Add as many screens as you like, of any size, from the screen's name at the
-top left of the editor (**Add a screen…**). Like setting up a phone, a new
-screen can:
+Add as many devices as you like, of any size, from the device's name at the
+top left of the editor (**Add new device…**). Like setting up a phone, a new
+device can:
 
 - **Set up as new**: start with one page that shows it's working (the date,
   the next sunrise or sunset, and a QR code to the guide). Make it yours from
   there.
-- **Copy from another screen**: take that screen's pages, fitted to this one,
+- **Copy from another device**: take that device's pages, fitted to this one,
   and change them freely.
-- **Show the same pages as another screen**: an edit shows on both. A screen
+- **Show the same pages as another device**: an edit shows on both. A device
   of another size keeps its own layout: move something there and only that
-  screen changes. Things it hasn't been told where to go are placed
+  device changes. Things it hasn't been told where to go are placed
   automatically, outlined in dashes until you move them.
 
-Each screen has its own name, quiet hours, key and **Refresh** button, and
-the switcher takes you between them. Change a screen's model and its pages
+Each device has its own name, quiet hours, key and **Refresh** button, and
+the switcher takes you between them. The same menu renames or removes it.
+Change a device's model and its pages
 start from an automatic fit for the new size; switching back brings your old
 layout back.
 
-## TRMNL screens
+## TRMNL devices
 
 A [TRMNL](https://usetrmnl.com) runs on a battery for months: it sleeps,
 wakes on a timer or when you press its button, fetches one picture and sleeps
 again. Its own firmware can use a server of your choosing, and this add-on can
 be that server, so you design its pages in the same editor.
 
-1. Turn on **TRMNL screens** in the add-on's **Configuration** tab and restart
+1. Turn on **TRMNL devices** in the add-on's **Configuration** tab and restart
    the add-on. While it's off, nothing of it exists.
-2. In the editor, **Add a screen…**, pick **TRMNL**, name it and choose its
+2. In the editor, **Add new device…**, pick **TRMNL**, name it and choose its
    pages. **Add and pair** listens for it for ten minutes.
 3. On the TRMNL's Wi-Fi setup page, under **Advanced**, enter the address the
    editor shows as its **API server**, then connect. The editor says when it
@@ -114,7 +115,7 @@ be that server, so you design its pages in the same editor.
 What's different from a CrowPanel:
 
 - **It always sleeps between updates.** It updates every 15 minutes to start;
-  **Update every** in Settings › Screen takes it from 5 minutes to a day, and
+  **Update every** (under the canvas, or Settings › Device) takes it from 5 minutes to a day, and
   **Rotate every** says how many updates each page stays (every update to
   start). Its button goes to the next page.
 - **Nothing can wake it early.** New pages and alerts show at its next update,
@@ -126,14 +127,14 @@ What's different from a CrowPanel:
   and doesn't flash. When it last checked in is **Last seen**, in the editor
   and in Home Assistant.
 - **Its size is whatever it reports.** TRMNL's firmware runs on several
-  screens; a size other than the TRMNL OG's 800 × 480 gets its own layout,
+  devices; a size other than the TRMNL OG's 800 × 480 gets its own layout,
   placed automatically until you move things.
 - **Battery and Wi-Fi** show in the editor and, with an MQTT broker, as
   sensors (the battery percentage is estimated from its voltage).
 
 ## Away from home
 
-Take a screen to work and it keeps showing your pages. In **Settings ›
+Take a device to work and it keeps showing your pages. In **Settings ›
 Reaching home**, choose how it gets them:
 
 - **At home only** (the default): nothing changes.
@@ -143,7 +144,7 @@ Reaching home**, choose how it gets them:
 - **Through your own address**: a tunnel or proxy of yours, such as
   Cloudflare Tunnel, pointed at the add-on. The editor shows what to point it at.
 
-Away from home every screen needs its own key, and wrong keys slow down.
+Away from home every device needs its own key, and wrong keys slow down.
 Install each CrowPanel again once (**Install or update**) so it uses the new
 address over HTTPS, and add the other place's Wi-Fi there too. A TRMNL is
 given the away address when you pair it.
@@ -152,7 +153,7 @@ Somewhere it knows no Wi-Fi, a CrowPanel opens its own ("Kitchen setup"), and
 its screen tells you to join it from your phone and choose a network. The
 password is in **Install or update**. A network chosen that way replaces the
 ones in its file until you install it again, so list the places it goes
-often. You can turn this off per screen.
+often. You can turn this off per device.
 
 ## The editor
 
@@ -172,7 +173,7 @@ what it's called.
   place and size, or give one page the layout of another.
 - **Together**: select two or more elements and give them one outline, one
   pill, or one inverted area. It follows them when they move and on every
-  screen size. Dragging several at once snaps to the same guides as one.
+  device. Dragging several at once snaps to the same guides as one.
 - **Send to panel** puts your changes on the panel. Until then they're saved
   as drafts, and a dot shows something is waiting.
 - **Now on the panel**, at the front of the page strip, says whether the
@@ -250,13 +251,13 @@ alerts, quiet hours and **Send to panel** reach it at once.
 
 The page strip is the rotation. Drag a page to move it, **Show again** puts
 a page in twice so it comes round more often, and **Take out** keeps a page
-without showing it. **Rotate every**, in Settings › Screen, sets how long
+without showing it. **Rotate every**, under the canvas or in Settings › Device, sets how long
 every page stays up.
 
 ### Always on, or on a battery
 
-Every screen has two settings, in Settings › Screen, and a new one asks which
-it is when you add it:
+Every device has two settings, under the canvas and in Settings › Device, and
+a new one asks which it is when you add it:
 
 - **Update every.** **1 minute** is always on, the default: for a panel on a
   cable. Its buttons answer at once, alerts show straight away and Home
@@ -284,8 +285,8 @@ Select a value, and under **Units** choose **Step up**: 950 W stays watts,
 
 ### Quiet nights
 
-**Settings › Quiet hours** sets a nightly window for the screen you're
-editing, and optionally "while nobody's home". Each screen has its own. The panel stops flashing and downloading, and shows a sleep
+**Settings › Quiet hours** sets a nightly window for the device you're
+editing, and optionally "while nobody's home". Each device has its own. The panel stops flashing and downloading, and shows a sleep
 screen that says when it wakes. Its buttons still work. Sleep it any time by
 holding the dial's centre, from Now on the panel, or with its **Sleep**
 switch in Home Assistant.
@@ -337,7 +338,7 @@ time, where you are, and a padlock when something is locked.
 While you're pressing buttons, new pages wait until you've stopped for 15 s,
 so nothing changes under your finger. E-paper keeps faint traces of earlier
 pictures; the panel cleans them with one full flash, but only when nobody's
-looking, and you can set how often in **Settings › Screen**.
+looking, and you can set how often in **Settings › Device**.
 
 ## Home Assistant
 
@@ -359,7 +360,7 @@ the panel offers these as `esphome.<device>_<action>`:
 
 ### Entities
 
-From the panel: **Sleep**, **Refresh interval** (kept at the screen's
+From the panel: **Sleep**, **Refresh interval** (kept at the device's
 **Update every** by the add-on), **Ghost clear after**, **Ghost clearing**,
 **Clear ghosting**, **Panel IP** and **Panel Wi-Fi**.
 
@@ -369,7 +370,7 @@ data source, the live widgets' own (`sensor.epaper_flights_overhead`,
 `sensor.epaper_closest_aircraft`, `sensor.epaper_racing_<series>`,
 `sensor.epaper_sports_<league>`), `sensor.epaper_panel_pages` (how many pages
 the panel holds right now, and what was left out), a problem sensor per
-outside service, and a **Refresh panel** button. A second screen gets its own
+outside service, and a **Refresh panel** button. A second device gets its own
 quiet hours, last render, pages and Refresh entities, named after it
 (`sensor.epaper_quiet_hours_kitchen`); the first keeps the names above. A
 TRMNL also gets `sensor.epaper_battery_<name>` (estimated percent),
@@ -383,7 +384,7 @@ removed only once nothing produces it any more.
 - **The editor is behind your Home Assistant login** and answers only Home
   Assistant's own proxy.
 - **The panel's port (8099) serves pictures of pages and nothing else**: no
-  layouts, entity names or places. Every screen has its own key, made for
+  layouts, entity names or places. Every device has its own key, made for
   you; a TRMNL is given its key only in the ten minutes after you ask to pair
   it. At home only (the default), the port refuses anything that came through
   a tunnel. Away from home, nothing gets in without a key, and a sender that
@@ -406,7 +407,7 @@ measurements behind each decision.
 ## Honest limitations
 
 - **Only the 5.79" is tested on a device** (see above), and only as the one
-  screen: two CrowPanels side by side, and HTTPS through Cloudflare or Home
+  device: two CrowPanels side by side, and HTTPS through Cloudflare or Home
   Assistant Cloud, haven't been tried on real hardware yet.
 - **Away from home, a CrowPanel can't be woken early.** Alerts and the
   Refresh button reach it through Home Assistant's own connection to it,
@@ -417,13 +418,13 @@ measurements behind each decision.
 - **A TRMNL doesn't check HTTPS certificates.** Its firmware encrypts the
   connection but doesn't check who it's talking to, so on a network you don't
   trust, something pretending to be your server could read its key. That key
-  only fetches that screen's pictures, and pairing it again replaces it. A
+  only fetches that device's pictures, and pairing it again replaces it. A
   CrowPanel does check, against the usual public certificate authorities.
 - **TRMNL support is built from its open-source firmware, not tried on one
   yet.** Pairing end to end, which pictures its decoder takes in practice,
   HTTPS through Cloudflare or Home Assistant Cloud, and real battery life are
   still to be checked on a device. While pairing it briefly shows its own
-  "visit trmnl.com/start" screen; that text is in its firmware. For screens
+  "visit trmnl.com/start" screen; that text is in its firmware. For devices
   other than the TRMNL OG, the physical size behind the legibility note is an
   estimate.
 - **You choose the entities.** Presets and search help, but it doesn't guess

@@ -161,7 +161,7 @@ than a frame does.
   and whether it sleeps (`timing.py`): **Update every** (`update_minutes`;
   1 minute is always on, 2 or more sleeps between updates) and **Rotate
   every** (always on: `rotate_seconds`; asleep: `rotate_updates`, a whole
-  number of updates). Set in the editor's Settings › Screen (and the cards
+  number of updates). Set in the editor's Settings › Device (and the cards
   when adding a screen), applied at once, never sent with the pages. Read
   them through the kind (`Kind.update_minutes`, `Kind.sleeps`) or `timing`,
   never from a device's fields or a panel's own setup. A CrowPanel's own
@@ -337,8 +337,16 @@ up to v0.12.0). `app/legacy.js` keeps the pieces of it this one still uses.
   user's call, 21 Oct): the screen bar under the canvas (`app/screenbar.js`)
   keeps four everyday screen settings in sight and in reach — power and
   Update every, Rotate every, quiet hours on or off, Mounted — like Control
-  Center next to Settings. Settings › Screen keeps them too and has the
+  Center next to Settings. Settings › Device keeps them too and has the
   rest; both change them through the same functions. Nothing else goes in it.
+- **Say "device", not "screen"** (the user's call, 21 Oct): in everything a
+  person reads (the editor, its messages, the README, the add-on's options),
+  the things you add and manage are devices: Add new device, Settings ›
+  Device, "There's already a device called Kitchen." Next to "New page",
+  "screen" read like another page. Code, API paths (`/api/devices`), stored
+  keys and Home Assistant entity names keep their words; changing those
+  would break upgrades. "Screen" stays where it means the display itself:
+  the sleep screen, what's on screen.
 - **The canvas is the task**, so the chrome is deliberately quiet and the panel
   sits in a dark frame that reads as the device. Do not add colour or weight
   that competes with it. The canvas shows only the add-on's own render

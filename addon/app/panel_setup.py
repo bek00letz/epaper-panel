@@ -237,7 +237,7 @@ async def _detect_panel_connection(dev: dict) -> dict:
     if not HA_TOKEN or link is None:
         panel_fix = load_fixture().get("panel") or {}
         return {"connected": False, "ip": None, "rssi": panel_fix.get("rssi"), "node": None,
-                "problem": "running without Home Assistant" if not HA_TOKEN else "the add-on can't reach this screen"}
+                "problem": "running without Home Assistant" if not HA_TOKEN else "the add-on can't reach this device"}
     return await link.connection()
 
 

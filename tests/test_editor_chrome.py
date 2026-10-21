@@ -105,7 +105,7 @@ class TestFindingAddAScreen(unittest.TestCase):
     def test_settings_offers_it_next_to_remove(self):
         src = js("sheets.js")
         group = src[src.index("function removeGroup"):src.index("async function panelPane")]
-        self.assertLess(group.index('"Add another device"'), group.index('"Remove this screen"'))
+        self.assertLess(group.index('"Add another device"'), group.index('"Remove this device"'))
         self.assertIn("openAddScreen(app)", group)
         self.assertIn("removeScreen(app, scr)", group)
 
@@ -129,7 +129,7 @@ class TestFindingAddAScreen(unittest.TestCase):
 
 class TestErrorsSayWhy(unittest.TestCase):
     def test_a_plain_text_reason_reaches_the_person(self):
-        # The add-on refuses with text ("There's already a screen called Kitchen."),
+        # The add-on refuses with text ("There's already a device called Kitchen."),
         # which the editor used to swap for "The add-on couldn't read that."
         api = js("util.js")
         api = api[api.index("export async function api"):api.index("export const clone")]
@@ -205,6 +205,38 @@ class TestScreenBar(unittest.TestCase):
 
     def test_big_enough_to_touch(self):
         self.assertIn("@media (pointer: coarse) { .sbpill { min-height: 44px;", CSS)
+
+
+
+class TestDeviceNotScreen(unittest.TestCase):
+    """The things you add and manage are devices in everything a person reads (the user's
+    call, 21 Oct). "Screen" stays where it means the display itself."""
+    DISPLAY = ("sleep screen", "sleep_screen", "on screen", "its own screen", "its screen says", "cleans the screen",
+               "one screen on the panel", "on one screen", "screenname")
+
+    def test_the_editor_says_device(self):
+        found = []
+        for f in sorted((WEB / "app").glob("*.js")) + [WEB / "index.html"]:
+            for n, line in enumerate(f.read_text().splitlines(), 1):
+                if line.strip().startswith(("//", "/*", "*")):
+                    continue
+                for lit in re.findall(r'"(?:[^"\\]|\\.)*"|`(?:[^`\\]|\\.)*`', line):
+                    words = re.sub(r"\$\{[^}]*\}", "", lit)        # what's inside ${…} is code
+                    if " " in words and re.search(r"screen", words, re.I) and not any(d in words.lower() for d in self.DISPLAY):
+                        found.append(f"{f.name}:{n}: {lit[:80]}")
+        self.assertEqual(found, [])
+
+    def test_the_add_ons_messages_say_device(self):
+        found = []
+        for f in [support.APP / "web.py", support.APP / "devices.py", support.APP / "reach.py", support.APP / "panel_setup.py",
+                  *sorted((support.APP / "kinds").glob("*.py"))]:
+            for n, line in enumerate(f.read_text().splitlines(), 1):
+                if re.search(r'(text=|Error\(|_refused\(|NOT_PAIRING = |return ")f?"[^"]*\bscreens?\b', line):
+                    found.append(f"{f.name}:{n}")
+        self.assertEqual(found, [])
+
+    def test_the_settings_section_is_device(self):
+        self.assertIn('panel: ["Device", "panel",', js("sheets.js"))
 
 
 if __name__ == "__main__":

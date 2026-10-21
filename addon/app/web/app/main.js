@@ -97,7 +97,7 @@ class App {
     const r = (await api("api/devices")).body;
     // The canvas's sizes come only from here; without them there's nothing safe to draw.
     if (!r || !r.displays || !Object.keys(r.displays).length || !(r.devices || []).length)
-      throw new Error("The add-on didn't say which screens it has. Restart the add-on, then reload this page.");
+      throw new Error("The add-on didn't say which devices it has. Restart the add-on, then reload this page.");
     this.applyScreens(r, want);
   }
   applyScreens(r, want) {
@@ -138,10 +138,10 @@ class App {
       { label: "Rename…", run: () => this.startRename() },
       { label: "Remove", danger: true, disabled: only, run: () => removeScreen(this, this.screen) },
       "sep",
-      { label: "Add new device…", icon: "plus", run: () => openAddScreen(this) }], { label: "Screens" });
+      { label: "Add new device…", icon: "plus", run: () => openAddScreen(this) }], { label: "Devices" });
   }
   /* The name in the toolbar turns into a field where it stands (names are edited in
-     place). Enter or clicking away keeps it; Esc puts it back. Settings › Screen has it too. */
+     place). Enter or clicking away keeps it; Esc puts it back. Settings › Device has it too. */
   startRename() {
     if (!this.screen) return;
     this.renaming = true;
@@ -267,7 +267,7 @@ class App {
     const items = [
       scr && this.renaming ? this.renameField(scr) : null,
       // A double-click on the name renames it; the first click has opened the menu, which closes.
-      scr && !this.renaming ? h("button", { class: "screenbtn", "aria-haspopup": "menu", "aria-label": `Editing ${scr.name}. Switch screen, rename it or add one`, title: this.screenLine(scr),
+      scr && !this.renaming ? h("button", { class: "screenbtn", "aria-haspopup": "menu", "aria-label": `Editing ${scr.name}. Switch device, rename it or add one`, title: this.screenLine(scr),
         onclick: (e) => { if (e.detail === 2) { closeAll(); this.startRename(); } else if (e.detail < 2) this.openScreens(e.currentTarget); } },
         icon("panel", "sm"), h("span", { class: "sn", text: scr.name }), icon("down", "sm")) : null,
       ib("undo", "Undo", `${modKey}Z`, () => doc.undo(), { disabled: !doc.canUndo }),

@@ -1,6 +1,6 @@
 // The screen bar under the canvas: how this screen runs, always in sight. Folded,
 // a pill says it in one line; open, a row of cards changes it. Like Control Center
-// next to Settings: these four are also in Settings › Screen, which has the rest.
+// next to Settings: these four are also in Settings › Device, which has the rest.
 // Nothing else gets a second place (AGENTS.md, Editor design decisions).
 
 import { h, icon, prefs, span, seconds } from "./util.js";
@@ -44,7 +44,7 @@ export function renderScreenBar(app) {
 
   if (!open) {
     host.replaceChildren(h("button", { class: "sbpill", data: { k: "pill" }, "aria-expanded": "false", "aria-controls": "screenbar",
-      "aria-label": `${scr.name}: ${line}. Show the screen's settings`, onclick: () => setOpen(true, "power") },
+      "aria-label": `${scr.name}: ${line}. Show the device's settings`, onclick: () => setOpen(true, "power") },
       icon(t.always_on ? "plug" : "moon", "sm"), h("span", { class: "sbline", text: line }), icon("down", "sm up")));
   } else {
     const spec = app.doc.spec, qh = spec.quiet_hours || {}, info = scr.info || {}, pairs = scr.setup === "pair";
@@ -71,8 +71,8 @@ export function renderScreenBar(app) {
     quiet.querySelector(".switch").dataset.k = "quiet";
     const mounted = card("Mounted", select(ORIENTATIONS, spec.orientation || 0, (v) => setMounted(app, v), { "aria-label": "Mounted", data: { k: "mounted" } }));
     const end = h("div", { class: "sbend" },
-      h("button", { class: "btn icon", data: { k: "settings" }, "aria-label": `All of ${scr.name}'s settings`, title: "Settings › Screen", onclick: () => openSettings(app, "panel") }, icon("gear")),
-      h("button", { class: "btn icon", data: { k: "close" }, "aria-label": "Hide the screen's settings", "aria-expanded": "true", title: "Hide", onclick: () => setOpen(false, "pill") }, icon("down")));
+      h("button", { class: "btn icon", data: { k: "settings" }, "aria-label": `All of ${scr.name}'s settings`, title: "Settings › Device", onclick: () => openSettings(app, "panel") }, icon("gear")),
+      h("button", { class: "btn icon", data: { k: "close" }, "aria-label": "Hide the device's settings", "aria-expanded": "true", title: "Hide", onclick: () => setOpen(false, "pill") }, icon("down")));
     host.replaceChildren(h("div", { class: "sbcards" }, power, rotate, quiet, mounted, end));
     host.onkeydown = (e) => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false, "pill"); } };
   }

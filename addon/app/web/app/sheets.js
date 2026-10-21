@@ -148,7 +148,7 @@ export function openStatus(app, anchor) {
 export function openFullStrip(app) {
   const wakes = app.screen?.picks_page === "addon";            // it holds one picture, not every page
   sheet(wakes ? "What it shows" : "Every page, as the panel has them", (node) => {
-    const img = h("img", { class: "fullstrip", alt: wakes ? "The picture the screen got at its last wake." : "All the pages the panel is rotating through, stacked." });
+    const img = h("img", { class: "fullstrip", alt: wakes ? "The picture the device got at its last wake." : "All the pages the panel is rotating through, stacked." });
     const meta = h("p", { class: "fnote" });
     img.addEventListener("error", () => { meta.textContent = wakes ? "Nothing yet. It gets its first picture at its next wake." : "No pages rendered yet."; });
     const load = () => { img.src = withDevice("api/strip.png?t=" + Date.now()); const p = app.status?.pages || []; meta.textContent = wakes ? "The picture it got at its last wake." : p.length ? `In order: ${p.map(pageTitle).join(", ")}.` : ""; };
@@ -164,7 +164,7 @@ export function openFullStrip(app) {
 // pages as another screen. Then on to installing it.
 export function openAddScreen(app) {
   const kinds = app.kinds.filter((k) => k.displays.length);
-  if (!kinds.length) { toast("This add-on doesn't know any kind of screen it can add."); return; }
+  if (!kinds.length) { toast("This add-on doesn't know any kind of device it can add."); return; }
   const st = { kind: kinds[0], display: kinds[0].displays[0].id, orientation: 0, pages: "new", from: app.screen?.id || app.screens[0]?.id, quiet: true, power: "on",
     minutes: kinds[0].asleep_default || 15 };
   // "Device", not "screen": next to "New page", "screen" read like another page (the user's call).
@@ -184,7 +184,7 @@ export function openAddScreen(app) {
         h("span", { class: "ct", text: title }), h("span", { class: "cs", text: sub }), extra || null, aside);
       return b;
     }
-    // How often a screen that sleeps updates: the same times Settings › Screen offers (timing.py), less always on.
+    // How often a screen that sleeps updates: the same times Settings › Device offers (timing.py), less always on.
     const sleepChoices = () => st.kind.update_choices.filter((m) => m !== 1);
     const every = (label) => pick(sleepChoices().map((m) => [m, span(m)]), st.minutes, (v) => {
       st.minutes = Number(v); st.power = "sleep"; draw();
@@ -192,7 +192,7 @@ export function openAddScreen(app) {
     }, label);
     function draw() {
       const screensOpts = app.screens.map((d) => [d.id, d.name]);
-      const fromSel = () => pick(screensOpts, st.from, (v) => { st.from = v; draw(); }, "Which screen");
+      const fromSel = () => pick(screensOpts, st.from, (v) => { st.from = v; draw(); }, "Which device");
       if (!sleepChoices().includes(st.minutes)) st.minutes = sleepChoices().includes(st.kind.asleep_default) ? st.kind.asleep_default : sleepChoices()[0];
       const everySel = every(pairs() ? "Updates every" : "Sleeps between updates: how often it updates");
       everySel.dataset.every = "";
@@ -217,15 +217,15 @@ export function openAddScreen(app) {
         h("h4", { class: "gtitle", text: "Pages" }),
         h("div", { class: "choices", role: "radiogroup", "aria-label": "Pages" },
           choice("new", "Set up as new", "One starter page to show it's working. Add your own from there."),
-          choice("copy", "Copy from another screen", "Its pages, fitted to this one, then yours to change.", st.pages === "copy" ? fromSel() : null),
-          choice("same", "Same pages as another screen", "Edits show on both. Each screen keeps its own layout.", st.pages === "same" ? fromSel() : null)),
+          choice("copy", "Copy from another device", "Its pages, fitted to this one, then yours to change.", st.pages === "copy" ? fromSel() : null),
+          choice("same", "Same pages as another device", "Edits show on both. Each device keeps its own layout.", st.pages === "same" ? fromSel() : null)),
         qh?.enabled ? group(grow(`Same quiet hours as ${st.pages === "new" ? (app.screen || src).name : src.name}`, `${qh.start} to ${qh.end}. Change them any time.`,
           toggle(st.quiet, (v) => { st.quiet = v; }, "Same quiet hours"))) : "",
         err);
     }
     async function submit() {
       err.textContent = "";
-      if (!name.value.trim()) { err.textContent = "Give the screen a name."; name.focus(); return; }
+      if (!name.value.trim()) { err.textContent = "Give the device a name."; name.focus(); return; }
       const src = source();
       const qsrc = st.pages === "new" ? (app.screen || src) : src;
       add.disabled = true;
@@ -374,7 +374,7 @@ export function openSettings(app, sectionName = "panel") {
     const pane = h("div", { class: "setpane" });
     const pairs = app.screen?.setup === "pair";
     const sections = {
-      panel: ["Screen", "panel", () => (pairs ? pairedPane(app, pane, show) : panelPane(app, pane, show))],
+      panel: ["Device", "panel", () => (pairs ? pairedPane(app, pane, show) : panelPane(app, pane, show))],
       ...(pairs ? {} : { install: ["Install or update", "key", () => installPane(app, pane)] }),
       quiet: ["Quiet hours", "moon", () => quietPane(app, pane)],
       reach: ["Reaching home", "globe", () => reachPane(app, pane)],
@@ -412,7 +412,7 @@ function grow(label, sub, ctl) { return h("div", { class: "gr" }, h("span", { cl
 
 /* A new size or mounting: the pages come back placed for it (that size's own
    layout, or an automatic fit), as one undoable change that's sent like any other. */
-/* Which way up it's mounted: Settings › Screen and the screen bar. Turning it a quarter
+/* Which way up it's mounted: Settings › Device and the screen bar. Turning it a quarter
    offers to rearrange the page on screen. */
 export async function setMounted(app, v) {
   const doc = app.doc, spec = doc.spec;
@@ -457,7 +457,7 @@ function pairedPane(app, pane, show) {
 function sharedGroup(app, pane, scr, show) {
   if (!scr.shares_with?.length) return;
   const doc = app.doc, others = scr.shares_with.map((x) => x.name).join(", ");
-  pane.append(h("h4", { class: "gtitle", text: "Pages" }), group(grow(`Same pages as ${others}`, "Edits show on both. Each screen keeps its own layout.",
+  pane.append(h("h4", { class: "gtitle", text: "Pages" }), group(grow(`Same pages as ${others}`, "Edits show on both. Each device keeps its own layout.",
     h("button", { class: "btn tinted", onclick: async () => {
       await doc.flush();
       try {
@@ -473,7 +473,7 @@ function sharedGroup(app, pane, scr, show) {
 function removeGroup(app, pane, scr) {
   const only = app.screens.length < 2;
   pane.append(group(grow("Add another device", "New, a copy of these pages, or the same ones",
-    h("button", { class: "btn tinted", onclick: () => openAddScreen(app) }, "Add…")), grow("Remove this screen", only ? "It's the only one. Add another first." : "Its key stops working. Undo puts it back.",
+    h("button", { class: "btn tinted", onclick: () => openAddScreen(app) }, "Add…")), grow("Remove this device", only ? "It's the only one. Add another first." : "Its key stops working. Undo puts it back.",
     h("button", { class: "btn tinted danger", disabled: only, onclick: () => removeScreen(app, scr) }, "Remove"))));
 }
 
@@ -547,7 +547,7 @@ async function panelPane(app, pane, show) {
 }
 
 /* Update every and Rotate every (timing.py): how a screen is powered, and how its pages turn. They apply at once. */
-/* The one way the editor changes a screen's timers: Settings › Screen and the screen bar both use it. */
+/* The one way the editor changes a screen's timers: Settings › Device and the screen bar both use it. */
 export async function changeTimers(app, scr, body, said) {
   try {
     const r = (await api(`api/devices/${encodeURIComponent(scr.id)}`, { method: "PATCH", body })).body;
@@ -705,12 +705,12 @@ async function installPane(app, pane) {
       h("p", { class: "note " + (p.connected ? "good" : "warn") }, h("span", { class: "led" }), h("span", { text: p.connected ? `Connected in Home Assistant${p.ip ? ` at ${p.ip}` : ""}.` : p.node ? "Found, but offline. It picks up changes when it reconnects." : "No panel yet. Install the file below with ESPHome, then add the device in Home Assistant." })),
       r.frame_protection && r.frame_protection !== "on" ? h("p", { class: "note warn" }, icon("info", "sm"), h("span", { text: "Pages on your network aren't protected yet. Installing the file below switches it on; nothing goes blank in between." })) : null,
       app.status?.ha_entities?.problem ? h("p", { class: "note warn" }, icon("info", "sm"), h("span", { text: app.status.ha_entities.problem })) : null,
-      app.doc.live.display !== app.doc.spec.display ? h("p", { class: "note warn" }, icon("info", "sm"), h("span", { text: "You changed the model but haven't sent it yet. This file is for the model the screen has now; send first, then install." })) : null].filter(Boolean));
+      app.doc.live.display !== app.doc.spec.display ? h("p", { class: "note warn" }, icon("info", "sm"), h("span", { text: "You changed the model but haven't sent it yet. This file is for the model the device has now; send first, then install." })) : null].filter(Boolean));
   }
   box.replaceChildren(status,
     group(grow("Home Assistant's address", "Where the panel fetches pages from", host), grow("Port", null, port), grow("Device name", null, dev)),
     group(grow("Wi-Fi network", null, ssid), grow("Wi-Fi password", null, pw), grow("Use secrets.yaml", "Keep the Wi-Fi details out of the file", toggle(useSecrets, (v) => { useSecrets = v; save(); }, "Use secrets.yaml"))),
-    h("h4", { class: "gtitle", text: "Other networks" }), h("p", { class: "fnote", text: "Where else the screen goes, like work. It joins whichever it finds." }), netsBox, hotspotBox,
+    h("h4", { class: "gtitle", text: "Other networks" }), h("p", { class: "fnote", text: "Where else the device goes, like work. It joins whichever it finds." }), netsBox, hotspotBox,
     group(grow("Encryption key", "Also protects updates over Wi-Fi", h("div", { class: "inline" }, key, h("button", { class: "btn tinted", onclick: () => copy(key.value, "the key") }, "Copy"))),
       grow("New key", "The panel then needs reinstalling and re-adding in Home Assistant", h("button", { class: "btn tinted danger", onclick: () => save({ regenerate_keys: true }, "New key made. Reinstall the panel and add it again in Home Assistant.") }, "Make a new key"))),
     h("h4", { class: "gtitle", text: "The panel's file" }), problems, esphomeBox, yaml,
@@ -738,8 +738,8 @@ function quietPane(app, pane) {
   const body = h("div");
   const wakes = app.screen?.owns_interval === "addon";
   pane.append(h("p", { class: "fnote", text: wakes
-    ? `This screen's own. While quiet hours last it shows the sleep screen and sleeps until they end. ${app.screen?.setup === "pair" ? "A press of its button shows a page" : "A press of a button shows your pages"} for two minutes. Sent with your pages.`
-    : "This screen's own. While quiet hours last, it doesn't flash or download, so a dark room stays dark. Its buttons still work. Sent with your pages." }), body);
+    ? `This device's own. While quiet hours last it shows the sleep screen and sleeps until they end. ${app.screen?.setup === "pair" ? "A press of its button shows a page" : "A press of a button shows your pages"} for two minutes. Sent with your pages.`
+    : "This device's own. While quiet hours last, it doesn't flash or download, so a dark room stays dark. Its buttons still work. Sent with your pages." }), body);
   function draw() {
     body.replaceChildren(
       group(grow("Quiet hours", null, toggle(qh.enabled, (v) => set("enabled", v), "Quiet hours"))),
@@ -759,7 +759,7 @@ function quietPane(app, pane) {
 // Assistant's own address (the companion integration), or a tunnel of yours.
 async function reachPane(app, pane) {
   const box = h("div", {}, h("p", { class: "fnote", text: "Checking…" }));
-  pane.append(h("p", { class: "fnote", text: "Take a screen to work or on holiday and it keeps showing your pages. Away from home, every screen needs its own key, and wrong keys slow down." }), box);
+  pane.append(h("p", { class: "fnote", text: "Take a device to work or on holiday and it keeps showing your pages. Away from home, every device needs its own key, and wrong keys slow down." }), box);
   let r = null, busy = false, restarting = false;
   const call = async (path, method, body, done) => {
     if (busy) return; busy = true;
@@ -798,7 +798,7 @@ async function reachPane(app, pane) {
   const mode = (m, title, sub) => h("button", { class: "cmp choice", role: "radio", "aria-checked": String(picked() === m),
     onclick: async () => {
       if (picked() === m) return;
-      await call("api/reach", "PUT", { mode: m, address: r.address }, m === "home" ? "Screens reach the add-on at home only." : null);
+      await call("api/reach", "PUT", { mode: m, address: r.address }, m === "home" ? "Devices reach the add-on at home only." : null);
       if (m === "own" && !r.address) box.querySelector("input[data-own]")?.focus();
     } },
     h("span", { class: "ct", text: title }), h("span", { class: "cs", text: sub }));
@@ -806,21 +806,21 @@ async function reachPane(app, pane) {
   function draw() {
     if (!r) return;
     const parts = [h("div", { class: "choices", role: "radiogroup", "aria-label": "Reaching home" },
-      mode("home", "At home only", "Screens fetch from the add-on on your home network."),
+      mode("home", "At home only", "Devices fetch from the add-on on your home network."),
       mode("ha", "Through Home Assistant's address", "Wherever you reach Home Assistant from outside: Home Assistant Cloud, Cloudflare, your own domain."),
       mode("own", "Through your own address", "A tunnel or proxy of yours, pointed at this add-on."))];
     if (picked() === "ha") {
       const c = r.companion || {};
       parts.push(r.ha_address
         ? (c.state === "running" && !c.restart_needed
-          ? h("p", { class: "note good" }, icon("check", "sm"), h("span", { text: `Screens use ${r.ha_address}/api/epaper.` }))
-          : h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: `Screens will use ${r.ha_address}/api/epaper once the integration runs.` })))
+          ? h("p", { class: "note good" }, icon("check", "sm"), h("span", { text: `Devices use ${r.ha_address}/api/epaper.` }))
+          : h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: `Devices will use ${r.ha_address}/api/epaper once the integration runs.` })))
         : h("p", { class: "note warn" }, icon("info", "sm"), h("span", { text: "Home Assistant has no address outside your home yet. Set one in Home Assistant under Settings, System, Network, or turn on Home Assistant Cloud." })));
       const restartRow = (title, sub) => restarting
         ? grow("Restarting Home Assistant", "This updates when it's back, in about a minute.", h("span", { class: "fnote", text: "Waiting…" }))
         : grow(title, sub, h("button", { class: "btn primary", onclick: restart }, "Restart"));
       parts.push(group(
-        !c.installed ? grow("A small integration", "Home Assistant needs it to pass screens on to the add-on. Nothing to fill in.", h("button", { class: "btn primary", onclick: () => call("api/reach/companion", "POST", undefined, "Installed. Restart Home Assistant to load it.") }, "Install"))
+        !c.installed ? grow("A small integration", "Home Assistant needs it to pass devices on to the add-on. Nothing to fill in.", h("button", { class: "btn primary", onclick: () => call("api/reach/companion", "POST", undefined, "Installed. Restart Home Assistant to load it.") }, "Install"))
         : c.restart_needed || restarting ? restartRow("Restart Home Assistant", "It loads the integration when it starts. Takes about a minute.")
         : c.state === "running" ? grow("The integration", `Running, version ${c.version}.`, h("span", { class: "fnote", text: "Ready" }))
         : c.state === "set_up" ? grow("The integration", `Home Assistant didn't set it up: ${c.problem || "no answer"}.`, h("button", { class: "btn tinted", onclick: () => call("api/reach", "GET") }, "Try again"))
@@ -829,8 +829,8 @@ async function reachPane(app, pane) {
         : grow("The integration", "Home Assistant didn't answer. It may be restarting.", h("button", { class: "btn tinted", onclick: () => call("api/reach", "GET") }, "Check again"))));
     }
     if (picked() === "own") {
-      const addr = input(r.address, (v) => call("api/reach", "PUT", { mode: "own", address: v }, "Saved. Screens away from home use it."), { placeholder: "https://panel.example.com", "aria-label": "Your address", inputmode: "url", autocomplete: "off", data: { own: "" } });
-      if (r.mode !== "own") parts.push(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: `Until you save an https address here, screens keep reaching the add-on ${NOW[r.mode] || NOW.home}.` })));
+      const addr = input(r.address, (v) => call("api/reach", "PUT", { mode: "own", address: v }, "Saved. Devices away from home use it."), { placeholder: "https://panel.example.com", "aria-label": "Your address", inputmode: "url", autocomplete: "off", data: { own: "" } });
+      if (r.mode !== "own") parts.push(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: `Until you save an https address here, devices keep reaching the add-on ${NOW[r.mode] || NOW.home}.` })));
       parts.push(group(grow("Your address", "Where your tunnel answers. It must be https.", addr),
         r.service_address ? grow("Point it at", "In the Cloudflared app, add a host with this as its service.", h("div", { class: "inline" }, h("input", { class: "inp code", readonly: true, value: r.service_address, "aria-label": "Point your tunnel at" }), h("button", { class: "btn tinted", onclick: () => copyText(r.service_address, "the address") }, "Copy"))) : null));
     }

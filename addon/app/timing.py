@@ -1,6 +1,6 @@
 """A screen's two timers: how often it updates, and how often it moves to the next page.
 
-Every screen has two settings, set in the editor (Settings › Screen, or the
+Every screen has two settings, set in the editor (Settings › Device, or the
 cards when it's added) and nowhere else. They're the one source of truth for
 when a screen fetches and when it sleeps.
 
