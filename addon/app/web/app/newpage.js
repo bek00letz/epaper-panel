@@ -6,6 +6,20 @@
 
 import { h, icon, api, clone, slug, prefs } from "./util.js";
 
+/* A built-in preset (drawn for the 5.79") placed on this device by the add-on (POST /api/fit, the one
+   way a design goes to another size), then rearranged if it stands upright. Asked once per page. */
+const fitAsked = new Map();
+async function fitToDevice(app, page) {
+  const g = app.geometry(), spec = app.doc.spec, els = page.elements || [];
+  if (g.W === CANVAS.w && g.H === CANVAS.h) return els;
+  const key = JSON.stringify([els, spec.display, spec.orientation]);
+  if (!fitAsked.has(key)) fitAsked.set(key, api("api/fit", { method: "POST", body: { elements: els, from_canvas: `${CANVAS.w}x${CANVAS.h}`, display: spec.display, orientation: Number(spec.orientation || 0) } })
+    .then((r) => r.body?.elements || els, () => { fitAsked.delete(key); return els; }));
+  const placed = clone(await fitAsked.get(key));
+  if (g.portrait) reflowPageElements({ elements: placed }, true, g.d, await timesOf(page));
+  return placed;
+}
+
 /* Which texts of a page show the time, as the add-on says (POST /api/shows-time): what an upright
    device's rearranging needs. Asked once per page. */
 const timesAsked = new Map();
@@ -17,7 +31,7 @@ function timesOf(page) {
 import { sheet, toast } from "./ui.js";
 import { syncDynamicGridShowIf } from "./conditions.js";
 import { reflowPageElements } from "./legacy.js";
-import { PRESETS as ALL_PRESETS, GROUPS, sleepsBetweenUpdates, staleNote, presetChangesEvery, lookOf, pageFor, examplePage, pageName, search, rankSensors, fitToCanvas } from "./presets.js";
+import { PRESETS as ALL_PRESETS, GROUPS, sleepsBetweenUpdates, staleNote, presetChangesEvery, lookOf, pageFor, examplePage, pageName, search, rankSensors, CANVAS } from "./presets.js";
 import { thumbnail } from "./strip.js";
 import { slider } from "./slider.js";
 import { setupStep } from "./setup.js";
@@ -35,8 +49,7 @@ function thumb(app, key, page, { example = false, fit = true, cls = "" } = {}) {
   const img = h("img", { class: "thumb", alt: "", "data-thumb": key, draggable: "false" });
   // Built-in presets are drawn for the 5.79" and fitted to this device; your own are as you saved them.
   requestAnimationFrame(async () => {
-    const times = fit && g.portrait ? await timesOf(page) : [];
-    const fitted = fit ? { ...page, elements: fitToCanvas(page.elements || [], g, reflowPageElements, times) } : page;
+    const fitted = fit ? { ...page, elements: await fitToDevice(app, page) } : page;
     thumbnail(app, key, img, fitted, { example });
   });
   return h("span", { class: "thumbwrap " + cls, style: { aspectRatio: `${g.W} / ${g.H}` } }, img);
@@ -170,7 +183,7 @@ export function openPresets(app) {
 
   async function add(p, look, ent, extra) {
     const page = pageFor(p, look, ent, extra, (id) => app.entMap.get(id) || "");
-    page.elements = fitToCanvas(page.elements, g, reflowPageElements, g.portrait ? await timesOf(page) : []);
+    page.elements = await fitToDevice(app, page);
     if (page.tier === "when") syncDynamicGridShowIf(page);
     const entName = ent ? app.entMap.get(ent)?.name : "";
     app.addPage(slug(pageName(p, look, ent, entName, extra)) || p.id, page);

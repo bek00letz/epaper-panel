@@ -273,20 +273,12 @@ class TestEverythingFits(unittest.TestCase):
         c = self.cat["canvas"]
         self.assertEqual((c["w"], c["h"], c["band"]), (T.DISPLAYS["crowpanel_579"]["w"], T.DISPLAYS["crowpanel_579"]["h"], T.band_height(272)))
 
-    def test_placed_on_another_size_as_the_add_on_places_a_design(self):
-        """The editor's fit (presets.fitToCanvas) is arrange.auto_box, so a new page sits where the add-on would put it."""
-        base = arrange.canvas_key(792, 272)
-        el = {"type": "text", "x": 132, "y": 94, "w": 400, "h": 64, "size": 22}
-        for key, d in T.DISPLAYS.items():
-            if d.get("offered") is False:
-                continue
-            w, h = d["w"], d["h"]
-            g = {"W": w, "H": h, "safeH": h - T.band_height(h), "portrait": False}
-            got = run_js(f"console.log(JSON.stringify(P.fitToCanvas([{json.dumps(el)}], {json.dumps(g)})[0]))")
-            want = {**el, **arrange.auto_box(el, base, arrange.canvas_key(w, h))}
-            with self.subTest(display=key):
-                self.assertEqual(got, want)
-
+    def test_placed_on_another_size_by_the_add_on(self):
+        """Framework review #5: the editor keeps no copy of arrange.auto_box; New page asks POST /api/fit."""
+        js = (APP_JS / "newpage.js").read_text()
+        self.assertIn('api("api/fit", { method: "POST", body: { elements: els, from_canvas: `${CANVAS.w}x${CANVAS.h}`', js)
+        self.assertIn("page.elements = await fitToDevice(app, page);", js)
+        self.assertNotIn("fitToCanvas", (APP_JS / "presets.js").read_text())
 
 @unittest.skipUnless(shutil.which("node"), "no node to read the editor's presets")
 class TestSensibleFirst(unittest.TestCase):
@@ -541,10 +533,14 @@ class TestDateOnASleepingDevice(unittest.TestCase):
 
     def test_a_clock_page_turns_into_the_date_where_it_was(self):
         # The way back (kept off) knew 0.14's template clock; the preset now uses the add-on's own clock.
-        got = run_js("""const clock = [{ type: "text", value: "{{ now().strftime('%H:%M') }}", size: 110, bold: true, x: 40, y: 20, w: 450, h: 140, align: "left" },
+        # The 4.2" placement is the add-on's own (arrange.auto_box).
+        base = [{"id": "e0", "x": 40, "y": 20, "w": 450, "h": 140, "size": 110}, {"id": "e1", "x": 44, "y": 168, "w": 500, "h": 46, "size": 36},
+                {"id": "e2", "x": 620, "y": 40, "w": 120, "h": 120}]
+        small = {e["id"]: arrange.auto_box(e, "792x272", "400x300") for e in base}
+        got = run_js("const SMALL = " + json.dumps(small) + ";\n" + """const clock = [{ type: "text", value: "{{ now().strftime('%H:%M') }}", size: 110, bold: true, x: 40, y: 20, w: 450, h: 140, align: "left" },
             { type: "text", value: "{{ now().strftime('%A, %-d %B') }}", size: 36, bold: false, x: 44, y: 168, w: 500, h: 46, align: "left" },
             { type: "icon", icon: "mdi:clock-outline", x: 620, y: 40, w: 120, h: 120 }].map((e, k) => ({ ...e, id: "e" + k }));
-          const small = P.fitToCanvas(clock, { W: 400, H: 300, safeH: 268, portrait: false });
+          const small = clock.map((e) => ({ ...e, ...SMALL[e.id] }));
           const mixed = [{ type: "text", id: "t", value: "{{ now().strftime('%I:%M %p') }}" }, { type: "number", id: "n", entity: "sensor.x" }];
           console.log(JSON.stringify([P.dateInstead(clock), P.dateInstead(small), P.dateInstead(mixed), P.clockPages({ a: { elements: clock }, b: { elements: mixed }, c: { elements: [] } })]))""")
         full, small, mixed, pages = got

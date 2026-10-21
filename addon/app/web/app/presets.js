@@ -302,26 +302,11 @@ export function guestWifi({ ssid = "", password = "", auth = "WPA" } = {}) {
   ];
 }
 
-/* Presets are drawn on the 5.79" (792 × 272, a 32 px footer band:
-   theme.band_height(272), pinned by a test). On any other canvas they're
-   placed the way the add-on places a design on another size
-   (arrange.auto_box): scaled to fit the content area and centred. Upright,
-   the page is then rearranged as turning a page upright does. */
+/* Presets are drawn on the 5.79" (792 × 272). On any other canvas the add-on
+   places them as it places a design on another size (POST /api/fit,
+   arrange.auto_box); upright, the editor then rearranges the page as
+   turning a page upright does (newpage.fitToDevice). */
 export const CANVAS = { w: 792, h: 272, band: 32 };
-export function fitToCanvas(elements, g, reflow, times = []) {
-  if (g.W === CANVAS.w && g.H === CANVAS.h) return elements;
-  const s = Math.min(g.W / CANVAS.w, g.safeH / (CANVAS.h - CANVAS.band));
-  const ox = (g.W - CANVAS.w * s) / 2, oy = (g.safeH - (CANVAS.h - CANVAS.band) * s) / 2;
-  const out = elements.map((el) => {
-    const e = { ...el };
-    for (const k of ["x", "w"]) if (typeof e[k] === "number") e[k] = Math.round(e[k] * s + (k === "x" ? ox : 0));
-    for (const k of ["y", "h"]) if (typeof e[k] === "number") e[k] = Math.round(e[k] * s + (k === "y" ? oy : 0));
-    if (typeof e.size === "number" && e.size) e.size = Math.max(8, Math.round(e.size * s));
-    return e;
-  });
-  if (g.portrait && reflow) reflow({ elements: out }, true, g.d, times);   // times: the add-on's answer (api/shows-time)
-  return out;
-}
 
 /* Now playing shows while one of its players plays (all of them when none
    are chosen). */

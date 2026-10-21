@@ -298,7 +298,9 @@
   sport's words and every widget (its name, settings and how often what it
   shows changes) come from the add-on, so a league or series it learns
   appears in New page and the inspector by itself. Race weekend now says
-  when it can be older than a sleeping device's update, like Scores.
+  when it can be older than a sleeping device's update, like Scores. A
+  preset added on a 4.2" or 2.9" is placed by the add-on itself, the same
+  way it places any page on another size.
 
 - **Status speaks your sensor's language.** A door says Open and Closed, a
   motion sensor Detected and Clear, a switch On and Off, a lock Locked and
