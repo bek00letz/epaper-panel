@@ -91,7 +91,7 @@ NO_STATE = ("", "unavailable", "unknown", "none")
 MOST = 24                      # a list longer than this is a value, not a set of states
 
 
-def offered(entity_id: str, device_class: str = "", options=(), seen=()) -> list[dict]:
+def offered(entity_id: str, device_class: str = "", options=(), seen=(), drawable=lambda icon: True) -> list[dict]:
     """The states an icon that follows an entity offers, each with an icon: [{"state", "word", "icon"}].
 
     In order: Home Assistant's own for its kind (`words`), the choices it lists (`options`), then
@@ -99,7 +99,8 @@ def offered(entity_id: str, device_class: str = "", options=(), seen=()) -> list
     whatever its case, spelt as Home Assistant spells it; no value (unavailable, unknown) is never
     one, it's what "Anything else" is for. The icon is the one the entity itself had in that state
     when its icon changes with its state (a template's icon), else Home Assistant's for its kind,
-    else the one it always has; "" when none is known.
+    else the one it always has; "" when none is known. Only icons `drawable` says the panel can draw
+    are offered, so a state never gets one that shows as nothing.
     """
     kind = words(entity_id, device_class)
     had: dict[str, str] = {}
@@ -108,7 +109,9 @@ def offered(entity_id: str, device_class: str = "", options=(), seen=()) -> list
         if k not in NO_STATE and k not in had:
             had[k] = str(ic or "")
     own = {ic for ic in had.values() if ic}
-    varies = len(own) > 1
+    varies = len(own) > 1                 # its icon changes with its state (a template's)
+    had = {k: ic if ic and drawable(ic) else "" for k, ic in had.items()}
+    own = {ic for ic in own if drawable(ic)}
     out, keys = [], set()
     names = list(kind) + [str(o) for o in (options or ()) if isinstance(o, (str, int, float))]
     names += [str(st).strip() for st, _ in (seen or ())]
@@ -118,7 +121,8 @@ def offered(entity_id: str, device_class: str = "", options=(), seen=()) -> list
             continue
         keys.add(k)
         word, kind_icon = kind.get(name, (name, ""))
-        icon = (had.get(k) if varies else "") or kind_icon or (next(iter(own)) if len(own) == 1 else "")
+        kind_icon = kind_icon if kind_icon and drawable(kind_icon) else ""
+        icon = had.get(k, "") or kind_icon if varies else kind_icon or next(iter(own), "")
         out.append({"state": name, "word": word, "icon": icon})
         if len(out) >= MOST:
             break

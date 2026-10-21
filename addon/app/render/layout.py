@@ -563,6 +563,15 @@ def _fit_text(text, max_w, f):
     return t + "…"
 
 
+def can_draw_icon(name) -> bool:
+    """Whether the panel draws this icon: one of its own (custom:) or one in its icon font. An icon
+    Home Assistant knows and the font doesn't (a newer one) draws as nothing, so it's never offered."""
+    name = str(name or "")
+    if name.startswith("custom:"):
+        return name.removeprefix("custom:") in CUSTOM_ICONS
+    return mdi_codepoint(name) is not None
+
+
 def _draw_icon_glyph(d, name, cx, cy, sz):
     name = str(name or "")
     if name.startswith("custom:"):

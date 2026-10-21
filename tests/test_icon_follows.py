@@ -27,6 +27,20 @@ class TestWhatAnEntityOffers(unittest.TestCase):
         self.assertEqual(states.offered(CAT, seen=seen), [{"state": "Outdoor Cat", "word": "Outdoor Cat", "icon": "mdi:cat-outline"},
                                                           {"state": "Indoor Cat", "word": "Indoor Cat", "icon": "mdi:cat"}])
 
+    def test_never_an_icon_the_panel_cant_draw(self):
+        # Home Assistant gives Outdoor Cat mdi:cat-outline, which isn't in the panel's icon font:
+        # offered without an icon (the editor gives it the icon's own), never one drawn as nothing.
+        from render import layout
+        self.assertFalse(layout.can_draw_icon("mdi:cat-outline"))
+        self.assertTrue(layout.can_draw_icon("mdi:cat") and layout.can_draw_icon("custom:cat-sitting"))
+        self.assertFalse(layout.can_draw_icon("custom:nope"))
+        seen = [("Outdoor Cat", "mdi:cat-outline"), ("Indoor Cat", "mdi:cat")]
+        got = states.offered(CAT, seen=seen, drawable=layout.can_draw_icon)
+        self.assertEqual([(g["state"], g["icon"]) for g in got], [("Outdoor Cat", ""), ("Indoor Cat", "mdi:cat")],
+                         "its icon changes with its state, so Indoor Cat's isn't Outdoor Cat's")
+        door = states.offered("binary_sensor.d", "door", seen=[("on", "mdi:not-an-icon")], drawable=lambda ic: ic == "mdi:door-closed")
+        self.assertEqual({g["state"]: g["icon"] for g in door}, {"on": "", "off": "mdi:door-closed"})
+
     def test_a_select_its_options_first(self):
         got = states.offered("input_select.mode", options=["Home", "Away", "Night"], seen=[("Night", "mdi:list-box")])
         self.assertEqual([g["state"] for g in got], ["Home", "Away", "Night"])
@@ -58,10 +72,16 @@ class TestReadingThemFromHomeAssistant(unittest.IsolatedAsyncioTestCase):
         return ha_json
 
     async def test_the_recorders_last_days(self):
-        rows = [{"state": "Indoor Cat", "attributes": {"icon": "mdi:cat"}}, {"state": "Outdoor Cat", "attributes": {"icon": "mdi:cat-outline"}}]
+        rows = [{"state": "Indoor Cat", "attributes": {"icon": "mdi:cat"}}, {"state": "Outdoor Cat", "attributes": {"icon": "mdi:paw"}}]
+        with mock.patch.object(states_seen, "HA_TOKEN", "t"), mock.patch.object(states_seen, "ha_json", self.ha({"icon": "mdi:paw"}, rows)):
+            got = await states_seen.fetch(None, CAT, now=NOW)
+        self.assertEqual([(g["state"], g["icon"]) for g in got], [("Outdoor Cat", "mdi:paw"), ("Indoor Cat", "mdi:cat")])
+
+    async def test_only_icons_the_panel_draws(self):
+        rows = [{"state": "Indoor Cat", "attributes": {"icon": "mdi:cat"}}]
         with mock.patch.object(states_seen, "HA_TOKEN", "t"), mock.patch.object(states_seen, "ha_json", self.ha({"icon": "mdi:cat-outline"}, rows)):
             got = await states_seen.fetch(None, CAT, now=NOW)
-        self.assertEqual([(g["state"], g["icon"]) for g in got], [("Outdoor Cat", "mdi:cat-outline"), ("Indoor Cat", "mdi:cat")])
+        self.assertEqual([(g["state"], g["icon"]) for g in got], [("Outdoor Cat", ""), ("Indoor Cat", "mdi:cat")])
 
     async def test_a_measurement_has_no_states(self):
         ha = mock.AsyncMock(return_value={"state": "21.2", "attributes": {"unit_of_measurement": "°C", "state_class": "measurement"}})

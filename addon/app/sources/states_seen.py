@@ -5,8 +5,8 @@ Three places say what states there are: Home Assistant's own words for its kind
 (render/states.py), the choices it lists (a select's or an enum sensor's
 `options`), and what it really was over the recorder's last days, with the
 icon it had then (a template sensor's icon can change with its state: a cat's
-location reads "Outdoor Cat" with mdi:cat-outline). render/states.offered puts
-them together; this only reads them. A measurement (a unit, a state class) has
+location reads "Outdoor Cat" with mdi:cat). render/states.offered puts them
+together, offering only icons the panel can draw; this only reads them. A measurement (a unit, a state class) has
 numbers, not states, so its history isn't read.
 """
 from __future__ import annotations
@@ -18,7 +18,7 @@ from datetime import datetime
 from config import HA_TOKEN, valid_entity_id
 from fixture import load_fixture
 from ha import ha_json
-from render import states
+from render import layout, states
 
 DAYS = 10                      # the recorder's own default keep
 
@@ -43,7 +43,7 @@ async def fetch(session, entity_id: str, now: float | None = None) -> list[dict]
     if not HA_TOKEN:
         st = (load_fixture().get("states") or {}).get(eid) or {}
         seen = [] if _measures(st) else [(st.get("state"), str(st.get("icon") or ""))]
-        return states.offered(eid, st.get("device_class") or "", st.get("options") or (), seen)
+        return states.offered(eid, st.get("device_class") or "", st.get("options") or (), seen, layout.can_draw_icon)
     st = await ha_json(session, f"/states/{urllib.parse.quote(eid, safe='.')}")
     attrs = st.get("attributes") or {}
     seen = []
@@ -54,4 +54,4 @@ async def fetch(session, entity_id: str, now: float | None = None) -> list[dict]
             seen += await _history(session, eid, now - DAYS * 86400)
         except Exception as exc:          # the recorder is optional: the rest still stands
             print(f"states of {eid}: no history ({exc.__class__.__name__})", flush=True)
-    return states.offered(eid, attrs.get("device_class") or "", attrs.get("options") or (), seen)
+    return states.offered(eid, attrs.get("device_class") or "", attrs.get("options") or (), seen, layout.can_draw_icon)
