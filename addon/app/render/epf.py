@@ -12,6 +12,11 @@ from dataclasses import dataclass
 from typing import Sequence
 from PIL import Image
 
+try:
+    from . import theme as T
+except ImportError:                     # imported as a top-level module
+    from render import theme as T
+
 # 64-byte aligned header constants
 MAGIC = b"EPAP"  # 0x45504150
 VERSION = 3
@@ -20,13 +25,8 @@ CAT_RECORD_SIZE = 16
 PAGE_RECORD_SIZE = 16
 CRC_SIZE = 4
 
-MODEL_MAP = {
-    "crowpanel_579": 0x0579,
-    "crowpanel_420": 0x0420,
-    "crowpanel_290": 0x0290,
-    "crowpanel_750": 0x0750,
-    "crowpanel_102": 0x1020,
-}
+# Each board's id in a frame file, from its profile (theme.DISPLAYS "frame_model").
+MODEL_MAP = {d: p["frame_model"] for d, p in T.DISPLAYS.items() if "frame_model" in p}
 
 MODEL_REV_MAP = {v: k for k, v in MODEL_MAP.items()}
 
@@ -42,9 +42,9 @@ CAT_FLAG_SLEEP = 0x0001         # the sleep screen (always category 0 when prese
 CAT_FLAG_SLEEP_AUTO = 0x0002    # quiet hours: the panel should be asleep now
 
 # Panels whose frame buffer stores each row right-to-left (the CrowPanel
-# driver's mirror_x). Pages are flipped before packing so a straight memcpy
-# into the buffer shows them the right way round.
-MIRRORED_MODELS = ("crowpanel_579", "crowpanel_420")
+# driver's mirror_x; the profile's "mirrored"). Pages are flipped before
+# packing so a straight memcpy into the buffer shows them the right way round.
+MIRRORED_MODELS = tuple(d for d, p in T.DISPLAYS.items() if p.get("mirrored"))
 
 HEADER_FMT = ">4sHHHHHHHHIQIII"          # 44 bytes, then 20 reserved
 GEOMETRY_FMT = ">HHBBHHHHH4x"             # 20 bytes in the reserved area

@@ -7,6 +7,7 @@ import re
 
 import feeds
 from render import binding, epf, layout, sleep, stripmeta, subitems, theme as T
+import conditions
 import config
 import devices
 from config import PAGE_RE, valid_entity_id
@@ -92,7 +93,11 @@ def sanitize_layouts(spec: dict) -> dict:
         if p.get("show_if") and isinstance(p.get("show_if"), str):
             entry["show_if"] = migrate_legacy_entity_refs(p["show_if"].strip())
         if tier == "alert":
-            entry["hold_minutes"] = max(1, min(1440, int(p.get("hold_minutes") or 10)))
+            if p.get("ends") == "until":
+                entry["ends"] = "until"
+                if isinstance(p.get("until_if"), str) and p["until_if"].strip():
+                    entry["until_if"] = migrate_legacy_entity_refs(p["until_if"].strip())
+            entry["hold_minutes"] = conditions.hold_minutes({**p, "ends": entry.get("ends")})
         pages[clean_name] = entry
 
     raw_rot = spec.get("rotation")

@@ -1,14 +1,48 @@
-"""Formula 1 and Formula E sessions and race windows."""
+"""Racing series: what's on now or next, and race windows."""
 
 import health
 import json
 import time
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import aiohttp
 
 import runtime
+from render import clock
 from sources.geo import get_home_timezone
+
+
+@dataclass(frozen=True)
+class Series:
+    """One racing series: every place that needs to know a series asks here."""
+    slug: str               # names its sensor, sensor.epaper_racing_<slug>
+    code: str               # short, on the page: "F1"
+    title: str              # "Formula 1"
+    event: str              # what an event is called before we know its name
+    venue: str              # what a venue is called before we know its name
+    aliases: tuple          # what a page may say for it
+    espn: str | None        # ESPN's scoreboard for it (live status, standings)
+    calendar: str | None    # sportstimes' session database (exact session times)
+    icon: str
+
+
+SERIES = {s.slug: s for s in (
+    Series("f1", "F1", "Formula 1", "Formula 1 Grand Prix", "Grand Prix Circuit",
+           ("f1", "formula1", "formula_1", "formula-1"), espn="f1", calendar="f1", icon="mdi:racing-helmet"),
+    Series("fe", "FE", "Formula E", "Formula E World Championship", "ePrix Circuit",
+           ("fe", "formula_e", "formula-e", "formulae"), espn=None, calendar="fe", icon="mdi:car-electric"),
+    Series("nascar", "NASCAR", "NASCAR", "NASCAR Cup Series", "Speedway",
+           ("nascar", "nascar-premier", "nascar_cup"), espn="nascar-premier", calendar=None, icon="mdi:racing-helmet"),
+    Series("indycar", "INDYCAR", "IndyCar", "IndyCar Series", "Circuit",
+           ("indycar", "irl"), espn="irl", calendar=None, icon="mdi:racing-helmet"),
+)}
+_ALIASES = {a: s for s in SERIES.values() for a in s.aliases}
+
+
+def series_of(value) -> Series:
+    """The series a page names, or Formula 1 for anything it doesn't know (an entity ID, say)."""
+    return _ALIASES.get(str(value or "f1").strip().lower(), SERIES["f1"])
 
 
 _racing_cache = {}
@@ -20,6 +54,7 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_na
         tz_name = await get_home_timezone(session)
     now = time.time()
     raw_key = str(entity_or_series or "f1").strip().lower()
+    ser = series_of(raw_key)
     cache_key = f"{raw_key}:{tz_name}"
 
     # 1. Approach A: Check if fallback is a resolved template from HA entity (e.g. sensor.f1)
@@ -43,11 +78,11 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_na
         ha_circuit = attrs.get("venue") or attrs.get("circuit") or ""
         ha_date = attrs.get("date") or ""
         if attrs.get("standings"):
-            ser_name = "FE" if raw_key in ("fe", "formula_e", "formula-e", "formulae") else "F1"
             return {
-                "series": ser_name,
-                "event_name": ha_event_name or ("Formula E World Championship" if ser_name == "FE" else "Formula 1 Grand Prix"),
-                "circuit": ha_circuit or "Grand Prix Circuit",
+                "series": ser.code,
+                "series_name": ser.title,
+                "event_name": ha_event_name or ser.event,
+                "circuit": ha_circuit or ser.venue,
                 "status": ha_status or "IN",
                 "lap": attrs.get("lap"),
                 "total_laps": attrs.get("total_laps"),
@@ -55,17 +90,18 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_na
                 "standings": attrs.get("standings")
             }
 
-    # 2. Formula E support
-    if raw_key in ("fe", "formula_e", "formula-e", "formulae"):
+    # 2. A series with no live scoreboard: its session calendar (Formula E)
+    if not ser.espn:
         cached = _racing_cache.get(cache_key)
         if cached and (now - cached["at"] < (60.0 if cached.get("is_live") else 600.0)):
             return cached["data"]
 
         fe_event = {
-            "series": "FE",
-            "event_name": ha_event_name or "Formula E World Championship",
-            "circuit": ha_circuit or "ePrix Circuit",
-            "detail": "Upcoming Formula E Session",
+            "series": ser.code,
+            "series_name": ser.title,
+            "event_name": ha_event_name or ser.event,
+            "circuit": ha_circuit or ser.venue,
+            "detail": f"Upcoming {ser.title} session",
             "status": ha_status or "PRE",
             "clock": "PRE",
             "standings": []
@@ -79,7 +115,7 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_na
         try:
             races = []
             for yr in (cur_year, cur_year + 1):
-                fe_url = f"https://raw.githubusercontent.com/sportstimes/f1/main/_db/fe/{yr}.json"
+                fe_url = f"https://raw.githubusercontent.com/sportstimes/f1/main/_db/{ser.calendar}/{yr}.json"
                 try:
                     async with session.get(fe_url, headers=headers, timeout=timeout) as r:
                         if r.status == 200:
@@ -165,13 +201,14 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_na
                     try:
                         dt_loc = active_session_dt.astimezone(ZoneInfo(tz_name))
                         tz_abbr = dt_loc.tzname() or ""
-                        detail_str = f"{session_title} · {dt_loc.strftime('%a %b %d · %H:%M')} {tz_abbr}".strip()
+                        detail_str = f"{session_title} · {dt_loc:%a %b %d} · {clock.hm(dt_loc)} {tz_abbr}".strip()
                     except Exception:
                         detail_str = f"{session_title} · {active_session_dt.strftime('%a %b %d · %H:%M UTC')}"
 
                 fe_event = {
-                    "series": "FE",
-                    "event_name": candidate_race.get("name") or ha_event_name or "Formula E World Championship",
+                    "series": ser.code,
+                    "series_name": ser.title,
+                    "event_name": candidate_race.get("name") or ha_event_name or ser.event,
                     "circuit": circ_name,
                     "detail": detail_str or f"Status: {session_st}",
                     "status": session_st,
@@ -183,24 +220,25 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_na
             runtime.prune(_racing_cache)
             return fe_event
         except Exception as exc:
-            print(f"fetch_formula_e_data error: {health.describe(exc)}", flush=True)
+            print(f"fetch_racing_data error ({ser.slug}): {health.describe(exc)}", flush=True)
             return _racing_cache.get(cache_key, {}).get("data") or fe_event
 
-    # 3. Check in-memory cache for F1 / other series
+    # 3. Check in-memory cache for a series on ESPN's scoreboard
     cached = _racing_cache.get(cache_key)
     if cached and (now - cached["at"] < (60.0 if cached.get("is_live") else 600.0)):
         return cached["data"]
 
-    # 4. Approach B: Query ESPN F1 scoreboard
-    f1_url = "https://site.api.espn.com/apis/site/v2/sports/racing/f1/scoreboard"
+    # 4. Approach B: Query the series' ESPN scoreboard
+    f1_url = f"https://site.api.espn.com/apis/site/v2/sports/racing/{ser.espn}/scoreboard"
     headers = {"User-Agent": "Crowpanel-Epaper/0.8.23 (HomeAssistant Addon)"}
     timeout = aiohttp.ClientTimeout(total=6)
 
     event_data = {
-        "series": "F1",
-        "event_name": ha_event_name or "Formula 1 Grand Prix",
-        "circuit": ha_circuit or "Grand Prix Circuit",
-        "detail": "Upcoming Grand Prix Session",
+        "series": ser.code,
+        "series_name": ser.title,
+        "event_name": ha_event_name or ser.event,
+        "circuit": ha_circuit or ser.venue,
+        "detail": f"Upcoming {ser.title} session",
         "status": ha_status or "PRE",
         "standings": []
     }
@@ -213,9 +251,9 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_na
                 events = data.get("events") or []
                 if events:
                     ev = events[0]
-                    ev_name = ev.get("name") or ha_event_name or "Formula 1 Grand Prix"
+                    ev_name = ev.get("name") or ha_event_name or ser.event
                     circuit_info = ev.get("circuit") or {}
-                    c_name = circuit_info.get("fullName") or ha_circuit or "Grand Prix Circuit"
+                    c_name = circuit_info.get("fullName") or ha_circuit or ser.venue
                     c_addr = circuit_info.get("address", {})
                     c_city = c_addr.get("city") or ""
                     circuit_str = f"{c_name} · {c_city}" if c_city else c_name
@@ -231,14 +269,15 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_na
                             if tz_name:
                                 dt_loc = dt.astimezone(ZoneInfo(tz_name))
                                 tz_abbr = dt_loc.tzname() or ""
-                                detail_str = f"{dt_loc.strftime('%a %b %d · %H:%M')} {tz_abbr}".strip()
+                                detail_str = f"{dt_loc:%a %b %d} · {clock.hm(dt_loc)} {tz_abbr}".strip()
                             else:
                                 detail_str = dt.strftime("%a %b %d · %H:%M UTC")
                         except Exception:
                             detail_str = f"{st_desc} · {str(date_iso)[:10]}"
 
                     event_data = {
-                        "series": "F1",
+                        "series": ser.code,
+                        "series_name": ser.title,
                         "event_name": ev_name,
                         "circuit": circuit_str,
                         "detail": detail_str,
@@ -253,7 +292,7 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_na
                         for idx, c in enumerate(comps[:10]):
                             ath = c.get("athlete") or {}
                             tm = c.get("team") or {}
-                            code = ath.get("abbreviation") or ath.get("shortName") or "DRV"
+                            code = _driver_code(ath)
                             team_name = tm.get("displayName") or tm.get("shortDisplayName") or ""
                             gap_val = c.get("status", {}).get("displayValue") or ("LEADER" if idx == 0 else "")
                             parsed_standings.append({
@@ -272,19 +311,24 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_na
     except Exception as exc:
         print(f"fetch_racing_data error: {health.describe(exc)}", flush=True)
         return _racing_cache.get(cache_key, {}).get("data") or event_data
+
+
+def _driver_code(athlete: dict) -> str:
+    """Three letters for a driver: ESPN's code where it has one (F1), else from the surname."""
+    code = athlete.get("abbreviation")
+    if code:
+        return str(code)
+    name = str(athlete.get("lastName") or athlete.get("displayName") or athlete.get("shortName") or "").strip()
+    return name.split()[-1] if name else "DRV"
+
+
 _racing_window_cache: dict[str, dict] = {}
 
 
 def series_slug(series) -> tuple[str, str]:
     """A racing series as (slug, title): the slug names its sensor, sensor.epaper_racing_<slug>."""
-    raw_s = str(series or "f1").strip().lower()
-    if raw_s in ("fe", "formula_e", "formula-e", "formulae"):
-        return "fe", "Formula E"
-    if raw_s in ("nascar", "nascar-premier"):
-        return "nascar", "NASCAR"
-    if raw_s in ("indycar", "irl"):
-        return "indycar", "IndyCar"
-    return "f1", "Formula 1"
+    ser = series_of(series)
+    return ser.slug, ser.title
 
 
 @runtime.live(60)
@@ -292,7 +336,8 @@ async def compute_racing_active_window(session, series="f1", pre_buffer_hours=2.
     """Compute whether a Motorsport series (F1, Formula E, NASCAR, IndyCar) is in an active session/race-weekend window."""
     if not tz_name:
         tz_name = await get_home_timezone(session)
-    slug, series_title = series_slug(series)
+    ser = series_of(series)
+    slug, series_title = ser.slug, ser.title
 
     w_mode = "weekend" if str(window_mode).strip().lower() == "weekend" else "session"
     cache_key = f"{slug}:{pre_buffer_hours}:{post_buffer_hours}:{w_mode}:{tz_name}"
@@ -312,9 +357,9 @@ async def compute_racing_active_window(session, series="f1", pre_buffer_hours=2.
     is_live = False
 
     # 1. For F1 and Formula E, check sportstimes session database for exact FP1/FP2/FP3/Quali/Sprint/Race UTC timestamps
-    if slug in ("f1", "fe"):
+    if ser.calendar:
         for yr in (cur_year, cur_year + 1):
-            db_url = f"https://raw.githubusercontent.com/sportstimes/f1/main/_db/{slug}/{yr}.json"
+            db_url = f"https://raw.githubusercontent.com/sportstimes/f1/main/_db/{ser.calendar}/{yr}.json"
             try:
                 async with session.get(db_url, headers=headers, timeout=timeout) as r:
                     if r.status == 200:
@@ -347,9 +392,8 @@ async def compute_racing_active_window(session, series="f1", pre_buffer_hours=2.
                 pass
 
     # 2. Also check ESPN racing scoreboard (for live status and NASCAR/IndyCar/F1 fallback)
-    espn_map = {"f1": "f1", "nascar": "nascar-premier", "indycar": "irl"}
-    if slug in espn_map:
-        espn_url = f"https://site.api.espn.com/apis/site/v2/sports/racing/{espn_map[slug]}/scoreboard"
+    if ser.espn:
+        espn_url = f"https://site.api.espn.com/apis/site/v2/sports/racing/{ser.espn}/scoreboard"
         try:
             async with session.get(espn_url, headers=headers, timeout=timeout) as r:
                 if r.status == 200:

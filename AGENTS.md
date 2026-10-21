@@ -167,7 +167,7 @@ than a frame does.
   and whether it sleeps (`timing.py`): **Update every** (`update_minutes`;
   1 minute is always on, 2 or more sleeps between updates) and **Rotate
   every** (always on: `rotate_seconds`; asleep: `rotate_updates`, a whole
-  number of updates). Set in the editor's Settings › Screen (and the cards
+  number of updates). Set in the editor's Settings › Device (and the cards
   when adding a screen), applied at once, never sent with the pages. Read
   them through the kind (`Kind.update_minutes`, `Kind.sleeps`) or `timing`,
   never from a device's fields or a panel's own setup. A CrowPanel's own
@@ -195,6 +195,10 @@ than a frame does.
   `kinds/`; the core never names one. A kind can be optional (`Kind.enabled`):
   list devices for anything a person or a render sees through
   `kinds.shown_devices()`, so a kind that's off shows nowhere.
+- **Everything about a size is in its profile** (`theme.DISPLAYS`), the
+  firmware's facts too: `frame_model` (its id in a frame file), `mirrored`,
+  `full_refresh` and `keep_picture` (the C++ for its driver). `epf.py` and
+  `firmware_gen.py` read them; never add a table keyed by a size elsewhere.
 - **A size a screen reports is a profile too**: `theme.sized_display` gives
   the kind's own profile, or `<kind>_<w>x<h>` made from it, which
   `theme.get_display` understands anywhere. Don't add one to `DISPLAYS` at
@@ -205,6 +209,13 @@ than a frame does.
   different: the add-on never changes it on its own, but a name the person
   gives it in the editor reaches Home Assistant at its next install, as for
   any screen (the user's call, 21 Oct). Home Assistant keeps the entity IDs.
+- **A preset sets up what it needs, in place** (the user's call, 21 Oct:
+  framework, not patch). A preset that needs a data source, or anything
+  else before it can show something (Guest Wi-Fi's network), asks for it in
+  its own next step in New page (`app/setup.js`, `SETUPS`), never by sending
+  the person to Settings first. What it sets up is saved where Settings
+  shows it (a data source through `PUT /api/sources`, the one store), so a
+  second page reuses it and there is no second path.
 - **Elements have IDs, unique in the design, and the editor gives them**
   (`doc.ensureIds`). Arrangements for other sizes are filed by them. Never
   make an element's identity depend on its position or its page.
@@ -343,12 +354,42 @@ up to v0.12.0). `app/legacy.js` keeps the pieces of it this one still uses.
   user's call, 21 Oct): the screen bar under the canvas (`app/screenbar.js`)
   keeps four everyday screen settings in sight and in reach — power and
   Update every, Rotate every, quiet hours on or off, Mounted — like Control
-  Center next to Settings. Settings › Screen keeps them too and has the
+  Center next to Settings. Settings › Device keeps them too and has the
   rest; both change them through the same functions. Nothing else goes in it.
+- **Say "device", not "screen"** (the user's call, 21 Oct): in everything a
+  person reads (the editor, its messages, the README, the add-on's options),
+  the things you add and manage are devices: Add new device, Settings ›
+  Device, "There's already a device called Kitchen." Next to "New page",
+  "screen" read like another page. Code, API paths (`/api/devices`), stored
+  keys and Home Assistant entity names keep their words; changing those
+  would break upgrades. "Screen" stays where it means the display itself:
+  the sleep screen, what's on screen.
 - **The canvas is the task**, so the chrome is deliberately quiet and the panel
   sits in a dark frame that reads as the device. Do not add colour or weight
   that competes with it. The canvas shows only the add-on's own render
   (`/api/preview`); everything else on it is an outline.
+- **New page is shelves of presets, one per thing a page shows**
+  (`app/newpage.js`; the presets are data in `app/presets.js`). One shelf
+  per group, your own first; a preset's looks, leagues or series are picked
+  in its next step, never separate cards. Presets are drawn on the 5.79"
+  and placed on other devices the way `arrange.auto_box` places a design
+  (`fitToCanvas`, pinned against it). Thumbnails there use the add-on's
+  example values (`/api/preview` with `example`), never the person's own
+  data, and never "--". What a preset shows is listed sensible first
+  (`rankSensors`: the Energy dashboard's sensor picked and said so, then
+  the right device class and unit). `tests/test_presets.py` draws every
+  look at every offered size and fails on words wider than their box.
+  A preset never writes a unit or a time format (framework review, 21 Oct):
+  a value takes its sensor's own unit (`unit: "entity"`, `withUnits`), and
+  a clock is the add-on's own (`show: "now"`), 12- or 24-hour as Settings ›
+  Time and language says. Clock is offered on every device; one that sleeps
+  draws the date in its place (`render/clocktime.py`), never the editor.
+- **The editor keeps no copies of the add-on's tables** (framework review,
+  21 Oct): leagues, series, sport words, state words and every widget's
+  descriptor (name, icon, box, fields, `changes_every`) come from
+  `GET /api/catalog` at start (`app/catalog.js`). Basic elements (text,
+  value, icon, card, divider, gauge, charts, QR) stay the editor's; a new
+  widget is a descriptor in `widgets.py`, nothing in the editor.
 - **The inspector is ordered by how often things are touched**: what it shows,
   how it looks, arrange, then "More". Rare settings go under More, not away.
 - **Picking: smallest thing under the pointer first.** Clicking again without
@@ -371,6 +412,18 @@ up to v0.12.0). `app/legacy.js` keeps the pieces of it this one still uses.
   this panel rather than a generic canvas.
 - **Text goes in as text.** Build nodes with `h()`; only the icon constants
   in `util.js` use `innerHTML`. The editor shares an origin with Home Assistant.
+- **One descriptor per widget** (`widgets.py`): its name, icon, default
+  box, settings and inspector fields, how its value is fetched and how often
+  it changes, its example and whether it makes items of its page. The render
+  cycle, examples, sub-items and the editor (through the catalog) read it. A
+  new widget is a descriptor plus its drawing, nowhere else.
+- **The editor keeps no copies of the server's tables.** Leagues, racing
+  series, each sport's words, state words, widget descriptors and the time
+  format come from `GET /api/catalog`, built from the tables themselves
+  (`sources/sports.LEAGUES`, `sources/racing.SERIES`, `render/sport.py`,
+  `render/states.py`, `widgets.py`, `timeformat.py`).
+- **Times of day go through `render/clock.py`**: one 12/24-hour setting
+  (`timeformat.py`, Home Assistant's country by default) for every device.
 - **Dynamic units live in the renderer** (`render/units.py`), so the canvas and
   the panel agree. The editor's copy of the tables only draws the example.
 

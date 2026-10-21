@@ -202,7 +202,7 @@ def add(kind: str, name: str, display: str, design: str | None = None, *, orient
     suffix, n = f"_{slug}", 2
     while suffix in taken:
         suffix, n = f"_{slug}_{n}", n + 1
-    dev = {"id": dev_id, "kind": kind, "name": name.strip()[:60] or f"Screen {dev_id}",
+    dev = {"id": dev_id, "kind": kind, "name": name.strip()[:60] or f"Device {dev_id}",
            "key": secrets.token_urlsafe(24), "entity_suffix": suffix, "display": T.get_display(display)["id"],
            "orientation": int(orientation) if int(orientation or 0) in (0, 90, 180, 270) else 0, **fields}
     if design is not None:
@@ -263,7 +263,7 @@ def remove(device_id) -> dict:
     store = _load()
     dev = get(device_id)
     if len(store["devices"]) < 2:
-        raise ValueError("This is the only screen, so it can't be removed.")
+        raise ValueError("This is the only device, so it can't be removed.")
     store["devices"] = [d for d in store["devices"] if d["id"] != dev["id"]]
     store["removed"] = ([dev] + [d for d in store.get("removed") or [] if d.get("id") != dev["id"]])[:REMEMBER_REMOVED]
     _save(store)
@@ -276,7 +276,7 @@ def restore(device_id) -> dict:
     device_id = _clean_id(device_id)
     dev = next((d for d in store.get("removed") or [] if d.get("id") == device_id), None)
     if dev is None or any(d["id"] == device_id for d in store["devices"]):
-        raise ValueError("That screen can't be put back any more.")
+        raise ValueError("That device can't be put back any more.")
     store["removed"] = [d for d in store["removed"] if d.get("id") != device_id]
     store["devices"].append(dev)
     store["devices"].sort(key=lambda d: int(d["id"]))

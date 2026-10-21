@@ -5,6 +5,7 @@ import health
 import json
 import os
 import re
+import unicodedata
 import secrets
 import urllib.parse
 from pathlib import Path
@@ -236,8 +237,8 @@ async def _detect_panel_connection(dev: dict) -> dict:
     link = kinds.of(dev).link(dev)
     if not HA_TOKEN or link is None:
         panel_fix = load_fixture().get("panel") or {}
-        return {"connected": False, "ip": None, "rssi": panel_fix.get("rssi"), "node": None,
-                "problem": "running without Home Assistant" if not HA_TOKEN else "the add-on can't reach this screen"}
+        return {"connected": False, "ip": None, "rssi": panel_fix.get("rssi"), "network": None, "node": None,
+                "problem": "running without Home Assistant" if not HA_TOKEN else "the add-on can't reach this device"}
     return await link.connection()
 
 
@@ -274,10 +275,26 @@ _ESPHOME_SLUG = re.compile(r"^(?:[0-9a-f]{8}_)?esphome(-beta|-dev)?$")
 _dashboard_cache: dict = {"at": 0.0, "url": None}
 
 
+def esphome_file_name(name: str) -> str:
+    """A device name as ESPHome's own wizard names its file (esphome.helpers.friendly_name_slugify):
+    accents dropped, lower case, spaces and underscores as dashes. "CrowPanel epaper" -> "crowpanel-epaper"."""
+    value = unicodedata.normalize("NFKD", str(name or "")).encode("ascii", "ignore").decode()
+    value = value.lower().replace(" ", "_").replace("-", "_").replace("__", "_").strip("_")
+    value = "".join(c for c in value if c in "abcdefghijklmnopqrstuvwxyz0123456789-_")
+    return value.replace("_", "-")
+
+
 def esphome_path(cfg: dict) -> Path:
-    """Where ESPHome finds this panel's file: named after its device name, as ESPHome would."""
-    slug = re.sub(r"[^a-z0-9_]+", "_", str(cfg.get("device_name") or "crowpanel-epaper").lower()).strip("_")
-    return config.ESPHOME_DIR / f"{slug or 'crowpanel_epaper'}.yaml"
+    """Where ESPHome finds this panel's file: named as ESPHome's own wizard would (dashes), so a panel
+    set up in ESPHome first keeps one file. Before 0.15 the add-on wrote underscores; a file it wrote
+    then is kept, so nobody gets a second one."""
+    name = str(cfg.get("device_name") or "crowpanel-epaper")
+    before = re.sub(r"[^a-z0-9_]+", "_", name.lower()).strip("_") or "crowpanel_epaper"
+    now = esphome_file_name(name) or "crowpanel-epaper"
+    old = config.ESPHOME_DIR / f"{before}.yaml"
+    if before != now and old.is_file():
+        return old
+    return config.ESPHOME_DIR / f"{now}.yaml"
 
 
 def esphome_state(cfg: dict, disk_yaml: str) -> dict:

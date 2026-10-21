@@ -10,9 +10,12 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from aiohttp import web
 
+import examples
+from sources.geo import get_home_timezone
 import feeds
+import widgets
 import live_data
-from render import binding, epf, layout, sleep, stripmeta, subitems, theme as T
+from render import binding, clock, epf, layout, sleep, stripmeta, subitems, theme as T
 import airports
 import companion
 import config
@@ -24,7 +27,7 @@ import runtime
 import timing
 from config import ADDON_VERSION, FRAME_PORT, HA_BASE, HA_TOKEN, INGRESS_GATEWAY, REFRESH, SLEEP_PAGE, WEB_DIR, valid_entity_id
 from fixture import load_fixture
-from frames import _png, as_int, enrich_page_values, refresh_frames, split_page_values
+from frames import _png, as_int, date_for_time, enrich_page_values, refresh_frames, split_page_values
 from ha import curve_series, ha_json, resolve_templates
 from layouts_store import clear_draft, layouts_etag, load_draft, load_layouts, load_sources, sanitize_layouts, save_draft, save_layouts
 from panel_ops import push_panel_update
@@ -61,11 +64,11 @@ def _device(request) -> dict:
     try:
         dev = devices.resolve(asked)
     except KeyError:
-        raise web.HTTPNotFound(text="There's no such screen.")
+        raise web.HTTPNotFound(text="There's no such device.")
     if kinds.shown(dev):
         return dev
     if asked:
-        raise web.HTTPNotFound(text="There's no such screen.")         # its kind is switched off
+        raise web.HTTPNotFound(text="There's no such device.")         # its kind is switched off
     return next(iter(kinds.shown_devices()), dev)
 
 
@@ -261,7 +264,7 @@ async def api_panel_device_get(request):
     """The panel's Sleep and ghost-clearing settings, read through Home Assistant."""
     link = _link(_device(request))
     if link is None:
-        return web.json_response({"available": False, "problem": "the add-on can't reach this screen"})
+        return web.json_response({"available": False, "problem": "the add-on can't reach this device"})
     return web.json_response(await link.device_settings())
 
 
@@ -272,7 +275,7 @@ async def api_panel_device_post(request):
         raise web.HTTPBadRequest(text="expected one setting")
     key, value = next(iter(body.items()))
     link = _link(_device(request))
-    ok, err = await link.set_device_setting(key, value) if link else (False, "the add-on can't reach this screen")
+    ok, err = await link.set_device_setting(key, value) if link else (False, "the add-on can't reach this device")
     return web.json_response({"ok": ok, "error": err or None}, status=200 if ok or key in
                              ("sleep", "ghost_after", "ghost_mode", "clear_ghosting") else 400)
 
@@ -294,6 +297,9 @@ async def api_entities(request):
                 "name": info.get("friendly_name") or eid,
                 "state": info.get("state"),
                 "unit": info.get("unit") or "",
+                "device_class": info.get("device_class") or "",
+                "state_class": info.get("state_class") or "",
+                "changes_every": widgets.sensor_changes_every(info),
                 "is_epaper": eid.startswith("sensor.epaper_"),
             }
     else:
@@ -312,6 +318,11 @@ async def api_entities(request):
                     "name": attrs.get("friendly_name") or eid,
                     "state": s.get("state"),
                     "unit": attrs.get("unit_of_measurement") or "",
+                    # So a preset can list, say, temperature sensors first.
+                    "device_class": attrs.get("device_class") or "",
+                    # A running total (total, total_increasing) can show its change today (binding "change_today").
+                    "state_class": attrs.get("state_class") or "",
+                    "changes_every": widgets.sensor_changes_every(attrs),
                     "is_epaper": eid.startswith("sensor.epaper_") or attrs.get("source") == "epaper_studio",
                 }
 
@@ -323,6 +334,8 @@ async def api_entities(request):
             "name": attrs.get("friendly_name") or eid,
             "state": info.get("state"),
             "unit": attrs.get("unit_of_measurement") or "",
+            "device_class": attrs.get("device_class") or "",
+            "state_class": attrs.get("state_class") or "",
             "is_epaper": True,
         }
 
@@ -371,14 +384,6 @@ async def api_preview(request):
     if not isinstance(body, dict) or not isinstance(body.get("page") or {}, dict):
         raise web.HTTPBadRequest(text="expected {page}")
     page = body.get("page") or {}
-    view = load_layouts(_device(request)["id"])
-    try:
-        orient = int(body.get("orientation") if "orientation" in body else view.get("orientation", 0))
-    except (TypeError, ValueError):
-        orient = 0
-    if orient not in (0, 90, 180, 270):
-        orient = 0
-    display = body.get("display") or view.get("display", T.DEFAULT_DISPLAY)
     vals, tpls = split_page_values(page)
     if tpls:
         vals.update(await resolve_templates(runtime.SESSION, tpls))
@@ -388,6 +393,66 @@ async def api_preview(request):
     for i, el in enumerate(page.get("elements", [])):
         if el.get("type") in ("curve", "bar_chart") and el.get("entity"):
             series[i] = await curve_series(runtime.SESSION, el["entity"], as_int(el.get("hours"), 24))
+    # The canvas is this device's own render: one that sleeps between updates shows the date for a time.
+    dev = _device(request)
+    return await _drawn(request, body, page, vals, series, today=await date_for_time(kinds.of(dev).sleeps(dev)))
+
+
+def _fit(elements: list, from_canvas: str, display: str, orientation: int) -> list:
+    """Elements made on `from_canvas` ("792x272"), placed for a device's size as an arrangement would
+    place them automatically (render/arrange.auto_box): the one way a page moves between sizes."""
+    from render import arrange
+    try:
+        arrange.parse_canvas(from_canvas)
+    except (TypeError, ValueError):
+        raise web.HTTPBadRequest(text="from_canvas is a size like 792x272")
+    target = arrange.canvas_key(*T.canvas_dims(orientation, display))
+    if target == from_canvas:
+        return elements
+    return [{**el, **arrange.auto_box(el, from_canvas, target)} if isinstance(el, dict) else el for el in elements]
+
+
+async def api_fit(request):
+    """POST {elements, from_canvas, display?, orientation?} -> {elements}: a page made on one size, placed
+    for a device's (the editor's own device by default), for adding a preset's page."""
+    body = await _body(request)
+    view = load_layouts(_device(request)["id"])
+    display = body.get("display") or view.get("display", T.DEFAULT_DISPLAY)
+    try:
+        orient = int(body.get("orientation") if "orientation" in body else view.get("orientation", 0))
+    except (TypeError, ValueError):
+        orient = 0
+    if orient not in (0, 90, 180, 270):
+        orient = 0
+    els = body.get("elements")
+    if not isinstance(els, list):
+        raise web.HTTPBadRequest(text="expected {elements, from_canvas}")
+    return web.json_response({"elements": _fit(els, str(body.get("from_canvas") or ""), display, orient)})
+
+
+async def api_example(request):
+    """A page drawn with example values only (examples.py), for preset thumbnails: never the person's own
+    data, and nothing asked of Home Assistant, the internet or a data source. Same body as /api/preview."""
+    body = await _json(request)
+    if not isinstance(body, dict) or not isinstance(body.get("page") or {}, dict):
+        raise web.HTTPBadRequest(text="expected {page}")
+    page = body.get("page") or {}
+    vals, series = await asyncio.to_thread(examples.page_values, page)
+    return await _drawn(request, body, page, vals, series)
+
+
+async def _drawn(request, body: dict, page: dict, vals: dict, series: dict, today=None):
+    """A preview's PNG at the device's size and orientation, with the text sizes it got (X-Metrics)."""
+    view = load_layouts(_device(request)["id"])
+    try:
+        orient = int(body.get("orientation") if "orientation" in body else view.get("orientation", 0))
+    except (TypeError, ValueError):
+        orient = 0
+    if orient not in (0, 90, 180, 270):
+        orient = 0
+    display = body.get("display") or view.get("display", T.DEFAULT_DISPLAY)
+    if body.get("from_canvas"):                         # a page made for another size, placed for this one
+        page = {**page, "elements": _fit(page.get("elements") or [], str(body["from_canvas"]), display, orient)}
     metrics = []
     try:
         dist = float(body.get("distance") or 3.0)
@@ -395,14 +460,91 @@ async def api_preview(request):
         dist = 3.0
     img = await asyncio.to_thread(
         layout.render_page, page, vals,
-        clock=datetime.now().strftime("%H:%M"),
+        clock=clock.hm(datetime.now()),
         label=str(body.get("label") or "preview")[:40],
         series=series, metrics=metrics, orientation=orient,
-        distance_m=dist, display=display)
+        distance_m=dist, display=display, date_for_time=today)
     # Effective font sizes ride back on a header so the editor can report
     # what you actually got, in millimetres, rather than what you asked for.
     return web.Response(body=_png(T.to_1bit(img)), content_type="image/png",
                         headers={"X-Metrics": json.dumps(metrics)})
+
+
+async def api_catalog(request):
+    """Everything the editor needs to know that the server keeps (framework review #5): the leagues and
+    racing series offered, each sport's words, state words by device, each widget's descriptor (name,
+    box, fields, how often its value changes) and the time format. One request at the editor's start;
+    the editor keeps no copies of these tables."""
+    import timeformat
+    import widgets
+    from render import sport, states
+    from sources import racing, sports
+    from sources.geo import get_home_locale
+
+    def said(w):
+        return {"event": w.event, "start": w.start, "day": w.day}
+    return web.json_response({
+        "leagues": [{"path": lg.path, "slug": lg.slug, "name": lg.name, "aliases": list(lg.aliases),
+                     "sensor": lg.sensor, "words": said(sport.words(lg.path))} for lg in sports.LEAGUES],
+        "series": [{"slug": s.slug, "code": s.code, "title": s.title, "aliases": list(s.aliases),
+                    "sensor": f"sensor.epaper_racing_{s.slug}"} for s in racing.SERIES.values()],
+        "sport_words": {**{k: said(v) for k, v in sport.SPORTS.items()}, "other": said(sport.OTHER)},
+        "states": states.catalog(),
+        "widgets": widgets.catalog(),
+        "time_format": timeformat.describe(*await get_home_locale(runtime.SESSION))["resolved"],
+    })
+
+
+async def api_timezones(request):
+    """The cities a world clock can show: {"home": Home Assistant's zone, "zones": [{"tz", "city", "region",
+    "offset"}]}, from the time zone database (render/worldclock.catalog)."""
+    from render import worldclock
+    return web.json_response({"home": await get_home_timezone(runtime.SESSION), "zones": worldclock.catalog()})
+
+
+async def api_shows_time(request):
+    """Which elements of a page show the time of day, however they're written (render/clocktime.py):
+    {"time": [index...]}. The editor asks here instead of matching strings of its own."""
+    from render import clocktime
+    body = await _json(request)
+    page = body.get("page") if isinstance(body, dict) else None
+    if not isinstance(page, dict):
+        raise web.HTTPBadRequest(text="expected {page}")
+    return web.json_response({"time": clocktime.times(page)})
+
+
+async def api_time_get(request):
+    """12- or 24-hour: {"format": "auto"|"12h"|"24h", "resolved": "12h"|"24h", "country"}.
+    Automatic follows Home Assistant's country."""
+    import timeformat
+    from sources.geo import get_home_locale
+    return web.json_response(timeformat.describe(*await get_home_locale(runtime.SESSION)))
+
+
+async def api_time_put(request):
+    import timeformat
+    from sources.geo import get_home_locale
+    body = await _body(request)
+    try:
+        timeformat.save(str(body.get("format") or ""))
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text=str(exc))
+    locale = await get_home_locale(runtime.SESSION)
+    timeformat.apply(*locale)
+    await _rerender()                                   # every device's times change at once
+    return web.json_response(timeformat.describe(*locale))
+
+
+async def api_energy(request):
+    """What the Energy dashboard is set up with, so a preset can say where its numbers come from
+    (or that it needs setting up there): {"solar": [{"energy", "power"}], "grid": [{"flows", "power"}],
+    "has_cost", "currency"}. Empty lists when there's no dashboard; 502 when Home Assistant didn't answer."""
+    from sources import energy
+    with live_data.waiting_for_fresh():
+        got = await energy.fetch_dashboard(runtime.SESSION)
+    if got is None:
+        return web.json_response({"error": "Home Assistant didn't say how its Energy dashboard is set up"}, status=502)
+    return web.json_response(got)
 
 
 async def api_airport(request):
@@ -437,7 +579,7 @@ async def api_push(request):
     link = _link(dev)
     return web.json_response({"pushed": delivered, "pending": bool(link and link.pending is not None),
                               "error": None if delivered else (link.last_error if link else
-                                                               "the add-on can't reach this screen")})
+                                                               "the add-on can't reach this device")})
 
 
 def _screen(dev: dict, everyone: list[dict]) -> dict:
@@ -455,7 +597,7 @@ def _screen(dev: dict, everyone: list[dict]) -> dict:
         "can_wake": kind.link(dev) is not None, "picks_page": kind.picks_page,
         # A screen that sleeps between updates (paging.py) wakes when the add-on says, whatever its kind.
         "owns_interval": "addon" if kind.sleeps(dev) else kind.owns_interval, "sleeps": kind.sleeps(dev),
-        "timing": timing.describe(dev, kind.stays_on),
+        "timing": timing.describe(dev, **kind.timers),
         "setup": kind.setup_flow, "info": kind.describe(dev),
         "entity_suffix": dev.get("entity_suffix") or "",
         # Enough to offer "the same quiet hours as …" when adding a screen.
@@ -474,7 +616,7 @@ def _screens() -> dict:
     return {"devices": [_screen(d, everyone) for d in everyone],
             "kinds": [{"id": k.id, "name": k.name, "setup": k.setup_flow,
                        # What Update every offers a new screen of this kind, and where sleeping starts.
-                       "update_choices": timing.update_choices(k.stays_on), "asleep_default": timing.ASLEEP_DEFAULT,
+                       "update_choices": timing.update_choices(**k.timers), "asleep_default": timing.ASLEEP_DEFAULT,
                        "displays": [{"id": d, "name": T.get_display(d)["name"], "w": T.get_display(d)["w"],
                                      "h": T.get_display(d)["h"]} for d in k.displays()]}
                       for k in on],
@@ -488,10 +630,10 @@ def _screens() -> dict:
 def _clean_name(raw, exclude_id=None) -> str:
     name = re.sub(r"\s+", " ", str(raw or "")).strip()[:60]
     if not name:
-        raise web.HTTPBadRequest(text="Give the screen a name.")
+        raise web.HTTPBadRequest(text="Give the device a name.")
     taken = next((d for d in devices.all_devices() if d.get("name", "").casefold() == name.casefold() and d["id"] != exclude_id), None)
     if taken:
-        raise web.HTTPBadRequest(text=f"There's already a screen called {taken['name']}.")
+        raise web.HTTPBadRequest(text=f"There's already a device called {taken['name']}.")
     return name
 
 
@@ -522,11 +664,11 @@ async def api_devices(request):
 
 
 async def api_devices_add(request):
-    """Add a screen: {kind, name, display, orientation, pages: new|copy|same, from, quiet_hours_from}."""
+    """Add a device (Add new device): {kind, name, display, orientation, pages: new|copy|same, from, quiet_hours_from}."""
     body = await _body(request)
     kind = kinds.KINDS.get(str(body.get("kind") or ""))
     if kind is None or not kind.enabled():
-        raise web.HTTPBadRequest(text="That isn't a kind of screen this add-on knows.")
+        raise web.HTTPBadRequest(text="That isn't a kind of device this add-on knows.")
     display = str(body.get("display") or "")
     if display not in kind.displays():
         raise web.HTTPBadRequest(text=f"Pick one of the {kind.name} sizes.")
@@ -538,7 +680,7 @@ async def api_devices_add(request):
     mode = body.get("pages") or "new"
     try:
         # Its timers (always on or sleeping, from the cards) and its kind's own settings, checked before it exists.
-        extra = {**timing.settings({"kind": kind.id}, body, kind.stays_on), **kind.settings({"kind": kind.id}, body)}
+        extra = {**timing.settings({"kind": kind.id}, body, **kind.timers), **kind.settings({"kind": kind.id}, body)}
     except ValueError as exc:
         raise web.HTTPBadRequest(text=str(exc))
     try:
@@ -557,7 +699,7 @@ async def api_devices_add(request):
         else:
             raise web.HTTPBadRequest(text="pages must be new, copy or same")
     except KeyError:
-        raise web.HTTPBadRequest(text="The screen to copy from isn't there any more.")
+        raise web.HTTPBadRequest(text="The device to copy from isn't there any more.")
     print(f"devices: added {dev['name']} ({kind.name}, {mode})", flush=True)
     await _rerender()
     return web.json_response({"device": _screen(dev, devices.all_devices()), **_screens()})
@@ -573,7 +715,7 @@ async def api_devices_update(request):
         fields["name"] = _clean_name(body["name"], exclude_id=dev["id"])
     kind = kinds.of(dev)
     try:
-        fields.update(timing.settings(dev, body, kind.stays_on))
+        fields.update(timing.settings(dev, body, **kind.timers))
         fields.update(kind.settings(dev, body))
     except ValueError as exc:
         raise web.HTTPBadRequest(text=str(exc))
@@ -599,7 +741,7 @@ async def api_devices_unlink(request):
 async def api_devices_remove(request):
     dev = _device_by_path(request)
     if len(kinds.shown_devices()) < 2:
-        raise web.HTTPConflict(text="This is the only screen, so it can't be removed.")
+        raise web.HTTPConflict(text="This is the only device, so it can't be removed.")
     try:
         devices.remove(dev["id"])
     except ValueError as exc:
@@ -622,9 +764,9 @@ def _device_by_path(request) -> dict:
     try:
         dev = devices.get(request.match_info["id"])
     except KeyError:
-        raise web.HTTPNotFound(text="There's no such screen.")
+        raise web.HTTPNotFound(text="There's no such device.")
     if not kinds.shown(dev):
-        raise web.HTTPNotFound(text="There's no such screen.")
+        raise web.HTTPNotFound(text="There's no such device.")
     return dev
 
 
@@ -637,7 +779,7 @@ async def api_arrange(request):
         raise web.HTTPBadRequest(text="expected {spec, display, orientation}")
     display = str(body.get("display") or "")
     if display not in kinds.of(dev).displays():
-        raise web.HTTPBadRequest(text="That size isn't one this screen comes in.")
+        raise web.HTTPBadRequest(text="That size isn't one this device comes in.")
     try:
         orientation = int(body.get("orientation") or 0)
     except (TypeError, ValueError):
@@ -728,6 +870,38 @@ async def api_sources_test(request):
     return web.json_response({"published": [{"entity_id": e, "state": str(v)[:120],
                                              "attributes": a} for e, v, a in rows],
                               "error": errors[0] if errors else None})
+
+
+async def api_jellyfin_check(request):
+    """Try a Jellyfin address and key before a preset saves them: {"ok", "users", "titles"} or {"ok": false, "error"}.
+    A key shown masked (editing a saved source, `name` or `id` given) is the saved one."""
+    from feeds import jellyfin
+    body = await _json(request)
+    if not isinstance(body, dict):
+        raise web.HTTPBadRequest(text="expected {base, key}")
+    src = feeds.unmask_secrets([{"type": "jellyfin", "name": body.get("name") or "watch", "id": body.get("id"),
+                                 "key": str(body.get("key") or "")}], load_sources())[0]
+    return web.json_response(await jellyfin.check(str(body.get("base") or ""), src.get("key") or "", runtime.SESSION))
+
+
+async def api_jellyfin_suggest(request):
+    """Jellyfin's address from JellyHA, when it's installed, so the preset can fill it in: {"address": "" | url}.
+    JellyHA doesn't share its API key, so that's still typed."""
+    if not HA_TOKEN:
+        return web.json_response({"address": ""})
+    try:
+        registry = await runtime.HASS.ws({"type": "config/entity_registry/list"}) or []
+        mine = [e.get("entity_id") for e in registry if isinstance(e, dict) and e.get("platform") == "jellyha"]
+        for eid in mine:
+            if not valid_entity_id(str(eid or "")):
+                continue
+            st = await ha_json(runtime.SESSION, f"/states/{urllib.parse.quote(eid, safe='.')}")
+            url = str(((st or {}).get("attributes") or {}).get("config_external_url") or "").strip().rstrip("/")
+            if url.startswith(("http://", "https://")):
+                return web.json_response({"address": url})
+    except Exception as exc:
+        print(f"jellyfin suggest: {health.describe(exc)}", flush=True)
+    return web.json_response({"address": ""})
 
 
 def _masked_setup(cfg: dict, dev: dict) -> dict:
@@ -953,11 +1127,21 @@ def make_apps():
         web.get("/api/attributes", api_attributes),
         web.get("/api/aircraft", api_aircraft),
         web.get("/api/airport", api_airport),
+        web.get("/api/energy", api_energy),
+        web.get("/api/catalog", api_catalog),
+        web.get("/api/timezones", api_timezones),
+        web.post("/api/shows-time", api_shows_time),
+        web.get("/api/settings/time", api_time_get),
+        web.put("/api/settings/time", api_time_put),
         web.post("/api/preview", api_preview),
+        web.post("/api/example", api_example),
+        web.post("/api/fit", api_fit),
         web.post("/api/push", api_push),
         web.get("/api/sources", api_sources_get),
         web.put("/api/sources", api_sources_put),
         web.post("/api/sources/test", api_sources_test),
+        web.post("/api/sources/jellyfin/check", api_jellyfin_check),
+        web.get("/api/sources/jellyfin/suggest", api_jellyfin_suggest),
         web.get("/api/devices", api_devices),
         web.post("/api/devices", api_devices_add),
         web.patch("/api/devices/{id}", api_devices_update),

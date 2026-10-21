@@ -1,11 +1,334 @@
 # Changelog
 
-## Unreleased
+## 0.15.0
+**Firmware change:** install the panel again (Settings › Install or update,
+then Send to ESPHome and Install in ESPHome) to see which Wi-Fi network it's
+on. Everything else works without reinstalling.
 
+In short: a new New page with presets on shelves, and new ones (Sunrise and
+sunset, energy, Now playing, On TV this week, your own weather station, a
+world clock, Countdown and Bin day without a calendar, to-do lists); alerts
+that end when something happens; "device" everywhere; zoom; 12- or 24-hour
+time; a clock that shows the date on a device that sleeps; and many fixes.
+The details:
+
+- **Connection says which Wi-Fi network the panel is on**, as in "Connected
+  to Office, Wi-Fi −37 dBm" (Settings › Device). **Firmware change:** install
+  the panel again (Send to ESPHome, then Install) to see it; until then the
+  row shows the signal as before.
+- **Zoom to any size between actual size and Fit.** Fit and Actual size are
+  now one zoom control: − and + around a menu of Fit, 75%, 100%, 125%, 150%
+  and 200%. ⌘+ and ⌘− step, ⌘0 is 100%, and a trackpad pinch zooms smoothly
+  around your fingers. It remembers your size; on a phone it always fits.
+- **They're called devices now.** Everywhere you read about the things you
+  add and manage, the editor says "device" instead of "screen", so it isn't
+  mistaken for a page: Add new device, Settings › Device, the menu, the bar
+  under the canvas, its messages, the README and the add-on's TRMNL option.
+  Nothing else changes: entity names and settings stay as they were.
+- **The device menu can remove a device too.** Under the device's name: your
+  devices, then Rename and Remove, then Add new device. Removing shows an
+  Undo, as in Settings.
+- **To-do lists as a page.** New page › To-do list shows any to-do list in
+  Home Assistant (the shopping list, Local To-do, Google Tasks, Todoist):
+  what's still to do, anything with a due date first, Overdue and Today
+  marked, then "and 4 more" when they don't all fit. It shows only while
+  the list has something on it. Each list is its own page, named after
+  the list, so a work list and a chores list rotate, repeat or sit out like
+  any other pages. Also under Insert › Widgets.
+- **To-do rows that show what's urgent.** Under Style: By urgency (the
+  start: an overdue item is a solid black row, today's is outlined, the
+  rest plain), Inverted when due (overdue and today solid, the rest
+  outlined), or Outlined (every row outlined). The due label sits inside
+  its row, so it reads as part of the item.
+- **Only what's due today.** A to-do list page can show only what's due
+  today or overdue, and then shows only while something is. The add-on
+  counts those items for each list on a page, so an alert can use the count
+  too ("Bins out" in the morning), with or without an MQTT broker.
+- **Alerts can end when something happens**, not only after a time. Under
+  Ends, choose When something happens and pick what ends it: "Watch battery
+  is below 20" until "Watch is charging" stays up until you put it on the
+  charger, even though it's still below 20 while it charges, and comes back
+  if you take it off too soon. At most sets how long it can hold if that
+  never happens (2 hours to start with). Alerts that end after a time work
+  as before.
+- **Fixed:** a page or alert that shows by one of the add-on's own values
+  (New to watch, for one) never showed without an MQTT broker, because Home
+  Assistant was asked about a value it only learns through the broker. The
+  add-on now answers those conditions itself, as it already did for what
+  the pages show. Any condition or template that uses one of the add-on's
+  own values now works without a broker, not only the simple form's, and
+  one that reads a word ("nothing new") as a number counts as no value,
+  not 0.
+- **Fixed:** "Watch battery is below 20" came true for a moment every time
+  Home Assistant restarted, because a sensor with no value yet counted as 0.
+  A sensor that's unavailable or unknown now never meets "is below", "is
+  above" or "isn't", so it can't fire an alert or show a page by accident.
+  Conditions you already have are fixed too, without saving them again.
 - **Fixed:** a panel asleep for quiet hours kept saying "back at 06:00" when
   the schedule ended but nobody was home, because nothing woke it to show
   "back when someone's home". It's now woken once when the sleep screen's
   words change, and never more often than that.
+- **Sunrise and sunset**, from Home Assistant's sun, with nothing to set
+  up. Next one first shows whichever comes next large and the other beside
+  it, and turns round at sunrise and at sunset; Both alike shows them side
+  by side. In the far north, a sunrise more than a day away says which day.
+- **Energy at a glance**, straight from your Energy dashboard, with nothing
+  to pick: Solar this month (the total and a bar for each day, from Home
+  Assistant's long-term statistics; also by day or year, and for what you
+  bought or sold), Grid now (buying or selling right now, with today's
+  hours as bars, up when buying and down when selling) and Energy cost
+  (earned or spent today and this month, from the prices in your Energy
+  dashboard, in Home Assistant's currency). If the dashboard doesn't have
+  what a page needs, the page says what to add there.
+- **Now playing**: what's playing on any media player in Home Assistant
+  (Spotify, Sonos, Apple TV, Chromecast, Plex, Jellyfin through JellyHA),
+  with the artist or show and where it's playing. Follow the players you
+  choose, or all of them; when several play, each is its own item of the
+  page, latest started first, like planes overhead.
+- **On TV this week**: the next episodes from any calendar of shows, such
+  as Sonarr's or Trakt's, a row each ("Tonight  Slow Horses  S6 E6"), as
+  many as read well and then "and 3 more".
+- **Weather from your own station.** The Weather page can take what it
+  says about now (temperature, humidity, wind) from your station's own
+  weather entity or from single sensors, while highs, lows and the coming
+  days stay with the forecast. With a rain sensor (one that measures rain
+  per hour, or is on while it rains; a "rain today" total can't say it's
+  raining now), the big icon shows rain whenever it's raining at your
+  house, whatever the forecast says. With a pressure sensor in any unit
+  (hPa, kPa, inHg, mmHg), it says when pressure is rising or falling. A solar
+  radiation sensor can decide sunny or cloudy in the daytime, but only if
+  you choose one: a station in the shade would read cloudy in full sun.
+- **Fixed:** the Weather page drew over itself on the 4.2" and 2.9": the
+  details ran into the coming days, and on the 2.9" the days were stacked
+  on top of each other. It now keeps its usual look at every size, shows
+  as many days and details as fit, and leaves out what doesn't.
+- **Fixed:** while Home Assistant was restarting, the Weather page showed
+  made-up weather (8.5° and rain). It now stays empty until the real
+  weather is back, like every other value. Race weekend and Match did the
+  same with a made-up race and match, before their results arrived or
+  when there were none, and Planes overhead with two made-up aircraft;
+  they now stay empty too. The examples live in one place and are only
+  used for the New page sheet's pictures.
+- **New to watch connects Jellyfin where you add it.** The address and
+  API key are tried before anything is saved, with a plain answer when
+  something's wrong (the key, the address, or not Jellyfin at all), and
+  then you pick whose unwatched to show. With JellyHA installed, the
+  address is filled in for you.
+- **Each sport in its own words.** A football match is a match, an NBA or
+  NFL game is a game, and the time before one starts reads "Kick-off
+  20:00", "Tip-off 20:00", "First pitch 20:00" or "Puck drop 20:00". Home
+  Assistant's sensor for a league says Matchday or Game day to match.
+- **A clock is a clock however it's written.** A device that sleeps shows
+  the date instead of the time it went to sleep with, now also for clocks
+  written as `as_timestamp(now()) | timestamp_custom(...)`, the Time & Date
+  sensor, or `now().hour`.
+- **A Weather widget with no weather chosen shows the first one Home
+  Assistant has**, instead of assuming it's called "Forecast Home".
+- **Fixed:** Send to ESPHome named the panel's file with underscores
+  (`crowpanel_epaper.yaml`), while ESPHome's own wizard uses dashes
+  (`crowpanel-epaper.yaml`), so a panel first set up in ESPHome ended up
+  with two files for one device. It now uses ESPHome's dashes; a file the
+  add-on already wrote keeps its name, so nobody gets a second one.
+- **An icon can follow its sensor.** An icon tied to an entity changes
+  with its state (a door open or closed, a lock locked or unlocked), and
+  keeps its own icon for any other state.
+- **World clock**: up to four cities, each with its name (yours to change)
+  and its time, all the same size and arranged to fill the space: side by
+  side on the wide 5.79", stacked or two by two where that reads larger.
+  Times follow each place's daylight saving and your 12- or 24-hour
+  setting, and a city already on tomorrow says "+1". On a device that
+  sleeps between updates, each city shows how many hours it is ahead or
+  behind ("−7 h", "Same time"), which never goes stale.
+  It's New page › Clock › Time zones: find each city by its name ("Here"
+  is Home Assistant's own), rename it if you like, and drag the rows (or
+  Alt with ↑ and ↓) to put them in order. The inspector edits the same
+  list, and the page redraws as you add, remove or move a city.
+- **Fixed:** a Race weekend page set to NASCAR or IndyCar showed Formula 1's
+  race, drivers and status. Each series now reads its own results, and its
+  page names it ("NASCAR · …"). Whether the page shows still followed the
+  right series before; only what it showed was wrong. A wide driver code
+  (HAM) no longer runs into its team's name.
+
+- **New page, on shelves.** One shelf per group (Your day, Home, Energy,
+  Outside, Sports, Watch and listen), each sliding sideways, with how many
+  it holds beside its name. Arrows show at the edges as you point at a
+  shelf, only where there's more, and the edge fades while there is; on a
+  phone you swipe. Your own presets get a shelf of their own, first. Search
+  finds a preset by any word, its old name too. "+ Blank page" sits in the
+  footer. The arrow keys move along a shelf, and Esc goes back a step.
+- **One preset per thing a page shows.** Its look is picked next: Planes
+  overhead (Nearest plane, Radar or Both, now under Outside with the
+  weather), Calendar (Month and agenda, or Month), New to watch (three
+  styles), To-do list (By urgency, Inverted when due, Outlined), Scores (any
+  league the add-on follows) and Race weekend (Formula 1, Formula E, NASCAR,
+  IndyCar). It remembers the look you picked last.
+- **Clearer names.** "Door or pet" is now Status, "On now" is Dynamic status,
+  "Formula 1" is Race weekend and "Match score" is Scores, since an NBA or
+  MLB game isn't a match. Where a single event is named, each sport keeps
+  its own word: a match in football, a game in the NBA, a race in racing. Pages you already have don't change. A new
+  Scores or Race weekend page is named after its league or series.
+
+- **Guest Wi-Fi asks for your network.** Its next step asks for the
+  network's name, password and security, and the code guests scan joins
+  that network; the page shows the name and keeps the password in the
+  code. Before, it came with a made-up network, and its words ran under
+  the code.
+- **Fixed:** a preset added on any device other than the 5.79" came out
+  drawn for the 5.79", running off the canvas. It's now placed the way the
+  add-on places a page on another size, and rearranged when the device
+  stands upright. Every preset's words now fit their boxes at every size:
+  New to watch's line at the top right and Battery and solar's heading no
+  longer run over.
+
+- **The likely sensor first.** A preset lists the sensors it's for first:
+  temperature sensors for Room temperature, energy sensors for Solar today,
+  and the one your Energy dashboard uses is picked for you and says so.
+  Status takes any sensor's state now (a door, a person, a lock), door and
+  window sensors first.
+
+- **New to watch connects Jellyfin itself.** The first time, its next step
+  asks for the server's address (filled in from JellyHA if you have it) and
+  an API key, says where Jellyfin keeps it, connects, and asks whose
+  unwatched to show. The connection is saved under Settings › Data sources
+  like one you add there, and the next Jellyfin page offers it.
+
+- **Fixed:** the scores widget's League menu offered nine leagues, though the add-on
+  also follows MLS, the WNBA and college football. It offers all twelve now,
+  the same list as New page.
+
+- **Sunrise and sunset in New page**, under Outside, in two styles: Next
+  one first (it turns round at sunrise and at sunset) or Both alike. It
+  uses Home Assistant's sun, so there's nothing to set up. It's under
+  Insert › Widgets too.
+
+- **Solar this month, Grid now and Energy cost in New page**, under Energy.
+  They read your Energy dashboard themselves, so there's nothing to pick:
+  the next step says which of its sensors they use. When the dashboard
+  hasn't got what they need, Solar this month and Grid now take a sensor
+  of yours instead, right there, and Energy cost says where to add prices.
+  Solar today opens with the dashboard's solar sensor picked. All three are
+  under Insert › Widgets too.
+
+- **Now playing and On TV this week in New page**, under Watch and listen
+  beside New to watch. Now playing follows every media player, or the ones
+  you tick, and shows only while one plays; On TV this week lists calendars
+  of shows (Sonarr's, Trakt's) first. Both are under Insert › Widgets too.
+- **Weather's "now" from your own station** can be set in the inspector:
+  another weather entity, and sensors for temperature, humidity, wind,
+  rain, pressure and sunlight, each optional.
+- Search in New page puts presets whose name you typed first.
+
+- **Fixed:** in New page, every preset that shows a sensor had "--" in its
+  picture. They're drawn with example values now, never your own data, and
+  the next step says "Example values" until you pick yours.
+
+- **Fixed:** New page showed the word "null" above the shelves when you had
+  no presets of your own, and in an energy preset's step.
+
+- **A device that sleeps shows the date where a clock would be.** A device
+  that sleeps between updates (Update every 2 minutes or more, and every
+  TRMNL) shows what it got at its last update, so a clock there would stop
+  at that time, and changing at every wake it would download and flash each
+  time. Such a device now draws the date in place of any time on its pages,
+  on its own: your pages keep their clock, and a device that's always on,
+  even one showing the same pages, keeps showing the time. Switch it back
+  to always on and the clock returns. The editor's canvas shows the date
+  for that device, and the clock says why. New page offers Date there too.
+- **Pages that change faster than a sleeping device say so.** On a device
+  that sleeps between updates, Planes overhead, Now playing, Scores, Grid
+  now and Battery and solar are still offered, with one line: "Changes
+  faster than this device updates (every 15 min), so it can be up to 15
+  min old." The same line shows in the inspector for a page like that.
+  A sensor counts when Home Assistant describes it as always moving (power,
+  current, wind and the like), whatever its unit.
+  A Weather page counts only with your own weather station's sensors; a
+  forecast alone changes slowly.
+
+- **Countdown and Bin day without a calendar.** New page › Countdown now
+  counts down to a date you pick (with a time if you like, and Every year
+  for birthdays), to your bins, or, as before, to a calendar's next event.
+  Bin day is now a Countdown: add each bin by name with its next collection
+  and how often it comes (every week, or 2, 3 or 4 weeks), so alternating
+  bins are two bins every 2 weeks. The evening before reads Tomorrow, the
+  day Today until noon (or midnight, or numbers only: your choice). On the
+  day of a date with a time it counts the hours. Starts showing keeps a
+  countdown off the panel until it's near: set a trip six months ahead and
+  have it show from a month before (its tile says "Shows from …"). Once a
+  one-off date has passed the panel leaves it out, and it stays among your
+  pages, outlined and marked Passed, its Delete showing on its tile, to
+  give another date or delete.
+  Nothing needs Home Assistant's calendar, and it's all editable later in
+  the inspector. Pages you made from a calendar work as before.
+
+- **The page strip slides like New page's shelves.** Its edges fade while
+  there are more pages to see, with arrows at an edge only towards more as
+  you point at it; down the side it fades top and bottom.
+- **The page strip's size is yours to choose** in Settings › Editor, next to
+  where it sits: Small, Standard (as it was) or Large.
+- **A page's menu on its picture.** Point at a page in the strip, or hold
+  it on a phone, and a "…" button shows on the right of its picture: it
+  opens the page's menu (Duplicate, Delete and the rest, as a right-click
+  does). On a countdown that has passed, it's Delete itself, showing all
+  the time.
+- **Fixed:** with the page strip down the side, New page shrank to a sliver
+  and, with this release's sliding strip, the pages ran under the canvas.
+
+- **Fixed:** presets wrote their own units, so a temperature in °F read
+  "71.6 °C" and a solar meter in Wh read kWh. A value now shows its sensor's
+  own unit, and changing a value's sensor in the inspector changes its unit
+  too (words you typed yourself stay).
+- **Battery and solar asks for each part it shows**: the home battery, the
+  house power and the solar power, the Energy dashboard's own picked first.
+  Before, two of its three gauges started empty.
+
+- **Clock is offered on every device**, and on one that sleeps between
+  updates its card says "Shows the date here": the device draws the date in
+  place of the time by itself, so pages shared with an always-on device keep
+  their clock there. **Date** is a preset of its own for anyone who wants
+  only the day and date.
+
+- **Fixed:** a gauge with no sensor showed a made-up "68%", and a gauge whose
+  sensor has no unit added "%" of its own. With no value it now shows an
+  empty gauge and no number; it shows its sensor's unit, or none, and its
+  decimals ("1.8 kW").
+
+- **Weather's rain field takes rain now, not rain so far.** Pick a rain total
+  (mm, in) and it says plainly that the page would then say it's raining
+  all day after a shower, and asks for a rate (mm/h, in/h) or a sensor
+  that's on while it rains.
+
+- **Solar today reads today, even from a lifetime meter.** It still shows the
+  sensor you pick (your Energy dashboard's first), but when that sensor is a
+  running total, as most inverters' are, the page shows how much it went up
+  today rather than "18,532 kWh produced today", from Home Assistant's
+  long-term statistics, in the sensor's own unit. Any value on a running
+  total (a gas or water meter) can do the same.
+
+- **12- or 24-hour time, in Settings › Time and language.** It starts as in
+  Home Assistant (the way clocks read in its country: 2:05 PM in the US,
+  14:05 in Romania) and changes every time on every device: clocks, sunrise
+  and sunset, due times, kick-offs, race sessions, the clock in the corner
+  and "updated". The Clock preset uses it, and any text can
+  show the time or date the same way (Shows: Time, in the inspector).
+
+- **The editor reads the add-on's own lists.** Leagues, racing series, each
+  sport's words and every widget (its name, settings and how often what it
+  shows changes) come from the add-on, so a league or series it learns
+  appears in New page and the inspector by itself. Race weekend now says
+  when it can be older than a sleeping device's update, like Scores. A
+  preset added on a 4.2" or 2.9" is placed by the add-on itself, the same
+  way it places any page on another size.
+
+- **Status speaks your sensor's language.** A door says Open and Closed, a
+  motion sensor Detected and Clear, a switch On and Off, a lock Locked and
+  Unlocked, a person Home and Away, each with its own icon: Home
+  Assistant's own words for that kind of device, which you can still
+  change. Before, everything read "Open" with a door.
+
+- **Turning a page upright knows a clock however it's written.** Rearrange
+  this page, and New page on an upright device, ask the add-on which texts
+  show the time, so a clock written any way Home Assistant allows is laid
+  out as a clock.
 
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,

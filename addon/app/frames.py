@@ -8,20 +8,24 @@ import urllib.parse
 from datetime import datetime, timedelta, timezone
 from email.utils import formatdate
 
-from render import binding, epf, layout, sleep, stripmeta, subitems, theme as T
+from render import binding, countdown, epf, layout, sleep, stripmeta, subitems, theme as T, todo
+import conditions
 import devices
 import health
 import kinds
 import runtime
+import timeformat
+import widgets
+from render.clock import hm as clock_text
 from config import HA_TOKEN, SLEEP_PAGE, valid_entity_id
 from entities import publish_category_sensors, publish_computed, publish_entity, sync_entities
 from ha import curve_series, ha_json, resolve_templates
 from panel_ops import push_panel_update
 from sources.flights import fetch_overhead_aircraft, place_of
-from sources.geo import get_home_timezone
-from sources.ha_services import fetch_calendar_events, fetch_weather_forecast
-from sources.racing import compute_racing_active_window, fetch_racing_data
-from sources.sports import compute_sports_active_window, fetch_sports_match
+from sources.geo import get_home_locale, get_home_timezone
+from sources import energy
+from sources.racing import compute_racing_active_window
+from sources.sports import compute_sports_active_window
 from runtime import Frames
 
 
@@ -104,35 +108,15 @@ async def enrich_page_values(session, page, vals):
     home_tz = await get_home_timezone(session)
     for i, el in enumerate(page.get("elements", [])):
         t = el.get("type")
-        if t == "weather_forecast":
-            wdata = await fetch_weather_forecast(session, el.get("entity", "weather.forecast_home"), fallback=vals.get(i))
-            if wdata:
-                vals[i] = wdata
-        elif t in ("calendar_month", "calendar_agenda"):
-            cal_ent = el.get("entity")
-            if cal_ent:
-                cal_data = await fetch_calendar_events(session, cal_ent, days=31, fallback=vals.get(i))
-                if cal_data:
-                    vals[i] = cal_data
-        elif t == "flight_tracker":
-            custom_lat, custom_lon, radius, _ = place_of(el)
-            fl_data = await fetch_overhead_aircraft(session, radius_km=radius, lat=custom_lat, lon=custom_lon)
-            if fl_data is not None:
-                vals[i] = fl_data
-        elif t == "sports_racing":
-            entity_or_series = el.get("entity") or el.get("series") or "f1"
-            el_tz = el.get("timezone") or home_tz
-            race_data = await fetch_racing_data(session, entity_or_series, fallback=vals.get(i), tz_name=el_tz)
-            if race_data:
-                vals[i] = race_data
-        elif t == "sports_match":
-            entity_or_league = el.get("entity") or el.get("league") or "soccer/eng.1"
-            team = el.get("team")
-            el_tz = el.get("timezone") or home_tz
-            match_data = await fetch_sports_match(session, entity_or_league, team=team, fallback=vals.get(i), tz_name=el_tz)
-            if match_data:
-                vals[i] = match_data
-
+        if el.get("show") == "change_today" and str(el.get("entity") or "").strip() and not str(el.get("value") or "").strip():
+            # A running total (a lifetime meter, say) as how much it went up today, from statistics.
+            got = await energy.fetch_total(session, "entity", str(el["entity"]).strip(), "day")
+            if got is not None and got.get("total") is not None:
+                vals[i] = got["total"]
+            continue
+        got = await widgets.fetch(session, el, widgets.Ctx(home_tz=home_tz, prev=vals.get(i)))
+        if got is not None:
+            vals[i] = got
 
 def as_int(value, default: int) -> int:
     """A number from a page element, or the default for anything else (null, "24h", Infinity)."""
@@ -293,6 +277,16 @@ async def _evaluate_widget_gate(session, widget: dict, home_tz: str) -> bool:
     return True
 
 
+async def resolve_conditions(session, conds: dict) -> dict:
+    """Conditions' values: those on the add-on's own values answered here
+    (conditions.local), the rest by Home Assistant in one request."""
+    out = {k: v for k, c in conds.items() if (v := conditions.local(c, runtime.PUBLISHED)) is not None}
+    rest = {k: c for k, c in conds.items() if k not in out}
+    if rest:
+        out.update(await resolve_templates(session, rest))
+    return out
+
+
 async def eligible_pages(session, spec, linger):
     """Pages whose tier and show_if (or built-in widget active window) say they belong in the rotation now.
 
@@ -313,9 +307,9 @@ async def eligible_pages(session, spec, linger):
         if w_gate is not None:
             widget_gates[n] = w_gate
         elif p.get("show_if"):
-            template_gates[n] = p["show_if"]
+            template_gates[n] = conditions.guarded(p["show_if"])
 
-    passed = await resolve_templates(session, template_gates) if template_gates else {}
+    passed = await resolve_conditions(session, template_gates) if template_gates else {}
     widget_results: dict[str, bool] = {}
     for n, w_el in widget_gates.items():
         try:
@@ -329,15 +323,18 @@ async def eligible_pages(session, spec, linger):
     linger.forget_except(widget_gates)
 
     live = []
+    now_home = todo.now_in(home_tz)
     for name in rotation:
         page = defs.get(name)
         if page is None or page.get("tier") == "alert":
+            continue
+        if countdown.page_hidden(page, now_home):          # past a one-off date, or not yet its time to show
             continue
         if name in widget_results:
             if not widget_results[name]:
                 continue
         elif name in template_gates:
-            if str(passed.get(name, "")).strip().lower() not in ("true", "on", "yes", "1"):
+            if not conditions.is_true(passed.get(name, "")):
                 continue
         live.append(name)
     return live or [n for n in rotation if n in defs and defs[n].get("tier") != "alert"][:1]
@@ -350,6 +347,13 @@ async def check_alerts(session, spec, state: dict):
     Edge-triggered, not level: an alert that stays true all evening fires
     once, rather than grabbing the panel every refresh. `state` is the
     design's (runtime.alert): every screen showing it is seized together.
+
+    An alert that ends "when something happens" (`conditions.ending`) is
+    one whose condition is "it started and that hasn't happened yet":
+    `hold_minutes` is then its limit. So it lets go when the start turns
+    false, when its Until is met or at the limit, and it fires again when
+    the Until is undone while the start still holds (the Watch unplugged at
+    15%). An Until that can't be read isn't met.
     """
     now = time.time()
     defs = spec.get("pages", {})
@@ -359,9 +363,12 @@ async def check_alerts(session, spec, state: dict):
         state["name"], state["until"] = None, 0.0
         return None
 
-    states = await resolve_templates(session, {n: p["show_if"] for n, p in alerts.items()})
-    truthy = {n for n, v in states.items()
-              if str(v).strip().lower() in ("true", "on", "yes", "1")}
+    asks = {n: conditions.guarded(p["show_if"]) for n, p in alerts.items()}
+    ends = {n: until for n, p in alerts.items() if (until := conditions.ending(p))}
+    asks.update({f"{n}:until": conditions.guarded(until) for n, until in ends.items()})
+    states = await resolve_conditions(session, asks)
+    truthy = {n for n in alerts if conditions.is_true(states.get(n, ""))
+              and not (n in ends and conditions.is_true(states.get(f"{n}:until", "")))}
 
     # release an expired or no-longer-true alert
     if state["name"] and (now > state["until"] or state["name"] not in truthy):
@@ -371,7 +378,7 @@ async def check_alerts(session, spec, state: dict):
     for name in truthy:
         if state["fired"].get(name):
             continue                                  # already handled this episode
-        hold = max(1, min(1440, int(alerts[name].get("hold_minutes", 10)))) * 60
+        hold = conditions.hold_minutes(alerts[name]) * 60
         state.update(name=name, until=now + hold)
         state["fired"][name] = True
         print(f"alert {name} fired, holding {hold}s", flush=True)
@@ -435,14 +442,27 @@ async def design_state(session, design_id: str, spec: dict) -> DesignState:
     return DesignState(alert, live, plans)
 
 
+async def date_for_time(sleeps: bool) -> datetime | None:
+    """Now, in Home Assistant's time zone, for a device that sleeps between updates: it draws
+    the date where a page shows the time (render/clocktime.py). None for one that's always on."""
+    if not sleeps:
+        return None
+    from zoneinfo import ZoneInfo
+    try:
+        return datetime.now(ZoneInfo(await get_home_timezone(runtime.SESSION)))
+    except Exception:
+        return datetime.now().astimezone()
+
+
 async def draw_category(plan: dict, sub_count: int, page_no: int, *, footer: dict, page_def: dict, orient: int,
-                        display: str, only: int | None = None) -> list:
+                        display: str, only: int | None = None, today: datetime | None = None) -> list:
     """Every item of one page, drawn at a display's size and turned for its mounting.
 
     `page_def` is the page as placed on this screen (devices.view); its
     elements are the design's, in the same order as the plan's values.
     `footer` is the strip's theme.footer_plan(), and this is page `page_no` of it.
-    `only`: just that item (0-based) of the `sub_count`."""
+    `only`: just that item (0-based) of the `sub_count`. `today` (date_for_time): this
+    screen sleeps between updates, so it draws the date where the time would be."""
     page_vals, elements = plan["vals"], page_def.get("elements", [])
     sub_type, feed_items, feed_entity = plan["sub_type"], plan["feed_items"], plan["feed_entity"]
     page_imgs = []
@@ -453,7 +473,7 @@ async def draw_category(plan: dict, sub_count: int, page_no: int, *, footer: dic
 
         for el_idx, el in enumerate(elements):
             el_c = dict(el)
-            if el.get("type") in ("flight_tracker", "sports_match"):
+            if el.get("type") in subitems.WIDGET_ITEMS:
                 el_c["sub_index"] = s_idx
             elif sub_type in ("feed", "watch") and feed_items and s_idx < len(feed_items):
                 item_data = feed_items[s_idx]
@@ -496,7 +516,7 @@ async def draw_category(plan: dict, sub_count: int, page_no: int, *, footer: dic
         img = await asyncio.to_thread(
             layout.render_page, cloned_page, cloned_vals,
             footer=footer, page_no=page_no, item_no=s_idx, items=sub_count,
-            series=plan["series"], orientation=orient, display=display)
+            series=plan["series"], orientation=orient, display=display, date_for_time=today)
         page_imgs.append(T.orient_for_panel(T.to_1bit(img), orient, display=display))
     return page_imgs
 
@@ -505,7 +525,7 @@ def empty_page(orient: int, display: str, clock: str | None = None):
     """What a screen shows when its design has no pages. `clock`: the footer's time (now)."""
     cw, _ = T.canvas_dims(orient, display=display)
     page = {"elements": [{"type": "text", "value": "no pages", "x": 24, "y": 60, "w": cw - 48, "h": 120}]}
-    return layout.render_page(page, {}, clock=clock or datetime.now().strftime("%H:%M"), label="empty",
+    return layout.render_page(page, {}, clock=clock or clock_text(datetime.now()), label="empty",
                               orientation=orient, display=display)
 
 
@@ -543,6 +563,7 @@ async def refresh_frames(session) -> dict[str, Frames]:
 
 
 async def _refresh_all(session) -> dict[str, Frames]:
+    timeformat.apply(*await get_home_locale(session))          # 12- or 24-hour, for every device
     await publish_computed(session)
     # Devices of a kind that's switched off aren't drawn (kinds.shown).
     views = [(dev, spec) for dev, spec in devices.all_views() if kinds.shown(dev)]

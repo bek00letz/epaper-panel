@@ -3,64 +3,55 @@
 import health
 import json
 import time
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import aiohttp
 
 import runtime
+from render import clock, sport
 from sources.geo import get_home_timezone
 
 
 _sports_match_cache = {}
 
 
-LEAGUE_MAP = {
-    "premier_league": "soccer/eng.1",
-    "epl": "soccer/eng.1",
-    "champions_league": "soccer/uefa.champions",
-    "ucl": "soccer/uefa.champions",
-    "la_liga": "soccer/esp.1",
-    "bundesliga": "soccer/ger.1",
-    "serie_a": "soccer/ita.1",
-    "mls": "soccer/usa.1",
-    "nba": "basketball/nba",
-    "wnba": "basketball/wnba",
-    "nfl": "football/nfl",
-    "college_football": "football/college-football",
-    "mlb": "baseball/mlb",
-    "nhl": "hockey/nhl"
-}
+@dataclass(frozen=True)
+class League:
+    """One league the add-on offers: every place that needs to know a league asks here (and the editor,
+    through /api/catalog)."""
+    path: str                   # ESPN's: "soccer/eng.1"
+    slug: str                   # names its sensor, sensor.epaper_sports_<slug>
+    name: str                   # "Premier League"
+    aliases: tuple = ()         # what a page may say for it
 
-LEAGUE_SLUGS = {
-    "soccer/eng.1": "premier_league",
-    "premier_league": "premier_league",
-    "epl": "premier_league",
-    "soccer/uefa.champions": "champions_league",
-    "champions_league": "champions_league",
-    "ucl": "champions_league",
-    "soccer/esp.1": "la_liga",
-    "la_liga": "la_liga",
-    "soccer/ger.1": "bundesliga",
-    "bundesliga": "bundesliga",
-    "soccer/ita.1": "serie_a",
-    "serie_a": "serie_a",
-    "soccer/usa.1": "mls",
-    "mls": "mls",
-    "basketball/nba": "nba",
-    "nba": "nba",
-    "basketball/wnba": "wnba",
-    "wnba": "wnba",
-    "football/nfl": "nfl",
-    "nfl": "nfl",
-    "football/college-football": "college_football",
-    "baseball/mlb": "mlb",
-    "mlb": "mlb",
-    "hockey/nhl": "nhl",
-    "nhl": "nhl"
-}
+    @property
+    def sensor(self) -> str:
+        return f"sensor.epaper_sports_{self.slug}"
 
 
-def _parse_espn_event(ev, league_title="MATCH", tz_name=None):
+# In the order the editor offers them.
+LEAGUES = (
+    League("soccer/eng.1", "premier_league", "Premier League", ("premier_league", "epl")),
+    League("soccer/uefa.champions", "champions_league", "Champions League", ("champions_league", "ucl")),
+    League("soccer/esp.1", "la_liga", "La Liga", ("la_liga",)),
+    League("soccer/ger.1", "bundesliga", "Bundesliga", ("bundesliga",)),
+    League("soccer/ita.1", "serie_a", "Serie A", ("serie_a",)),
+    League("soccer/usa.1", "mls", "MLS", ("mls",)),
+    League("basketball/nba", "nba", "NBA", ("nba",)),
+    League("basketball/wnba", "wnba", "WNBA", ("wnba",)),
+    League("football/nfl", "nfl", "NFL", ("nfl",)),
+    League("football/college-football", "college_football", "College football", ("college_football",)),
+    League("baseball/mlb", "mlb", "MLB", ("mlb",)),
+    League("hockey/nhl", "nhl", "NHL", ("nhl",)),
+)
+# What a page may say, to the ESPN path; and a path or alias to the slug that names its sensor.
+LEAGUE_MAP = {a: lg.path for lg in LEAGUES for a in lg.aliases}
+LEAGUE_SLUGS = {**{lg.path: lg.slug for lg in LEAGUES}, **{a: lg.slug for lg in LEAGUES for a in lg.aliases}}
+
+
+def _parse_espn_event(ev, league_title="", tz_name=None, league="soccer"):
+    said = sport.words(league)
     comp = (ev.get("competitions") or [{}])[0]
     competitors = comp.get("competitors") or []
     home = next((c for c in competitors if c.get("homeAway") == "home"), competitors[0] if competitors else {})
@@ -84,7 +75,7 @@ def _parse_espn_event(ev, league_title="MATCH", tz_name=None):
                     kickoff_dt = kickoff_dt.astimezone(local_tz)
                 except Exception:
                     pass
-            kickoff_time_str = kickoff_dt.strftime("%H:%M")
+            kickoff_time_str = clock.hm(kickoff_dt)
             now_local = datetime.now(kickoff_dt.tzinfo)
             if kickoff_dt.date() != now_local.date():
                 kickoff_day_str = kickoff_dt.strftime("%a ")
@@ -97,7 +88,7 @@ def _parse_espn_event(ev, league_title="MATCH", tz_name=None):
         if kickoff_day_str:
             clock_badge = f"{kickoff_day_str}{kickoff_time_str}"
         elif kickoff_time_str:
-            clock_badge = f"Kickoff {kickoff_time_str}"
+            clock_badge = f"{said.start} {kickoff_time_str}"
         else:
             clock_badge = st_desc
     else:
@@ -122,7 +113,7 @@ def _parse_espn_event(ev, league_title="MATCH", tz_name=None):
 
     return {
         "id": str(ev.get("id") or comp.get("id") or f"{home_id}_{str(away.get('team', {}).get('id') or '')}"),
-        "league": league_title,
+        "league": league_title or said.event.upper(),
         "venue": venue_title,
         "clock": clock_badge,
         "status": st_state.upper(),
@@ -196,13 +187,13 @@ async def compute_sports_active_window(session, entity_or_league="soccer/eng.1",
 
     today_url = f"https://site.api.espn.com/apis/site/v2/sports/{endpoint_path}/scoreboard?dates={today_str}"
     events = []
-    league_title = "MATCH"
+    league_title = ""
     try:
         async with session.get(today_url, headers=headers, timeout=timeout) as r:
             if r.status == 200:
                 data = await r.json()
                 events = data.get("events") or []
-                league_title = (data.get("leagues") or [{}])[0].get("name") or "MATCH"
+                league_title = (data.get("leagues") or [{}])[0].get("name") or ""
     except Exception as exc:
         print(f"compute_sports_active_window error: {health.describe(exc)}", flush=True)
 
@@ -239,7 +230,7 @@ async def compute_sports_active_window(session, entity_or_league="soccer/eng.1",
     today_parsed = []
 
     for ev in filtered_today:
-        parsed = _parse_espn_event(ev, league_title, tz_name=tz_name)
+        parsed = _parse_espn_event(ev, league_title, tz_name=tz_name, league=endpoint_path)
         today_parsed.append(parsed)
 
     for ev in all_candidate_events:
@@ -334,7 +325,7 @@ async def fetch_sports_match(session, entity_or_league="soccer/eng.1", team=None
         last_play = attrs.get("last_play") or ""
         down_dist = attrs.get("down_distance_text") or ""
         venue = attrs.get("venue") or ""
-        league_name = attrs.get("league") or "MATCH"
+        league_name = attrs.get("league") or sport.words(attrs.get("sport")).event.upper()
         return [{
             "id": str(attrs.get("event_id") or attrs.get("id") or f"{home}_{away}"),
             "league": league_name,
@@ -372,13 +363,13 @@ async def fetch_sports_match(session, entity_or_league="soccer/eng.1", team=None
 
     try:
         events = []
-        league_title = "MATCH"
+        league_title = ""
         # First try today's games so today's upcoming/live matches take precedence
         async with session.get(url_today, headers=headers, timeout=timeout) as r:
             if r.status == 200:
                 data = await r.json()
                 events = data.get("events") or []
-                league_title = (data.get("leagues") or [{}])[0].get("name") or "MATCH"
+                league_title = (data.get("leagues") or [{}])[0].get("name") or ""
 
         # If no games today, fall back to default scoreboard (upcoming or current round)
         if not events:
@@ -391,7 +382,7 @@ async def fetch_sports_match(session, entity_or_league="soccer/eng.1", team=None
         if not events:
             return cached["data"] if cached else None
 
-        parsed_matches = [_parse_espn_event(ev, league_title, tz_name=tz_name) for ev in events]
+        parsed_matches = [_parse_espn_event(ev, league_title, tz_name=tz_name, league=endpoint_path) for ev in events]
 
         # Most important first: when the panel can't hold every match, the
         # ones at the end are the ones left out (frames.fit_counts).

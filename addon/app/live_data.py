@@ -102,6 +102,7 @@ class LiveData:
                 return fallback if value is None else value
 
             reader.direct = fn          # the network call itself, for tests
+            reader.interval = interval  # how often its value is fetched (widgets.Widget.changes_every)
             return reader
         return wrap
 

@@ -42,8 +42,9 @@ import paging
 import panel_ops
 import runtime
 import timing
+from render.clock import hm as clock_text
 from config import HA_TOKEN, SLEEP_PAGE
-from kinds import Kind, device_for, register
+from kinds import Kind, device_for, of as kind_of, register
 from panel_link import PanelLink
 from render import epf, sleep, stripmeta, subitems, theme as T
 
@@ -175,7 +176,7 @@ class CrowPanel(Kind):
             cat_ids = [stripmeta.identity("empty")]
             sub_ids = [stripmeta.identity("empty:0")]
             # No pills on the empty page: width 0 tells the panel to draw no highlight.
-            fg = T.footer_plan(clock=datetime.now().strftime("%H:%M"), orientation=orient, display=display)
+            fg = T.footer_plan(clock=clock_text(datetime.now()), orientation=orient, display=display)
             epf_data = epf.encode_epf(
                 pages=[one], cat_ids=cat_ids, cat_offsets=[0], cat_sizes=[1], cat_pill_widths=[0], sub_ids=sub_ids,
                 display_model=display, width=dw, height=dh, rotate_sec=rot_sec, quiet_hours=quiet_active,
@@ -196,8 +197,9 @@ class CrowPanel(Kind):
 
         imgs = []
         cat_offsets, cat_sizes, cat_names, cat_pill_widths, cat_sub_keys = [], [], [], [], []
-        clock = datetime.now().strftime("%H:%M")       # one clock for the whole strip
+        clock = clock_text(datetime.now())             # one clock for the whole strip
         kept = [(p, c) for p, c in zip(plans, counts) if c > 0]
+        today = await frames.date_for_time(self.sleeps(dev))    # it sleeps: the date where a time would be
         # One footer for the whole strip, drawn with the same numbers the panel
         # draws its highlight and padlocks with, in every orientation.
         fg = T.footer_plan(clock=clock, pages=[(p["name"], c) for p, c in kept], orientation=orient, display=display)
@@ -208,7 +210,7 @@ class CrowPanel(Kind):
             try:
                 page_imgs = await frames.draw_category(plan, sub_count, cat_i, footer=fg,
                                                        page_def=spec["pages"][cat_name], orient=orient,
-                                                       display=display)
+                                                       display=display, today=today)
             except Exception as exc:
                 print(f"page {cat_name} left out: {health.describe(exc)}", flush=True)
                 continue
@@ -379,7 +381,8 @@ class _Art(paging.Art):
         fg = T.footer_plan(clock=clock, pages=[(p["name"], max(1, p["want"])) for p in plans],
                            orientation=orient, display=display)
         imgs = await frames.draw_category(plan, count, pos, footer=fg, page_def=spec["pages"][plan["name"]],
-                                          orient=orient, display=display, only=item)
+                                          orient=orient, display=display, only=item,
+                                          today=await frames.date_for_time(kind_of(dev).sleeps(dev)))
         # The identities it has in the frame file of every page, so a press after this wake keeps its place.
         keys = [(p["sub_keys"] or [p["name"]])[:max(1, p["want"])] for p in plans]
         cat_ids, sub_ids = subitems.compute_identities([p["name"] for p in plans], keys)
@@ -566,9 +569,9 @@ async def editor_stay_awake(request):
     try:
         dev = devices.get(request.match_info["id"])
     except KeyError:
-        raise web.HTTPNotFound(text="There's no such screen.")
+        raise web.HTTPNotFound(text="There's no such device.")
     if dev.get("kind") != CrowPanel.id:
-        raise web.HTTPNotFound(text="That screen isn't a CrowPanel.")
+        raise web.HTTPNotFound(text="That device isn't a CrowPanel.")
     if not KIND.sleeps(dev):
         raise web.HTTPConflict(text="It's always on, so it's already awake.")
     info = paging.ask_to_stay_awake(dev, request.method == "POST")

@@ -50,6 +50,66 @@ class TestAlerts(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(await self.check(False, 1060))
 
 
+class TestAlertsUntil(unittest.IsolatedAsyncioTestCase):
+    """An alert that ends when something happens: Watch battery below 20%,
+    until it's charging (it's still below 20% while it charges)."""
+
+    def setUp(self):
+        self.state = runtime.new_alert()
+        self.page = {"tier": "alert", "show_if": "{{ low }}", "ends": "until",
+                     "until_if": "{{ charging }}", "hold_minutes": 120}
+        self.spec = {"pages": {"watch_low": self.page}}
+        self.asked = {}
+
+    async def check(self, low, charging, at):
+        async def resolve(session, templates):
+            self.asked = dict(templates)
+            out = {"watch_low": "true" if low else "false"}
+            if charging is not None:                  # None: Home Assistant couldn't say
+                out["watch_low:until"] = "True" if charging else "False"
+            return {k: out.get(k, "") for k in templates}
+        with mock.patch.object(frames, "resolve_templates", resolve), \
+             mock.patch.object(frames.time, "time", return_value=at):
+            return await frames.check_alerts(None, self.spec, self.state)
+
+    async def test_holds_until_it_happens_not_for_a_time(self):
+        self.assertEqual(await self.check(True, False, 1000), "watch_low")
+        self.assertEqual(self.asked, {"watch_low": "{{ low }}", "watch_low:until": "{{ charging }}"})
+        self.assertEqual(await self.check(True, False, 1000 + 3600), "watch_low", "an hour on: still held")
+        self.assertIsNone(await self.check(True, True, 1000 + 3660), "charging ends it while still low")
+        self.assertIsNone(await self.check(True, True, 1000 + 3720), "and it stays away while it charges")
+
+    async def test_comes_back_when_the_end_is_undone(self):
+        await self.check(True, False, 1000)
+        await self.check(True, True, 1060)
+        self.assertEqual(await self.check(True, False, 1120), "watch_low", "unplugged at 15%: back")
+
+    async def test_lets_go_when_the_start_turns_false(self):
+        await self.check(True, False, 1000)
+        self.assertIsNone(await self.check(False, False, 1060))
+
+    async def test_the_limit_ends_it_and_it_waits_for_a_new_start(self):
+        await self.check(True, False, 1000)
+        self.assertIsNone(await self.check(True, False, 1000 + 7201), "released at the 2-hour limit")
+        self.assertIsNone(await self.check(True, False, 1000 + 7300), "doesn't fire again at once")
+        self.assertIsNone(await self.check(False, False, 1000 + 7400))
+        self.assertEqual(await self.check(True, False, 1000 + 7500), "watch_low")
+
+    async def test_an_until_it_cant_read_isnt_met(self):
+        self.assertEqual(await self.check(True, None, 1000), "watch_low")
+
+    async def test_never_fires_if_it_has_already_happened(self):
+        self.assertIsNone(await self.check(True, True, 1000), "already charging when it drops below 20%")
+
+    async def test_without_an_until_it_is_todays_alert(self):
+        for page in ({"ends": "until"}, {"until_if": "{{ charging }}"}):
+            self.state = runtime.new_alert()
+            self.spec = {"pages": {"watch_low": {"tier": "alert", "show_if": "{{ low }}", "hold_minutes": 10, **page}}}
+            self.assertEqual(await self.check(True, True, 1000), "watch_low")
+            self.assertNotIn("watch_low:until", self.asked)
+            self.assertIsNone(await self.check(True, True, 1000 + 601), "released after hold_minutes")
+
+
 class TestQuietHours(unittest.IsolatedAsyncioTestCase):
     async def evaluate(self, qh, hour, minute=0, presence_state=None):
         ha = mock.AsyncMock(return_value={"state": presence_state})
@@ -98,6 +158,7 @@ class TestSavingLayouts(unittest.TestCase):
         self.assertEqual(clean["rotation"], ["solar", "flights"], "alerts and unknown pages never rotate")
         self.assertEqual(clean["pages"]["flights"]["tier"], "rotate")
         self.assertEqual(clean["pages"]["dryer"]["hold_minutes"], 1440)
+        self.assertNotIn("ends", clean["pages"]["dryer"])
         self.assertEqual(clean["orientation"], 0)
         self.assertNotIn("rotate_seconds", clean, "Rotate every is the screen's own, never sent with pages")
         self.assertEqual(clean["quiet_hours"]["start"], "23:00")
@@ -106,6 +167,18 @@ class TestSavingLayouts(unittest.TestCase):
         self.assertTrue(clean["quiet_hours"]["sleep_screen"])
         self.assertEqual(clean["pages"]["flights"]["elements"][0]["entity"], "sensor.epaper_flights_overhead",
                          "0.8 entity names are migrated")
+
+    def test_an_alert_keeps_its_until(self):
+        pages = layouts_store.sanitize_layouts({"pages": {
+            "low": {"tier": "alert", "show_if": "{{ a }}", "ends": "until", "until_if": " {{ b }} "},
+            "timed": {"tier": "alert", "show_if": "{{ a }}", "ends": "nonsense", "until_if": "{{ b }}"},
+            "when": {"tier": "when", "show_if": "{{ a }}", "ends": "until", "until_if": "{{ b }}"},
+        }})["pages"]
+        self.assertEqual(pages["low"], {"tier": "alert", "elements": [], "show_if": "{{ a }}",
+                                        "ends": "until", "until_if": "{{ b }}", "hold_minutes": 120})
+        self.assertEqual(pages["timed"]["hold_minutes"], 10)
+        self.assertNotIn("until_if", pages["timed"])
+        self.assertNotIn("ends", pages["when"], "only alerts end")
 
     def test_pages_must_be_an_object(self):
         with self.assertRaises(ValueError):
@@ -143,7 +216,7 @@ class TestPanelSetupSave(unittest.IsolatedAsyncioTestCase):
     async def test_untouched_password_never_reaches_the_file_masked(self):
         await self.post({"device_name": "crowpanel-epaper", "wifi_ssid": "home", "wifi_password": "real-secret"})
         res = await self.post({"device_name": "crowpanel-epaper", "wifi_ssid": "home", "wifi_password": "••••••••"})
-        written = (Path(self.tmp.name) / "crowpanel_epaper.yaml").read_text()
+        written = (Path(self.tmp.name) / "crowpanel-epaper.yaml").read_text()
         self.assertIn('"real-secret"', written)
         self.assertNotIn("••••", written)
         self.assertNotIn("real-secret", res["yaml"], "the browser gets the masked copy")
@@ -152,19 +225,19 @@ class TestPanelSetupSave(unittest.IsolatedAsyncioTestCase):
         await self.post({"device_name": "crowpanel-epaper", "wifi_ssid": "home", "wifi_password": "one-one-one"})
         await self.post({"device_name": "crowpanel-epaper", "wifi_ssid": "home", "wifi_password": "two-two-two"})
         folder = Path(self.tmp.name)
-        self.assertIn('"two-two-two"', (folder / "crowpanel_epaper.yaml").read_text())
-        self.assertIn('"one-one-one"', (folder / "crowpanel_epaper.yaml.previous").read_text())
+        self.assertIn('"two-two-two"', (folder / "crowpanel-epaper.yaml").read_text())
+        self.assertIn('"one-one-one"', (folder / "crowpanel-epaper.yaml.previous").read_text())
 
     async def test_no_way_online_is_said_before_install_and_not_written(self):
         folder = Path(self.tmp.name)
         res = await self.post({"device_name": "crowpanel-epaper", "wifi_ssid": "home", "wifi_password": "long-enough"})
         self.assertEqual(res["problems"], [])
-        written = (folder / "crowpanel_epaper.yaml").read_text()
+        written = (folder / "crowpanel-epaper.yaml").read_text()
         res = await self.post({"device_name": "crowpanel-epaper", "wifi_ssid": "", "wifi_networks": [], "hotspot": False})
         self.assertEqual(len(res["problems"]), 1)
         self.assertIn("no way online", res["problems"][0])
         self.assertIn("wouldn't install", res["sent"])
-        self.assertEqual((folder / "crowpanel_epaper.yaml").read_text(), written, "the last good file stays")
+        self.assertEqual((folder / "crowpanel-epaper.yaml").read_text(), written, "the last good file stays")
         res = await self.post({"device_name": "crowpanel-epaper", "hotspot": True})
         self.assertEqual(res["problems"], [], "its own Wi-Fi is a way online: set up from a phone")
 
@@ -186,13 +259,13 @@ class TestPanelSetupSave(unittest.IsolatedAsyncioTestCase):
         res = await self.post({**base, "hotspot_password": "kitchen-panel"})
         self.assertEqual(res["problems"], [])
         self.assertEqual(res["config"]["hotspot_password"], "kitchen-panel", "shown, for typing on a phone")
-        self.assertIn('password: "kitchen-panel"', (folder / "crowpanel_epaper.yaml").read_text())
+        self.assertIn('password: "kitchen-panel"', (folder / "crowpanel-epaper.yaml").read_text())
         for password in ("short", "x" * 64):
             res = await self.post({**base, "hotspot_password": password})
             self.assertEqual(len(res["problems"]), 1, f"{len(password)} characters")
             self.assertIn("its own Wi-Fi", res["problems"][0])
             self.assertIn("wouldn't install", res["sent"], "ESPHome would refuse it")
-            self.assertIn('password: "kitchen-panel"', (folder / "crowpanel_epaper.yaml").read_text())
+            self.assertIn('password: "kitchen-panel"', (folder / "crowpanel-epaper.yaml").read_text())
         res = await self.post({**base, "hotspot_password": "x" * 63})
         self.assertEqual(res["problems"], [])
         res = await self.post({**base, "hotspot_password": ""})
@@ -296,3 +369,30 @@ class TestEsphomeDashboard(unittest.IsolatedAsyncioTestCase):
         self.ps._dashboard_cache.update(at=0.0, url=None)
         hass, _ = self.hass(fail=True)
         self.assertIsNone(await self.ps.esphome_dashboard(hass, clock=lambda: 1000.0))
+
+
+class TestESPHomeFileName(unittest.TestCase):
+    """Send to ESPHome names the file as ESPHome's own wizard does, so a panel set up there first keeps one file."""
+
+    def setUp(self):
+        import config
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.old = config.ESPHOME_DIR
+        config.ESPHOME_DIR = Path(self.tmp.name)
+
+    def tearDown(self):
+        import config
+        config.ESPHOME_DIR = self.old
+        self.tmp.cleanup()
+
+    def test_dashes_like_esphomes_wizard(self):
+        import panel_setup
+        for name, file in (("crowpanel-epaper", "crowpanel-epaper"), ("Kitchen Panel", "kitchen-panel"),
+                           ("hall_panel", "hall-panel"), ("Café 2", "cafe-2")):
+            self.assertEqual(panel_setup.esphome_path({"device_name": name}).name, f"{file}.yaml")
+
+    def test_a_file_the_add_on_wrote_before_is_kept(self):
+        import panel_setup
+        (Path(self.tmp.name) / "crowpanel_epaper.yaml").write_text("# 0.14")
+        self.assertEqual(panel_setup.esphome_path({"device_name": "crowpanel-epaper"}).name, "crowpanel_epaper.yaml")

@@ -19,11 +19,13 @@ PANEL_SERVICES = {"crowpanel_epaper_refresh_now": {}, "crowpanel_epaper_page_ste
 
 PANEL_REGISTRY = [
     {"entity_id": "number.living_room_e_paper_panel_refresh_interval", "platform": "esphome",
-     "device_id": "dev1", "unique_id": "44:1B:F6:D1:45:04/0/number/Refresh interval"},
+     "device_id": "dev1", "unique_id": "00:00:5E:00:53:01/0/number/Refresh interval"},
     {"entity_id": "sensor.e_paper_panel_panel_ip", "platform": "esphome",
-     "device_id": "dev1", "unique_id": "44:1B:F6:D1:45:04/0/text_sensor/Panel IP"},
+     "device_id": "dev1", "unique_id": "00:00:5E:00:53:01/0/text_sensor/Panel IP"},
     {"entity_id": "sensor.e_paper_panel_panel_wi_fi", "platform": "esphome",
-     "device_id": "dev1", "unique_id": "44:1B:F6:D1:45:04/0/sensor/Panel Wi-Fi"},
+     "device_id": "dev1", "unique_id": "00:00:5E:00:53:01/0/sensor/Panel Wi-Fi"},
+    {"entity_id": "sensor.e_paper_panel_panel_wi_fi_network", "platform": "esphome",
+     "device_id": "dev1", "unique_id": "00:00:5E:00:53:01/0/text_sensor/Panel Wi-Fi network"},
 ]
 
 
@@ -103,9 +105,24 @@ class TestPanelLink(unittest.TestCase):
         self.assertEqual(link.entities["refresh"], "number.living_room_e_paper_panel_refresh_interval")
         self.assertEqual(link.entities["ip"], "sensor.e_paper_panel_panel_ip")
 
+    def test_connection_names_the_network(self):
+        hass = FakeHass()
+        hass.states = {"sensor.e_paper_panel_panel_ip": {"state": "192.0.2.7"},
+                       "sensor.e_paper_panel_panel_wi_fi": {"state": "-37.0"},
+                       "sensor.e_paper_panel_panel_wi_fi_network": {"state": "Office"}}
+        conn = run(panel_link.PanelLink(hass, lambda: "").connection())
+        self.assertEqual((conn["connected"], conn["rssi"], conn["network"]), (True, "-37.0", "Office"))
+
+    def test_firmware_without_the_network_sensor_still_connects(self):
+        registry = [e for e in PANEL_REGISTRY if "network" not in e["unique_id"]]
+        hass = FakeHass(registry=registry)
+        hass.states = {"sensor.e_paper_panel_panel_wi_fi": {"state": "-37.0"}}
+        conn = run(panel_link.PanelLink(hass, lambda: "").connection())
+        self.assertEqual((conn["connected"], conn["network"]), (True, None))
+
     def test_older_esphome_unique_id_format(self):
-        self.assertTrue(panel_link.unique_id_is("441bf6d14504-number-refresh_interval", "number", "Refresh interval"))
-        self.assertFalse(panel_link.unique_id_is("441bf6d14504-number-volume", "number", "Refresh interval"))
+        self.assertTrue(panel_link.unique_id_is("00005e005301-number-refresh_interval", "number", "Refresh interval"))
+        self.assertFalse(panel_link.unique_id_is("00005e005301-number-volume", "number", "Refresh interval"))
 
     def test_two_panels_without_a_choice_is_reported_not_guessed(self):
         services = dict(PANEL_SERVICES)

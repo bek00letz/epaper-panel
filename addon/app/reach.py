@@ -52,7 +52,7 @@ def clean_address(raw: str) -> str:
         raise ValueError("Enter the address your tunnel gives you, like https://panel.example.com.")
     parts = urllib.parse.urlsplit(raw if "://" in raw else "https://" + raw)
     if parts.scheme != "https":
-        raise ValueError("Use an https address: screens send their key with every request.")
+        raise ValueError("Use an https address: devices send their key with every request.")
     if not parts.hostname or parts.query or parts.fragment:
         raise ValueError("That doesn't look like an address. It should be like https://panel.example.com.")
     return urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path.rstrip("/"), "", ""))
@@ -75,7 +75,7 @@ def save(mode: str, address: str = "") -> dict:
     tmp.write_text(json.dumps(out))
     tmp.replace(config.DATA_DIR / FILE)
     waiting = " until your own address is saved" if out["chosen"] != out["mode"] else ""
-    print(f"reach: screens reach the add-on {describe(out['mode'])}{waiting}", flush=True)
+    print(f"reach: devices reach the add-on {describe(out['mode'])}{waiting}", flush=True)
     return out
 
 
@@ -128,7 +128,7 @@ def refusal(request) -> str | None:
     if through_companion(request):
         return None if mode == "ha" else "Reaching home through Home Assistant is off in the add-on's settings."
     if through_proxy(request) and mode == "home":
-        return "This add-on only answers screens at home. Turn on Reaching home in its settings."
+        return "This add-on only answers devices at home. Turn on Reaching home in its settings."
     return None
 
 

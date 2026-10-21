@@ -47,16 +47,9 @@ def display_settled(disp: dict) -> str:
 # SCK 12, MOSI 11, CS 45, DC 46, RES 47, BUSY 48, its power on GPIO 7, and the
 # five buttons on 1, 2, 4, 5, 6.
 
-# How the redraw script asks each driver for a full (ghost-clearing) refresh,
-# by ESPHome model. Full refreshes are the panel's policy (WaveformPolicy),
-# so each driver's own count is set out of reach.
-FULL_REFRESH = {
-    "5.79in": "id(epd).force_full_update();",
-    "4.20in": "id(epd).force_full_update();",
-    # Its full refresh happens when its count is at 0, and it has no call for
-    # that: epf restarts the count (epf_client.h).
-    "2.90inv2-r2": "epf::full_refresh_next(id(epd));",
-}
+# How the redraw script asks each driver for a full (ghost-clearing) refresh is
+# the profile's "full_refresh" (theme.DISPLAYS). Full refreshes are the panel's
+# policy (WaveformPolicy), so each driver's own count is set out of reach.
 
 
 # The display's power rail, the same on every board (Elecrow's demos).
@@ -70,28 +63,23 @@ DISPLAY_POWER_PIN = 7
 KEEP_DISPLAY_ASLEEP = True
 
 # After such a sleep, how each driver is told it still holds the picture, so it
-# doesn't start with a full refresh (epf_client.h), by ESPHome model.
-KEEP_PICTURE = {
-    "5.79in": "epf::crowpanel_picture_kept(id(epd));",
-    "4.20in": "epf::crowpanel_picture_kept(id(epd));",
-    "2.90inv2-r2": "epf::waveshare_picture_kept(id(epd));",
-}
+# doesn't start with a full refresh (epf_client.h), is the profile's "keep_picture".
 
 
 def keep_display_pin(disp: dict) -> int:
     """The pin the firmware holds on through deep sleep, or -1 to switch the display off."""
-    return DISPLAY_POWER_PIN if KEEP_DISPLAY_ASLEEP and disp["esphome_model"] in KEEP_PICTURE else -1
+    return DISPLAY_POWER_PIN if KEEP_DISPLAY_ASLEEP and disp.get("keep_picture") else -1
 
 
 def keep_picture(disp: dict) -> str:
     """The C++ statement run at start-up when the display kept its picture through sleep."""
-    return KEEP_PICTURE.get(disp["esphome_model"], "{}") if keep_display_pin(disp) >= 0 else "{}"
+    return disp["keep_picture"] if keep_display_pin(disp) >= 0 else "{}"
 
 
 def full_refresh(disp: dict) -> str:
     """The C++ statement that makes the display's next refresh a full one. A driver
     not listed (only sizes the editor doesn't offer) is left to refresh as it does."""
-    return FULL_REFRESH.get(disp["esphome_model"], "{}")
+    return disp.get("full_refresh") or "{}"
 
 
 def display_blocks(disp: dict) -> tuple[str, str]:

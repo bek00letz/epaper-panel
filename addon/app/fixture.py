@@ -22,10 +22,42 @@ def load_fixture():
     return _fixture_cache
 
 
-def eval_fixture_template(tpl: str) -> str:
-    """Evaluate common HA templates against fixture.json when running offline."""
-    states = dict(load_fixture().get("states", {}))
-    for eid, info in runtime.PUBLISHED.items():
+def fixture_todo(entity_id: str) -> dict | None:
+    """A to-do list as fetch_todo_items gives it, offline. Due dates are
+    counted from today (`due_in_days`), so the sample never goes stale."""
+    fx = load_fixture()
+    items = (fx.get("todo") or {}).get(entity_id)
+    if items is None:
+        return None
+    today = datetime.now().date()
+    out = []
+    for k, raw in enumerate(items):
+        due = raw.get("due") or ""
+        if raw.get("due_in_days") is not None:
+            due = (today + timedelta(days=int(raw["due_in_days"]))).isoformat()
+        out.append({"uid": f"{entity_id}-{k}", "summary": raw.get("summary", ""), "status": "needs_action", "due": due})
+    name = ((fx.get("states") or {}).get(entity_id) or {}).get("friendly_name") or entity_id
+    return {"entity": entity_id, "name": name, "items": out}
+
+
+def _dated(info: dict) -> dict:
+    """A fixture state with `<key>_in_days` turned into `<key>`, counted from today, so samples never go stale
+    ("start_time_in_days": 4 is a start_time four days from now, at 07:00)."""
+    if not isinstance(info, dict) or not any(k.endswith("_in_days") for k in info):
+        return info
+    out = dict(info)
+    day = datetime.now().astimezone().replace(hour=7, minute=0, second=0, microsecond=0)
+    for k, v in info.items():
+        if k.endswith("_in_days"):
+            out[k[:-len("_in_days")]] = (day + timedelta(days=int(v))).isoformat()
+    return out
+
+
+def eval_fixture_template(tpl: str, own: bool = True) -> str:
+    """Evaluate common HA templates against fixture.json when running offline.
+    `own`: the add-on's own values count too (not for examples, which never show someone's data)."""
+    states = {eid: _dated(info) for eid, info in (load_fixture().get("states") or {}).items()}
+    for eid, info in (runtime.PUBLISHED.items() if own else ()):
         attrs = dict(info.get("attributes") or {})
         attrs["state"] = info.get("state", "")
         states[eid] = attrs
@@ -83,22 +115,44 @@ def eval_fixture_template(tpl: str) -> str:
     else:
         expr = s
 
+    # The clock: `now().strftime('%H:%M')`
+    m = re.match(r"^now\(\)\.strftime\(\s*'([^']*)'\s*\)$", expr)
+    if m:
+        return datetime.now().strftime(m.group(1))
+
+    # The simple form's no-value guard: `has_value('entity') and <condition>`
+    m = re.match(r"^has_value\(\s*'([^']+)'\s*\)\s+and\s+(.+)$", expr)
+    if m:
+        cur = (states.get(m.group(1)) or {}).get("state")
+        if cur is None or str(cur) in ("unavailable", "unknown"):
+            return "False"
+        expr = m.group(2).strip()
+
+    # Handle `not is_state('entity', 'val')`
+    m = re.match(r"^not\s+is_state\(\s*'([^']+)'\s*,\s*'([^']+)'\s*\)$", expr)
+    if m:
+        cur = (states.get(m.group(1)) or {}).get("state", "")
+        return "True" if str(cur) != m.group(2) else "False"
+
+    # Handle `states('entity') | float(0) < 20` and the like
+    m = re.match(r"^states\(\s*'([^']+)'\s*\)\s*\|\s*(int|float)\([^)]*\)\s*(>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)$", expr)
+    if m:
+        try:
+            val = float((states.get(m.group(1)) or {}).get("state", 0))
+        except (TypeError, ValueError):
+            val = 0.0
+        if m.group(2) == "int":
+            val = float(int(val))
+        b = float(m.group(4))
+        held = {">": val > b, "<": val < b, ">=": val >= b, "<=": val <= b}[m.group(3)]
+        return "True" if held else "False"
+
     # Handle `is_state('entity', 'val')`
     m = re.match(r"^is_state\(\s*'([^']+)'\s*,\s*'([^']+)'\s*\)$", expr)
     if m:
         eid, target = m.group(1), m.group(2)
         cur = (states.get(eid) or {}).get("state", "")
         return "True" if str(cur) == target else "False"
-
-    # Handle `states('entity') | int(0) > 0`
-    m = re.match(r"^states\(\s*'([^']+)'\s*\)\s*\|\s*int\(\d*\)\s*>\s*(\d+)$", expr)
-    if m:
-        eid, thresh = m.group(1), int(m.group(2))
-        try:
-            val = int(float((states.get(eid) or {}).get("state", 0)))
-        except (TypeError, ValueError):
-            val = 0
-        return "True" if val > thresh else "False"
 
     # Handle zone check on `in_zones`
     if "in_zones" in expr:

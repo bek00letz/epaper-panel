@@ -29,6 +29,7 @@ ENTITY_KEYS = {
     "refresh": ("number", "Refresh interval"),
     "ip": ("text_sensor", "Panel IP"),
     "wifi": ("sensor", "Panel Wi-Fi"),
+    "network": ("text_sensor", "Panel Wi-Fi network"),      # firmware 0.14.1 and later
     # The panel's own settings, shown in the editor (firmware 0.9.5 and later).
     "sleep": ("switch", "Sleep"),
     "ghost_after": ("number", "Ghost clear after"),
@@ -50,8 +51,8 @@ def _slug(s: str) -> str:
 def unique_id_is(uid: str, domain: str, name: str) -> bool:
     """Match ESPHome's unique_id for an entity, in both formats it has used.
 
-    Current:  `44:1B:F6:D1:45:04/0/number/Refresh interval`
-    Older:    `441bf6d14504-number-refresh_interval`
+    Current:  `00:00:5E:00:53:01/0/number/Refresh interval`
+    Older:    `00005e005301-number-refresh_interval`
     """
     uid = str(uid or "")
     parts = uid.split("/")
@@ -292,8 +293,8 @@ class PanelLink:
 
     async def connection(self) -> dict:
         await self.discover()
-        out = {"connected": False, "ip": None, "rssi": None, "node": self.node, "problem": self.problem}
-        for key, field in (("ip", "ip"), ("wifi", "rssi")):
+        out = {"connected": False, "ip": None, "rssi": None, "network": None, "node": self.node, "problem": self.problem}
+        for key, field in (("ip", "ip"), ("wifi", "rssi"), ("network", "network")):
             ent = self.entities.get(key)
             if not ent:
                 continue

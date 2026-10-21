@@ -9,12 +9,17 @@ import { Canvas } from "./canvas.js";
 import { renderStrip, statusSummary } from "./strip.js";
 import { renderInspector } from "./inspector.js";
 import { openEntityPicker, openAttributePicker, openIconPicker, openInsert } from "./pickers.js";
-import { openPresets, savePresetSheet, openStatus, openSettings, resolveClashes, openShortcuts, openAddScreen } from "./sheets.js";
-import { geometry, setDisplays, makeElement, makeEntityElement, elName, TYPES, pairByType, LAYOUT_KEYS, normalizeLineParity } from "./elements.js";
+import { openPresets } from "./newpage.js";
+import { savePresetSheet, openStatus, openSettings, resolveClashes, openShortcuts, openAddScreen, removeScreen } from "./sheets.js";
+import { setCatalog } from "./catalog.js";
+import { geometry, setDisplays, applyCatalog, makeElement, makeEntityElement, elName, TYPES, pairByType, LAYOUT_KEYS, normalizeLineParity } from "./elements.js";
 import { syncDynamicGridShowIf, syncWidgetShowIf } from "./conditions.js";
 import { CATEGORY_TERMS } from "./legacy.js";
 import { unitsRows } from "./units.js";
 import { renderScreenBar } from "./screenbar.js";
+
+const ZOOM_STEPS = [0.75, 1, 1.25, 1.5, 2];
+const ZOOM_MIN = 0.5, ZOOM_MAX = 3;                  // a pinch can go a little past the steps
 
 const CLIP_KEY = "clipboard";
 
@@ -45,6 +50,7 @@ class App {
     matchMedia("(min-width: 901px)").addEventListener("change", () => this.renderStrip());
     matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => this.applyTheme());
     this.wireKeys();
+    this.wirePinch();
     addEventListener("beforeunload", (e) => { if (this.doc.saving !== "saved") { this.doc.flush(); e.preventDefault(); e.returnValue = ""; } });
     document.addEventListener("visibilitychange", () => { if (document.hidden) this.doc.flush(); else this.poll(); });
   }
@@ -76,6 +82,8 @@ class App {
   applyStripPos() {
     const pos = prefs.get("strip_pos", "top");
     this.el.app.dataset.strip = ["top", "bottom", "side"].includes(pos) ? pos : "top";
+    const size = prefs.get("strip_size", "standard");
+    this.el.app.dataset.stripsize = ["small", "standard", "large"].includes(size) ? size : "standard";
     this.renderStrip();
   }
   stripVertical() { return this.el.app.dataset.strip === "side" && matchMedia("(min-width: 901px)").matches; }
@@ -93,7 +101,12 @@ class App {
     const r = (await api("api/devices")).body;
     // The canvas's sizes come only from here; without them there's nothing safe to draw.
     if (!r || !r.displays || !Object.keys(r.displays).length || !(r.devices || []).length)
-      throw new Error("The add-on didn't say which screens it has. Restart the add-on, then reload this page.");
+      throw new Error("The add-on didn't say which devices it has. Restart the add-on, then reload this page.");
+    // What the add-on knows (leagues, series, widgets, state words), once: read, never copied (catalog.js).
+    if (!this.catalogLoaded) {
+      try { setCatalog((await api("api/catalog")).body); applyCatalog(); this.catalogLoaded = true; }
+      catch (e) { this.notice(`Couldn't load the add-on's widgets: ${e.message} Reload the page to try again.`); }
+    }
     this.applyScreens(r, want);
   }
   applyScreens(r, want) {
@@ -128,10 +141,16 @@ class App {
   }
   openScreens(anchor) {
     const items = this.screens.map((d) => ({ label: d.name, sub: this.screenLine(d), checked: d.id === this.screen?.id, run: () => this.switchScreen(d.id) }));
-    menu(anchor, [...items, "sep", { label: "Rename…", run: () => this.startRename() }, { label: "Add a screen…", icon: "plus", run: () => openAddScreen(this) }], { label: "Screens" });
+    // The screens; then this one's own (Rename, Remove); then adding another.
+    const only = this.screens.length < 2;
+    menu(anchor, [...items, "sep",
+      { label: "Rename…", run: () => this.startRename() },
+      { label: "Remove", danger: true, disabled: only, run: () => removeScreen(this, this.screen) },
+      "sep",
+      { label: "Add new device…", icon: "plus", run: () => openAddScreen(this) }], { label: "Devices" });
   }
   /* The name in the toolbar turns into a field where it stands (names are edited in
-     place). Enter or clicking away keeps it; Esc puts it back. Settings › Screen has it too. */
+     place). Enter or clicking away keeps it; Esc puts it back. Settings › Device has it too. */
   startRename() {
     if (!this.screen) return;
     this.renaming = true;
@@ -257,7 +276,7 @@ class App {
     const items = [
       scr && this.renaming ? this.renameField(scr) : null,
       // A double-click on the name renames it; the first click has opened the menu, which closes.
-      scr && !this.renaming ? h("button", { class: "screenbtn", "aria-haspopup": "menu", "aria-label": `Editing ${scr.name}. Switch screen, rename it or add one`, title: this.screenLine(scr),
+      scr && !this.renaming ? h("button", { class: "screenbtn", "aria-haspopup": "menu", "aria-label": `Editing ${scr.name}. Switch device, rename it or add one`, title: this.screenLine(scr),
         onclick: (e) => { if (e.detail === 2) { closeAll(); this.startRename(); } else if (e.detail < 2) this.openScreens(e.currentTarget); } },
         icon("panel", "sm"), h("span", { class: "sn", text: scr.name }), icon("down", "sm")) : null,
       ib("undo", "Undo", `${modKey}Z`, () => doc.undo(), { disabled: !doc.canUndo }),
@@ -282,10 +301,81 @@ class App {
     else tb.replaceChildren(...items);
   }
 
+  /* ---------- zoom ---------- */
+  /* Fit, or a size of the panel's own pixels (1 = actual size). Steps for the menu and
+     ⌘+ ⌘−; a pinch goes anywhere between the ends. Remembered. */
+  zoom() {
+    if (matchMedia("(max-width: 760px)").matches) return "fit";       // a phone has no zoom control
+    const z = prefs.get("zoom", "fit");
+    if (z === "actual") return 1;                       // before 0.15: Fit or Actual size
+    const n = Number(z);
+    return z !== "fit" && n > 0 ? Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, n)) : "fit";
+  }
+  shownScale() {
+    const z = this.zoom();
+    if (z !== "fit") return z;
+    // Fit's size from the area, as editor.css works it out (the frame may still be moving).
+    const a = this.el.area, cs = getComputedStyle(a), g = this.geometry();
+    const w = a.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const hgt = a.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+    return Math.max(0.01, (Math.min(w, (hgt - 32) * (g.W / g.H) + 24) - 24) / g.W);
+  }
+  // Keeps the point at (x, y) on screen where it was: the pointer for a pinch, else the middle of the view.
+  setZoom(z, at) {
+    const area = this.el.area, before = this.canvas.device.getBoundingClientRect(), view = area.getBoundingClientRect();
+    const x = at?.x ?? view.left + view.width / 2, y = at?.y ?? view.top + view.height / 2;
+    const fx = (x - before.left) / before.width, fy = (y - before.top) / before.height;
+    prefs.set("zoom", z === "fit" ? "fit" : String(Math.round(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z)) * 1000) / 1000));
+    this.applyZoom();
+    if (z !== "fit") {
+      const after = this.canvas.device.getBoundingClientRect();
+      area.scrollLeft += after.left + fx * after.width - x;
+      area.scrollTop += after.top + fy * after.height - y;
+    }
+    this.renderBar();
+  }
+  applyZoom() {
+    const z = this.zoom(), area = this.el.area;
+    area.classList.toggle("zoomed", z !== "fit");
+    area.style.setProperty("--zoom", z === "fit" ? "1" : String(z));
+  }
+  zoomStep(dir) {
+    const cur = this.shownScale();
+    const next = dir > 0 ? ZOOM_STEPS.find((s) => s > cur + 0.001) : [...ZOOM_STEPS].reverse().find((s) => s < cur - 0.001);
+    if (next) this.setZoom(next);
+  }
+  // A trackpad pinch: ctrl + wheel in Chrome and Firefox, gesture events in Safari.
+  wirePinch() {
+    const area = this.el.area;
+    let start = 1, settle = null;
+    const done = () => { clearTimeout(settle); settle = setTimeout(() => this.say(`Zoom ${Math.round(this.shownScale() * 100)}%.`), 300); };
+    const narrow = () => matchMedia("(max-width: 760px)").matches;
+    area.addEventListener("wheel", (e) => {
+      if (!e.ctrlKey || narrow()) return;
+      e.preventDefault();
+      this.setZoom(this.shownScale() * Math.exp(-e.deltaY * 0.01), { x: e.clientX, y: e.clientY });
+      done();
+    }, { passive: false });
+    area.addEventListener("gesturestart", (e) => { if (narrow()) return; e.preventDefault(); start = this.shownScale(); });
+    area.addEventListener("gesturechange", (e) => { if (narrow()) return; e.preventDefault(); this.setZoom(start * e.scale, { x: e.clientX, y: e.clientY }); done(); });
+    area.addEventListener("gestureend", (e) => { if (!narrow()) e.preventDefault(); });
+  }
+  zoomControl() {
+    const z = this.zoom(), label = z === "fit" ? "Fit" : `${Math.round(z * 100)}%`;
+    const cur = this.shownScale();
+    return h("div", { class: "zoomc hide-narrow", role: "group", "aria-label": "Zoom" },
+      h("button", { class: "btn icon small", "aria-label": "Zoom out", title: `Zoom out  ${modKey}−`, disabled: cur <= ZOOM_STEPS[0] + 0.001, onclick: () => this.zoomStep(-1) }, icon("minus", "sm")),
+      h("button", { class: "btn small zoomv", "aria-haspopup": "menu", "aria-label": `Zoom: ${label}. Choose a size`, onclick: (e) => menu(e.currentTarget, [
+        { label: "Fit", sub: "As big as the window allows", checked: z === "fit", run: () => this.setZoom("fit") },
+        "sep",
+        ...ZOOM_STEPS.map((s) => ({ label: `${s * 100}%`, kb: s === 1 ? `${modKey}0` : null, checked: z === s, run: () => this.setZoom(s) }))], { label: "Zoom", align: "right" }) },
+        h("span", { text: label }), icon("down", "sm")),
+      h("button", { class: "btn icon small", "aria-label": "Zoom in", title: `Zoom in  ${modKey}+`, disabled: cur >= ZOOM_STEPS[ZOOM_STEPS.length - 1] - 0.001, onclick: () => this.zoomStep(1) }, icon("plus", "sm")));
+  }
+
   renderBar() {
     const doc = this.doc, bar = this.el.bar, p = doc.page();
-    const zoom = prefs.get("zoom", "fit");
-    this.el.area.classList.toggle("actual", zoom === "actual");
+    this.applyZoom();
     bar.replaceChildren(
       h("div", { class: "crumb" }, h("b", { text: p ? pageTitle(doc.cur) : "No page" }),
         p ? h("span", { class: "muted", text: p.tier === "alert" ? "Alert page" : p.tier === "when" ? "Shows only sometimes" : "Shows always" }) : null),
@@ -293,8 +383,7 @@ class App {
       h("span", { class: "spacer" }),
       h("button", { class: "btn small", "aria-pressed": String(prefs.get("guides") === "1"), title: "Show where the footer is, and every element's box", onclick: () => { prefs.set("guides", prefs.get("guides") === "1" ? "0" : "1"); this.refresh(); } }, icon("guides", "sm"), h("span", { class: "hide-narrow", text: "Guides" })),
       h("button", { class: "btn small", "aria-pressed": String(prefs.get("layers") === "1"), "aria-controls": "layers", title: "Layers, front first", onclick: () => this.showLayers() }, icon("layers", "sm"), h("span", { text: "Layers" })),
-      h("div", { class: "segc small hide-narrow", role: "radiogroup", "aria-label": "Zoom" },
-        ...[["fit", "Fit"], ["actual", "Actual size"]].map(([v, l]) => h("button", { role: "radio", "aria-checked": String(zoom === v), onclick: () => { prefs.set("zoom", v); this.renderBar(); } }, l))));
+      this.zoomControl());
   }
 
   /* Pages shared with other screens: say so quietly, and what an edit here reaches. */
@@ -317,7 +406,7 @@ class App {
     // In a row, status and New page together are exactly one page preview tall.
     const front = this.el.strip.querySelector(".stripfront"), first = this.el.strip.querySelector(".tile");
     if (front) front.style.height = !this.stripVertical() && first ? first.offsetHeight + "px" : "";
-    if (n) { n.scrollLeft = scroll[0]; n.scrollTop = scroll[1]; }
+    if (n) { n.scrollLeft = scroll[0]; n.scrollTop = scroll[1]; n.closest(".slider")?.sync(); }   // edges as they were, no fade-in
     if (fi >= 0) { const t = this.el.strip.querySelectorAll(".tile")[fi]; if (t) t.focus({ preventScroll: true }); }
     if (n && !this.didScroll) { const c = n.querySelector('[aria-current="page"]'); if (c) { c.scrollIntoView({ inline: "nearest", block: "nearest" }); this.didScroll = true; } }
   }
@@ -339,7 +428,13 @@ class App {
   }
   inspectorKey() { return `${this.doc.cur}|${this.doc.sel.join(",")}`; }
   inspectorSoon() { cancelAnimationFrame(this.inspRaf); this.inspRaf = requestAnimationFrame(() => this.renderInspector()); }
-  onMetrics() { if (this.doc.sel.length === 1) this.renderInspector(); }
+  onMetrics(m) {
+    // The page's own note follows a countdown's state; redrawn only when that changes, so typing isn't lost.
+    const cd = JSON.stringify((m || []).find((x) => x.countdown)?.countdown || null);
+    const redrawPage = !this.doc.sel.length && cd !== this._countdown;
+    this._countdown = cd;
+    if (this.doc.sel.length === 1 || redrawPage) this.renderInspector();
+  }
   liveFields(el) {
     const q = this.el.insp.querySelectorAll(".quad input");
     if (q.length === 4) ["x", "y", "w", "h"].forEach((k, i) => { q[i].value = el[k]; });
@@ -485,7 +580,7 @@ class App {
     if (v === "alert") doc.spec.rotation = doc.spec.rotation.filter((n) => n !== doc.cur);
     else if (!doc.spec.rotation.includes(doc.cur)) doc.spec.rotation.push(doc.cur);
     if (v === "when") { syncDynamicGridShowIf(p); syncWidgetShowIf(p); }
-    this.rawCondition = false;
+    this.rawCondition = this.rawUntil = false;
     doc.commit();
   }
   savePreset() { savePresetSheet(this); }
@@ -636,16 +731,16 @@ class App {
       { label: "Send to back", kb: `⌥${modKey}[`, icon: "back2", disabled: doc.sel.length !== 1, run: () => this.order("back") });
     menu(null, items, { at: { x: e.clientX, y: e.clientY }, label: "Element" });
   }
-  openPageMenu(e, n) {
+  openPageMenu(e, n, anchor) {
     const doc = this.doc, p = doc.spec.pages[n], times = doc.spec.rotation.filter((x) => x === n).length;
-    menu(null, [
+    menu(anchor || null, [
       { label: "Open", run: () => doc.openPage(n) },
       { label: "Duplicate", icon: "dup", run: () => this.duplicatePage(n) },
       p.tier !== "alert" ? { label: times ? "Show again" : "Add to rotation", run: () => { doc.spec.rotation.push(n); doc.commit(); } } : null,
       p.tier !== "alert" && times ? { label: times > 1 ? "Show once less" : "Take out of rotation", run: () => { doc.spec.rotation.splice(doc.spec.rotation.lastIndexOf(n), 1); doc.commit(); } } : null,
       "sep",
       { label: "Delete", icon: "trash", danger: true, run: () => this.deletePage(n) },
-    ], { at: { x: e.clientX, y: e.clientY }, label: pageTitle(n) });
+    ], { ...(anchor ? { align: "right" } : { at: { x: e.clientX, y: e.clientY } }), label: pageTitle(n) });
   }
   openStatus(anchor) { openStatus(this, anchor); }
   openPresets() { openPresets(this); }
@@ -679,6 +774,9 @@ class App {
       const mod = isMac ? e.metaKey : e.ctrlKey, k = e.key.toLowerCase();
       if (mod && k === "s") { e.preventDefault(); this.send(); return; }
       if (typing) return;
+      if (mod && (e.key === "=" || e.key === "+")) { e.preventDefault(); this.zoomStep(1); return; }
+      if (mod && (e.key === "-" || e.key === "_")) { e.preventDefault(); this.zoomStep(-1); return; }
+      if (mod && e.key === "0") { e.preventDefault(); this.setZoom(1); return; }
       if (mod && k === "z") { e.preventDefault(); e.shiftKey ? doc.redo() : doc.undo(); return; }
       if (mod && k === "y") { e.preventDefault(); doc.redo(); return; }
       if (!doc.page()) return;

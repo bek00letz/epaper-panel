@@ -1,6 +1,6 @@
 """A screen's two timers: how often it updates, and how often it moves to the next page.
 
-Every screen has two settings, set in the editor (Settings › Screen, or the
+Every screen has two settings, set in the editor (Settings › Device, or the
 cards when it's added) and nowhere else. They're the one source of truth for
 when a screen fetches and when it sleeps.
 
@@ -9,7 +9,7 @@ when a screen fetches and when it sleeps.
   alerts and Home Assistant reach it straight away. 2 minutes or more, it
   sleeps between updates (paging.py), and longer is lower power. A kind that
   can't stay connected (a TRMNL: `Kind.stays_on`) has no always-on choice and
-  starts at 5 minutes.
+  starts at its own shortest (`Kind.shortest_update`; a TRMNL's is 5 minutes).
 - **Rotate every**. Always on, it's seconds (`rotate_seconds`) and the panel
   turns its pages itself. Asleep, it's a whole number of updates
   (`rotate_updates`): each wake refreshes the page on screen, and every Nth
@@ -26,7 +26,7 @@ from __future__ import annotations
 
 ALWAYS_ON = 1
 UPDATE_CHOICES = (1, 2, 5, 10, 15, 30, 60, 120, 240, 480, 720, 1440)     # minutes
-ASLEEP_FROM = 5                         # the shortest for a screen that can't stay connected
+ASLEEP_FROM = 5                         # a kind's shortest when it can't stay connected, unless it says (Kind.shortest_update)
 ASLEEP_DEFAULT = 15                     # what "sleeps between updates" starts at
 ROTATE_SECONDS = (15, 30, 45, 60, 120, 300)
 ROTATE_DEFAULT = 30
@@ -35,11 +35,12 @@ LONGEST_ROTATION = 1440                 # minutes: a page moves on at least once
 UPDATE_KEYS = ("update_minutes", "rotate_seconds", "rotate_updates")
 
 
-def update_choices(stays_on: bool) -> list[int]:
-    return [m for m in UPDATE_CHOICES if stays_on or m >= ASLEEP_FROM]
+def update_choices(stays_on: bool, shortest: int = ASLEEP_FROM) -> list[int]:
+    """`shortest`: the shortest Update every of a kind that can't stay connected (its Kind says)."""
+    return [m for m in UPDATE_CHOICES if stays_on or m >= shortest]
 
 
-def update_minutes(dev: dict, stays_on: bool = True) -> int:
+def update_minutes(dev: dict, stays_on: bool = True, shortest: int = ASLEEP_FROM) -> int:
     """Update every, in minutes. A screen set before 0.13 means what it meant then."""
     raw = dev.get("update_minutes")
     if raw is None:
@@ -52,15 +53,15 @@ def update_minutes(dev: dict, stays_on: bool = True) -> int:
         minutes = int(raw)
     except (TypeError, ValueError):
         minutes = 0
-    choices = update_choices(stays_on)
+    choices = update_choices(stays_on, shortest)
     if minutes in choices:
         return minutes
     return ALWAYS_ON if stays_on else ASLEEP_DEFAULT
 
 
-def sleeps(dev: dict, stays_on: bool = True) -> bool:
+def sleeps(dev: dict, stays_on: bool = True, shortest: int = ASLEEP_FROM) -> bool:
     """Whether the screen sleeps between updates: anything but always on."""
-    return update_minutes(dev, stays_on) != ALWAYS_ON
+    return update_minutes(dev, stays_on, shortest) != ALWAYS_ON
 
 
 def rotate_seconds(dev: dict) -> int:
@@ -75,17 +76,17 @@ def rotate_update_choices(minutes: int) -> list[int]:
     return [n for n in ROTATE_UPDATES if n == 1 or n * minutes <= LONGEST_ROTATION]
 
 
-def rotate_updates(dev: dict, stays_on: bool = True) -> int:
+def rotate_updates(dev: dict, stays_on: bool = True, shortest: int = ASLEEP_FROM) -> int:
     """Asleep: every how many updates it moves to the next page (1: every one)."""
     try:
         n = int(dev.get("rotate_updates") or 1)
     except (TypeError, ValueError):
         n = 1
-    allowed = rotate_update_choices(update_minutes(dev, stays_on))
+    allowed = rotate_update_choices(update_minutes(dev, stays_on, shortest))
     return max([c for c in allowed if c <= n] or [1])
 
 
-def settings(dev: dict, body: dict, stays_on: bool = True) -> dict:
+def settings(dev: dict, body: dict, stays_on: bool = True, shortest: int = ASLEEP_FROM) -> dict:
     """The device fields an editor change of the timers asks for ({} when it asks for none).
     Raises ValueError, with what to fix, for a value it can't take."""
     fields = {}
@@ -98,7 +99,7 @@ def settings(dev: dict, body: dict, stays_on: bool = True) -> dict:
 
     if "update_minutes" in body:
         minutes = number("update_minutes")
-        if minutes not in update_choices(stays_on):
+        if minutes not in update_choices(stays_on, shortest):
             raise ValueError("Pick one of the update times offered.")
         fields["update_minutes"] = minutes
     if "rotate_seconds" in body:
@@ -108,24 +109,24 @@ def settings(dev: dict, body: dict, stays_on: bool = True) -> dict:
         fields["rotate_seconds"] = seconds
     if "rotate_updates" in body:
         n = number("rotate_updates")
-        minutes = fields.get("update_minutes") or update_minutes(dev, stays_on)
+        minutes = fields.get("update_minutes") or update_minutes(dev, stays_on, shortest)
         if n not in rotate_update_choices(minutes):
             raise ValueError("Pick one of the rotation times offered.")
         fields["rotate_updates"] = n
     return fields
 
 
-def describe(dev: dict, stays_on: bool = True) -> dict:
+def describe(dev: dict, stays_on: bool = True, shortest: int = ASLEEP_FROM) -> dict:
     """What the editor shows and offers."""
-    minutes = update_minutes(dev, stays_on)
+    minutes = update_minutes(dev, stays_on, shortest)
     return {
         "update_minutes": minutes,
-        "update_choices": update_choices(stays_on),
+        "update_choices": update_choices(stays_on, shortest),
         "always_on": minutes == ALWAYS_ON,
         "can_stay_on": stays_on,
         "rotate_seconds": rotate_seconds(dev),
         "rotate_seconds_choices": list(ROTATE_SECONDS),
-        "rotate_updates": rotate_updates(dev, stays_on),
+        "rotate_updates": rotate_updates(dev, stays_on, shortest),
         "rotate_update_choices": rotate_update_choices(minutes),
         "asleep_default": ASLEEP_DEFAULT,
     }

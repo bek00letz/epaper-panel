@@ -173,7 +173,7 @@ class TestPresets(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        script = (f"import {{ PRESETS }} from {json.dumps(str(support.APP / 'web/app/legacy.js'))};"
+        script = (f"import {{ LOOKS as PRESETS }} from {json.dumps(str(support.APP / 'web/app/presets.js'))};"
                   f"console.log(JSON.stringify(PRESETS.filter((p) => p.asks === 'jellyfin')"
                   f".map((p) => ({{ id: p.id, show_if: p.showIf({json.dumps(cls.ENT)}),"
                   f" elements: p.makeElements({json.dumps(cls.ENT)}) }}))))")
@@ -256,3 +256,91 @@ class TestEditorListsTheParts(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestConnectInPlace(unittest.IsolatedAsyncioTestCase):
+    """New to watch connects Jellyfin in its own step: the address and key are tried before saving."""
+
+    async def asyncSetUp(self):
+        from aiohttp import web as aioweb
+
+        async def users(request):
+            if request.headers.get("X-Emby-Token") != "good":
+                raise aioweb.HTTPUnauthorized()
+            return aioweb.json_response([{"Id": "u1", "Name": "bek"}, {"Id": "u2", "Name": "Ada"}])
+
+        async def counts(request):
+            return aioweb.json_response({"MovieCount": 12, "SeriesCount": 30, "EpisodeCount": 900})
+
+        app = aioweb.Application()
+        app.add_routes([aioweb.get("/Users", users), aioweb.get("/Items/Counts", counts)])
+        self.server = TestServer(app)
+        await self.server.start_server()
+        self.base = str(self.server.make_url("")).rstrip("/")
+
+    async def asyncTearDown(self):
+        await self.server.close()
+
+    async def test_a_good_key_lists_whose_unwatched_to_show(self):
+        got = await jellyfin.check(self.base, "good")
+        self.assertEqual(got, {"ok": True, "titles": 42, "users": [{"id": "u1", "name": "bek"}, {"id": "u2", "name": "Ada"}]})
+
+    async def test_each_failure_says_what_to_do(self):
+        self.assertIn("API key", (await jellyfin.check(self.base, "bad"))["error"])
+        self.assertIn("web address", (await jellyfin.check("jellyfin.local:8096", "good"))["error"])
+        self.assertIn("Couldn't reach", (await jellyfin.check("http://127.0.0.1:9", "good"))["error"])
+        self.assertIn("not like Jellyfin", (await jellyfin.check(self.base + "/web", "good"))["error"])
+
+    async def test_through_the_editor_with_a_saved_key(self):
+        import config
+        import feeds
+        support.fresh_data_dir()
+        feeds.save(config.DATA_DIR, [{"type": "jellyfin", "name": "watch", "base": self.base, "key": "good"}])
+        _, editor = web.make_apps()
+        async with TestClient(TestServer(editor)) as ed:
+            r = await ed.post("/api/sources/jellyfin/check", json={"base": self.base, "key": feeds.SECRET_MASK, "name": "watch"})
+            self.assertTrue((await r.json())["ok"])
+            r = await ed.get("/api/sources/jellyfin/suggest")
+            self.assertEqual(await r.json(), {"address": ""})          # no Home Assistant here
+        support.use_test_data_dir()
+
+
+class TestJellyHAAddress(unittest.IsolatedAsyncioTestCase):
+    async def test_jellyha_gives_the_address_and_nothing_else_does(self):
+        class Registry:
+            async def ws(self, payload, timeout=10):
+                return [{"entity_id": "media_player.living_room", "platform": "cast"},
+                        {"entity_id": "media_player.jellyha_user_bek", "platform": "jellyha"}]
+
+        async def states(session, path, **kw):
+            return {"attributes": {"config_external_url": "https://jelly.example.org/"}} if "jellyha" in path else {}
+        _, editor = web.make_apps()
+        with mock.patch.object(runtime, "HASS", Registry()), mock.patch.object(web, "HA_TOKEN", "t"), \
+             mock.patch.object(web, "ha_json", states):
+            async with TestClient(TestServer(editor)) as ed:
+                r = await ed.get("/api/sources/jellyfin/suggest")
+                self.assertEqual(await r.json(), {"address": "https://jelly.example.org"})
+
+
+class TestASecondJellyfinSource(unittest.IsolatedAsyncioTestCase):
+    """New to watch makes watch_2 for a second server: its page steps through its own items, never watch's."""
+
+    async def test_a_second_source_pages_through_its_own(self):
+        ent = "sensor.epaper_watch_2"
+        mine = [{"title": "Harbour Town", "detail": "2 new episodes", "what_is_new": "2 new episodes"},
+                {"title": "Paper Moon", "detail": "Film", "what_is_new": "New film"}]
+        others = [{"title": "Northern Lights", "detail": "S02E04"}, {"title": "Something else", "detail": "Film"}]
+        page = {"elements": [{"type": "text", "entity": ent, "show": "state", "x": 10, "y": 10, "w": 700, "h": 80},
+                             {"type": "text", "entity": ent, "show": "attribute", "attribute": "what_is_new",
+                              "x": 10, "y": 100, "w": 700, "h": 60}]}
+        cache = {"sensor.epaper_watch": others, ent: mine}
+        vals = {0: "Harbour Town", 1: "2 new episodes"}
+        n, kind, keys, items, feed = subitems.inspect_category_subitems(page, vals, cache)
+        self.assertEqual((n, kind, feed), (2, "feed", ent))
+        self.assertEqual([i["title"] for i in items], ["Harbour Town", "Paper Moon"])
+        plan = {"name": "watch_2", "vals": vals, "sub_type": kind, "feed_items": items, "feed_entity": feed, "series": None}
+        footer = frames.T.footer_plan(clock="12:00")
+        one, two = [await frames.draw_category(plan, n, 0, footer=footer, page_def=page, orient=0,
+                                               display="crowpanel_579", only=k) for k in (0, 1)]
+        self.assertNotEqual(one, two, "each item draws its own title")
+        self.assertEqual(subitems.item_value(page["elements"][1], ent, mine[1]), "New film")

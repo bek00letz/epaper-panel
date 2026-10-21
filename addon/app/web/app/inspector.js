@@ -4,9 +4,13 @@
 
 import { h, icon, api, clone, pageTitle, slug, modKey, turning } from "./util.js";
 import { field, input, number, select, seg, textarea, toggle, toggleRow, section, linkButton, toast } from "./ui.js";
-import { TYPES, BREAKABLE, isWidget, hasText, elName, normalizeLineParity, GROUP_STYLES, GROUP_PAD } from "./elements.js";
+import { TYPES, breakable, isWidget, hasText, elName, normalizeLineParity, GROUP_STYLES, GROUP_PAD } from "./elements.js";
 import { OPS, parseShowIf, compileShowIf, evaluate, describe, syncWidgetShowIf, syncDynamicGridShowIf } from "./conditions.js";
 import { explodeWidget, getWidgetSensorId, suggestIconForEntity } from "./legacy.js";
+import { dateEditor, binsEditor } from "./countdown.js";
+import { zonesEditor } from "./zones.js";
+import { staleNote, changesEvery, pageChangesEvery } from "./presets.js";
+import { widget, leagueOptions, seriesOptions, sportWord } from "./catalog.js";
 
 const SHOWS = [["state", "Its value"], ["unit", "Its unit, following the value"], ["attribute", "One of its details"], ["last_changed", "When it last changed"], ["last_updated", "When it last updated"],
   ["days_until", "Days until it"], ["date_formatted", "Its date"], ["calendar_title", "The event's name"]];
@@ -63,7 +67,7 @@ function legibility(app, i, el) {
     linkButton("Treat as text", () => { el.type = "text"; app.doc.commit(); }, { class: "linkbtn inline" })));
   if (m.collection) out.push(h("div", { class: "note bad", role: "note" }, icon("warn", "sm"), h("span", { text: "That's a list, not one value. Pick a different detail, or show its value." })));
   const dist = Number(app.prefs.get("view_dist", "3.0"));
-  if (dist > 0) {
+  if (dist > 0 && m.verdict) {                     // only what the renderer measured: a world clock reports none
     const good = /comfortable|effortless/.test(m.verdict);
     const verdict = m.verdict.replace(/ at [\d.]+m$/, "");
     out.push(h("div", { class: "note " + (good ? "good" : "warn"), role: "note" }, h("span", { class: "led" }),
@@ -98,7 +102,16 @@ function element(app, head, body, el, i) {
   head.append(h("div", { class: "ttl" }, h("span", { class: "kind" }, icon(TYPES[el.type]?.icon || "square", "xs"), t), h("span", { class: "tname", text: d || t })));
   const set = setter(app, el);
   const doc = app.doc, g = app.geometry();
-  if (el._auto) body.append(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: `Placed automatically for ${app.screen?.name || "this screen"}. Move or resize it and this screen keeps its own place for it.` })));
+  if (el._auto) body.append(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: `Placed automatically for ${app.screen?.name || "this device"}. Move or resize it and this device keeps its own place for it.` })));
+  const stale = staleNote(changesEvery(el, app.entMap), app.screen);
+  if (stale) body.append(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: stale })));
+  // A device that sleeps draws the date where the time would be; the renderer says which elements
+  // it changed (render/clocktime.py, the one place that knows what shows the time).
+  const asleep = app.canvas.metrics.find((x) => x.i === i);
+  if (asleep?.date_for_time) body.append(h("p", { class: "note info" }, icon("info", "sm"),
+    h("span", { text: `${app.screen?.name || "This device"} sleeps between updates, so it shows the date here.` })));
+  if (asleep?.hours_apart) body.append(h("p", { class: "note info" }, icon("info", "sm"),
+    h("span", { text: `${app.screen?.name || "This device"} sleeps between updates, so each city shows how many hours it's ahead or behind.` })));
 
   if (hasText(el)) {
     body.append(shows(app, el, set));
@@ -126,7 +139,8 @@ function element(app, head, body, el, i) {
     r.addEventListener("input", () => { pct.textContent = Math.round(r.value * 100) + "%"; });
     r.addEventListener("change", () => set("font_scale", Number(r.value) === 1 ? "" : Number(r.value)));
     body.append(section("Text size", h("div", { class: "rangerow" }, h("span", { class: "rmin", "aria-hidden": "true", text: "A" }), r, h("span", { class: "rmax", "aria-hidden": "true", text: "A" }), pct),
-      BREAKABLE.includes(el.type) ? h("div", { class: "btnrow" }, h("button", { class: "btn tinted", onclick: () => {
+      legibility(app, i, el),                       // for a widget whose renderer reports its size (a to-do list)
+      breakable(el) ? h("div", { class: "btnrow" }, h("button", { class: "btn tinted", onclick: () => {
         const parts = explodeWidget(el);
         if (!parts.length) return;
         doc.els().splice(i, 1, ...parts);
@@ -134,7 +148,7 @@ function element(app, head, body, el, i) {
         doc.commit();
         toast(`Broken into ${parts.length} elements you can move one by one.`, { label: "Undo", run: () => doc.undo() });
       } }, "Break apart")) : null,
-      BREAKABLE.includes(el.type) ? h("p", { class: "fnote", text: "Turns the widget into plain text, values and icons you can move and restyle one by one." }) : null));
+      breakable(el) ? h("p", { class: "fnote", text: "Turns the widget into plain text, values and icons you can move and restyle one by one." }) : null));
   }
 
   // Arrange
@@ -171,22 +185,31 @@ function element(app, head, body, el, i) {
 /* What a text or value shows. */
 function shows(app, el, set) {
   const tpl = typeof el.value === "string" && /\{[{%]/.test(el.value);
-  const source = el.entity && !el.value ? "sensor" : tpl ? "template" : el.value !== undefined && !el.entity ? "text" : el.entity ? "sensor" : el.type === "number" ? "sensor" : "text";
-  const s = section("Shows", h("div", { class: "field" }, h("span", { class: "lab", text: "From" }), seg([["text", "Text"], ["sensor", "Sensor"], ["template", "Template"]], source, (v) => {
+  // "Time": the add-on's own clock (binding show "now"), 12- or 24-hour as Settings › Time and language says.
+  const clockish = el.type === "text" && el.show === "now" && !el.entity && !tpl;
+  const source = clockish ? "clock" : el.entity && !el.value ? "sensor" : tpl ? "template" : el.value !== undefined && !el.entity ? "text" : el.entity ? "sensor" : el.type === "number" ? "sensor" : "text";
+  const s = section("Shows", h("div", { class: "field" }, h("span", { class: "lab", text: "From" }), seg([["text", "Text"], ["sensor", "Sensor"], ["clock", "Time"], ["template", "Template"]], source, (v) => {
+    if (v !== "clock" && el.show === "now") delete el.show;
+    if (v === "clock") { el.type = "text"; el.show = "now"; el.format = CLOCK_FORMATS.some(([f]) => f === el.format) ? el.format : "time"; delete el.value; delete el.entity; }
     if (v === "text") { el.value = el.value && !/\{[{%]/.test(el.value) ? el.value : "Label"; delete el.entity; }
     if (v === "sensor") { delete el.value; }
     if (v === "template") { el.value = el.value && /\{[{%]/.test(el.value) ? el.value : `{{ states('${el.entity || "sensor.example"}') }}`; }
     app.doc.commit();
   }, "Shows")));
-  if (source === "text") {
+  if (source === "clock") {
+    s.append(field("Looks like", select(CLOCK_FORMATS, el.format || "time", (v) => set("format", v))),
+      h("p", { class: "fnote", text: "12- or 24-hour as in Settings › Time and language. A device that sleeps shows the date instead of the time." }));
+  } else if (source === "text") {
     s.append(field("Text", input(el.value, (v) => set("value", v), { placeholder: "What it says" })));
   } else if (source === "template") {
     s.append(field("Template", textarea(el.value, (v) => set("value", v)), { wide: true, note: "Anything Home Assistant can render." }));
   } else {
     s.append(entityButton(app, el.entity, (id) => {
+      // The unit follows the sensor when it was the old sensor's own (or none); words you typed stay.
+      const was = String(app.entMap.get(el.entity)?.unit || "").trim(), mine = String(el.suffix || "").trim();
       el.entity = id;
       const e = app.entMap.get(id);
-      if (el.type === "number" && e && e.unit && !el.suffix) el.suffix = " " + e.unit;
+      if (el.type === "number" && (!mine || mine === was)) { if (e?.unit) el.suffix = e.unit === "%" ? "%" : " " + e.unit; else if (mine) delete el.suffix; }
       app.doc.commit();
     }));
     const show = el.show || "state";
@@ -259,6 +282,9 @@ function replacements(app, el) {
   return wrap;
 }
 
+// The add-on's own clock's formats (render/binding.TIME_FORMATS); "time" follows the 12/24-hour setting.
+const CLOCK_FORMATS = [["time", "The time"], ["day_full", "Weekday and date"], ["day_date", "Short weekday and date"], ["date", "Date"], ["datetime", "Date and time"]];
+
 /* ---------- per-type settings for everything that isn't text ---------- */
 const F = {
   entity: (key, label, domains) => ({ kind: "entity", key, label, domains }),
@@ -268,6 +294,8 @@ const F = {
   on: (key, label, def) => ({ kind: "toggle", key, label, def }),
 };
 const BORDER_ON = F.on("show_border", "Border", true);
+// The basic elements' settings. A widget's come from its descriptor in the add-on's catalog
+// (widgets.py, fieldsFor below), never a copy here.
 const TYPE_FIELDS = {
   box: [F.sel("fill", "Fill", [["outline", "Outline"], ["black", "Black"], ["screen", "Half tone"], ["white", "White"]], "outline"), F.num("radius", "Corners", "12", 0, 120), F.num("thickness", "Border", "3", 1, 20)],
   bar: [F.entity("entity", "Sensor"), F.text("title", "Title", "Battery"), F.sel("bar_style", "Style", [["solid", "Solid"], ["segmented", "Segments"], ["vertical", "Upright"]], "solid"),
@@ -275,41 +303,60 @@ const TYPE_FIELDS = {
     F.num("min_val", "From", "0"), F.num("max_val", "To", "100"), F.text("suffix", "Unit", "%"), F.num("decimals", "Decimals", "0", 0, 4), F.on("show_label", "Show the value", true)],
   curve: [F.entity("entity", "Sensor"), F.num("hours", "Hours", "24", 1, 168)],
   bar_chart: [F.entity("entity", "Sensor"), F.text("title", "Title", "Last 24 hours"), F.num("hours", "Hours", "24", 1, 168), F.num("bars", "Bars", "12", 2, 48), F.on("show_labels", "Lowest and highest", true), F.on("show_border", "Border", false)],
-  calendar_month: [F.entity("entity", "Calendar", ["calendar"]), F.sel("first_weekday", "Week starts", [["0", "Monday"], ["6", "Sunday"]], "0"), F.on("show_header", "Month name", true), F.on("show_weekdays", "Weekday names", true), F.on("highlight_today", "Mark today", true), BORDER_ON],
-  calendar_agenda: [F.entity("entity", "Calendar", ["calendar"]), F.text("title", "Title", "Coming up"), F.sel("max_events", "Events", [["2", "2, extra large"], ["3", "3, large"], ["4", "4"], ["5", "5"], ["6", "6"]], "4"), F.on("show_sub", "Times and places", true), BORDER_ON],
-  weather_forecast: [F.entity("entity", "Weather", ["weather"]), F.sel("layout_mode", "Layout", [["auto", "Fit the box"], ["split", "Now and forecast side by side"], ["stacked", "Now above the forecast"], ["hero_only", "Now only, very large"], ["forecast_only", "Forecast only"]], "auto"),
-    F.sel("forecast_days", "Days", [["3", "3"], ["4", "4"], ["5", "5"]], "4"), F.on("show_details", "Humidity and wind", true), BORDER_ON],
-  sports_racing: [F.sel("series", "Series", [["f1", "Formula 1"], ["fe", "Formula E"], ["nascar", "NASCAR"], ["indycar", "IndyCar"]], "f1"), F.entity("entity", "Sensor, if you have one"),
-    F.sel("max_drivers", "Leaderboard", [["6", "Top 6, extra large"], ["8", "Top 8, large"], ["10", "Top 10"]], "10"),
-    { kind: "window", label: "Only show around sessions" }, F.sel("window_mode", "Around", [["session", "Each session"], ["weekend", "The whole weekend"]], "session"),
-    F.num("pre_buffer_hours", "Hours before", "2", 0, 24, 0.5), F.num("post_buffer_hours", "Hours after", "2", 0, 24, 0.5),
-    F.on("show_teams", "Team names", true), F.text("timezone", "Time zone", "Home Assistant's"), BORDER_ON, { kind: "sensorid" }],
-  sports_match: [F.sel("league", "League", [["soccer/eng.1", "Premier League"], ["soccer/uefa.champions", "Champions League"], ["soccer/esp.1", "La Liga"], ["soccer/ger.1", "Bundesliga"], ["soccer/ita.1", "Serie A"], ["basketball/nba", "NBA"], ["football/nfl", "NFL"], ["baseball/mlb", "MLB"], ["hockey/nhl", "NHL"]], "soccer/eng.1"),
-    F.text("team", "Team", "Any team"), F.entity("entity", "Team Tracker sensor"), { kind: "window", label: "Only show on match days" },
-    F.num("pre_buffer_hours", "Hours before", "2", 0, 24, 0.5), F.num("post_buffer_hours", "Hours after", "2", 0, 24, 0.5),
-    F.text("timezone", "Time zone", "Home Assistant's"), F.on("show_stats", "Team stats", true), F.on("show_scorers", "Scorers", true), BORDER_ON, { kind: "sensorid" }],
-  flight_tracker: [F.sel("style", "Style", [["card", "Details"], ["split", "Radar and details"], ["radar", "Radar"]], "card"), { kind: "place" },
-    F.num("radius", "Radius, km", "35", 5, 250), { kind: "window", label: "Only show while a plane is near" }, F.on("show_sub_metrics", "Second units", true), BORDER_ON, { kind: "sensorid" }],
 };
+
+/* A widget's fields as its descriptor gives them (plain data), made ready for the form: a league
+   or series list from the catalog, a condition ({key, is}) as a test, a label with the sport's word
+   ("{event}") or by what the element shows, and what an entity field accepts, with the add-on's
+   own reason when it won't. */
+export function fieldsFor(type) {
+  const w = widget(type);
+  if (!w) return TYPE_FIELDS[type] || [];
+  return (w.fields || []).map((f) => {
+    const out = { ...f };
+    if (f.options === "leagues") out.options = leagueOptions();
+    if (f.options === "series") out.options = seriesOptions();
+    if (f.when && typeof f.when === "object") { const { key, is } = f.when; out.when = (el) => (Array.isArray(is) ? is.includes(el[key]) : el[key] === is); }
+    if (typeof f.label === "string" && f.label.includes("{event}")) out.label = (el) => f.label.replace("{event}", sportWord(el.league));
+    else if (f.label && typeof f.label === "object") out.label = (el) => (f.label.show || {})[el.show] ?? f.label.else ?? "";
+    if (f.accepts) out.check = (e) => {
+      const a = f.accepts, unit = String(e.unit || "").trim().toLowerCase();
+      if ((a.domains || []).some((d) => e.entity_id.startsWith(d + "."))) return "";
+      if ((a.unit_ends || []).some((x) => unit.endsWith(x.toLowerCase()))) return "";
+      return a.reason || "This sensor won't do here.";
+    };
+    return out;
+  });
+}
 
 function typeSections(app, el, set, i) {
   if (el.type === "line") return [lineSection(app, el)];
   if (el.type === "qr") return [qrSection(app, el, set)];
-  if (el.type === "dynamic_grid") return gridSections(app, el, set);
-  const fields = TYPE_FIELDS[el.type] || [];
+  const fields = fieldsFor(el.type);
+  // A descriptor whose field is the whole grid editor (the Devices widget): its own sections.
+  if (fields.some((f) => f.kind === "grid")) return gridSections(app, el, set);
   const s = section(TYPES[el.type]?.name || "Settings");
   for (const f of fields) {
     if (f.when && !f.when(el)) continue;
-    if (f.kind === "entity") s.append(field(f.label, entityButton(app, el[f.key], (id) => set(f.key, id), { domains: f.domains, allowNone: true })));
+    if (f.kind === "entity") s.append(field(f.label, entityButton(app, el[f.key], (id) => {
+      // A field that takes only some sensors says plainly why it won't take this one, and keeps what it had.
+      const why = id && f.check ? f.check(app.entMap.get(id) || { entity_id: id }) : "";
+      if (why) { s.querySelector(".note.refused")?.remove(); s.append(h("p", { class: "note warn refused", role: "status" }, icon("info", "sm"), h("span", { text: why }))); return; }
+      // A to-do list's page shows by its list: follow it, in the same undo step.
+      if (el.type === "todo_list" && app.doc.page().tier === "when") { el[f.key] = id; syncWidgetShowIf(app.doc.page(), el); }
+      set(f.key, id);
+    }, { domains: f.domains, allowNone: true })));
     else if (f.kind === "text") s.append(field(f.label, input(el[f.key], (v) => set(f.key, v), { placeholder: f.ph || "" })));
     else if (f.kind === "num") s.append(field(f.label, number(el[f.key], (v) => set(f.key, v), { placeholder: f.ph || "", min: f.min, max: f.max, step: f.step })));
     else if (f.kind === "sel") s.append(field(f.label, select(f.options, el[f.key] ?? f.def, (v) => {
+      // What a to-do list shows is what its page shows by: follow it, in the same undo step.
+      if (el.type === "todo_list" && app.doc.page().tier === "when") { el[f.key] = v; syncWidgetShowIf(app.doc.page(), el); }
       const num = /^(first_weekday|max_events|forecast_days|max_drivers)$/.test(f.key);
       set(f.key, num ? Number(v) : v);
       if ((f.key === "league" || f.key === "series") && app.doc.page().tier === "when") { syncWidgetShowIf(app.doc.page(), el); app.doc.commit(); }
     })));
     else if (f.kind === "toggle") s.append(toggleRow(f.label, f.def ? el[f.key] !== false : !!el[f.key], (v) => set(f.key, f.def ? (v ? "" : false) : (v ? true : ""))));
-    else if (f.kind === "window") s.append(toggleRow(f.label, app.doc.page().tier === "when", (v) => {
+    else if (f.kind === "window") s.append(toggleRow(typeof f.label === "function" ? f.label(el) : f.label, app.doc.page().tier === "when", (v) => {
       const p = app.doc.page();
       el.auto_window = v;
       if (v) { p.tier = "when"; syncWidgetShowIf(p, el); if (!app.doc.spec.rotation.includes(app.doc.cur)) app.doc.spec.rotation.push(app.doc.cur); }
@@ -317,8 +364,13 @@ function typeSections(app, el, set, i) {
       app.doc.commit();
     }, "Sets when the whole page shows"));
     else if (f.kind === "sensorid") s.append(h("details", { class: "more" }, h("summary", {}, icon("chev", "sm"), "Its sensor"),
-      h("p", { class: "fnote" }, "The add-on publishes this widget's state as ", h("code", { class: "sel", text: getWidgetSensorId(el) }), ", for your own automations.")));
+      el.type === "todo_list"
+        ? h("p", { class: "fnote" }, "The add-on counts what's due today or overdue as ", h("code", { class: "sel", text: getWidgetSensorId(el) || "sensor.epaper_todo_…_due" }), ". An alert can show by it, or your own automations.")
+        : h("p", { class: "fnote" }, "The add-on publishes this widget's state as ", h("code", { class: "sel", text: getWidgetSensorId(el) }), ", for your own automations.")));
     else if (f.kind === "place") s.append(...placeRows(app, el, set));
+    else if (f.kind === "countdown") s.append((el.to === "bins" ? binsEditor : dateEditor)(el, () => app.doc.commit()));
+    // A world clock's cities: adding, removing or reordering one redraws the canvas at once (each commit does).
+    else if (f.kind === "zones") s.append(field(f.label || "Cities", zonesEditor(el, () => app.doc.commit(), { most: f.most || 4 }), { wide: true }));
   }
   return [s];
 }
@@ -461,7 +513,7 @@ function together(app, members, grp) {
   const rows = [seg([["none", "None"], ...GROUP_STYLES], grp?.style || "none", choose, "Style around them")];
   if (grp) {
     rows.push(field("Space inside", number(grp.pad ?? GROUP_PAD, (v) => { grp.pad = Math.max(0, Math.min(60, Number(v) || 0)); doc.commit("pad"); }, { min: "0", max: "60", style: { width: "5em" } })));
-    rows.push(h("p", { class: "fnote", text: "It follows them when they move, and on every screen." }));
+    rows.push(h("p", { class: "fnote", text: "It follows them when they move, and on every device." }));
   } else rows.push(h("p", { class: "fnote", text: "An outline, a pill or an inverted area around all of them." }));
   return section("Together", ...rows);
 }
@@ -505,13 +557,20 @@ function page(app, head, body) {
   name.addEventListener("keydown", (e) => { if (e.key === "Enter") name.blur(); if (e.key === "Escape") { name.value = cur; err.textContent = ""; name.blur(); } });
   name.addEventListener("change", () => app.renamePage(cur, name.value));
   head.append(h("div", { class: "ttl" }, h("span", { class: "kind", text: "Page" }), name), err);
+  // A countdown's page: passed (reuse it with another date, or delete it), or not showing yet.
+  const cd = app.canvas.metrics.find((m) => m.countdown)?.countdown;
+  if (cd?.state === "passed") body.append(h("div", { class: "note passed", role: "note" }, icon("info", "sm"),
+    h("span", { text: `Passed on ${cd.on}, so the panel leaves it out. Give it another date to use it again.` }),
+    h("button", { class: "btn tinted danger", onclick: () => app.deletePage() }, icon("trash", "sm"), "Delete")));
+  else if (cd?.state === "waiting") body.append(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: `It starts showing on ${cd.from}.` })));
+  // What changes faster than a sleeping device updates is noted, never hidden (presets.staleNote).
+  const stale = staleNote(pageChangesEvery(p.elements, app.entMap), app.screen);
+  if (stale) body.append(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: stale })));
 
   const tier = p.tier || "rotate";
   const when = section("Shows", seg([["rotate", "Always"], ["when", "Only when"], ["alert", "As an alert"]], tier, (v) => app.setTier(v), "When this page shows"));
   if (tier !== "rotate") when.append(conditionRows(app, p));
-  if (tier === "alert") {
-    when.append(field("Holds for", number(p.hold_minutes ?? 10, (v) => { p.hold_minutes = Math.max(1, Math.min(1440, Number(v) || 10)); doc.commit(); }, { min: "1", max: "1440" }), { note: "Minutes. It takes over the panel when its condition turns true, then gives it back." }));
-  }
+  if (tier === "alert") when.append(...endRows(app, p));
   body.append(when);
 
   if (tier !== "alert") {
@@ -521,8 +580,8 @@ function page(app, head, body) {
       h("div", { class: "btnrow" },
         h("button", { class: "btn tinted", onclick: () => { doc.spec.rotation.push(cur); doc.commit(); } }, times ? "Show again" : "Add to rotation"),
         times ? h("button", { class: "btn tinted", onclick: () => { doc.spec.rotation.splice(doc.spec.rotation.lastIndexOf(cur), 1); doc.commit(); } }, times > 1 ? "Show once less" : "Take out") : null),
-      // Rotate every is the screen's own (Settings › Screen), next to Update every.
-      h("p", { class: "fnote", text: `${app.screen?.name || "This screen"} shows ${turning(app.screen?.timing) || "your pages in turn"}. Change it under the canvas.` })));
+      // Rotate every is the screen's own (Settings › Device), next to Update every.
+      h("p", { class: "fnote", text: `${app.screen?.name || "This device"} shows ${turning(app.screen?.timing) || "your pages in turn"}. Change it under the canvas.` })));
   }
   body.append(section(null, h("div", { class: "btnrow" },
     h("button", { class: "btn tinted", onclick: () => app.duplicatePage() }, icon("dup", "sm"), "Duplicate"),
@@ -531,33 +590,59 @@ function page(app, head, body) {
   body.append(h("p", { class: "empty-note", text: doc.els().length ? "Select something on the canvas to change it." : "This page is empty. Insert a sensor, text or an icon." }));
 }
 
-function conditionRows(app, p) {
+// How an alert ends: after a time (hold_minutes), or when its Until comes
+// true, with hold_minutes as the most it holds (conditions.py, frames.check_alerts).
+const HOLD = { time: 10, until: 120 };
+function endRows(app, p) {
+  const doc = app.doc, ends = p.ends === "until" ? "until" : "time";
+  const pick = (v) => {
+    if (v === ends) return;
+    // Each way of ending has its own sensible default; a time you chose stays.
+    if (p.hold_minutes == null || p.hold_minutes === HOLD[ends]) p.hold_minutes = HOLD[v];
+    if (v === "until") p.ends = "until"; else delete p.ends;
+    app.rawUntil = false;
+    doc.commit();
+  };
+  const minutes = (label, note) => field(label, number(p.hold_minutes ?? HOLD[ends], (v) => { p.hold_minutes = Math.max(1, Math.min(1440, Math.round(Number(v)) || HOLD[ends])); doc.commit(); }, { min: "1", max: "1440", step: "1" }), { note });
+  const rows = [field("Ends", select([["time", "After a time"], ["until", "When something happens"]], ends, pick))];
+  if (ends === "time") rows.push(minutes("Holds for", "Minutes. It takes over the panel when its condition turns true, then gives it back."));
+  else rows.push(conditionRows(app, p, UNTIL), minutes("At most", "Minutes. It gives the panel back sooner if this happens or its start stops being true, and comes back if this is undone."));
+  return rows;
+}
+
+// The condition a page shows by (show_if), or the Until an alert ends by.
+const SHOW = { key: "show_if", raw: "rawCondition", label: "While", rawNote: "A Home Assistant template that's true while the page should show.", now: [ "True now, so it's showing.", "False now" ] };
+const UNTIL = { key: "until_if", raw: "rawUntil", label: "Until", rawNote: "A Home Assistant template that's true once the alert should end.", now: [ "True now, so the alert would end.", "False now" ] };
+
+function conditionRows(app, p, c = SHOW) {
   const doc = app.doc;
-  const parsed = parseShowIf(p.show_if);
+  const parsed = parseShowIf(p[c.key]);
   const wrap = h("div", { class: "cond" });
-  if (parsed.mode === "raw" || app.rawCondition) {
-    wrap.append(field("Condition", textarea(p.show_if, (v) => { if (v.trim()) p.show_if = v.trim(); else delete p.show_if; doc.commit(); }), { wide: true, note: "A Home Assistant template that's true while the page should show." }));
-    const back = parseShowIf(p.show_if);
-    if (back.mode === "simple") wrap.append(linkButton("Use the simple form", () => { app.rawCondition = false; app.refresh(); }));
+  if (parsed.mode === "raw" || app[c.raw]) {
+    wrap.append(field(c === SHOW ? "Condition" : "Until", textarea(p[c.key], (v) => { if (v.trim()) p[c.key] = v.trim(); else delete p[c.key]; doc.commit(); }), { wide: true, note: c.rawNote }));
+    const back = parseShowIf(p[c.key]);
+    if (back.mode === "simple") wrap.append(linkButton("Use the simple form", () => { app[c.raw] = false; app.refresh(); }));
     return wrap;
   }
-  const upd = (patch) => { const next = { ...parsed, ...patch }; const c = compileShowIf(next); if (c) p.show_if = c; else delete p.show_if; doc.commit(); };
-  wrap.append(entityButton(app, parsed.ent, (id) => {
+  const upd = (patch) => { const next = { ...parsed, ...patch }; const v = compileShowIf(next); if (v) p[c.key] = v; else delete p[c.key]; doc.commit(); };
+  const pickBtn = entityButton(app, parsed.ent, (id) => {
     const dom = id.split(".")[0], st = app.entMap.get(id)?.state;
     upd({ ent: id, op: "eq", val: (KNOWN_STATES[dom] || [])[0] || st || "" });
-  }, { label: "While" }));
+  }, { label: c.label });
+  // "Shows" heads the page's own condition; an Until needs its word in sight.
+  wrap.append(c === SHOW ? pickBtn : field(c.label, pickBtn));
   if (parsed.ent) {
     const dom = parsed.ent.split(".")[0], known = KNOWN_STATES[dom];
-    const opSel = select(OPS, parsed.op, (v) => upd({ op: v }), { "aria-label": "Comparison" });
-    const valIn = input(parsed.val, (v) => upd({ val: v }), { "aria-label": "Value", placeholder: "Value" });
+    const opSel = select(OPS, parsed.op, (v) => upd({ op: v }), { "aria-label": c.label + " comparison" });
+    const valIn = input(parsed.val, (v) => upd({ val: v }), { "aria-label": c.label + " value", placeholder: "Value" });
     wrap.append(h("div", { class: "inline cmp" }, opSel, valIn));
     if (known && (parsed.op === "eq" || parsed.op === "ne")) wrap.append(h("div", { class: "chips" }, ...known.map((s) => h("button", { class: "chipbtn", "aria-pressed": String(parsed.val === s), onclick: () => upd({ val: s }) }, s.replace(/_/g, " ")))));
     const holds = evaluate(parsed, app.entMap);
     if (holds !== null) {
-      const d = describe(p.show_if, app.entMap);
-      wrap.append(h("div", { class: "note " + (holds ? "good" : "warn"), role: "note" }, h("span", { class: "led" }), h("span", { text: holds ? "True now, so it's showing." : `False now: ${d.why}` })));
+      const d = describe(p[c.key], app.entMap);
+      wrap.append(h("div", { class: "note " + (holds ? "good" : "warn"), role: "note" }, h("span", { class: "led" }), h("span", { text: holds ? c.now[0] : `${c.now[1]}: ${d.why}` })));
     }
   }
-  wrap.append(linkButton("Use a custom condition", () => { app.rawCondition = true; app.refresh(); }));
+  wrap.append(linkButton("Use a custom condition", () => { app[c.raw] = true; app.refresh(); }));
   return wrap;
 }

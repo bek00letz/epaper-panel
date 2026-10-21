@@ -11,7 +11,7 @@ from ha import ha_json
 # No built-in fallback location or timezone: a default would be someone's real
 # home, and wrong for everyone else. Home Assistant's own settings are the source.
 _home_location_cache = {"at": 0.0, "lat": None, "lon": None}
-_ha_config_cache = {"at": 0.0, "tz": None}
+_ha_config_cache = {"at": 0.0, "tz": None, "country": None, "language": None}
 
 
 def _haversine_km(lat1, lon1, lat2, lon2):
@@ -47,6 +47,8 @@ async def get_home_timezone(session, default="UTC"):
             if tz:
                 _ha_config_cache["at"] = now
                 _ha_config_cache["tz"] = tz
+                _ha_config_cache["country"] = cfg.get("country")
+                _ha_config_cache["language"] = cfg.get("language")
                 if "latitude" in cfg and "longitude" in cfg:
                     _home_location_cache["at"] = now
                     _home_location_cache["lat"] = float(cfg["latitude"])
@@ -88,3 +90,9 @@ async def get_home_coordinates(session):
         except Exception:
             pass
     return _home_location_cache["lat"], _home_location_cache["lon"]
+
+
+async def get_home_locale(session) -> tuple[str | None, str | None]:
+    """Home Assistant's country and language (from the same /config read as its time zone)."""
+    await get_home_timezone(session)
+    return _ha_config_cache.get("country"), _ha_config_cache.get("language")

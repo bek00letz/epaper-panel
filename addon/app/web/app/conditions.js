@@ -2,7 +2,10 @@
 // the same Home Assistant template 0.9 wrote, and reads it back. Anything the
 // form can't express stays a custom template, untouched.
 
-import { getWidgetSensorId } from "./legacy.js";
+import { getWidgetSensorId, todoShowIf } from "./legacy.js";
+import { widget } from "./catalog.js";
+
+const NO_VALUE = ["unavailable", "unknown"];
 
 export const OPS = [["eq", "is"], ["ne", "isn't"], ["gt", "is above"], ["lt", "is below"], ["ge", "is at least"], ["le", "is at most"]];
 
@@ -10,13 +13,21 @@ export function parseShowIf(expr) {
   const s = String(expr || "").trim();
   if (!s) return { mode: "simple", ent: "", op: "eq", val: "" };
   const inner = s.startsWith("{{") && s.endsWith("}}") ? s.slice(2, -2).trim() : s;
+  // The no-value guard compileShowIf adds, on the same sensor; conditions saved
+  // before it read the same.
+  const g = inner.match(/^has_value\(\s*'([^']+)'\s*\)\s+and\s+(.*)$/);
+  const p = parseSimple(g ? g[2] : inner);
+  return p && (!g || p.ent === g[1]) ? p : { mode: "raw", raw: s };
+}
+
+function parseSimple(inner) {
   let m = inner.match(/^is_state\(\s*'([^']+)'\s*,\s*'([^']*)'\s*\)$/);
   if (m) return { mode: "simple", ent: m[1], op: "eq", val: m[2] };
   m = inner.match(/^not\s+is_state\(\s*'([^']+)'\s*,\s*'([^']*)'\s*\)$/);
   if (m) return { mode: "simple", ent: m[1], op: "ne", val: m[2] };
   m = inner.match(/^states\(\s*'([^']+)'\s*\)\s*\|\s*(?:int|float)\([^)]*\)\s*(>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)$/);
   if (m) return { mode: "simple", ent: m[1], op: { ">": "gt", "<": "lt", ">=": "ge", "<=": "le" }[m[2]], val: m[3] };
-  return { mode: "raw", raw: s };
+  return null;
 }
 
 export function compileShowIf({ ent, op, val }) {
@@ -24,10 +35,12 @@ export function compileShowIf({ ent, op, val }) {
   val = String(val ?? "").trim().replace(/'/g, "");
   if (!ent) return "";
   if (op === "eq") return `{{ is_state('${ent}','${val}') }}`;
-  if (op === "ne") return `{{ not is_state('${ent}','${val}') }}`;
+  // A sensor with no value (unavailable, unknown) never meets "isn't" or a
+  // number: float(0) would read it as 0, so "below 20" came true at every restart.
+  if (op === "ne") return `{{ has_value('${ent}') and not is_state('${ent}','${val}') }}`;
   const sym = { gt: ">", lt: "<", ge: ">=", le: "<=" }[op] || ">";
   const n = Number(val);
-  return `{{ states('${ent}') | float(0) ${sym} ${isNaN(n) ? 0 : n} }}`;
+  return `{{ has_value('${ent}') and states('${ent}') | float(0) ${sym} ${isNaN(n) ? 0 : n} }}`;
 }
 
 /* Does a simple condition hold with these states? null when it can't tell. */
@@ -37,6 +50,7 @@ export function evaluate(parsed, entMap) {
   if (!e) return null;
   const s = String(e.state), v = parsed.val;
   if (parsed.op === "eq") return s === v;
+  if (NO_VALUE.includes(s)) return false;
   if (parsed.op === "ne") return s !== v;
   const a = Number(s), b = Number(v);
   if (isNaN(a)) return false;
@@ -60,7 +74,17 @@ export function describe(showIf, entMap) {
 const BUILTIN_MARKERS = ["sensor.epaper_sports_", "sensor.sports_", "sensor.epaper_racing_", "sensor.f1_status", "sensor.formula_e_status", "sensor.epaper_flights_overhead", "sensor.overhead_aircraft_count"];
 export function syncWidgetShowIf(page, widgetEl) {
   if (!page || page.tier !== "when") return;
-  widgetEl = widgetEl || (page.elements || []).find((x) => ["sports_match", "sports_racing", "flight_tracker"].includes(x.type));
+  const list = widgetEl?.type === "todo_list" ? widgetEl : !widgetEl && (page.elements || []).find((x) => x.type === "todo_list");
+  if (list) {
+    // Ours to rewrite only while it's still a to-do list's own condition.
+    const cur = parseShowIf(page.show_if);
+    if (page.show_if && !(cur.mode === "simple" && /^(todo\.|sensor\.epaper_todo_)/.test(cur.ent))) return;
+    const c = todoShowIf(list.entity, list.show);
+    if (c) page.show_if = c; else delete page.show_if;
+    return;
+  }
+  // A widget that shows only around its events says so in its descriptor ("window": the add-on's).
+  widgetEl = widgetEl || (page.elements || []).find((x) => x.type !== "todo_list" && widget(x.type)?.window);
   if (!widgetEl) return;
   const cur = String(page.show_if || "").trim();
   if (cur && !BUILTIN_MARKERS.some((m) => cur.includes(m))) return;

@@ -176,3 +176,37 @@ async def fetch(src, ctx):
          {"friendly_name": f"{src.get('friendly_name') or 'Next to watch'} count",
           "icon": "mdi:television-play"}),
     ]
+
+
+def _plain_error(exc) -> str:
+    """What went wrong connecting, in words that say what to do next."""
+    status = getattr(exc, "status", None)
+    if status in (401, 403):
+        return "Jellyfin didn't accept that API key. Make one in Jellyfin under Dashboard › API Keys, then paste it here."
+    if status is not None:
+        return "That address answered, but not like Jellyfin. Check it's the address you open Jellyfin at, without /web at the end."
+    return ("Couldn't reach Jellyfin at that address. Check it opens in a browser on the same network as Home Assistant, "
+            "including the port (often :8096).")
+
+
+async def check(base: str, key: str, session=None) -> dict:
+    """Try an address and API key before saving them: {"ok", "users": [{"id", "name"}], "titles"}
+    or {"ok": false, "error"}. `titles`: films and series in the library."""
+    base = (base or "").strip().rstrip("/")
+    if not base.startswith(("http://", "https://")):
+        return {"ok": False, "error": "That isn't a web address. It starts with http:// or https://, like http://192.168.1.20:8096."}
+    if not (key or "").strip():
+        return {"ok": False, "error": "Paste an API key from Jellyfin's Dashboard › API Keys."}
+    try:
+        if session is None:
+            async with aiohttp.ClientSession() as s:
+                return await check(base, key, s)
+        users = await _get(session, base, key.strip(), "/Users")
+        counts = await _get(session, base, key.strip(), "/Items/Counts")
+    except Exception as exc:
+        return {"ok": False, "error": _plain_error(exc)}
+    if not isinstance(users, list):
+        return {"ok": False, "error": "That address answered, but not like Jellyfin. Check it's the address you open Jellyfin at, without /web at the end."}
+    titles = sum(int((counts or {}).get(k) or 0) for k in ("MovieCount", "SeriesCount")) if isinstance(counts, dict) else 0
+    return {"ok": True, "titles": titles,
+            "users": [{"id": str(u.get("Id") or ""), "name": str(u.get("Name") or "")} for u in users if isinstance(u, dict)]}

@@ -55,7 +55,7 @@ Where things live in `addon/app/`:
 | `reach.py` / `companion.py` / `companion/epaper_panel/` | Reaching home: how screens away from home get in, and the Home Assistant integration that passes them on |
 | `frames.py` | Per design: which pages are live, their values, alerts. Per device: quiet hours, then its kind renders it |
 | `entities.py` / `mqtt_bridge.py` | The add-on's own values, and mirroring them into Home Assistant |
-| `sources/` | Outside data (flights, sports, racing, weather, calendars), always through `live_data.py` |
+| `sources/` | Outside data (flights, sports, racing, weather, calendars, to-do lists), always through `live_data.py` |
 | `panel_link.py` / `panel_ops.py` | Finding a panel and asking it to refresh or step |
 | `panel_setup.py` / `firmware_gen.py` / `firmware/panel.yaml` | Panel setup, and the one source of the firmware YAML |
 | `web.py` | The device port (shared routes; each kind adds its own) and the Ingress-only editor API |
@@ -141,7 +141,7 @@ every design.
   on, seconds, and the panel turns its pages itself; asleep, a whole number of
   updates (each wake refreshes the page on screen, every Nth moves on), at
   least once a day. Each mode keeps its own, so switching back finds what you
-  had. They're set in Settings › Screen and apply at once, never sent with the
+  had. They're set in Settings › Device and apply at once, never sent with the
   pages; a new screen chooses between two cards, always on picked. A kind
   that can't stay connected (`stays_on` false: a TRMNL) has no always-on
   choice and starts at 5 minutes. Whether a screen sleeps is never assumed
@@ -285,8 +285,10 @@ render) live in one record inside the add-on, `runtime.PUBLISHED`.
 
 - **Pages read that record directly** (`binding.local_value`) for `state` and
   `attribute` bindings. They don't round-trip through Home Assistant, so they
-  work without a broker and never race the publish. Raw Jinja that names a
-  `sensor.epaper_*` entity still goes through Home Assistant.
+  work without a broker and never race the publish. So do the simple
+  form's conditions on them (`conditions.local`, `frames.resolve_conditions`):
+  "New to watch is above 0" is answered from the record. Raw Jinja that names
+  a `sensor.epaper_*` entity still goes through Home Assistant.
 - **Home Assistant gets them over MQTT discovery only** (`mqtt_bridge.py`). The
   Supervisor hands over the broker login (`services: mqtt:want`). Each value
   is a sensor with a `unique_id` under an "E-Paper Studio" device, has
@@ -308,14 +310,14 @@ render) live in one record inside the add-on, `runtime.PUBLISHED`.
 
 ## Outside data
 
-`live_data.py`. Flights, sports, racing, weather and calendars are fetched in
+`live_data.py`. Flights, sports, racing, weather, calendars and to-do lists are fetched in
 the background; a render only reads what's already there and never waits on
 an outside service. The first read of something new returns at once, using the
 caller's fallback, and schedules the fetch. When it lands, the render loop
 wakes, so a new widget fills in within seconds. A failed fetch keeps the last
 good value, unless it has a `stale_after` age (an aircraft list older than five
 minutes is dropped). Your data sources (`feeds/`) go through the same store,
-each on its own interval. The seven fetchers in `sources/` are decorated `@runtime.live(seconds)`;
+each on its own interval. The eight fetchers in `sources/` are decorated `@runtime.live(seconds)`;
 their own caches still stop them hitting a service more often than it allows.
 The editor's preview (and its aircraft list) wait for fresh data, because
 there a person asked.
@@ -576,7 +578,7 @@ screen (Update every), never a property of a kind. Three setups make sense:
 
 ### Sleeping between updates
 
-Update every 2 minutes or more (Settings › Screen, or the second card when
+Update every 2 minutes or more (Settings › Device, or the second card when
 adding a screen; always on is the default) makes a CrowPanel a
 [screen that sleeps](#screens-that-sleep).
 
@@ -742,6 +744,23 @@ pages that currently have something to say. `watch` drops out when nothing is
 new rather than showing "nothing new" on the wall; `dryer` exists only while the
 timer runs. When an `alert` page fires, the server replaces the strip with a
 single-page alert frame for `hold_minutes` and pushes a refresh to the panel.
+An alert that ends "when something happens" (`ends: until`, `until_if`) is
+the same alert with the condition "it started and its Until hasn't happened
+yet", and `hold_minutes` as its limit (`frames.check_alerts`,
+`conditions.py`): it lets go when either changes or at the limit, and comes
+back when the Until is undone while the start still holds. A held alert is
+in memory only: a restart forgets it, and a start that's still true fires
+again.
+
+**To-do lists through Home Assistant's `todo.get_items`**, not each
+service's own API, so every kind of list works (Shopping list, Local To-do,
+Google Tasks, Todoist, CalDAV) with no keys. Home Assistant hands the items
+over in the list's stored order, not by due date, so `render/todo.py`
+orders them (due first, then the list's order) and gives the due labels,
+for the page and for the add-on's count of what's due today or overdue
+(`sensor.epaper_todo_<list>_due`, `entities.publish_todo_due`, one per list
+on a page) alike. A list that doesn't fit
+ends with "and 4 more" instead of paging: one calm screen.
 
 **The panel owns which page is shown; the server owns what the pages are.**
 (For an always-on CrowPanel. A TRMNL can't page on its own, and a sleeping
