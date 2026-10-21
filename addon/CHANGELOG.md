@@ -1,6 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.18.0
+**Firmware change:** install the panel again (Settings › Install or update,
+then Send to ESPHome and Install in ESPHome) so its clock lines up with the
+minute. Until then it keeps working as before.
+
+In short: the clock on the panel is right within seconds (the add-on draws
+just after each minute starts and the panel fetches right after); icons come
+from your own Home Assistant, including your custom icon sets; condition
+suggestions come from the add-on's one list of states.
+The details:
 - **Icons come from your Home Assistant.** The add-on still ships the whole
   Material Design set, so icons always draw, but when Home Assistant has a
   different version it copies Home Assistant's set across in one go and
