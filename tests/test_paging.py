@@ -55,20 +55,40 @@ class TestTheCursor(unittest.TestCase):
         self.assertEqual(paging.updated_label(datetime(2026, 10, 19, 22, 5), now), "updated Mon 22:05")
 
 
-class TestTheSleepTime(unittest.TestCase):
+class AlignedAt3(unittest.TestCase):
+    """Renders usually done by :03 (cadence.fetch_second), so a wake lands at hh:mm:03."""
+
+    def setUp(self):
+        patcher = mock.patch.object(cadence, "fetch_second", lambda: 3.0)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+
+def wakes_at(now: datetime, seconds: int) -> str:
+    return (now + timedelta(seconds=seconds)).strftime("%H:%M:%S")
+
+
+class TestTheSleepTime(AlignedAt3):
     dev = {"id": "9", "kind": "crowpanel", "update_minutes": 15}
-    now = datetime(2026, 10, 20, 14, 0)
+    now = datetime(2026, 10, 20, 14, 0, 3)
 
     def test_the_wake_interval(self):
         self.assertEqual(paging.sleep_seconds(self.dev, ahead(), self.now, person=False), 900)
 
+    def test_a_wake_lands_just_after_a_minute_starts(self):
+        # Its first wake was at :19 (a press, a boot): the next is at :03, never later than asked.
+        at = datetime(2026, 10, 20, 14, 0, 19)
+        self.assertEqual(wakes_at(at, paging.sleep_seconds(self.dev, ahead(), at, person=False)), "14:15:03")
+        self.assertEqual(wakes_at(at, paging.sleep_seconds(self.dev, ahead(), at, person=True)), "14:15:03",
+                         "after a press too")
+
     def test_cut_short_to_wake_just_after_quiet_hours_start(self):
         qh = {"enabled": True, "start": "14:05", "end": "07:00"}
-        self.assertEqual(paging.sleep_seconds(self.dev, ahead(qh), self.now, False), 5 * 60 + paging.QUIET_MARGIN)
+        self.assertEqual(wakes_at(self.now, paging.sleep_seconds(self.dev, ahead(qh), self.now, False)), "14:05:03")
 
     def test_through_quiet_hours_until_they_end(self):
         qh = {"enabled": True, "start": "13:00", "end": "16:00"}
-        self.assertEqual(paging.sleep_seconds(self.dev, ahead(qh), self.now, False), 2 * 3600 + paging.QUIET_MARGIN)
+        self.assertEqual(wakes_at(self.now, paging.sleep_seconds(self.dev, ahead(qh), self.now, False)), "16:00:03")
         self.assertEqual(paging.sleep_seconds(self.dev, ahead(qh), self.now, True), paging.GLANCE_SECONDS,
                          "a press shows a page for a while, then the sleep screen")
 
@@ -93,10 +113,11 @@ class TestTheSleepTime(unittest.TestCase):
         self.assertTrue(paging.quiet_now(ahead(qh), datetime(2026, 10, 20, 23, 0, 20))[0])
 
 
-class TestTheNightTheClocksChange(unittest.TestCase):
+class TestTheNightTheClocksChange(AlignedAt3):
     """A screen asleep until quiet hours end wakes at that time on the clock, not an hour off."""
 
     def setUp(self):
+        super().setUp()
         self._tz = os.environ.get("TZ")
         os.environ["TZ"] = "Europe/Bucharest"           # clocks change at 03:00/04:00 local, like most of Europe
         time.tzset()
@@ -120,8 +141,9 @@ class TestTheNightTheClocksChange(unittest.TestCase):
     def test_asleep_through_quiet_hours(self):
         qh = {"enabled": True, "start": "22:00", "end": "07:00"}
         dev = {"id": "9", "kind": "crowpanel", "update_minutes": 15}
-        self.assertEqual(paging.sleep_seconds(dev, ahead(qh), datetime(2026, 10, 24, 23, 0), False),
-                         9 * 3600 + paging.QUIET_MARGIN)
+        at = datetime(2026, 10, 24, 23, 0).astimezone()
+        woke = datetime.fromtimestamp(at.timestamp() + paging.sleep_seconds(dev, ahead(qh), at, False))
+        self.assertEqual(woke.strftime("%d %H:%M:%S"), "25 07:00:03", "the clock's 07:00, an hour further than usual")
 
 
 class TestAwake(unittest.TestCase):
@@ -183,6 +205,14 @@ class LowPowerBase(unittest.IsolatedAsyncioTestCase):
         return await self.lan.get("/frames.epf", params={"token": self.key, **params})
 
 
+def sleep_order(r) -> tuple[int, int]:
+    sleep_for, awake = r.headers["X-EPF-Sleep"].split("; awake=")
+    return int(sleep_for), int(awake)
+
+
+lands_aligned = support.lands_aligned
+
+
 class TestAlwaysOn(LowPowerBase):
     async def test_always_on_by_default_and_nothing_tells_it_to_sleep(self):
         self.assertNotIn("update_minutes", devices.get(self.hall["id"]), "nothing set: always on")
@@ -239,7 +269,8 @@ class TestSleeping(LowPowerBase):
     async def test_a_timer_wake_gets_one_picked_page_and_how_long_to_sleep(self):
         await self.update_every()
         r = await self.fetch(wake="timer", awake_ms="3100")
-        self.assertEqual(r.headers["X-EPF-Sleep"], "900; awake=0")
+        sleep_for, awake = sleep_order(r)
+        self.assertTrue(lands_aligned(sleep_for, 900) and awake == 0, r.headers["X-EPF-Sleep"])
         first = epf.decode_epf(await r.read())
         self.assertEqual(first.header.page_count, 1, "one page: a quarter of the decode time of the strip")
         r2 = await self.fetch(wake="timer")
@@ -260,13 +291,14 @@ class TestSleeping(LowPowerBase):
         r = await self.lan.get("/frames.epf", params={"token": self.key, "wake": "timer"},
                                headers={"If-None-Match": etag})
         self.assertEqual(r.status, 304, "updated is when it last changed: same picture, same tag")
-        self.assertEqual(r.headers["X-EPF-Sleep"], "3600; awake=0", "a 304 still says how long to sleep")
+        self.assertTrue(lands_aligned(sleep_order(r)[0], 3600), "a 304 still says how long to sleep")
 
     async def test_a_press_gets_every_page_and_a_minute_awake(self):
         await self.update_every()
         r = await self.fetch(wake="button")
         self.assertGreater(epf.decode_epf(await r.read()).header.page_count, 1)
-        self.assertEqual(r.headers["X-EPF-Sleep"], f"900; awake={paging.PERSON_AWAKE_SECONDS}")
+        sleep_for, awake = sleep_order(r)
+        self.assertTrue(lands_aligned(sleep_for, 900) and awake == paging.PERSON_AWAKE_SECONDS, r.headers["X-EPF-Sleep"])
         r = await self.fetch()
         self.assertIn("X-EPF-Sleep", r.headers, "firmware that can't sleep yet ignores it")
 
@@ -276,7 +308,8 @@ class TestSleeping(LowPowerBase):
         await self.update_every()
         self.assertTrue((await self.fetch(wake="button")).headers["X-EPF-Sleep"].endswith(
             f"awake={paging.PERSON_AWAKE_SECONDS}"))
-        self.assertEqual((await self.fetch()).headers["X-EPF-Sleep"], "900; awake=0")
+        sleep_for, awake = sleep_order(await self.fetch())
+        self.assertTrue(lands_aligned(sleep_for, 900) and awake == 0)
         await self.ed.post(f"/api/devices/{self.hall['id']}/stay-awake")
         await self.fetch(wake="timer")
         awake = int((await self.fetch()).headers["X-EPF-Sleep"].split("awake=")[1])
@@ -290,7 +323,8 @@ class TestSleeping(LowPowerBase):
         sleep_for, awake = r.headers["X-EPF-Sleep"].split("; awake=")
         self.assertGreater(int(awake), paging.STAY_AWAKE_SECONDS - 5, "the same field carries it")
         await self.ed.delete(f"/api/devices/{self.hall['id']}/stay-awake")
-        self.assertEqual((await self.fetch(wake="timer")).headers["X-EPF-Sleep"], "900; awake=0")
+        sleep_for, awake = sleep_order(await self.fetch(wake="timer"))
+        self.assertTrue(lands_aligned(sleep_for, 900) and awake == 0)
         await self.update_every(1)
         self.assertEqual((await self.ed.post(f"/api/devices/{self.hall['id']}/stay-awake")).status, 409)
 
@@ -310,9 +344,9 @@ class TestSleeping(LowPowerBase):
     async def test_update_every_is_how_long_it_sleeps(self):
         await self.update_every(30)
         self.assertEqual(devices.get(self.hall["id"])["update_minutes"], 30)
-        self.assertEqual((await self.fetch(wake="timer")).headers["X-EPF-Sleep"], "1800; awake=0")
+        self.assertTrue(lands_aligned(sleep_order(await self.fetch(wake="timer"))[0], 1800))
         await self.update_every(1440)
-        self.assertEqual((await self.fetch(wake="timer")).headers["X-EPF-Sleep"], "86400; awake=0", "up to a day")
+        self.assertTrue(lands_aligned(sleep_order(await self.fetch(wake="timer"))[0], 86400), "up to a day")
         self.assertEqual((await self.ed.patch(f"/api/devices/{self.hall['id']}", json={"update_minutes": 7})).status, 400)
         status = await (await self.ed.get(f"/api/status?device={self.hall['id']}")).json()
         self.assertEqual(status["panel_interval"], 1440)

@@ -15,6 +15,10 @@ Firmware change: reinstall the panel's firmware to get the second half.
   Send, alerts and quiet hours still fetch at once; the next timed fetch
   lines up again. Until its firmware is reinstalled, a panel keeps
   fetching every minute from when it started, as before.
+- **Devices that sleep between updates wake just after a minute starts**,
+  a CrowPanel and a TRMNL alike, so what they show was drawn that minute.
+  A wake is never later than Update every asks; the first one after a
+  start or a press may come up to a minute sooner, to line up.
 
 ## 0.17.0
 Add-on only; no firmware change, so nothing to reinstall on the panel.

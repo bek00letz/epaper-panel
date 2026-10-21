@@ -51,3 +51,12 @@ def first_frames():
     import devices
     import runtime
     return runtime.device(devices.primary()["id"]).frames
+
+
+def lands_aligned(sleep_for: int, want: int) -> bool:
+    """A sleep of `want` seconds from now, cut to wake fetch_second() into a minute (cadence.py):
+    never later than asked, less than a minute sooner, and on the moment."""
+    import time
+    import cadence
+    at = time.time() + sleep_for
+    return want - 60 < sleep_for <= want + 1 and abs((at - cadence.fetch_second() + 30) % 60 - 30) < 2
