@@ -11,7 +11,9 @@ from email.utils import formatdate
 from render import binding, countdown, epf, layout, sleep, stripmeta, subitems, theme as T, todo
 import cadence
 import conditions
+import config
 import devices
+import feeds
 import health
 import kinds
 import runtime
@@ -174,10 +176,24 @@ def fit_counts(wants: list[int], page_bytes: int, capacity: int, extra_pages: in
     return counts
 
 
+def items_word(plan: dict) -> str:
+    """What a page's items are called, in its own words: games or matches (its league's sport),
+    planes, players, titles (widgets.py's items_word, feeds.ITEM_WORDS); "items" otherwise."""
+    for el in plan.get("elements") or []:
+        if isinstance(el, dict) and el.get("type") in subitems.WIDGET_WORDS \
+                and subitems.WIDGET_ITEMS[el["type"]][1] == plan.get("sub_type"):
+            return subitems.WIDGET_WORDS[el["type"]](el)
+    if plan.get("feed_entity"):
+        return feeds.items_word(plan["feed_entity"], feeds.load(config.DATA_DIR))
+    return "items"
+
+
 def record_fit(plans: list[dict], counts: list[int], capacity: int, previous: dict | None = None,
                device_name: str = "the panel") -> dict:
-    """What was left out to fit a panel, for the editor and Home Assistant."""
-    trimmed = [{"page": p["name"], "shown": c, "of": p["want"]} for p, c in zip(plans, counts) if c < p["want"]]
+    """What was left out to fit a panel, for the editor (each page's tile and inspector say it, in
+    its own words) and Home Assistant."""
+    trimmed = [{"page": p["name"], "shown": c, "of": p["want"], "items": items_word(p)}
+               for p, c in zip(plans, counts) if c < p["want"]]
     fit = {"capacity": capacity, "pages_shown": sum(counts),
            "pages_wanted": sum(p["want"] for p in plans), "trimmed": trimmed}
     if trimmed and fit["trimmed"] != (previous or {}).get("trimmed"):

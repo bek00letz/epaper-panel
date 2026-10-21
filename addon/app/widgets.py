@@ -25,7 +25,7 @@ from datetime import datetime
 from typing import Any, Awaitable, Callable
 
 import examples
-from render import layout, subitems
+from render import layout, sport, subitems
 from sources import energy, flights, ha_services, home, racing, sports, station
 
 # A default box: "fill" takes the content area less `inset` (from `y`); otherwise each size is clamped to it.
@@ -80,6 +80,7 @@ class Widget:
     # as the panel holds (frames.fit_counts shares its room out, most important first).
     items: tuple[int | None, str] | None = None
     busiest: Callable[[dict], int] | None = None    # with no cap: the most items an element can have at once
+    items_word: Callable[[dict], str] | None = None  # what its items are called: "planes", a sport's "games"
     window: bool = False                        # its page can show only around its events (a sensor of ours)
     breakable: bool = False                     # the editor can break it into plain elements
 
@@ -245,7 +246,7 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
            fields=[entity("entity", "Power sensor, if not the dashboard's"), toggle("invert", "Above zero when selling", False)]),
     Widget("energy_cost", "Energy cost", "value", _cost, lambda el, now: dict(examples.COST)),
     Widget("now_playing", "Now playing", "play", _now_playing, lambda el, now: list(examples.PLAYING),
-           live=(home.fetch_now_playing,), defaults={"entity": ""}, items=(5, "media"),
+           live=(home.fetch_now_playing,), defaults={"entity": ""}, items=(5, "media"), items_word=lambda el: "players",
            fields=[text("entity", "Players", "All of them")]),
     Widget("tv_week", "On TV this week", "calendar", _tv, lambda el, now: {"events": examples.episodes(now), "tz": None},
            defaults={"entity": "", "days": 7},
@@ -285,7 +286,8 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
                      "items": [{"entity": "", "name": "Spot 1", "icon": "mdi:radiator"}, {"entity": "", "name": "Spot 2", "icon": "mdi:radiator"}]},
            fields=[{"kind": "grid"}]),
     Widget("flight_tracker", "Flights", "plane", _flights, lambda el, now: list(examples.AIRCRAFT),
-           live=(flights.fetch_overhead_aircraft,), items=(5, "flight"), window=True, breakable=True,
+           live=(flights.fetch_overhead_aircraft,), items=(5, "flight"), items_word=lambda el: "planes",
+           window=True, breakable=True,
            defaults={"radius": 35, "style": "card", "show_border": True},
            fields=[sel("style", "Style", [["card", "Details"], ["split", "Radar and details"], ["radar", "Radar"]], "card"),
                    {"kind": "place"}, num("radius", "Radius, km", "35", 5, 250),
@@ -307,6 +309,7 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
            live=(sports.fetch_sports_match,), items=(None, "sports"), window=True, breakable=True,
            # A Team Tracker sensor is one game; a league, its busiest day.
            busiest=lambda el: 1 if str(el.get("entity") or "").strip() else sports.busiest_day(el.get("league")),
+           items_word=lambda el: sport.words(sports.path_of(el.get("league"))).events,
            defaults={"league": "soccer/eng.1", "team": "", "entity": "", "show_border": True},
            fields=[sel("league", "League", "leagues", "soccer/eng.1"), text("team", "Team", "Any team"),
                    entity("entity", "Team Tracker sensor"),
@@ -320,6 +323,7 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
 # Render-side facts come from here: which types take their fetched value, and which make items of a page.
 subitems.WIDGET_ITEMS.update({t: w.items for t, w in WIDGETS.items() if w.items})
 subitems.WIDGET_BUSIEST.update({t: w.busiest for t, w in WIDGETS.items() if w.busiest})
+subitems.WIDGET_WORDS.update({t: w.items_word for t, w in WIDGETS.items() if w.items_word})
 
 
 # A plain sensor whose value changes all the time (power, wind...), as Home Assistant describes it.

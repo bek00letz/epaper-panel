@@ -10,7 +10,7 @@ import { explodeWidget, getWidgetSensorId, suggestIconForEntity } from "./legacy
 import { dateEditor, binsEditor } from "./countdown.js";
 import { zonesEditor } from "./zones.js";
 import { staleNote, changesEvery, pageChangesEvery, sleepsBetweenUpdates } from "./presets.js";
-import { busyNote } from "./busyday.js";
+import { busyNote, leftOutNote } from "./busyday.js";
 import { widget, leagueOptions, seriesOptions, sportWord, stateWords } from "./catalog.js";
 import { FROM, CLOCK_FORMATS, sourceOf, switchSource, isTemplate } from "./shows.js";
 import { isFollowing, startFollowing, stopFollowing, setEntity, addState, removeState, setStateIcon, setStateLook, suggestions, wordFor,
@@ -107,6 +107,7 @@ function element(app, head, body, el, i) {
   if (el._auto) body.append(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: `Placed automatically for ${app.screen?.name || "this device"}. Move or resize it and this device keeps its own place for it.` })));
   const stale = staleNote(changesEvery(el, app.entMap), app.screen);
   if (stale) body.append(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: stale })));
+  if (widget(el.type)?.sub_items) body.append(leftOutNote(app, doc.cur));   // its page's items left out to fit
   // A device that sleeps draws the date where the time would be; the renderer says which elements
   // it changed (render/clocktime.py, the one place that knows what shows the time).
   const asleep = app.canvas.metrics.find((x) => x.i === i);
@@ -675,6 +676,7 @@ function page(app, head, body) {
   // What changes faster than a sleeping device updates is noted, never hidden (presets.staleNote).
   const stale = staleNote(pageChangesEvery(p.elements, app.entMap), app.screen);
   if (stale) body.append(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: stale })));
+  body.append(leftOutNote(app, cur));         // what the panel left out of it to fit, while it does
 
   const tier = p.tier || "rotate";
   const when = section("Shows", seg([["rotate", "Always"], ["when", "Only when"], ["alert", "As an alert"]], tier, (v) => app.setTier(v), "When this page shows"));

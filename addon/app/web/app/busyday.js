@@ -36,3 +36,44 @@ export function busyNote(app, spec) {
   }).catch(() => { /* nothing to say is better than a guess */ });
   return node;
 }
+
+/* When it happened: what the panel left out of a page to fit (the add-on's fit, /api/status, only
+   for a device that keeps its whole rotation; nothing for one that sleeps). In the page's own words:
+   "Showing 14 of 23 games" on its tile, a fuller line in its inspector. Gone once nothing is left out. */
+export function leftOut(app, n) {
+  return (app.status?.fit?.trimmed || []).find((t) => t.page === n) || null;
+}
+
+export function leftOutShort(cut) {
+  return cut.shown ? `Showing ${cut.shown} of ${cut.of} ${cut.items}` : "No room for it";
+}
+
+function leftOutLong(app, n, cut) {
+  const who = app.screen?.name || "This device";
+  if (!cut.shown) return `${who} has no room left for this page. Take a page out of the rotation to make room.`;
+  const scores = (app.doc.spec.pages[n]?.elements || []).filter((el) => el.type === "sports_match");
+  const team = scores.length && scores.every((el) => String(el.team || el.entity || "").trim());
+  return `${who} has room for ${cut.shown} of the ${cut.of} ${cut.items} right now, ` +
+    (team ? "your team's first." : "the most important first.") +
+    (scores.length && !team ? ` Pick your team to make sure its ${cut.items} show.` : "");
+}
+
+/* The inspector's line for page `n`, kept up to date as the status comes in (refreshLeftOut). */
+export function leftOutNote(app, n) {
+  const node = h("p", { class: "note info leftout", role: "note", data: { page: n } }, icon("info", "sm"), h("span"));
+  fillLeftOut(app, node, false);
+  return node;
+}
+
+function fillLeftOut(app, node, fresh) {
+  const cut = leftOut(app, node.dataset.page);
+  const text = cut ? leftOutLong(app, node.dataset.page, cut) : "";
+  const was = node.querySelector("span").textContent;
+  node.querySelector("span").textContent = text;
+  node.hidden = !text;
+  if (fresh && text && !was) node.classList.add("fade");
+}
+
+export function refreshLeftOut(app) {
+  document.querySelectorAll(".note.leftout").forEach((node) => fillLeftOut(app, node, true));
+}

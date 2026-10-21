@@ -28,6 +28,23 @@ class TestBusyDayLine(unittest.TestCase):
         self.assertIn('if (p.choose !== "League") return;', js("setup.js"), "Scores only")
         self.assertIn('if (f.key === "league") s.append(busyNote(app, app.doc.spec));', js("inspector.js"))
 
+class TestLeftOut(unittest.TestCase):
+    def test_the_tile_says_it_in_the_pages_own_words(self):
+        src = js("busyday.js")
+        self.assertIn("(app.status?.fit?.trimmed || []).find((t) => t.page === n)", src, "the add-on's fit, nothing counted here")
+        self.assertIn("`Showing ${cut.shown} of ${cut.of} ${cut.items}`", src)
+        self.assertIn("if (cut) sub = leftOutShort(cut);", js("strip.js"))
+
+    def test_the_inspector_says_more_and_keeps_up(self):
+        src = js("busyday.js")
+        self.assertIn("has room for ${cut.shown} of the ${cut.of} ${cut.items} right now, ", src)
+        self.assertIn("body.append(leftOutNote(app, cur));", js("inspector.js"), "the page's inspector")
+        self.assertIn("if (widget(el.type)?.sub_items) body.append(leftOutNote(app, doc.cur));", js("inspector.js"),
+                      "and its Scores widget's, which fills the page")
+        self.assertIn("refreshLeftOut(this);", js("main.js"), "gone by itself once nothing is left out")
+
+
+class TestNoCounter(unittest.TestCase):
     def test_no_page_counter_anywhere(self):
         for name in ("strip.js", "sheets.js", "main.js"):
             self.assertNotIn("pages_wanted", js(name), name)

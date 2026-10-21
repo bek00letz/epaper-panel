@@ -11,6 +11,11 @@
   leagues can have a lot of scores, and Kitchen can only show about 25 of
   them." Nothing shows when it all fits, or on a device that sleeps between
   updates or a TRMNL, which have no such limit.
+- **A page that's cut short says so.** When an always-on device can't hold
+  every game, its Scores page's tile says "Showing 14 of 23 games" (or
+  matches, in football's word), and its inspector says which come first.
+  Planes, Now playing and New to watch say it the same way, in their own
+  words. It goes away by itself once everything fits again.
 
 ## 0.18.0
 **Firmware change:** install the panel again (Settings › Install or update,

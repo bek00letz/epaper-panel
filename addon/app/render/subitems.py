@@ -31,6 +31,9 @@ WIDGET_ITEMS: dict[str, tuple[int | None, str]] = {}
 # ({type: fn(el) -> int}; Scores: its league's busiest day). Filled from widgets.py too.
 WIDGET_BUSIEST: dict[str, Any] = {}
 
+# What a widget's items are called, in its own words ({type: fn(el) -> "games"}). From widgets.py.
+WIDGET_WORDS: dict[str, Any] = {}
+
 # A feed's attributes that speak for all of its items at once. A page that
 # shows only these is one screen, not one per item.
 WHOLE_FEED = ("up_next", "count", "titles", "items")

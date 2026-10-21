@@ -156,8 +156,9 @@ async def status(request):
         # Every outside service and data source: last success, and the problem
         # if it is failing (also a problem sensor in Home Assistant).
         "services": health.status(),
-        # How many pages the panel holds, and what was left out to fit.
-        "fit": rt.fit,
+        # How many pages the panel holds, and what was left out to fit: only for a device that keeps its
+        # whole rotation in memory (Kind.room), which can run out. One that sleeps gets a page a wake.
+        "fit": rt.fit if kinds.of(dev).room(dev) else None,
         "ha_entities": runtime.PUBLISHER.status() if runtime.PUBLISHER is not None else
                        {"mode": "off", "problem": "not started", "entities": 0},
         "version": ADDON_VERSION,

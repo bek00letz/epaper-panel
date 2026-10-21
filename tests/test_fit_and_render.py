@@ -6,6 +6,7 @@ import asyncio
 import os
 import sys
 import unittest
+import unittest.mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -86,8 +87,20 @@ class TestFitThePanel(unittest.TestCase):
     def test_what_was_left_out_is_recorded(self):
         plans = [{"name": "sport", "want": 6}, {"name": "cat", "want": 1}]
         fit = frames.record_fit(plans, [2, 1], 1 << 20)
-        self.assertEqual(fit["trimmed"], [{"page": "sport", "shown": 2, "of": 6}])
+        self.assertEqual(fit["trimmed"], [{"page": "sport", "shown": 2, "of": 6, "items": "items"}])
         self.assertEqual((fit["pages_shown"], fit["pages_wanted"]), (3, 7))
+
+    def test_what_was_left_out_is_said_in_the_pages_own_words(self):
+        # "Showing 14 of 23 games" on its tile: never a Premier League match called a game.
+        def plan(sub_type, *els, feed=None):
+            return {"name": "p", "want": 9, "sub_type": sub_type, "elements": list(els), "feed_entity": feed}
+        self.assertEqual(frames.items_word(plan("sports", {"type": "sports_match", "league": "basketball/nba"})), "games")
+        self.assertEqual(frames.items_word(plan("sports", {"type": "sports_match", "league": "epl"})), "matches")
+        self.assertEqual(frames.items_word(plan("flight", {"type": "flight_tracker"})), "planes")
+        self.assertEqual(frames.items_word(plan("media", {"type": "now_playing"})), "players")
+        with unittest.mock.patch.object(feeds, "load", lambda _: [{"type": "jellyfin", "name": "Watch"}]):
+            self.assertEqual(frames.items_word(plan("feed", {"type": "text"}, feed="sensor.epaper_watch")), "titles")
+            self.assertEqual(frames.items_word(plan("feed", {"type": "text"}, feed="sensor.epaper_news")), "items")
 
 
 def _scores(league, team=""):
@@ -144,6 +157,16 @@ class TestBusyDayForTheEditor(Base):
             devices.update(self.dev_id, update_minutes=10)       # it sleeps between updates: a page a wake
             self.addCleanup(devices.update, self.dev_id, update_minutes=None)
             self.assertIsNone((await (await c.post("/api/busy_day", json=body)).json())["scores"])
+
+    async def test_what_was_left_out_reaches_the_editor_only_while_always_on(self):
+        _, editor = web.make_apps()
+        runtime.device(self.dev_id).fit = {"trimmed": [{"page": "nba", "shown": 14, "of": 23, "items": "games"}]}
+        async with TestClient(TestServer(editor)) as c:
+            got = await (await c.get("/api/status")).json()
+            self.assertEqual(got["fit"]["trimmed"][0]["items"], "games")
+            devices.update(self.dev_id, update_minutes=10)
+            self.addCleanup(devices.update, self.dev_id, update_minutes=None)
+            self.assertIsNone((await (await c.get("/api/status")).json())["fit"])
 
 
 class TestPanelCapacity(Base):
