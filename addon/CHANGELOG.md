@@ -260,6 +260,11 @@
   running total, as most inverters' are, the page shows how much it went up
   today rather than "18,532 kWh produced today".
 
+- **12- or 24-hour time, in Settings › Time and language.** It starts as in
+  Home Assistant and changes every time on every device: clocks, sunrise and
+  sunset, due times, kick-offs. The Clock preset uses it, and any text can
+  show the time or date the same way (Shows: Time, in the inspector).
+
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) for the quiet-hours fix below.

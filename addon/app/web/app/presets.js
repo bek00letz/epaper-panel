@@ -62,8 +62,9 @@ export const PRESETS = [
     id: "clock", group: "day", title: "Clock", desc: "The time, very large, and today's date.", kw: "time date",
     asks: "", onSleeping: "Shows the date here",
     looks: [{ id: "clock", name: "Clock", make: () => [
-      { type: "text", value: "{{ now().strftime('%H:%M') }}", size: 110, bold: true, x: 40, y: 20, w: 450, h: 140, align: "left" },
-      { type: "text", value: "{{ now().strftime('%A, %-d %B') }}", size: 36, bold: false, x: 44, y: 168, w: 500, h: 46, align: "left" },
+      // The add-on's own clock (framework review #9): 12- or 24-hour as Settings › Time and language says.
+      { type: "text", show: "now", format: "time", size: 110, bold: true, x: 40, y: 20, w: 450, h: 140, align: "left" },
+      { type: "text", show: "now", format: "day_full", size: 36, bold: false, x: 44, y: 168, w: 500, h: 46, align: "left" },
       { type: "icon", icon: "mdi:clock-outline", x: 620, y: 40, w: 120, h: 120 },
     ] }],
   },

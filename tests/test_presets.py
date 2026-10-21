@@ -473,6 +473,19 @@ class TestDateOnASleepingDevice(unittest.TestCase):
         self.assertIn('const asleep = sleeps && p.onSleeping ? p.onSleeping : "";', js)
         self.assertNotIn("forDevice(", js, "the design is never made differently for one device")
 
+    def test_the_clock_is_the_add_ons_own_in_your_12_or_24_hours(self):
+        """Framework review #9: the Clock preset uses the time helper (binding show "now"), and the
+        12/24-hour setting lives in Settings › Time and language (the user's call)."""
+        els = run_js('console.log(JSON.stringify(P.presetById("clock").looks[0].make()))')
+        self.assertEqual([(e.get("show"), e.get("format")) for e in els if e["type"] == "text"], [("now", "time"), ("now", "day_full")])
+        self.assertFalse(any("strftime('%H" in str(e.get("value", "")) for e in els), "no 24-hour clock of its own")
+        sheets = (APP_JS / "sheets.js").read_text()
+        self.assertIn('time: ["Time and language", "clock", () => timePane(app, pane)],', sheets)
+        self.assertIn('select([["auto", `As in Home Assistant (${word(r.resolved)} here)`], ["12h", "12-hour, like 2:30 PM"], ["24h", "24-hour, like 14:30"]]', sheets)
+        self.assertIn('api("api/settings/time", { method: "PUT", body: { format: v } })', sheets)
+        insp = (APP_JS / "inspector.js").read_text()
+        self.assertIn('seg([["text", "Text"], ["sensor", "Sensor"], ["clock", "Time"], ["template", "Template"]]', insp)
+
     def test_sleeping_is_read_from_the_timers_not_the_kind(self):
         got = run_js("""console.log(JSON.stringify([{ timing: { always_on: false } }, { timing: { always_on: true } }, { kind: "trmnl", timing: { always_on: false } },
           { sleeps: true }, {}, null].map(P.sleepsBetweenUpdates)))""")
@@ -501,7 +514,10 @@ class TestDateOnASleepingDevice(unittest.TestCase):
                 self.assertEqual([m for m in metrics if m.get("overflow")], [])
 
     def test_a_clock_page_turns_into_the_date_where_it_was(self):
-        got = run_js("""const clock = P.presetById("clock").looks[0].make().map((e, k) => ({ ...e, id: "e" + k }));
+        # The way back (kept off) knew 0.14's template clock; the preset now uses the add-on's own clock.
+        got = run_js("""const clock = [{ type: "text", value: "{{ now().strftime('%H:%M') }}", size: 110, bold: true, x: 40, y: 20, w: 450, h: 140, align: "left" },
+            { type: "text", value: "{{ now().strftime('%A, %-d %B') }}", size: 36, bold: false, x: 44, y: 168, w: 500, h: 46, align: "left" },
+            { type: "icon", icon: "mdi:clock-outline", x: 620, y: 40, w: 120, h: 120 }].map((e, k) => ({ ...e, id: "e" + k }));
           const small = P.fitToCanvas(clock, { W: 400, H: 300, safeH: 268, portrait: false });
           const mixed = [{ type: "text", id: "t", value: "{{ now().strftime('%I:%M %p') }}" }, { type: "number", id: "n", entity: "sensor.x" }];
           console.log(JSON.stringify([P.dateInstead(clock), P.dateInstead(small), P.dateInstead(mixed), P.clockPages({ a: { elements: clock }, b: { elements: mixed }, c: { elements: [] } })]))""")

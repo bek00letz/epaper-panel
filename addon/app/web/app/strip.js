@@ -12,6 +12,8 @@ import { slider } from "./slider.js";
 const thumbCache = new Map();
 // What the render said about each picture (its metrics): a countdown's state, for the tile to show.
 const thumbMeta = new Map();
+/* Drawn again from scratch, after a change that isn't in the page (the 12/24-hour setting). */
+export function forgetThumbnails() { for (const u of thumbCache.values()) URL.revokeObjectURL(u); thumbCache.clear(); thumbMeta.clear(); }
 const tell = (img, metrics) => img.dispatchEvent(new CustomEvent("thumbmeta", { detail: metrics || [] }));
 let queue = [], running = false;
 // `example`: drawn with the add-on's example values (api/example), never Home Assistant's (New page's presets).

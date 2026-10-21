@@ -180,14 +180,21 @@ function element(app, head, body, el, i) {
 /* What a text or value shows. */
 function shows(app, el, set) {
   const tpl = typeof el.value === "string" && /\{[{%]/.test(el.value);
-  const source = el.entity && !el.value ? "sensor" : tpl ? "template" : el.value !== undefined && !el.entity ? "text" : el.entity ? "sensor" : el.type === "number" ? "sensor" : "text";
-  const s = section("Shows", h("div", { class: "field" }, h("span", { class: "lab", text: "From" }), seg([["text", "Text"], ["sensor", "Sensor"], ["template", "Template"]], source, (v) => {
+  // "Time": the add-on's own clock (binding show "now"), 12- or 24-hour as Settings › Time and language says.
+  const clockish = el.type === "text" && el.show === "now" && !el.entity && !tpl;
+  const source = clockish ? "clock" : el.entity && !el.value ? "sensor" : tpl ? "template" : el.value !== undefined && !el.entity ? "text" : el.entity ? "sensor" : el.type === "number" ? "sensor" : "text";
+  const s = section("Shows", h("div", { class: "field" }, h("span", { class: "lab", text: "From" }), seg([["text", "Text"], ["sensor", "Sensor"], ["clock", "Time"], ["template", "Template"]], source, (v) => {
+    if (v !== "clock" && el.show === "now") delete el.show;
+    if (v === "clock") { el.type = "text"; el.show = "now"; el.format = CLOCK_FORMATS.some(([f]) => f === el.format) ? el.format : "time"; delete el.value; delete el.entity; }
     if (v === "text") { el.value = el.value && !/\{[{%]/.test(el.value) ? el.value : "Label"; delete el.entity; }
     if (v === "sensor") { delete el.value; }
     if (v === "template") { el.value = el.value && /\{[{%]/.test(el.value) ? el.value : `{{ states('${el.entity || "sensor.example"}') }}`; }
     app.doc.commit();
   }, "Shows")));
-  if (source === "text") {
+  if (source === "clock") {
+    s.append(field("Looks like", select(CLOCK_FORMATS, el.format || "time", (v) => set("format", v))),
+      h("p", { class: "fnote", text: "12- or 24-hour as in Settings › Time and language. A device that sleeps shows the date instead of the time." }));
+  } else if (source === "text") {
     s.append(field("Text", input(el.value, (v) => set("value", v), { placeholder: "What it says" })));
   } else if (source === "template") {
     s.append(field("Template", textarea(el.value, (v) => set("value", v)), { wide: true, note: "Anything Home Assistant can render." }));
@@ -269,6 +276,9 @@ function replacements(app, el) {
   wrap.append(h("p", { class: "fnote", text: "For example, when it says on, show Running." }), rows);
   return wrap;
 }
+
+// The add-on's own clock's formats (render/binding.TIME_FORMATS); "time" follows the 12/24-hour setting.
+const CLOCK_FORMATS = [["time", "The time"], ["day_full", "Weekday and date"], ["day_date", "Short weekday and date"], ["date", "Date"], ["datetime", "Date and time"]];
 
 /* Rain now, not rain so far (sources/station.py): a rate (mm/h, in/h) or a sensor that's on while it
    rains. A total keeps counting after the shower, so the page would say rain all day. */

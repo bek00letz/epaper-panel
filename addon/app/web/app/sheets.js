@@ -8,7 +8,7 @@ import { DISPLAYS, isWidget } from "./elements.js";
 import { describe, parseShowIf, syncDynamicGridShowIf } from "./conditions.js";
 import { reflowPageElements } from "./legacy.js";
 import { LOOKS as PRESETS, clockPages, dateInstead } from "./presets.js";
-import { thumbnail, statusSummary } from "./strip.js";
+import { thumbnail, statusSummary, forgetThumbnails } from "./strip.js";
 
 const thumbImg = (app, key, page) => {
   const img = h("img", { class: "thumb", alt: "", "data-thumb": key, draggable: "false" });
@@ -384,6 +384,7 @@ export function openSettings(app, sectionName = "panel") {
       quiet: ["Quiet hours", "moon", () => quietPane(app, pane)],
       reach: ["Reaching home", "globe", () => reachPane(app, pane)],
       sources: ["Data sources", "plug", () => sourcesPane(app, pane)],
+      time: ["Time and language", "clock", () => timePane(app, pane)],
       editor: ["Editor", "gear", () => editorPane(app, pane)],
     };
     function show(k) {
@@ -903,6 +904,26 @@ async function sourcesPane(app, pane) {
     });
   }
   pane.append(list, h("div", { class: "btnrow" }, add, h("span", { class: "spacer" }), msg, h("button", { class: "btn primary", onclick: save }, "Save sources")));
+  draw();
+}
+
+/* ---------- time and language ---------- */
+// One setting for every device's times (render/clock.py): clocks, sunrise, "Today 14:00", kick-off.
+// The screen's language goes here too when it comes.
+async function timePane(app, pane) {
+  const box = h("div", {}, h("p", { class: "fnote", text: "Checking…" }));
+  pane.append(box);
+  let r;
+  try { r = (await api("api/settings/time")).body || {}; } catch (e) { box.replaceChildren(h("p", { class: "fnote bad", text: `Couldn't read it: ${e.message}` })); return; }
+  const word = (f) => (f === "12h" ? "12-hour" : "24-hour");
+  const draw = () => box.replaceChildren(group(grow("Time", "On every device: clocks, sunrise and sunset, due times, kick-offs",
+    select([["auto", `As in Home Assistant (${word(r.resolved)} here)`], ["12h", "12-hour, like 2:30 PM"], ["24h", "24-hour, like 14:30"]], r.format || "auto", async (v) => {
+      try {
+        r = (await api("api/settings/time", { method: "PUT", body: { format: v } })).body || r;
+        draw(); forgetThumbnails(); app.canvas?.preview(true); app.renderStrip();
+        toast(`Times read ${word(r.resolved)} now, on every device from its next update.`);
+      } catch (e) { toast(`Couldn't change it: ${e.message}`); }
+    }, { "aria-label": "Time" }))));
   draw();
 }
 
