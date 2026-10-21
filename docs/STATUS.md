@@ -41,8 +41,13 @@ the coordinator's own notes folder.
 
 ## Framework review
 
-Last review: from v0.12.0 to `release-next` (21 Oct, session "framework-review",
-in progress). Next one when a good amount of work has piled up since.
+Last review: v0.12.0 to `release-next` at e8e65c2 (21 Oct, session
+"framework-review"; findings in the coordinator's notes, framework-review.md).
+14 findings, all going into 0.15.0 (user, 21 Oct): server half with
+widgets-015, editor half with presets-015. User's calls: Solar today shows a
+running total's change today; times follow Home Assistant's 12/24-hour with
+a setting; New page offers Clock everywhere (a sleeping device draws the
+date). Next review when a good amount of work has piled up since e8e65c2.
 
 ## Backlog, most important first
 
