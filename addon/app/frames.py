@@ -186,6 +186,28 @@ def record_fit(plans: list[dict], counts: list[int], capacity: int, previous: di
     return fit
 
 
+def busy_day(spec: dict, page_bytes: int, capacity: int) -> dict:
+    """How a design's rotation fits a panel on a busy day, when every page has the most items it
+    can (subitems.busiest: a league's busiest day, five planes), shared out as a render would
+    (fit_counts). For the editor's line while setting up Scores: {"scores": {"busiest", "room",
+    "teams", "leagues"}}, the games its Scores pages can have, how many of them the panel has room
+    for, whether every one has a team picked, and how many leagues; None with no Scores page."""
+    pages = spec.get("pages") or {}
+    rotation = [n for n in spec.get("rotation") or [] if isinstance(pages.get(n), dict)
+                and pages[n].get("tier") != "alert"]
+    wants = [subitems.busiest(pages[n]) for n in rotation]
+    counts = fit_counts(wants, page_bytes=page_bytes, capacity=capacity)
+    scores = [(n, w, c) for n, w, c in zip(rotation, wants, counts)
+              if any(isinstance(el, dict) and el.get("type") == "sports_match" for el in pages[n].get("elements") or [])]
+    if not scores:
+        return {"scores": None}
+    els = [el for n, _, _ in scores for el in pages[n].get("elements") or []
+           if isinstance(el, dict) and el.get("type") == "sports_match"]
+    return {"scores": {"busiest": sum(w for _, w, _ in scores), "room": sum(c for _, _, c in scores),
+                       "teams": all(str(el.get("team") or el.get("entity") or "").strip() for el in els),
+                       "leagues": len({str(el.get("league") or "") for el in els})}}
+
+
 def split_page_values(page):
     """A page's values the add-on already holds, and templates for the rest.
 

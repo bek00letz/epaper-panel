@@ -79,6 +79,7 @@ class Widget:
     # (most, kind): a list value is up to `most` items of its page; `most` None: all of them, as many
     # as the panel holds (frames.fit_counts shares its room out, most important first).
     items: tuple[int | None, str] | None = None
+    busiest: Callable[[dict], int] | None = None    # with no cap: the most items an element can have at once
     window: bool = False                        # its page can show only around its events (a sensor of ours)
     breakable: bool = False                     # the editor can break it into plain elements
 
@@ -304,6 +305,8 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
            lambda el, now: examples.match(el.get("league") or el.get("entity") or "soccer/eng.1"),
            # Every game of the day (the user's call, 21 Oct); the way back is items=(6, "sports").
            live=(sports.fetch_sports_match,), items=(None, "sports"), window=True, breakable=True,
+           # A Team Tracker sensor is one game; a league, its busiest day.
+           busiest=lambda el: 1 if str(el.get("entity") or "").strip() else sports.busiest_day(el.get("league")),
            defaults={"league": "soccer/eng.1", "team": "", "entity": "", "show_border": True},
            fields=[sel("league", "League", "leagues", "soccer/eng.1"), text("team", "Team", "Any team"),
                    entity("entity", "Team Tracker sensor"),
@@ -316,6 +319,7 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
 
 # Render-side facts come from here: which types take their fetched value, and which make items of a page.
 subitems.WIDGET_ITEMS.update({t: w.items for t, w in WIDGETS.items() if w.items})
+subitems.WIDGET_BUSIEST.update({t: w.busiest for t, w in WIDGETS.items() if w.busiest})
 
 
 # A plain sensor whose value changes all the time (power, wind...), as Home Assistant describes it.

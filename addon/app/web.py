@@ -27,7 +27,7 @@ import runtime
 import timing
 from config import ADDON_VERSION, FRAME_PORT, HA_BASE, HA_TOKEN, INGRESS_GATEWAY, REFRESH, SLEEP_PAGE, WEB_DIR, valid_entity_id
 from fixture import load_fixture
-from frames import _png, as_int, date_for_time, enrich_page_values, refresh_frames, split_page_values
+from frames import _png, as_int, busy_day, date_for_time, enrich_page_values, refresh_frames, split_page_values
 from ha import curve_series, ha_json, resolve_templates
 from layouts_store import clear_draft, layouts_etag, load_draft, load_layouts, load_sources, sanitize_layouts, save_draft, save_layouts
 from panel_ops import push_panel_update
@@ -438,6 +438,19 @@ async def api_fit(request):
     if not isinstance(els, list):
         raise web.HTTPBadRequest(text="expected {elements, from_canvas}")
     return web.json_response({"elements": _fit(els, str(body.get("from_canvas") or ""), display, orient)})
+
+
+async def api_busy_day(request):
+    """POST {rotation, pages} -> {"scores": {busiest, room, teams, leagues} | None}: on a busy day, how many
+    games a draft's Scores pages can have and how many the device has room for, with the rest of its
+    rotation (frames.busy_day). Only a device that keeps its whole rotation in memory can run out
+    (Kind.room: an always-on CrowPanel); for any other, scores is None."""
+    body = await _body(request)
+    dev = _device(request)
+    room = kinds.of(dev).room(dev)
+    if not room or not isinstance(body.get("pages"), dict) or not isinstance(body.get("rotation"), list):
+        return web.json_response({"scores": None})
+    return web.json_response(busy_day(body, page_bytes=room[0], capacity=room[1]))
 
 
 async def api_example(request):
@@ -1223,6 +1236,7 @@ def make_apps():
         web.post("/api/preview", api_preview),
         web.post("/api/example", api_example),
         web.post("/api/fit", api_fit),
+        web.post("/api/busy_day", api_busy_day),
         web.post("/api/as_template", api_as_template),
         web.post("/api/push", api_push),
         web.get("/api/sources", api_sources_get),

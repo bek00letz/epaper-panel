@@ -27,9 +27,41 @@ except (ImportError, ValueError):
 # all of them. Filled from their descriptors (widgets.py), the one place a widget is described.
 WIDGET_ITEMS: dict[str, tuple[int | None, str]] = {}
 
+# For a widget with no cap: the most items one element can have at once, on its busiest day
+# ({type: fn(el) -> int}; Scores: its league's busiest day). Filled from widgets.py too.
+WIDGET_BUSIEST: dict[str, Any] = {}
+
 # A feed's attributes that speak for all of its items at once. A page that
 # shows only these is one screen, not one per item.
 WHOLE_FEED = ("up_next", "count", "titles", "items")
+FEED_MOST = 5                   # a feed's items on one page, at most
+
+
+def _feed_entity(el: dict) -> str | None:
+    """The feed sensor an element shows one item of at a time, or None."""
+    ent = str(el.get("entity", ""))
+    if el.get("show") == "attribute" and el.get("attribute") in WHOLE_FEED:
+        return None
+    if ent.startswith("sensor.epaper_") and not ent.endswith("_count") and not ent.startswith("sensor.epaper_category_") \
+            and not ent.startswith("sensor.epaper_panel_"):
+        return ent
+    return None
+
+
+def busiest(page_def: dict) -> int:
+    """The most items a page can have at once (inspect_category_subitems, on a busy day): what
+    the editor warns with before an always-on panel runs out of room (frames.busy_day)."""
+    most = 1
+    for el in page_def.get("elements") or []:
+        if not isinstance(el, dict):
+            continue
+        if el.get("type") in WIDGET_ITEMS:
+            cap = WIDGET_ITEMS[el["type"]][0]
+            fn = WIDGET_BUSIEST.get(el["type"])
+            most = max(most, cap if cap is not None else (fn(el) if fn else 1))
+        elif _feed_entity(el):
+            most = max(most, FEED_MOST)
+    return most
 
 
 def derive_item_key(item: Any, fallback_index: int) -> str:
@@ -105,16 +137,12 @@ def inspect_category_subitems(
     # 2. Check for feed items (Watch/Jellyfin, RSS, or any sensor with an 'items' attribute)
     if not sub_type and feed_items_cache:
         for el in elements:
-            if not isinstance(el, dict):
-                continue
-            ent = str(el.get("entity", ""))
-            if el.get("show") == "attribute" and el.get("attribute") in WHOLE_FEED:
-                continue
-            if ent.startswith("sensor.epaper_") and not ent.endswith("_count") and not ent.startswith("sensor.epaper_category_") and not ent.startswith("sensor.epaper_panel_"):
+            ent = _feed_entity(el) if isinstance(el, dict) else None
+            if ent:
                 f_items = feed_items_cache.get(ent)
                 if f_items and isinstance(f_items, list) and len(f_items) > 1:
                     feed_entity = ent
-                    sub_count = max(sub_count, min(len(f_items), 5))
+                    sub_count = max(sub_count, min(len(f_items), FEED_MOST))
                     sub_type = "feed"
                     items = f_items[:sub_count]
                     break

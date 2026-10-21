@@ -57,6 +57,14 @@ LEAGUE_MAP = {a: lg.path for lg in LEAGUES for a in lg.aliases}
 LEAGUE_SLUGS = {**{lg.path: lg.slug for lg in LEAGUES}, **{a: lg.slug for lg in LEAGUES for a in lg.aliases}}
 
 
+def busiest_day(raw) -> int:
+    """The most games a page for this league (a path or an alias, as a page says it) can have at
+    once; 1 for a league the add-on doesn't know, which it can't promise anything about."""
+    said = str(raw or "soccer/eng.1").strip()
+    path = LEAGUE_MAP.get(said.lower().replace("-", "_").replace(" ", "_"), said)
+    return next((lg.busiest_day for lg in LEAGUES if lg.path == path), 1)
+
+
 def _parse_espn_event(ev, league_title="", tz_name=None, league="soccer"):
     said = sport.words(league)
     comp = (ev.get("competitions") or [{}])[0]
