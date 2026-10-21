@@ -67,7 +67,7 @@ function legibility(app, i, el) {
     linkButton("Treat as text", () => { el.type = "text"; app.doc.commit(); }, { class: "linkbtn inline" })));
   if (m.collection) out.push(h("div", { class: "note bad", role: "note" }, icon("warn", "sm"), h("span", { text: "That's a list, not one value. Pick a different detail, or show its value." })));
   const dist = Number(app.prefs.get("view_dist", "3.0"));
-  if (dist > 0) {
+  if (dist > 0 && m.verdict) {                     // only what the renderer measured: a world clock reports none
     const good = /comfortable|effortless/.test(m.verdict);
     const verdict = m.verdict.replace(/ at [\d.]+m$/, "");
     out.push(h("div", { class: "note " + (good ? "good" : "warn"), role: "note" }, h("span", { class: "led" }),

@@ -128,7 +128,19 @@ class TestPerDevice(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.design(), before, "switching never changes the design")
 
 
+WORLD = {"type": "world_clock", "zones": [{"tz": "", "label": ""}, {"tz": "Asia/Tokyo", "label": ""}], "x": 24, "y": 14, "w": 744, "h": 208}
+
+
 class TestTheEditor(unittest.TestCase):
+    def test_a_world_clock_reports_no_legibility_reading(self):
+        """Selecting a world clock on a sleeping device broke the inspector: its metric has no
+        `verdict` (it's no text the renderer measures), and the legibility line read one."""
+        metrics = []
+        layout.render_page({"elements": [WORLD]}, {}, metrics=metrics, date_for_time=WED)
+        self.assertTrue(metrics and all("verdict" not in m for m in metrics if m["i"] == 0))
+        src = (support.APP / "web" / "app" / "inspector.js").read_text()
+        self.assertIn("if (dist > 0 && m.verdict) {", src)
+
     def test_the_note_on_the_clock_comes_from_the_render(self):
         src = (support.APP / "web" / "app" / "inspector.js").read_text()
         self.assertIn("if (app.canvas.metrics.find((x) => x.i === i)?.date_for_time)", src)
