@@ -9,6 +9,11 @@
   state" adds one it hasn't been yet, and "Anything else" is the icon for
   the rest. Turn it off and the icon stays as it was. An icon Home
   Assistant uses that the panel can't draw isn't offered.
+- **Each state has its own look**: plain, inverted (a black tile with the
+  icon in white) or outlined, chosen at the top of the icon picker, so
+  "Outdoor Cat" can stand out. "Anything else" keeps the icon's own style.
+  Inside an inverted group, an inverted state shows white so it still
+  stands out. Pages made before keep drawing as they did.
 - **No error in the browser's console as the editor opens.** The page
   strip asked what isn't sent yet before the pages had loaded.
 - **An icon that follows a sensor matches its state whatever the case.**

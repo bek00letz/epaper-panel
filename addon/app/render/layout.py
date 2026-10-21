@@ -585,17 +585,41 @@ def _draw_icon_glyph(d, name, cx, cy, sz):
         d.text((cx, cy), chr(cp), font=f, fill=T.BLACK, anchor="mm")
 
 
-def icon_for_state(state_icons, state) -> str:
-    """The icon a state_icons map gives a state, or "" when none does. Matched as Home Assistant's
-    state reads, ignoring case and spaces around it ("outdoor cat" is "Outdoor Cat"): the one
-    lookup for an icon element and a Dynamic status spot."""
+ICON_LOOKS = ("plain", "invert", "pill")      # an icon's Style: Plain, Inverted, Outlined
+
+
+def _state_entry(state_icons, state) -> dict:
+    """What a state_icons map says for a state: {"icon", "look"}, {} when nothing. Matched as Home
+    Assistant's state reads, ignoring case and spaces around it ("outdoor cat" is "Outdoor Cat").
+    An entry is an icon ("mdi:cat", the first shape) or {"icon", "look"}, look one of ICON_LOOKS;
+    without a look, the element's own Style."""
     st = str(state or "").strip().lower()
     if not st or not isinstance(state_icons, dict):
-        return ""
+        return {}
     for k, v in state_icons.items():
-        if str(k).strip().lower() == st and v:
-            return str(v)
-    return ""
+        if str(k).strip().lower() != st:
+            continue
+        if isinstance(v, dict):
+            look = str(v.get("look") or "")
+            return {"icon": str(v.get("icon") or ""), "look": look if look in ICON_LOOKS else ""}
+        return {"icon": str(v or ""), "look": ""}
+    return {}
+
+
+def icon_for_state(state_icons, state) -> str:
+    """The icon a state_icons map gives a state, or "" when none does: the one lookup for an icon
+    element and a Dynamic status spot."""
+    return _state_entry(state_icons, state).get("icon", "")
+
+
+def icon_in_state(el: dict, state) -> dict:
+    """An icon that follows its entity, as drawn in this state: the state's icon and look, else its
+    own (what "Anything else" is in the editor)."""
+    got = _state_entry(el.get("state_icons"), state)
+    out = {**el, "icon": got.get("icon") or el.get("icon", "")}
+    if got.get("look"):
+        out["invert"], out["pill"] = got["look"] == "invert", got["look"] == "pill"
+    return out
 
 
 def _resolve_spot_icon(it, state):
@@ -2200,7 +2224,7 @@ def render_page(page, vals, *, clock="", label="", footer=None, page_no=None, it
         try:
             if el["type"] == "icon" and isinstance(el.get("state_icons"), dict):
                 # Drawn by its entity's state, with its own icon when no state matches (or none yet).
-                el = {**el, "icon": icon_for_state(el["state_icons"], vals.get(i)) or el.get("icon", "")}
+                el = icon_in_state(el, vals.get(i))
             if el["type"] in ("curve", "bar_chart"):
                 drawer(img, d, el, "", (series or {}).get(i), display=display)
             elif el["type"] == "todo_list":

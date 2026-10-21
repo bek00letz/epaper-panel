@@ -400,6 +400,11 @@ up to v0.12.0). `app/legacy.js` keeps the pieces of it this one still uses.
   last 10 days with the icon each state had), only icons the panel can draw
   (`layout.can_draw_icon`). A state matches whatever its case
   (`layout.icon_for_state`, the one lookup for icons and status spots).
+  Each state has its own look, Plain, Inverted or Outlined (the user's
+  call, 21 Oct), chosen at the top of the icon picker; the icon's own
+  Style is "Anything else"'s, so the Style row hides while it follows.
+  A row is `{icon, look}`, or just an icon (the first shape, which keeps
+  the icon's Style): `layout.icon_in_state` reads both.
 - **The inspector is ordered by how often things are touched**: what it shows,
   how it looks, arrange, then "More". Rare settings go under More, not away.
 - **Picking: smallest thing under the pointer first.** Clicking again without

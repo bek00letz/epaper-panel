@@ -8,6 +8,26 @@
 
 const key = (s) => String(s ?? "").trim().toLowerCase();
 
+/* A look is an icon's Style: Plain, Inverted (a filled shape, the icon in white) or Outlined. Each
+   state has its own (the user's design, 21 Oct); the icon's own Style is "Anything else"'s. A row
+   is { icon, look }; one that's just an icon (the first shape, and the Status preset's) draws
+   with the icon's Style. render/layout.icon_in_state reads both. */
+export const LOOKS = [["plain", "Plain"], ["invert", "Inverted"], ["pill", "Outlined"]];
+export const styleOf = (el) => (el.invert ? "invert" : el.pill ? "pill" : "plain");
+export function setStyle(el, look) {
+  delete el.invert; delete el.pill;
+  if (look === "invert") el.invert = true;
+  if (look === "pill") el.pill = true;
+}
+const entry = (v) => (v && typeof v === "object" ? v : { icon: String(v || "") });
+export const iconOf = (v) => entry(v).icon || "";
+export function lookOf(el, state) {
+  const k = rowFor(el, state), l = k === undefined ? "" : entry(el.state_icons[k]).look;
+  return LOOKS.some(([v]) => v === l) ? l : styleOf(el);
+}
+/* Whether anything it draws has a shape around it, so its Corners matter. */
+export const framed = (el) => styleOf(el) !== "plain" || (isFollowing(el) && Object.keys(el.state_icons).some((k) => lookOf(el, k) !== "plain"));
+
 export const isFollowing = (el) => !!el && el.type === "icon" && !!el.state_icons && typeof el.state_icons === "object" && !Array.isArray(el.state_icons);
 
 /* The switch: on keeps the icon as "Anything else", off keeps it as the plain icon. */
@@ -39,7 +59,7 @@ export function addState(el, state, icon) {
   if (!s || !isFollowing(el)) return "";
   const had = rowFor(el, s);
   if (had !== undefined) return "";
-  el.state_icons[s] = icon || el.icon || "mdi:help-circle-outline";
+  el.state_icons[s] = { icon: icon || el.icon || "mdi:help-circle-outline", look: styleOf(el) };
   return s;
 }
 export function removeState(el, state) {
@@ -48,7 +68,11 @@ export function removeState(el, state) {
 }
 export function setStateIcon(el, state, icon) {
   const k = rowFor(el, state);
-  if (k !== undefined && icon) el.state_icons[k] = icon;
+  if (k !== undefined && icon) el.state_icons[k] = { icon, look: lookOf(el, k) };
+}
+export function setStateLook(el, state, look) {
+  const k = rowFor(el, state);
+  if (k !== undefined && LOOKS.some(([v]) => v === look)) el.state_icons[k] = { icon: iconOf(el.state_icons[k]), look };
 }
 
 /* What's offered and not added yet, each with the icon it would get. */

@@ -815,6 +815,27 @@ class TestIconsFollowTheirState(unittest.TestCase):
         self.assertNotEqual(in_.tobytes(), other.tobytes())
         self.assertEqual(other.tobytes(), render({**el, "state_icons": {}}, "Away").tobytes(), "no match: its own icon")
 
+    def test_a_state_has_its_own_look(self):
+        # "Outdoor Cat" inverted to stand out; an entry that's just an icon keeps the element's Style.
+        el = {**self.EL, "state_icons": {"on": {"icon": "mdi:door-open", "look": "invert"}, "off": "mdi:door-closed"}}
+        inverted = {**self.EL, "icon": "mdi:door-open", "invert": True}
+        inverted.pop("state_icons")
+        self.assertEqual(render(el, "on").tobytes(), render(inverted, None).tobytes())
+        self.assertEqual(render(el, "off").tobytes(), render(self.EL, "off").tobytes(), "a plain string: just an icon")
+        outlined = {**el, "pill": True}
+        self.assertEqual(render(outlined, "on").tobytes(), render({**inverted, "pill": True}, None).tobytes(),
+                         "its own look wins over the element's")
+        plain_state = {**self.EL, "invert": True, "state_icons": {"off": {"icon": "mdi:door-closed", "look": "plain"}}}
+        self.assertEqual(render(plain_state, "off").tobytes(), render({**self.EL, "state_icons": {}}, "x").tobytes(),
+                         "plain is a look too: an inverted icon drawn plain in that state")
+        self.assertEqual(render(plain_state, "jammed").tobytes(), render({**self.EL, "invert": True, "state_icons": {}}, "x").tobytes(),
+                         "anything else: the element's own Style")
+
+    def test_an_unknown_look_is_the_elements(self):
+        got = layout.icon_in_state({"icon": "mdi:a", "invert": True, "state_icons": {"on": {"icon": "mdi:b", "look": "sparkly"}}}, "ON")
+        self.assertEqual((got["icon"], got["invert"]), ("mdi:b", True))
+        self.assertEqual(layout.icon_for_state({"on": {"icon": "mdi:b", "look": "invert"}}, "on"), "mdi:b", "spots read the icon of either shape")
+
     def test_one_lookup_for_icons_and_status_spots(self):
         si = {"Outdoor Cat": "mdi:cat-outline", "on": ""}
         self.assertEqual(layout.icon_for_state(si, " outdoor cat "), "mdi:cat-outline")

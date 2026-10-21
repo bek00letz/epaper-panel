@@ -627,6 +627,11 @@ button.uopen:focus-visible { outline: 2px solid var(--accent); outline-offset: -
 .iconcell:active { transform: scale(0.95); }
 .iconcell.current { box-shadow: inset 0 0 0 2px var(--accent); }
 .iconcell .mdi { font-size: 28px; }
+/* An icon's look, as the panel draws it: Inverted is a black tile with the icon in white, Outlined a ring. */
+.iconbtn .glyph.look-invert, .icongrid[data-look="invert"] .iconcell .mdi { background: #111; color: #fff; }
+.iconbtn .glyph.look-pill, .icongrid[data-look="pill"] .iconcell .mdi { background: var(--paper); color: #111; box-shadow: inset 0 0 0 2px #111; }
+.icongrid[data-look="invert"] .iconcell .mdi, .icongrid[data-look="pill"] .iconcell .mdi { width: 40px; height: 40px; border-radius: var(--r-inner); display: grid; place-items: center; font-size: 24px; }
+.icongrid[data-look="plain"] .iconcell .mdi { height: 40px; display: grid; place-items: center; }
 .iconcell .in { font-size: 10.5px; color: var(--fg-2); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .stripbox { overflow: auto; background: var(--device); border-radius: var(--r-card); padding: 12px; }

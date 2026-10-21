@@ -141,7 +141,8 @@ const on = JSON.parse(JSON.stringify(el));
 F.stopFollowing(el);
 console.log(JSON.stringify({ before, on, off: el, text: F.isFollowing({ type: "text", state_icons: {} }) }));""")
         self.assertFalse(got["before"])
-        self.assertEqual(got["on"], {"type": "icon", "icon": "mdi:cat", "entity": "sensor.pawpaw_location", "state_icons": {"Outdoor Cat": "mdi:cat-outline"}})
+        self.assertEqual(got["on"], {"type": "icon", "icon": "mdi:cat", "entity": "sensor.pawpaw_location",
+                                     "state_icons": {"Outdoor Cat": {"icon": "mdi:cat-outline", "look": "plain"}}})
         self.assertEqual(got["off"], {"type": "icon", "icon": "mdi:cat"}, "off: the plain icon, nothing else")
         self.assertFalse(got["text"], "only an icon follows")
 
@@ -157,7 +158,7 @@ for (const o of first) F.addState(el, o.state, o.icon);
 console.log(JSON.stringify({{ first, after: F.suggestions(el, offered), map: el.state_icons }}));""")
         self.assertEqual([(o["word"], o["icon"]) for o in got["first"]], [("Outdoor Cat", "mdi:cat-outline"), ("Indoor Cat", "mdi:cat")])
         self.assertEqual(got["after"], [], "an added state isn't offered again")
-        self.assertEqual(got["map"], {"Outdoor Cat": "mdi:cat-outline", "Indoor Cat": "mdi:cat"})
+        self.assertEqual(got["map"], {"Outdoor Cat": {"icon": "mdi:cat-outline", "look": "plain"}, "Indoor Cat": {"icon": "mdi:cat", "look": "plain"}})
 
     def test_a_state_is_one_row_whatever_its_case(self):
         got = run_js("""
@@ -168,7 +169,7 @@ const offer = F.suggestions(el, [{ state: "outdoor CAT", icon: "mdi:y" }, { stat
 F.removeState(el, "away");
 console.log(JSON.stringify({ a, b, c, typed, offer, map: el.state_icons }));""")
         self.assertEqual((got["a"], got["b"], got["c"], got["typed"]), ("Outdoor Cat", "", "", "Away"))
-        self.assertEqual(got["map"], {"Outdoor Cat": "mdi:cat-off"})
+        self.assertEqual(got["map"], {"Outdoor Cat": {"icon": "mdi:cat-off", "look": "plain"}})
         self.assertEqual(got["offer"], [{"state": "Home", "word": "Home", "icon": "mdi:cat"}], "no icon known: its own")
 
     def test_another_sensor_clears_the_states_of_the_one_before(self):
@@ -179,6 +180,34 @@ const same = F.setEntity(el, "sensor.a"), other = F.setEntity(el, "sensor.b");
 console.log(JSON.stringify({ none, same, other, map: el.state_icons, entity: el.entity }));""")
         self.assertEqual((got["none"], got["same"], got["other"]), (0, 0, 2))
         self.assertEqual((got["map"], got["entity"]), ({}, "sensor.b"))
+
+    def test_each_state_has_its_own_look(self):
+        got = run_js("""
+const el = { type: "icon", icon: "mdi:cat", pill: true, state_icons: { on: "mdi:door-open" } };
+const old = F.lookOf(el, "ON");                                   // just an icon: the icon's Style
+F.addState(el, "Outdoor Cat", "mdi:paw");                          // a new row starts with the Style
+F.setStateLook(el, "outdoor cat", "invert"); F.setStateIcon(el, "Outdoor Cat", "mdi:cat");
+F.setStateLook(el, "on", "plain"); F.setStateLook(el, "on", "sparkly");
+const framedPlain = F.framed({ type: "icon", state_icons: { a: { icon: "x", look: "plain" } } });
+const framedRow = F.framed({ type: "icon", state_icons: { a: { icon: "x", look: "invert" } } });
+F.setStyle(el, "invert"); const own = [F.styleOf(el), el.pill];
+console.log(JSON.stringify({ old, map: el.state_icons, framedPlain, framedRow, own, after: F.lookOf(el, "Outdoor Cat") }));""")
+        self.assertEqual(got["old"], "pill")
+        self.assertEqual(got["map"], {"on": {"icon": "mdi:door-open", "look": "plain"}, "Outdoor Cat": {"icon": "mdi:cat", "look": "invert"}},
+                         "its look kept when its icon changes; a look that isn't one is ignored")
+        self.assertEqual((got["framedPlain"], got["framedRow"]), (False, True), "Corners show when anything has a shape")
+        self.assertEqual(got["own"], ["invert", None])
+        self.assertEqual(got["after"], "invert", "the icon's Style is Anything else's, not the rows'")
+
+    def test_the_look_is_chosen_in_the_icon_picker(self):
+        pickers = (support.APP / "web" / "app" / "pickers.js").read_text()
+        self.assertIn('h("span", { class: "lab", text: "Look" })', pickers)
+        self.assertIn("seg(LOOKS, look.value", pickers)
+        rows = INSPECTOR[INSPECTOR.index("function iconRows"):INSPECTOR.index("function addStates")]
+        self.assertIn("setStateLook(el, st, l)", rows)
+        self.assertIn('"Icon for anything else", own)', rows, "Anything else's look is the icon's Style")
+        style = INSPECTOR[INSPECTOR.index("function styleRows"):INSPECTOR.index("function element(")]
+        self.assertIn("isFollowing(el) ? []", style, "no second Style control while it follows")
 
     def test_a_row_says_home_assistants_word(self):
         got = run_js("""
