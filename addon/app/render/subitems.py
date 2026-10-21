@@ -23,6 +23,10 @@ try:
 except (ImportError, ValueError):
     from render import binding, stripmeta
 
+# Widgets whose list value is several items of their page: {type: (most, kind)}. Filled from
+# their descriptors (widgets.py), the one place a widget is described.
+WIDGET_ITEMS: dict[str, tuple[int, str]] = {}
+
 # A feed's attributes that speak for all of its items at once. A page that
 # shows only these is one screen, not one per item.
 WHOLE_FEED = ("up_next", "count", "titles", "items")
@@ -87,29 +91,16 @@ def inspect_category_subitems(
     items: list[Any] = []
     feed_entity = None
 
-    # 1. Check for built-in composite widgets with multiple sub-items
+    # 1. A widget whose value is a list is that many items of its page (widgets.py says which, and how many)
     for el_idx, el in enumerate(elements):
-        if not isinstance(el, dict):
+        if not isinstance(el, dict) or el.get("type") not in WIDGET_ITEMS:
             continue
-        el_t = el.get("type")
-        if el_t == "flight_tracker":
-            fl_list = page_vals.get(el_idx)
-            if isinstance(fl_list, list) and len(fl_list) > 1:
-                sub_count = max(sub_count, min(len(fl_list), 5))
-                sub_type = "flight"
-                items = fl_list[:sub_count]
-        elif el_t == "sports_match":
-            sm_list = page_vals.get(el_idx)
-            if isinstance(sm_list, list) and len(sm_list) > 1:
-                sub_count = max(sub_count, min(len(sm_list), 6))
-                sub_type = "sports"
-                items = sm_list[:sub_count]
-        elif el_t == "now_playing":
-            playing = page_vals.get(el_idx)
-            if isinstance(playing, list) and len(playing) > 1:
-                sub_count = max(sub_count, min(len(playing), 5))
-                sub_type = "media"
-                items = playing[:sub_count]
+        most, kind = WIDGET_ITEMS[el["type"]]
+        got = page_vals.get(el_idx)
+        if isinstance(got, list) and len(got) > 1:
+            sub_count = max(sub_count, min(len(got), most))
+            sub_type = kind
+            items = got[:sub_count]
 
     # 2. Check for feed items (Watch/Jellyfin, RSS, or any sensor with an 'items' attribute)
     if not sub_type and feed_items_cache:

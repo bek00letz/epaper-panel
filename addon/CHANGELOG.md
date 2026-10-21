@@ -45,7 +45,10 @@
   (New to watch, for one) never showed without an MQTT broker, because Home
   Assistant was asked about a value it only learns through the broker. The
   add-on now answers those conditions itself, as it already did for what
-  the pages show.
+  the pages show. Any condition or template that uses one of the add-on's
+  own values now works without a broker, not only the simple form's, and
+  one that reads a word ("nothing new") as a number counts as no value,
+  not 0.
 - **Fixed:** "Watch battery is below 20" came true for a moment every time
   Home Assistant restarted, because a sensor with no value yet counted as 0.
   A sensor that's unavailable or unknown now never meets "is below", "is
@@ -78,9 +81,11 @@
 - **Weather from your own station.** The Weather page can take what it
   says about now (temperature, humidity, wind) from your station's own
   weather entity or from single sensors, while highs, lows and the coming
-  days stay with the forecast. With a rain sensor, the big icon shows rain
-  whenever it's raining at your house, whatever the forecast says. With a
-  pressure sensor, it says when pressure is rising or falling. A solar
+  days stay with the forecast. With a rain sensor (one that measures rain
+  per hour, or is on while it rains; a "rain today" total can't say it's
+  raining now), the big icon shows rain whenever it's raining at your
+  house, whatever the forecast says. With a pressure sensor in any unit
+  (hPa, kPa, inHg, mmHg), it says when pressure is rising or falling. A solar
   radiation sensor can decide sunny or cloudy in the daytime, but only if
   you choose one: a station in the shade would read cloudy in full sun.
 - **Fixed:** the Weather page drew over itself on the 4.2" and 2.9": the
@@ -103,6 +108,12 @@
   NFL game is a game, and the time before one starts reads "Kick-off
   20:00", "Tip-off 20:00", "First pitch 20:00" or "Puck drop 20:00". Home
   Assistant's sensor for a league says Matchday or Game day to match.
+- **A clock is a clock however it's written.** A device that sleeps shows
+  the date instead of the time it went to sleep with, now also for clocks
+  written as `as_timestamp(now()) | timestamp_custom(...)`, the Time & Date
+  sensor, or `now().hour`.
+- **A Weather widget with no weather chosen shows the first one Home
+  Assistant has**, instead of assuming it's called "Forecast Home".
 - **Fixed:** a Race weekend page set to NASCAR or IndyCar showed Formula 1's
   race, drivers and status. Each series now reads its own results, and its
   page names it ("NASCAR · …"). Whether the page shows still followed the
@@ -257,11 +268,15 @@
 - **Solar today reads today, even from a lifetime meter.** It still shows the
   sensor you pick (your Energy dashboard's first), but when that sensor is a
   running total, as most inverters' are, the page shows how much it went up
-  today rather than "18,532 kWh produced today".
+  today rather than "18,532 kWh produced today", from Home Assistant's
+  long-term statistics, in the sensor's own unit. Any value on a running
+  total (a gas or water meter) can do the same.
 
 - **12- or 24-hour time, in Settings › Time and language.** It starts as in
-  Home Assistant and changes every time on every device: clocks, sunrise and
-  sunset, due times, kick-offs. The Clock preset uses it, and any text can
+  Home Assistant (the way clocks read in its country: 2:05 PM in the US,
+  14:05 in Romania) and changes every time on every device: clocks, sunrise
+  and sunset, due times, kick-offs, race sessions, the clock in the corner
+  and "updated". The Clock preset uses it, and any text can
   show the time or date the same way (Shows: Time, in the inspector).
 
 ## 0.14.0

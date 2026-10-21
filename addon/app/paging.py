@@ -39,7 +39,7 @@ import frames
 import health
 import runtime
 import timing as timers                  # paging.timing is a wake's timing
-from render import sleep, theme as T
+from render import clock, sleep, theme as T
 
 GLANCE_SECONDS = 120                    # a press during quiet hours shows a page this long
 FIRST_RENDER_SECONDS = 60               # nothing drawn yet: ask again soon
@@ -75,7 +75,7 @@ def update_seconds(dev: dict) -> int:
 
 def rotate_updates(dev: dict) -> int:
     """Rotate every, as a number of updates."""
-    return timers.rotate_updates(dev, _kind(dev).stays_on)
+    return timers.rotate_updates(dev, **_kind(dev).timers)
 
 
 # ---------------------------------------------------------------- drawn ahead
@@ -166,7 +166,7 @@ async def draw_ahead(dev: dict, spec: dict, st, quiet: bool, reason: str, art: A
 
 def updated_label(at: datetime, now: datetime) -> str:
     """The footer's time: when this page last changed, with the day once it's not today."""
-    return f"updated {at.strftime('%H:%M') if at.date() == now.date() else at.strftime('%a %H:%M')}"
+    return f"updated {clock.hm(at) if at.date() == now.date() else at.strftime('%a ') + clock.hm(at)}"
 
 
 def digest(data: bytes) -> str:

@@ -13,7 +13,7 @@ from aiohttp import web
 import examples
 import feeds
 import live_data
-from render import binding, epf, layout, sleep, stripmeta, subitems, theme as T
+from render import binding, clock, epf, layout, sleep, stripmeta, subitems, theme as T
 import airports
 import companion
 import config
@@ -296,6 +296,7 @@ async def api_entities(request):
                 "state": info.get("state"),
                 "unit": info.get("unit") or "",
                 "device_class": info.get("device_class") or "",
+                "state_class": info.get("state_class") or "",
                 "is_epaper": eid.startswith("sensor.epaper_"),
             }
     else:
@@ -316,6 +317,8 @@ async def api_entities(request):
                     "unit": attrs.get("unit_of_measurement") or "",
                     # So a preset can list, say, temperature sensors first.
                     "device_class": attrs.get("device_class") or "",
+                    # A running total (total, total_increasing) can show its change today (binding "change_today").
+                    "state_class": attrs.get("state_class") or "",
                     "is_epaper": eid.startswith("sensor.epaper_") or attrs.get("source") == "epaper_studio",
                 }
 
@@ -328,6 +331,7 @@ async def api_entities(request):
             "state": info.get("state"),
             "unit": attrs.get("unit_of_measurement") or "",
             "device_class": attrs.get("device_class") or "",
+            "state_class": attrs.get("state_class") or "",
             "is_epaper": True,
         }
 
@@ -418,7 +422,7 @@ async def _drawn(request, body: dict, page: dict, vals: dict, series: dict, toda
         dist = 3.0
     img = await asyncio.to_thread(
         layout.render_page, page, vals,
-        clock=datetime.now().strftime("%H:%M"),
+        clock=clock.hm(datetime.now()),
         label=str(body.get("label") or "preview")[:40],
         series=series, metrics=metrics, orientation=orient,
         distance_m=dist, display=display, date_for_time=today)
@@ -426,6 +430,64 @@ async def _drawn(request, body: dict, page: dict, vals: dict, series: dict, toda
     # what you actually got, in millimetres, rather than what you asked for.
     return web.Response(body=_png(T.to_1bit(img)), content_type="image/png",
                         headers={"X-Metrics": json.dumps(metrics)})
+
+
+async def api_catalog(request):
+    """Everything the editor needs to know that the server keeps (framework review #5): the leagues and
+    racing series offered, each sport's words, state words by device, each widget's descriptor (name,
+    box, fields, how often its value changes) and the time format. One request at the editor's start;
+    the editor keeps no copies of these tables."""
+    import timeformat
+    import widgets
+    from render import sport, states
+    from sources import racing, sports
+    from sources.geo import get_home_locale
+
+    def said(w):
+        return {"event": w.event, "start": w.start, "day": w.day}
+    return web.json_response({
+        "leagues": [{"path": lg.path, "slug": lg.slug, "name": lg.name, "aliases": list(lg.aliases),
+                     "sensor": lg.sensor, "words": said(sport.words(lg.path))} for lg in sports.LEAGUES],
+        "series": [{"slug": s.slug, "code": s.code, "title": s.title, "aliases": list(s.aliases),
+                    "sensor": f"sensor.epaper_racing_{s.slug}"} for s in racing.SERIES.values()],
+        "sport_words": {**{k: said(v) for k, v in sport.SPORTS.items()}, "other": said(sport.OTHER)},
+        "states": states.catalog(),
+        "widgets": widgets.catalog(),
+        "time_format": timeformat.describe(*await get_home_locale(runtime.SESSION))["resolved"],
+    })
+
+
+async def api_shows_time(request):
+    """Which elements of a page show the time of day, however they're written (render/clocktime.py):
+    {"time": [index...]}. The editor asks here instead of matching strings of its own."""
+    from render import clocktime
+    body = await _json(request)
+    page = body.get("page") if isinstance(body, dict) else None
+    if not isinstance(page, dict):
+        raise web.HTTPBadRequest(text="expected {page}")
+    return web.json_response({"time": clocktime.times(page)})
+
+
+async def api_time_get(request):
+    """12- or 24-hour: {"format": "auto"|"12h"|"24h", "resolved": "12h"|"24h", "country"}.
+    Automatic follows Home Assistant's country."""
+    import timeformat
+    from sources.geo import get_home_locale
+    return web.json_response(timeformat.describe(*await get_home_locale(runtime.SESSION)))
+
+
+async def api_time_put(request):
+    import timeformat
+    from sources.geo import get_home_locale
+    body = await _body(request)
+    try:
+        timeformat.save(str(body.get("format") or ""))
+    except ValueError as exc:
+        raise web.HTTPBadRequest(text=str(exc))
+    locale = await get_home_locale(runtime.SESSION)
+    timeformat.apply(*locale)
+    await _rerender()                                   # every device's times change at once
+    return web.json_response(timeformat.describe(*locale))
 
 
 async def api_energy(request):
@@ -490,7 +552,7 @@ def _screen(dev: dict, everyone: list[dict]) -> dict:
         "can_wake": kind.link(dev) is not None, "picks_page": kind.picks_page,
         # A screen that sleeps between updates (paging.py) wakes when the add-on says, whatever its kind.
         "owns_interval": "addon" if kind.sleeps(dev) else kind.owns_interval, "sleeps": kind.sleeps(dev),
-        "timing": timing.describe(dev, kind.stays_on),
+        "timing": timing.describe(dev, **kind.timers),
         "setup": kind.setup_flow, "info": kind.describe(dev),
         "entity_suffix": dev.get("entity_suffix") or "",
         # Enough to offer "the same quiet hours as …" when adding a screen.
@@ -509,7 +571,7 @@ def _screens() -> dict:
     return {"devices": [_screen(d, everyone) for d in everyone],
             "kinds": [{"id": k.id, "name": k.name, "setup": k.setup_flow,
                        # What Update every offers a new screen of this kind, and where sleeping starts.
-                       "update_choices": timing.update_choices(k.stays_on), "asleep_default": timing.ASLEEP_DEFAULT,
+                       "update_choices": timing.update_choices(**k.timers), "asleep_default": timing.ASLEEP_DEFAULT,
                        "displays": [{"id": d, "name": T.get_display(d)["name"], "w": T.get_display(d)["w"],
                                      "h": T.get_display(d)["h"]} for d in k.displays()]}
                       for k in on],
@@ -573,7 +635,7 @@ async def api_devices_add(request):
     mode = body.get("pages") or "new"
     try:
         # Its timers (always on or sleeping, from the cards) and its kind's own settings, checked before it exists.
-        extra = {**timing.settings({"kind": kind.id}, body, kind.stays_on), **kind.settings({"kind": kind.id}, body)}
+        extra = {**timing.settings({"kind": kind.id}, body, **kind.timers), **kind.settings({"kind": kind.id}, body)}
     except ValueError as exc:
         raise web.HTTPBadRequest(text=str(exc))
     try:
@@ -608,7 +670,7 @@ async def api_devices_update(request):
         fields["name"] = _clean_name(body["name"], exclude_id=dev["id"])
     kind = kinds.of(dev)
     try:
-        fields.update(timing.settings(dev, body, kind.stays_on))
+        fields.update(timing.settings(dev, body, **kind.timers))
         fields.update(kind.settings(dev, body))
     except ValueError as exc:
         raise web.HTTPBadRequest(text=str(exc))
@@ -1021,6 +1083,10 @@ def make_apps():
         web.get("/api/aircraft", api_aircraft),
         web.get("/api/airport", api_airport),
         web.get("/api/energy", api_energy),
+        web.get("/api/catalog", api_catalog),
+        web.post("/api/shows-time", api_shows_time),
+        web.get("/api/settings/time", api_time_get),
+        web.put("/api/settings/time", api_time_put),
         web.post("/api/preview", api_preview),
         web.post("/api/example", api_example),
         web.post("/api/push", api_push),

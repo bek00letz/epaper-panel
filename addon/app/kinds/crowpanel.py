@@ -42,6 +42,7 @@ import paging
 import panel_ops
 import runtime
 import timing
+from render.clock import hm as clock_text
 from config import HA_TOKEN, SLEEP_PAGE
 from kinds import Kind, device_for, of as kind_of, register
 from panel_link import PanelLink
@@ -175,7 +176,7 @@ class CrowPanel(Kind):
             cat_ids = [stripmeta.identity("empty")]
             sub_ids = [stripmeta.identity("empty:0")]
             # No pills on the empty page: width 0 tells the panel to draw no highlight.
-            fg = T.footer_plan(clock=datetime.now().strftime("%H:%M"), orientation=orient, display=display)
+            fg = T.footer_plan(clock=clock_text(datetime.now()), orientation=orient, display=display)
             epf_data = epf.encode_epf(
                 pages=[one], cat_ids=cat_ids, cat_offsets=[0], cat_sizes=[1], cat_pill_widths=[0], sub_ids=sub_ids,
                 display_model=display, width=dw, height=dh, rotate_sec=rot_sec, quiet_hours=quiet_active,
@@ -196,7 +197,7 @@ class CrowPanel(Kind):
 
         imgs = []
         cat_offsets, cat_sizes, cat_names, cat_pill_widths, cat_sub_keys = [], [], [], [], []
-        clock = datetime.now().strftime("%H:%M")       # one clock for the whole strip
+        clock = clock_text(datetime.now())             # one clock for the whole strip
         kept = [(p, c) for p, c in zip(plans, counts) if c > 0]
         today = await frames.date_for_time(self.sleeps(dev))    # it sleeps: the date where a time would be
         # One footer for the whole strip, drawn with the same numbers the panel

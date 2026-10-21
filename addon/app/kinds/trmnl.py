@@ -71,6 +71,7 @@ class Trmnl(Kind):
     owns_interval = "addon"
     setup_flow = "pair"
     stays_on = False                    # it always sleeps between updates
+    shortest_update = 5                 # its firmware's floor: it wakes no more often than this
 
     def enabled(self) -> bool:
         return config.TRMNL

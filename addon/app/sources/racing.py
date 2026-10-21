@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 import aiohttp
 
 import runtime
+from render import clock
 from sources.geo import get_home_timezone
 
 
@@ -200,7 +201,7 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_na
                     try:
                         dt_loc = active_session_dt.astimezone(ZoneInfo(tz_name))
                         tz_abbr = dt_loc.tzname() or ""
-                        detail_str = f"{session_title} · {dt_loc.strftime('%a %b %d · %H:%M')} {tz_abbr}".strip()
+                        detail_str = f"{session_title} · {dt_loc:%a %b %d} · {clock.hm(dt_loc)} {tz_abbr}".strip()
                     except Exception:
                         detail_str = f"{session_title} · {active_session_dt.strftime('%a %b %d · %H:%M UTC')}"
 
@@ -268,7 +269,7 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_na
                             if tz_name:
                                 dt_loc = dt.astimezone(ZoneInfo(tz_name))
                                 tz_abbr = dt_loc.tzname() or ""
-                                detail_str = f"{dt_loc.strftime('%a %b %d · %H:%M')} {tz_abbr}".strip()
+                                detail_str = f"{dt_loc:%a %b %d} · {clock.hm(dt_loc)} {tz_abbr}".strip()
                             else:
                                 detail_str = dt.strftime("%a %b %d · %H:%M UTC")
                         except Exception:

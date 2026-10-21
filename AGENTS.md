@@ -189,6 +189,10 @@ than a frame does.
   `kinds/`; the core never names one. A kind can be optional (`Kind.enabled`):
   list devices for anything a person or a render sees through
   `kinds.shown_devices()`, so a kind that's off shows nowhere.
+- **Everything about a size is in its profile** (`theme.DISPLAYS`), the
+  firmware's facts too: `frame_model` (its id in a frame file), `mirrored`,
+  `full_refresh` and `keep_picture` (the C++ for its driver). `epf.py` and
+  `firmware_gen.py` read them; never add a table keyed by a size elsewhere.
 - **A size a screen reports is a profile too**: `theme.sized_display` gives
   the kind's own profile, or `<kind>_<w>x<h>` made from it, which
   `theme.get_display` understands anywhere. Don't add one to `DISPLAYS` at
@@ -396,6 +400,18 @@ up to v0.12.0). `app/legacy.js` keeps the pieces of it this one still uses.
   this panel rather than a generic canvas.
 - **Text goes in as text.** Build nodes with `h()`; only the icon constants
   in `util.js` use `innerHTML`. The editor shares an origin with Home Assistant.
+- **One descriptor per widget** (`widgets.py`): its name, icon, default
+  box, settings and inspector fields, how its value is fetched and how often
+  it changes, its example and whether it makes items of its page. The render
+  cycle, examples, sub-items and the editor (through the catalog) read it. A
+  new widget is a descriptor plus its drawing, nowhere else.
+- **The editor keeps no copies of the server's tables.** Leagues, racing
+  series, each sport's words, state words, widget descriptors and the time
+  format come from `GET /api/catalog`, built from the tables themselves
+  (`sources/sports.LEAGUES`, `sources/racing.SERIES`, `render/sport.py`,
+  `render/states.py`, `widgets.py`, `timeformat.py`).
+- **Times of day go through `render/clock.py`**: one 12/24-hour setting
+  (`timeformat.py`, Home Assistant's country by default) for every device.
 - **Dynamic units live in the renderer** (`render/units.py`), so the canvas and
   the panel agree. The editor's copy of the tables only draws the example.
 

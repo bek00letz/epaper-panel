@@ -14,17 +14,18 @@ import devices
 import health
 import kinds
 import runtime
+import timeformat
+import widgets
+from render.clock import hm as clock_text
 from config import HA_TOKEN, SLEEP_PAGE, valid_entity_id
 from entities import publish_category_sensors, publish_computed, publish_entity, sync_entities
 from ha import curve_series, ha_json, resolve_templates
 from panel_ops import push_panel_update
 from sources.flights import fetch_overhead_aircraft, place_of
-from sources.geo import get_home_timezone
-from sources.ha_services import fetch_calendar_events, fetch_todo_items, fetch_weather_forecast, todo_list_id
-from sources import energy, station
-from sources.home import episodes, fetch_now_playing, fetch_sun, players
-from sources.racing import compute_racing_active_window, fetch_racing_data
-from sources.sports import compute_sports_active_window, fetch_sports_match
+from sources.geo import get_home_locale, get_home_timezone
+from sources import energy
+from sources.racing import compute_racing_active_window
+from sources.sports import compute_sports_active_window
 from runtime import Frames
 
 
@@ -107,75 +108,15 @@ async def enrich_page_values(session, page, vals):
     home_tz = await get_home_timezone(session)
     for i, el in enumerate(page.get("elements", [])):
         t = el.get("type")
-        if t == "weather_forecast":
-            wdata = await fetch_weather_forecast(session, el.get("entity", "weather.forecast_home"), fallback=vals.get(i))
-            if wdata:
-                vals[i] = wdata
-            if station.wanted(el):                 # "now" from your own station, over the forecast
-                now_data = await station.fetch_station(session, **station.wanted(el))
-                merged = station.merge(layout._parse_val_json(vals.get(i)) if vals.get(i) else None, now_data)
-                if isinstance(merged, dict):
-                    vals[i] = merged
-        elif t in ("calendar_month", "calendar_agenda"):
-            cal_ent = el.get("entity")
-            if cal_ent:
-                cal_data = await fetch_calendar_events(session, cal_ent, days=31, fallback=vals.get(i))
-                if cal_data:
-                    vals[i] = cal_data
-        elif t == "todo_list":
-            if todo_list_id(el.get("entity")):
-                todo_data = await fetch_todo_items(session, todo_list_id(el.get("entity")))
-                if todo_data:
-                    vals[i] = {**todo_data, "tz": home_tz}   # "Today" is Home Assistant's today
-        elif t == "countdown":
-            vals[i] = {"tz": home_tz}           # it counts from the element itself (render/countdown.py)
-        elif t == "sun_times":
-            sun_data = await fetch_sun(session)
-            if sun_data is not None:
-                vals[i] = {**sun_data, "tz": home_tz}
-        elif t == "energy_total":
-            got = await energy.fetch_total(session, str(el.get("source") or "solar"), str(el.get("entity") or ""),
-                                           str(el.get("period") or "month"))
-            if got is not None:
-                vals[i] = got
-        elif t == "grid_now":
-            ent, inv = str(el.get("entity") or ""), bool(el.get("invert"))
-            power = await energy.fetch_grid_power(session, ent, inv)
-            hours = await energy.fetch_grid_hours(session, ent, inv)
-            if power is not None or hours is not None:
-                vals[i] = {"watts": None, "bars": [], "today": None, **(hours or {}), **(power or {})}
-        elif t == "energy_cost":
-            got = await energy.fetch_cost(session)
-            if got is not None:
-                vals[i] = got
-        elif t == "now_playing":
-            playing = await fetch_now_playing(session, tuple(players(el.get("entity"))))
-            if playing is not None:
-                vals[i] = playing
-        elif t == "tv_week":
-            if str(el.get("entity") or "").strip():
-                events = await episodes(session, str(el["entity"]), days=as_int(el.get("days"), 7))
-                if events is not None:
-                    vals[i] = {"events": events, "tz": home_tz}
-        elif t == "flight_tracker":
-            custom_lat, custom_lon, radius, _ = place_of(el)
-            fl_data = await fetch_overhead_aircraft(session, radius_km=radius, lat=custom_lat, lon=custom_lon)
-            if fl_data is not None:
-                vals[i] = fl_data
-        elif t == "sports_racing":
-            entity_or_series = el.get("entity") or el.get("series") or "f1"
-            el_tz = el.get("timezone") or home_tz
-            race_data = await fetch_racing_data(session, entity_or_series, fallback=vals.get(i), tz_name=el_tz)
-            if race_data:
-                vals[i] = race_data
-        elif t == "sports_match":
-            entity_or_league = el.get("entity") or el.get("league") or "soccer/eng.1"
-            team = el.get("team")
-            el_tz = el.get("timezone") or home_tz
-            match_data = await fetch_sports_match(session, entity_or_league, team=team, fallback=vals.get(i), tz_name=el_tz)
-            if match_data:
-                vals[i] = match_data
-
+        if el.get("show") == "change_today" and str(el.get("entity") or "").strip() and not str(el.get("value") or "").strip():
+            # A running total (a lifetime meter, say) as how much it went up today, from statistics.
+            got = await energy.fetch_total(session, "entity", str(el["entity"]).strip(), "day")
+            if got is not None and got.get("total") is not None:
+                vals[i] = got["total"]
+            continue
+        got = await widgets.fetch(session, el, widgets.Ctx(home_tz=home_tz, prev=vals.get(i)))
+        if got is not None:
+            vals[i] = got
 
 def as_int(value, default: int) -> int:
     """A number from a page element, or the default for anything else (null, "24h", Infinity)."""
@@ -532,7 +473,7 @@ async def draw_category(plan: dict, sub_count: int, page_no: int, *, footer: dic
 
         for el_idx, el in enumerate(elements):
             el_c = dict(el)
-            if el.get("type") in ("flight_tracker", "sports_match", "now_playing"):
+            if el.get("type") in subitems.WIDGET_ITEMS:
                 el_c["sub_index"] = s_idx
             elif sub_type in ("feed", "watch") and feed_items and s_idx < len(feed_items):
                 item_data = feed_items[s_idx]
@@ -584,7 +525,7 @@ def empty_page(orient: int, display: str, clock: str | None = None):
     """What a screen shows when its design has no pages. `clock`: the footer's time (now)."""
     cw, _ = T.canvas_dims(orient, display=display)
     page = {"elements": [{"type": "text", "value": "no pages", "x": 24, "y": 60, "w": cw - 48, "h": 120}]}
-    return layout.render_page(page, {}, clock=clock or datetime.now().strftime("%H:%M"), label="empty",
+    return layout.render_page(page, {}, clock=clock or clock_text(datetime.now()), label="empty",
                               orientation=orient, display=display)
 
 
@@ -622,6 +563,7 @@ async def refresh_frames(session) -> dict[str, Frames]:
 
 
 async def _refresh_all(session) -> dict[str, Frames]:
+    timeformat.apply(*await get_home_locale(session))          # 12- or 24-hour, for every device
     await publish_computed(session)
     # Devices of a kind that's switched off aren't drawn (kinds.shown).
     views = [(dev, spec) for dev, spec in devices.all_views() if kinds.shown(dev)]

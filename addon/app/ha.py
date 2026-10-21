@@ -54,6 +54,10 @@ async def resolve_templates(session, templates):
     keys = list(templates)
     if not HA_TOKEN:
         return {k: eval_fixture_template(templates[k]) for k in keys}
+    # The add-on's own values go in as they are: Home Assistant only has them through a broker.
+    import conditions
+    import runtime
+    templates = {k: conditions.inline(templates[k], runtime.PUBLISHED) for k in keys}
 
     joined = f"\n{SEP}\n".join(templates[k] for k in keys)
     out = await ha_template(session, joined)

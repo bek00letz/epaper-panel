@@ -535,3 +535,31 @@ if __name__ == "__main__":
         print("wrote esphome/crowpanel-epaper.yaml")
     else:
         unittest.main()
+
+
+class TestASizesFactsAreInItsProfile(unittest.TestCase):
+    """A CrowPanel size's firmware facts live in its profile, so a new size can't miss one quietly (review #8)."""
+    FACTS = ("frame_model", "mirrored", "full_refresh", "keep_picture")
+
+    def test_every_offered_size_has_each(self):
+        offered = [d for d, p in T.DISPLAYS.items() if p.get("kind") == "crowpanel" and p.get("offered", True)]
+        self.assertGreaterEqual(len(offered), 3)
+        models = [T.DISPLAYS[d]["frame_model"] for d in T.DISPLAYS if "frame_model" in T.DISPLAYS[d]]
+        self.assertEqual(len(models), len(set(models)), "frame ids are unique")
+        for d in offered:
+            p = T.DISPLAYS[d]
+            for fact in self.FACTS:
+                self.assertIn(fact, p, f"{d} has no {fact}")
+            self.assertIsInstance(p["mirrored"], bool)
+            self.assertTrue(p["full_refresh"] and p["keep_picture"], d)
+            self.assertEqual(epf.MODEL_MAP[d], p["frame_model"])
+            self.assertEqual(d in epf.MIRRORED_MODELS, p["mirrored"])
+
+    def test_the_firmware_reads_them_from_the_profile(self):
+        for d in ("crowpanel_579", "crowpanel_290"):
+            disp = dict(T.get_display(d))
+            disp["full_refresh"], disp["keep_picture"] = "full_marker();", "kept_marker();"
+            text = firmware_gen.render(disp=disp, version="0.15.0", device_name="p", frames_url="http://h/f.epf", api_key="k",
+                                       wifi_ssid='"x"', wifi_password='"y"', interval_min=1, orientation=0)
+            self.assertIn("full_marker();", text)
+            self.assertIn("kept_marker();", text)

@@ -262,6 +262,7 @@ class TestEnergyForTheEditor(EditorClient):
 # ---------------------------------------------------------------- watch and listen
 
 from render import media, subitems  # noqa: E402
+from sources import racing  # noqa: E402
 from sources import home  # noqa: E402
 
 PLAYING = [{"entity": "media_player.tv", "key": "media_player.tv", "player": "Living room TV", "title": "Trojan's Horse",
@@ -326,7 +327,7 @@ class TestTvWeek(Sizes, unittest.TestCase):
 
 # ---------------------------------------------------------------- weather from your own station
 
-from sources import station  # noqa: E402
+from sources import ha_services, station  # noqa: E402
 
 
 class TestStation(unittest.TestCase):
@@ -339,7 +340,13 @@ class TestStation(unittest.TestCase):
         self.assertEqual(station.raining({"state": "0.0", "attributes": {"unit_of_measurement": "mm/h"}}), None)
         self.assertEqual(station.raining({"state": "1.2", "attributes": {"unit_of_measurement": "mm/h"}}), "rainy")
         self.assertEqual(station.raining({"state": "0.4", "attributes": {"unit_of_measurement": "in/h"}}), "pouring")
-        self.assertEqual(station.raining({"state": "on"}), "rainy")
+        self.assertEqual(station.raining({"state": "on"}, "binary_sensor.rain"), "rainy")
+        self.assertEqual(station.raining({"state": "off"}, "binary_sensor.rain"), None)
+        # A total after one shower would say rain all day: never.
+        self.assertEqual(station.raining({"state": "3.2", "attributes": {"unit_of_measurement": "mm"}}), None)
+        self.assertEqual(station.rain_problem("sensor.rain_today", "mm"), station.RAIN_TOTAL)
+        self.assertEqual(station.rain_problem("sensor.rain_rate", "mm/h"), "")
+        self.assertEqual(station.rain_problem("binary_sensor.raining", ""), "")
         self.assertEqual(station.raining({"state": "unavailable"}), None)
 
     def test_sky_from_sunlight_only_when_the_sun_is_up_enough(self):
@@ -357,7 +364,10 @@ class TestStation(unittest.TestCase):
         self.assertEqual(station.trend(rows("1012.0", "1009.5"), now), "falling")
         self.assertEqual(station.trend(rows("1009.0", "1011.0"), now), "rising")
         self.assertEqual(station.trend(rows("1011.0", "1011.4"), now), "steady")
-        self.assertEqual(station.trend(rows("29.90", "29.80"), now), "falling")       # inHg
+        self.assertEqual(station.trend(rows("29.90", "29.80"), now, "inHg"), "falling")
+        self.assertEqual(station.trend(rows("101.3", "101.0"), now, "kPa"), "falling")    # 3 hPa, once read as 0.3
+        self.assertEqual(station.trend(rows("760.0", "758.0"), now, "mmHg"), "falling")
+        self.assertIsNone(station.trend(rows("1", "5"), now, "°C"))
         self.assertIsNone(station.trend(rows("1011", "1012")[1:], now))
 
     def test_now_goes_over_the_forecast_and_the_days_stay(self):
@@ -418,7 +428,7 @@ class TestStationInTheRenderCycle(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(kw, {"now_entity": "weather.idumbr13"})
             return {"temperature": 23, "condition": "partlycloudy"}
         with unittest.mock.patch.object(station, "fetch_station", reader), \
-             unittest.mock.patch.object(frames, "fetch_weather_forecast", unittest.mock.AsyncMock(return_value=None)):
+             unittest.mock.patch.object(ha_services, "fetch_weather_forecast", unittest.mock.AsyncMock(return_value=None)):
             await frames.enrich_page_values(None, {"elements": [el]}, vals)
         self.assertEqual((vals[0]["temperature"], vals[0]["condition"], vals[0]["unit"]), (23, "partlycloudy", "°C"))
 
@@ -568,3 +578,188 @@ class TestExampleTemplates(unittest.TestCase):
         self.assertEqual(ev(binding.template_for({**bins, "show": "calendar_title"}), own=False), "Recycling")
         self.assertIn(ev(binding.template_for({**bins, "show": "days_until"}), own=False), ("3", "4"))   # by time of day
         self.assertTrue(ev(binding.template_for({"entity": "calendar.family", "show": "date_formatted"}), own=False))
+
+
+# ---------------------------------------------------------------- 12- or 24-hour
+
+import timeformat  # noqa: E402
+from render import binding, clock, todo  # noqa: E402
+
+
+class TestTimeFormat(unittest.TestCase):
+    def tearDown(self):
+        clock.use(False)
+        try:
+            (support.DATA_DIR / timeformat.FILE).unlink()
+        except FileNotFoundError:
+            pass
+        support.use_test_data_dir()
+
+    def test_automatic_follows_home_assistants_country(self):
+        support.use_test_data_dir()
+        self.assertTrue(timeformat.twelve_hour("US", "en"))
+        self.assertFalse(timeformat.twelve_hour("RO", "ro"))
+        self.assertFalse(timeformat.twelve_hour("CA", "fr"))
+        self.assertTrue(timeformat.twelve_hour("CA", "en"))
+        self.assertFalse(timeformat.twelve_hour(None, None))
+
+    def test_the_setting_overrides_it(self):
+        support.use_test_data_dir()
+        timeformat.save("24h")
+        self.assertFalse(timeformat.twelve_hour("US"))
+        timeformat.save("12h")
+        self.assertEqual(timeformat.describe("RO"), {"format": "12h", "resolved": "12h", "country": "RO"})
+        with self.assertRaises(ValueError):
+            timeformat.save("13h")
+
+    def test_every_time_on_the_panel_follows_it(self):
+        at = datetime(2026, 10, 21, 14, 5, tzinfo=TZ)
+        clock.use(True)
+        self.assertEqual(clock.hm(at), "2:05 PM")
+        self.assertEqual(sun.facts({"rising": at.isoformat(), "setting": at.isoformat()}, at)[0].value, "2:05 PM")
+        self.assertEqual(todo.due_label({"due": at.isoformat()}, at.replace(hour=9))[0], "Today 2:05 PM")
+        self.assertEqual(binding.now_text({"show": "now"}, at), "2:05 PM")
+        self.assertIn("%-I:%M %p", binding.template_for({"entity": "sensor.door", "show": "last_changed", "format": "time"}))
+        self.assertEqual(sports._parse_espn_event({"date": at.isoformat(), "competitions": [{"status": {"type": {"state": "pre"}}}]},
+                                                  "", tz_name="Europe/Bucharest", league="soccer/eng.1")["clock"], "Kick-off 2:05 PM")
+        clock.use(False)
+        self.assertEqual(clock.hm(at), "14:05")
+        self.assertEqual(binding.now_text({"show": "now", "format": "day_full"}, at), "Wednesday, 21 October")
+
+
+class TestTimeForTheEditor(EditorClient):
+    async def test_set_and_read_and_which_elements_show_the_time(self):
+        r = await self.ed.put("/api/settings/time", json={"format": "12h"})
+        self.assertEqual((await r.json())["resolved"], "12h")
+        self.assertTrue(clock.twelve_hour())
+        r = await self.ed.put("/api/settings/time", json={"format": "sometimes"})
+        self.assertEqual(r.status, 400)
+        await self.ed.put("/api/settings/time", json={"format": "auto"})
+        r = await self.ed.post("/api/shows-time", json={"page": {"elements": [
+            {"type": "text", "value": "{{ states('sensor.time') }}"}, {"type": "text", "value": "Hello"}, {"type": "text", "show": "now"}]}})
+        self.assertEqual(await r.json(), {"time": [0, 2]})
+        clock.use(False)
+
+
+# ---------------------------------------------------------------- a running total's change today
+
+class TestChangeToday(unittest.IsolatedAsyncioTestCase):
+    EL = {"type": "number", "entity": "sensor.inverter_lifetime", "show": "change_today", "decimals": 1, "suffix": " kWh"}
+
+    async def test_a_lifetime_meter_shows_today_not_its_lifetime(self):
+        self.assertEqual(binding.template_for(self.EL), "")             # never states(): that's 18,532 kWh
+        asked = []
+
+        async def total(session, source, entity, period):
+            asked.append((source, entity, period))
+            return {"total": 12.4, "bars": [], "unit": "kWh"}
+        vals = {}
+        with unittest.mock.patch.object(energy, "fetch_total", total):
+            await frames.enrich_page_values(None, {"elements": [self.EL]}, vals)
+        self.assertEqual(asked, [("entity", "sensor.inverter_lifetime", "day")])
+        self.assertEqual(layout.element_text(self.EL, vals, 0), "12.4 kWh")
+
+    async def test_in_the_sensors_own_unit(self):
+        import runtime
+        hass = FakeHass(rows={"sensor.meter": []})
+        with unittest.mock.patch.object(energy, "HA_TOKEN", "t"), unittest.mock.patch.object(runtime, "HASS", hass), \
+             unittest.mock.patch.object(energy, "get_home_timezone", unittest.mock.AsyncMock(return_value="UTC")):
+            await energy.fetch_total.direct(None, "entity", "sensor.meter", "day")
+        asked = [p for p in hass.asked if p["type"] == "recorder/statistics_during_period"][0]
+        self.assertNotIn("units", asked)
+
+
+class TestStateClassForPresets(EditorClient):
+    async def test_rows_say_whether_its_a_running_total(self):
+        rows = {r["entity_id"]: r for r in await (await self.ed.get("/api/entities")).json()}
+        self.assertEqual(rows["sensor.solar_today_production"]["state_class"], "total_increasing")
+        self.assertEqual(rows["sensor.indoor_temperature"]["state_class"], "")
+
+
+# ---------------------------------------------------------------- state words
+
+from render import states as state_words  # noqa: E402
+
+
+class TestStateWords(unittest.TestCase):
+    def test_a_switch_never_reads_open(self):
+        self.assertEqual(state_words.words("switch.guest_mode")["on"][0], "On")
+        self.assertEqual(state_words.words("binary_sensor.hall", "motion")["on"][0], "Detected")
+        self.assertEqual(state_words.words("binary_sensor.front", "door")["off"][0], "Closed")
+        self.assertEqual(state_words.words("binary_sensor.washer", "running")["on"][0], "Running")
+        self.assertEqual(state_words.words("binary_sensor.thing", "")["on"][0], "On")
+        self.assertEqual(state_words.words("lock.front")["locked"][0], "Locked")
+        self.assertEqual(state_words.words("person.ada")["not_home"][0], "Away")
+        self.assertEqual(state_words.words("sensor.temperature"), {})
+
+    def test_every_icon_is_in_the_panels_icon_font(self):
+        for key, by_state in state_words.STATES.items():
+            for st, (word, icon) in by_state.items():
+                self.assertIsNotNone(layout.mdi_codepoint(icon), f"{key} {st}: {icon}")
+                self.assertTrue(word and word[0].isupper(), f"{key} {st}: sentence case")
+
+
+class TestEveryLeagueHasItsExample(unittest.TestCase):
+    def test_both_ways(self):
+        offered = {lg.path for lg in sports.LEAGUES}
+        self.assertEqual(set(examples._TEAMS), offered, "every offered league has its own teams, and only those")
+        for path in offered:
+            self.assertNotIn(examples.match(path)["home_team"], ("HOME", "AWAY"), path)
+
+
+# ---------------------------------------------------------------- one descriptor per widget, one catalog
+
+import widgets  # noqa: E402
+
+
+class TestWidgetDescriptors(unittest.TestCase):
+    def test_every_widget_the_panel_draws_from_a_value_is_described(self):
+        drawn = set(layout.WIDGETS) | {"weather_forecast", "calendar_month", "calendar_agenda", "todo_list",
+                                       "flight_tracker", "sports_racing", "sports_match", "dynamic_grid"}
+        self.assertEqual(set(widgets.WIDGETS), drawn)
+        for t, w in widgets.WIDGETS.items():
+            self.assertIn(t, layout.DRAWERS, t)
+            d = w.describe()
+            self.assertTrue(d["name"] and d["icon"] and isinstance(d["box"], dict) and isinstance(d["fields"], list), t)
+
+    def test_how_often_it_changes_comes_from_its_fetchers(self):
+        self.assertEqual(widgets.get("now_playing").changes_every(), 10)
+        self.assertEqual(widgets.get("grid_now").changes_every(), 15)
+        self.assertEqual(widgets.get("sports_racing").changes_every(), racing.fetch_racing_data.interval)
+        self.assertEqual(widgets.get("weather_forecast").changes_every(), 60)       # your station's, the faster
+        self.assertIsNone(widgets.get("dynamic_grid").changes_every())               # as Home Assistant's states do
+        self.assertIsNone(widgets.get("countdown").changes_every())
+
+    def test_every_widget_with_a_fetch_has_an_example(self):
+        for t, w in widgets.WIDGETS.items():
+            self.assertEqual(w.fetch is None, w.example is None, t)
+
+    def test_items_of_a_page_come_from_the_descriptors(self):
+        self.assertEqual(subitems.WIDGET_ITEMS, {t: w.items for t, w in widgets.WIDGETS.items() if w.items})
+
+
+class TestCatalog(EditorClient):
+    async def test_the_editor_reads_the_servers_tables(self):
+        got = await (await self.ed.get("/api/catalog")).json()
+        self.assertEqual([lg["path"] for lg in got["leagues"]], [lg.path for lg in sports.LEAGUES])
+        nfl = next(lg for lg in got["leagues"] if lg["slug"] == "nfl")
+        self.assertEqual((nfl["sensor"], nfl["words"]["event"]), ("sensor.epaper_sports_nfl", "game"))
+        nascar = next(s for s in got["series"] if s["slug"] == "nascar")
+        self.assertIn("nascar_cup", nascar["aliases"])
+        self.assertEqual({s["slug"] for s in got["series"]}, set(racing.SERIES), "every series is offered")
+        self.assertEqual(got["sport_words"]["soccer"]["event"], "match")
+        self.assertEqual(got["states"]["binary_sensor.motion"]["on"]["word"], "Detected")
+        self.assertEqual(set(got["widgets"]), set(widgets.WIDGETS))
+        self.assertEqual(got["widgets"]["now_playing"]["changes_every"], 10)
+        self.assertIn(got["time_format"], ("12h", "24h"))
+
+
+class TestNoGuessedWeather(unittest.IsolatedAsyncioTestCase):
+    async def test_a_weather_widget_without_one_shows_the_first_home_assistant_has(self):
+        async def states(session, path, **kw):
+            return [{"entity_id": "sensor.x"}, {"entity_id": "weather.zz_station"}, {"entity_id": "weather.home"}]
+        import runtime
+        with unittest.mock.patch.object(ha_services, "HA_TOKEN", "t"), unittest.mock.patch.object(ha_services, "ha_json", states), \
+             unittest.mock.patch.dict(runtime.ENTITY_CACHE, {"items": []}):
+            self.assertEqual(await ha_services.default_weather(None), "weather.home")
+        self.assertNotIn(0, layout.collect_templates({"elements": [{"type": "weather_forecast"}]}))

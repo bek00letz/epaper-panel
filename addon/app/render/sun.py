@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from . import clock
 from . import hero
 from . import theme as T
 from .todo import now_in
@@ -39,7 +40,7 @@ def facts(data: dict | None, now: datetime) -> tuple[hero.Fact, hero.Fact] | Non
             continue
         days = (dt.date() - now.date()).days
         caption = word if days <= 1 else f"{word} {dt.day} {dt:%b}"
-        out.append(hero.Fact(f"{dt:%H:%M}", caption, icon))
+        out.append(hero.Fact(clock.hm(dt), caption, icon))
     if out[0] is None and out[1] is None:
         return None
     return out[0] or hero.Fact("--:--", "sunrise", RISE_ICON), out[1] or hero.Fact("--:--", "sunset", SET_ICON)

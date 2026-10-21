@@ -138,3 +138,25 @@ class TestItsOwnTimer(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestAKindsShortestUpdate(unittest.TestCase):
+    """A kind that can't stay connected says its own shortest Update every; 5 minutes is TRMNL's, not the core's."""
+
+    def test_a_kind_that_can_wake_every_two_minutes_is_offered_two(self):
+        import kinds
+
+        class Quick(kinds.Kind):
+            id = "quick"
+            stays_on = False
+            shortest_update = 2
+
+        self.assertEqual(timing.update_choices(**Quick().timers)[0], 2)
+        self.assertEqual(Quick().update_minutes({"update_minutes": 2}), 2)
+        self.assertEqual(timing.settings({}, {"update_minutes": 2}, **Quick().timers), {"update_minutes": 2})
+        self.assertEqual(timing.describe({"update_minutes": 2}, **Quick().timers)["update_choices"][0], 2)
+
+    def test_a_trmnl_still_starts_at_five(self):
+        from kinds import trmnl
+        kind = next(k for k in vars(trmnl).values() if isinstance(k, type) and getattr(k, "id", "") == "trmnl")
+        self.assertEqual(timing.update_choices(**kind().timers)[0], 5)

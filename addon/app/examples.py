@@ -20,14 +20,17 @@ from render import layout
 
 # ---------------------------------------------------------------- sports
 
+# Every league the add-on offers (sources/sports.LEAGUES) has its own; a test holds both ways.
 _TEAMS = {
     "soccer/eng.1": ("ARSENAL", "CHELSEA", "PREMIER LEAGUE", "Emirates Stadium"),
     "soccer/esp.1": ("BARCELONA", "REAL MADRID", "LALIGA", "Spotify Camp Nou"),
     "soccer/ita.1": ("INTER", "MILAN", "SERIE A", "San Siro"),
     "soccer/ger.1": ("BAYERN", "DORTMUND", "BUNDESLIGA", "Allianz Arena"),
-    "soccer/fra.1": ("PSG", "MARSEILLE", "LIGUE 1", "Parc des Princes"),
     "soccer/uefa.champions": ("REAL MADRID", "BAYERN", "CHAMPIONS LEAGUE", "Santiago Bernabéu"),
+    "soccer/usa.1": ("LA GALAXY", "LAFC", "MLS", "Dignity Health Sports Park"),
     "basketball/nba": ("LAKERS", "CELTICS", "NBA", "Crypto.com Arena"),
+    "basketball/wnba": ("LIBERTY", "ACES", "WNBA", "Barclays Center"),
+    "football/college-football": ("MICHIGAN", "OHIO STATE", "COLLEGE FOOTBALL", "Michigan Stadium"),
     "football/nfl": ("CHIEFS", "EAGLES", "NFL", "Arrowhead Stadium"),
     "baseball/mlb": ("YANKEES", "DODGERS", "MLB", "Yankee Stadium"),
     "hockey/nhl": ("RANGERS", "BRUINS", "NHL", "Madison Square Garden"),
@@ -158,29 +161,14 @@ def page_values(page: dict, now: datetime | None = None) -> tuple[dict, dict]:
         if not isinstance(el, dict):
             continue
         t = el.get("type")
+        if el.get("show") == "change_today":                      # a running total's day: the fixture's value
+            vals[i] = eval_fixture_template("{{ states('%s') }}" % el.get("entity", ""), own=False)
+            continue
         if t in ("curve", "bar_chart"):
             series[i] = curve
-        elif t == "todo_list":
-            got = fixture_todo(str(el.get("entity") or "todo.chores")) or fixture_todo("todo.chores")
-            vals[i] = {**got, "tz": tz} if got else None
-        elif t == "flight_tracker":
-            vals[i] = AIRCRAFT
-        elif t == "sports_match":
-            vals[i] = match(el.get("league") or el.get("entity") or "soccer/eng.1")
-        elif t == "sports_racing":
-            vals[i] = race(el.get("series") or "f1")
-        elif t == "sun_times":
-            vals[i] = {**sun(now), "tz": tz}
-        elif t == "countdown":
-            vals[i] = {"tz": tz}                    # counts from the element itself, like the panel
-        elif t == "energy_total":
-            vals[i] = total(str(el.get("period") or "month"), now)
-        elif t == "grid_now":
-            vals[i] = grid(now)
-        elif t == "energy_cost":
-            vals[i] = dict(COST)
-        elif t == "now_playing":
-            vals[i] = list(PLAYING)
-        elif t == "tv_week":
-            vals[i] = {"events": episodes(now), "tz": tz}
+            continue
+        import widgets                              # widgets.py describes each widget with its example
+        w = widgets.get(t)
+        if w and w.example:
+            vals[i] = w.example(el, now)
     return vals, series

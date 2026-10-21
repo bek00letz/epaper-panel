@@ -228,13 +228,13 @@ class TestPresets(unittest.TestCase):
 
 DEVICE_REGISTRY = PANEL_REGISTRY + [
     {"entity_id": "switch.e_paper_panel_sleep", "platform": "esphome", "device_id": "dev1",
-     "unique_id": "44:1B:F6:D1:45:04/0/switch/Sleep"},
+     "unique_id": "00:00:5E:00:53:01/0/switch/Sleep"},
     {"entity_id": "number.e_paper_panel_ghost_clear_after", "platform": "esphome", "device_id": "dev1",
-     "unique_id": "44:1B:F6:D1:45:04/0/number/Ghost clear after"},
+     "unique_id": "00:00:5E:00:53:01/0/number/Ghost clear after"},
     {"entity_id": "select.e_paper_panel_ghost_clearing", "platform": "esphome", "device_id": "dev1",
-     "unique_id": "44:1B:F6:D1:45:04/0/select/Ghost clearing"},
+     "unique_id": "00:00:5E:00:53:01/0/select/Ghost clearing"},
     {"entity_id": "button.e_paper_panel_clear_ghosting", "platform": "esphome", "device_id": "dev1",
-     "unique_id": "44:1B:F6:D1:45:04/0/button/Clear ghosting"},
+     "unique_id": "00:00:5E:00:53:01/0/button/Clear ghosting"},
 ]
 
 

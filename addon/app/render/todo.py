@@ -14,6 +14,8 @@ from __future__ import annotations
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
+from . import clock
+
 # What the page shows: everything still to do, or only what's due by today.
 SHOWS = ("open", "due")
 
@@ -89,7 +91,7 @@ def due_label(item: dict, now: datetime) -> tuple[str, str]:
         return "Overdue", "overdue"
     day = _day(due)
     if day == now.date():
-        return (f"Today {due:%H:%M}" if isinstance(due, datetime) else "Today"), "today"
+        return (f"Today {clock.hm(due)}" if isinstance(due, datetime) else "Today"), "today"
     if day == now.date() + timedelta(days=1):
         return "Tomorrow", ""
     if day < now.date() + timedelta(days=7):

@@ -73,12 +73,76 @@ def local(expr: str, registry: dict):
     try:
         a = float(state)
     except ValueError:
-        a = 0.0
+        return "False"                # "nothing new" is no value, not 0 (as for Home Assistant's own, d9a8495)
     if m.group("f") == "int":
         a = float(int(a))
     b = float(m.group("nv"))
     held = {">": a > b, "<": a < b, ">=": a >= b, "<=": a <= b}[m.group("op")]
     return "True" if held else "False"
+
+
+# The add-on's own values, wherever a template asks for them (inline()).
+_Q = r"""(?:'(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")"""
+_OWN = r"""['"](sensor\.epaper_[a-z0-9_]+)['"]"""
+_STATES = re.compile(r"states\(\s*" + _OWN + r"\s*\)")
+_IS_STATE = re.compile(r"is_state\(\s*" + _OWN + r"\s*,\s*(" + _Q + r")\s*\)")
+_HAS_VALUE = re.compile(r"has_value\(\s*" + _OWN + r"\s*\)")
+_STATE_ATTR = re.compile(r"state_attr\(\s*" + _OWN + r"\s*,\s*['\"]([^'\"]+)['\"]\s*\)")
+
+
+def literal(value) -> str:
+    """A value as a Jinja literal."""
+    if value is None:
+        return "none"
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return repr(value)
+    if isinstance(value, (list, tuple)):
+        return "[" + ", ".join(literal(v) for v in value) + "]"
+    if isinstance(value, dict):
+        return "{" + ", ".join(f"{literal(str(k))}: {literal(v)}" for k, v in value.items()) + "}"
+    return "'" + str(value).replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+
+def inline(template: str, registry: dict) -> str:
+    """A template with the add-on's own values (runtime.PUBLISHED) written in where it asks for them:
+    states(), is_state(), has_value() and state_attr() on sensor.epaper_… . Home Assistant only has
+    those through an MQTT broker; written in, any template works without one. Others are left alone."""
+    text = str(template or "")
+    if "sensor.epaper_" not in text:
+        return text
+
+    def state_of(eid):
+        got = registry.get(eid)
+        return None if got is None else got.get("state")
+
+    def states(m):
+        if m.group(1) not in registry:
+            return m.group(0)
+        st = state_of(m.group(1))
+        return literal("unknown" if st is None else str(st))
+
+    def is_state(m):
+        if m.group(1) not in registry:
+            return m.group(0)
+        st = state_of(m.group(1))
+        return f"({literal('unknown' if st is None else str(st))} == {m.group(2)})"
+
+    def has_value(m):
+        if m.group(1) not in registry:
+            return m.group(0)
+        st = state_of(m.group(1))
+        return literal(st is not None and str(st) not in ("unavailable", "unknown"))
+
+    def state_attr(m):
+        if m.group(1) not in registry:
+            return m.group(0)
+        return literal(((registry.get(m.group(1)) or {}).get("attributes") or {}).get(m.group(2)))
+
+    for pattern, fn in ((_IS_STATE, is_state), (_HAS_VALUE, has_value), (_STATE_ATTR, state_attr), (_STATES, states)):
+        text = pattern.sub(fn, text)
+    return text
 
 
 def is_true(value) -> bool:

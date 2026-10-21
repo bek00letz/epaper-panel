@@ -15,9 +15,26 @@ _weather_cache = {}
 _calendar_cache = {}
 
 
+async def default_weather(session) -> str:
+    """The weather a Weather widget without one shows: the first Home Assistant has (by name), never a
+    guessed entity ID. "" when there's none."""
+    if not HA_TOKEN:
+        return "weather.forecast_home"                  # the offline fixture's
+    states = runtime.ENTITY_CACHE.get("items") or []
+    if not states:
+        try:
+            states = await ha_json(session, "/states")
+        except Exception:
+            return ""
+    ids = sorted(s["entity_id"] for s in states if isinstance(s, dict) and str(s.get("entity_id", "")).startswith("weather."))
+    return ids[0] if ids else ""
+
+
 @runtime.live(300)
 async def fetch_weather_forecast(session, entity_id, fallback=None):
-    eid = str(entity_id or "weather.forecast_home").strip()
+    eid = str(entity_id or "").strip()
+    if not valid_entity_id(eid):
+        return fallback
     now = time.time()
     cached = _weather_cache.get(eid)
     if cached and (now - cached["at"] < 600):

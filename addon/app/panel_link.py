@@ -51,8 +51,8 @@ def _slug(s: str) -> str:
 def unique_id_is(uid: str, domain: str, name: str) -> bool:
     """Match ESPHome's unique_id for an entity, in both formats it has used.
 
-    Current:  `44:1B:F6:D1:45:04/0/number/Refresh interval`
-    Older:    `441bf6d14504-number-refresh_interval`
+    Current:  `00:00:5E:00:53:01/0/number/Refresh interval`
+    Older:    `00005e005301-number-refresh_interval`
     """
     uid = str(uid or "")
     parts = uid.split("/")
