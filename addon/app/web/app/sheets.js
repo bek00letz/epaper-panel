@@ -167,11 +167,12 @@ export function openAddScreen(app) {
   if (!kinds.length) { toast("This add-on doesn't know any kind of screen it can add."); return; }
   const st = { kind: kinds[0], display: kinds[0].displays[0].id, orientation: 0, pages: "new", from: app.screen?.id || app.screens[0]?.id, quiet: true, power: "on",
     minutes: kinds[0].asleep_default || 15 };
-  sheet("Add a screen", (node, close) => {
+  // "Device", not "screen": next to "New page", "screen" read like another page (the user's call).
+  sheet("Add new device", (node, close) => {
     const body = h("div", { class: "sheet-body" });
     const name = h("input", { class: "inp", placeholder: "Kitchen", "aria-label": "Name", maxlength: "60", autocomplete: "off" });
     const err = h("p", { class: "fnote bad", role: "status", "aria-live": "polite" });
-    const add = h("button", { class: "btn primary", onclick: () => submit() }, "Add screen");
+    const add = h("button", { class: "btn primary", onclick: () => submit() }, "Add device");
     const pairs = () => st.kind.setup === "pair";
     const source = () => app.screens.find((d) => d.id === st.from) || app.screens[0];
     const pick = (opts, value, onChange, label) => select(opts, value, onChange, { "aria-label": label });
@@ -198,7 +199,7 @@ export function openAddScreen(app) {
       const src = source();
       const qh = st.pages === "new" ? (app.screen || src)?.quiet : src?.quiet;
       const disp = st.kind.displays.find((d) => d.id === st.display) || st.kind.displays[0];
-      add.textContent = pairs() ? "Add and pair" : "Add screen";
+      add.textContent = pairs() ? "Add and pair" : "Add device";
       body.replaceChildren(
         group(grow("Name", null, name),
           kinds.length > 1 ? grow("Kind", null, pick(kinds.map((k) => [k.id, k.name]), st.kind.id, (v) => { st.kind = kinds.find((k) => k.id === v); st.display = st.kind.displays[0].id; draw(); }, "Kind")) : null,
@@ -470,26 +471,29 @@ function sharedGroup(app, pane, scr, show) {
 
 // Adding one sits with removing one: where people look for their screens in Settings.
 function removeGroup(app, pane, scr) {
-  const doc = app.doc, only = app.screens.length < 2;
-  pane.append(group(grow("Add another screen", "New, a copy of these pages, or the same ones",
+  const only = app.screens.length < 2;
+  pane.append(group(grow("Add another device", "New, a copy of these pages, or the same ones",
     h("button", { class: "btn tinted", onclick: () => openAddScreen(app) }, "Add…")), grow("Remove this screen", only ? "It's the only one. Add another first." : "Its key stops working. Undo puts it back.",
-    h("button", { class: "btn tinted danger", disabled: only, onclick: async () => {
-      const gone = scr;
+    h("button", { class: "btn tinted danger", disabled: only, onclick: () => removeScreen(app, scr) }, "Remove"))));
+}
+
+/* Removing a screen, from Settings or the screen menu: no question first, an undo after. */
+export async function removeScreen(app, scr) {
+  const doc = app.doc, gone = scr;
+  try {
+    await doc.flush();
+    const r = (await api(`api/devices/${encodeURIComponent(gone.id)}`, { method: "DELETE" })).body;
+    closeAll();
+    app.screens = r.devices;
+    await app.switchScreen(r.devices[0].id);
+    app.applyScreens(r, r.devices[0].id);
+    toast(`Removed ${gone.name}.`, { label: "Undo", run: async () => {
       try {
-        await doc.flush();
-        const r = (await api(`api/devices/${encodeURIComponent(gone.id)}`, { method: "DELETE" })).body;
-        closeAll();
-        app.screens = r.devices;
-        await app.switchScreen(r.devices[0].id);
-        app.applyScreens(r, r.devices[0].id);
-        toast(`Removed ${gone.name}.`, { label: "Undo", run: async () => {
-          try {
-            const back = (await api(`api/devices/${encodeURIComponent(gone.id)}/restore`, { method: "POST" })).body;
-            app.screens = back.devices; await app.switchScreen(gone.id); app.applyScreens(back, gone.id);
-          } catch (e) { toast(`Couldn't put it back: ${e.message}`); }
-        } });
-      } catch (e) { toast(`Couldn't remove it: ${e.message}`); }
-    } }, "Remove"))));
+        const back = (await api(`api/devices/${encodeURIComponent(gone.id)}/restore`, { method: "POST" })).body;
+        app.screens = back.devices; await app.switchScreen(gone.id); app.applyScreens(back, gone.id);
+      } catch (e) { toast(`Couldn't put it back: ${e.message}`); }
+    } });
+  } catch (e) { toast(`Couldn't remove it: ${e.message}`); }
 }
 
 async function panelPane(app, pane, show) {

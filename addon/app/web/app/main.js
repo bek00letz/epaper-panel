@@ -9,7 +9,7 @@ import { Canvas } from "./canvas.js";
 import { renderStrip, statusSummary } from "./strip.js";
 import { renderInspector } from "./inspector.js";
 import { openEntityPicker, openAttributePicker, openIconPicker, openInsert } from "./pickers.js";
-import { openPresets, savePresetSheet, openStatus, openSettings, resolveClashes, openShortcuts, openAddScreen } from "./sheets.js";
+import { openPresets, savePresetSheet, openStatus, openSettings, resolveClashes, openShortcuts, openAddScreen, removeScreen } from "./sheets.js";
 import { geometry, setDisplays, makeElement, makeEntityElement, elName, TYPES, pairByType, LAYOUT_KEYS, normalizeLineParity } from "./elements.js";
 import { syncDynamicGridShowIf, syncWidgetShowIf } from "./conditions.js";
 import { CATEGORY_TERMS } from "./legacy.js";
@@ -128,7 +128,13 @@ class App {
   }
   openScreens(anchor) {
     const items = this.screens.map((d) => ({ label: d.name, sub: this.screenLine(d), checked: d.id === this.screen?.id, run: () => this.switchScreen(d.id) }));
-    menu(anchor, [...items, "sep", { label: "Rename…", run: () => this.startRename() }, { label: "Add a screen…", icon: "plus", run: () => openAddScreen(this) }], { label: "Screens" });
+    // The screens; then this one's own (Rename, Remove); then adding another.
+    const only = this.screens.length < 2;
+    menu(anchor, [...items, "sep",
+      { label: "Rename…", run: () => this.startRename() },
+      { label: "Remove", danger: true, disabled: only, run: () => removeScreen(this, this.screen) },
+      "sep",
+      { label: "Add new device…", icon: "plus", run: () => openAddScreen(this) }], { label: "Screens" });
   }
   /* The name in the toolbar turns into a field where it stands (names are edited in
      place). Enter or clicking away keeps it; Esc puts it back. Settings › Screen has it too. */

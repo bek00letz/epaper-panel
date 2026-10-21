@@ -72,8 +72,25 @@ class TestFindingAddAScreen(unittest.TestCase):
     def test_settings_offers_it_next_to_remove(self):
         src = js("sheets.js")
         group = src[src.index("function removeGroup"):src.index("async function panelPane")]
-        self.assertLess(group.index('"Add another screen"'), group.index('"Remove this screen"'))
+        self.assertLess(group.index('"Add another device"'), group.index('"Remove this screen"'))
         self.assertIn("openAddScreen(app)", group)
+        self.assertIn("removeScreen(app, scr)", group)
+
+    def test_the_screen_menu_is_screens_then_this_ones_then_adding(self):
+        # The user's order: the screens, a line, Rename and Remove (red), a line, Add new device.
+        main = js("main.js")
+        menu = main[main.index("  openScreens(anchor) {"):main.index("  startRename() {")]
+        rename, remove = menu.index('label: "Rename…"'), menu.index('label: "Remove", danger: true, disabled: only')
+        line_after = menu.index('"sep",', remove)
+        self.assertLess(menu.index('[...items, "sep"'), rename)
+        self.assertLess(rename, remove)
+        self.assertLess(line_after, menu.index('label: "Add new device…"'))
+        self.assertIn("removeScreen(this, this.screen)", menu)
+
+    def test_it_says_device_so_it_isnt_taken_for_a_page(self):
+        sheets = js("sheets.js")
+        self.assertIn('sheet("Add new device"', sheets)
+        self.assertNotIn('"Add a screen…"', js("main.js"))
 
 
 

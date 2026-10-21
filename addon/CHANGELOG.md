@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **The screen menu can remove a screen too.** Under the screen's name: your
+  screens, then Rename and Remove, then Add new device. Removing shows an
+  Undo, as in Settings. "Add a screen" is now "Add new device" there, in
+  its sheet and in Settings, so it isn't mistaken for a new page.
+
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) for the quiet-hours fix below.
