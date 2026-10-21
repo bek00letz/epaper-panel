@@ -26,7 +26,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Work | Where | State |
 |---|---|---|
-| "Follows" for any icon in the inspector: pick an entity, an icon per state, from Home Assistant's own icons and the entity's states (session "icon-follows") | branch `icon-follows` from main | Started 21 Oct; designs with the user first |
+| "Follows" for any icon in the inspector: pick an entity, an icon per state, from Home Assistant's own icons and the entity's states, plain or inverted per state; plus two inspector bugs: From can't switch Template → Sensor, and its "Template" label is clipped (session "icon-follows") | branch `icon-follows` from main | Started 21 Oct; designs with the user first |
 
 Worker notes are in the notes folders (`break-it-0.12.0.md`,
 `timers-addon.md`, `firmware-013.md`, `fixes-0131.md`, `editor-polish.md`,
