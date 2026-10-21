@@ -22,11 +22,14 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 ## In flight
 
-
+0.15.0 is everything together (user, 21 Oct), assembled on `release-next`
 (worktree `~/Documents/HA/epaper-worktrees/release-next`): the held 0.14.1
 (device wording, zoom, the sleep-screen fix, the Wi-Fi network name; a
 firmware change), alerts that end on a condition and to-do lists with three
-row styles (merged in), plus:
+row styles (merged in).
+The user approved tagging and pushing it once both workers are done and the
+full suite and the firmware compile pass, with no break-it pass first; they
+get a hands-on checklist after (21 Oct). Still being built:
 
 | Work | Where | State |
 |---|---|---|
