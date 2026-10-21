@@ -722,13 +722,15 @@ class TestWidgetDescriptors(unittest.TestCase):
             d = w.describe()
             self.assertTrue(d["name"] and d["icon"] and isinstance(d["box"], dict) and isinstance(d["fields"], list), t)
 
-    def test_how_often_it_changes_comes_from_its_fetchers(self):
-        self.assertEqual(widgets.get("now_playing").changes_every(), 10)
-        self.assertEqual(widgets.get("grid_now").changes_every(), 15)
-        self.assertEqual(widgets.get("sports_racing").changes_every(), racing.fetch_racing_data.interval)
-        self.assertEqual(widgets.get("weather_forecast").changes_every(), 60)       # your station's, the faster
-        self.assertIsNone(widgets.get("dynamic_grid").changes_every())               # as Home Assistant's states do
-        self.assertIsNone(widgets.get("countdown").changes_every())
+    def test_how_often_what_it_shows_changes(self):
+        # The user's list: planes, scores, races, what's playing, the grid now, a weather station.
+        live = {t: w.changes_every() for t, w in widgets.WIDGETS.items() if w.changes_every()}
+        self.assertEqual(live, {"now_playing": 10, "grid_now": 15, "flight_tracker": 30, "sports_racing": 30,
+                                "sports_match": 30, "weather_forecast": 60})
+        weather = widgets.get("weather_forecast")
+        self.assertIsNone(weather.changes_every({"entity": "weather.home"}), "a forecast alone changes slowly")
+        self.assertEqual(weather.changes_every({"entity": "weather.home", "rain_sensor": "sensor.rain"}), 60)
+        self.assertIn("now_entity", weather.describe()["changes_when"])
 
     def test_every_widget_with_a_fetch_has_an_example(self):
         for t, w in widgets.WIDGETS.items():
@@ -751,6 +753,7 @@ class TestCatalog(EditorClient):
         self.assertEqual(got["states"]["binary_sensor.motion"]["on"]["word"], "Detected")
         self.assertEqual(set(got["widgets"]), set(widgets.WIDGETS))
         self.assertEqual(got["widgets"]["now_playing"]["changes_every"], 10)
+        self.assertIsNone(got["widgets"]["calendar_month"]["changes_every"])
         self.assertIn(got["time_format"], ("12h", "24h"))
 
 
@@ -862,5 +865,5 @@ class TestWorldClock(Sizes, unittest.TestCase):
         self.assertEqual(cities["America/New_York"]["city"], "New York")
         self.assertEqual(cities["Asia/Kolkata"]["offset"], "+05:30")
         self.assertNotIn("US/Eastern", cities)
-        self.assertEqual(widgets.get("world_clock").changes_every(), 60)
+        self.assertIsNone(widgets.get("world_clock").changes_every(), "a sleeping device shows hours apart instead")
         self.assertTrue(clocktime.shows_time({"type": "world_clock"}))

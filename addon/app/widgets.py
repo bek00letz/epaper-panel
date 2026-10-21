@@ -8,7 +8,7 @@ quietly. Here each widget says, once:
 - what it's called and its icon, its default box and settings, and its
   inspector fields (served to the editor, /api/catalog);
 - how its value is fetched (always through live_data, so a render never
-  waits) and how often that value changes (from its fetchers' own
+  waits) and, for what's live, how often it changes (its live readers' own
   @runtime.live intervals);
 - its example value, for thumbnails (examples.py);
 - how it's drawn (render/), and whether a list value is several items of
@@ -69,8 +69,10 @@ class Widget:
     icon: str                                   # the editor's icon for it
     fetch: Callable[[Any, dict, Ctx], Awaitable[Any]] | None
     example: Callable[[dict, datetime], Any] | None
-    readers: tuple = ()                         # its live_data readers: how often its value changes
-    every: int | None = None                    # or, with nothing fetched, how often it changes anyway (a clock)
+    # What it shows that's live (planes, scores, the grid now, what's playing): the live_data readers of
+    # that, whose own interval says how often it changes. Empty: it changes slowly (a calendar, a total).
+    live: tuple = ()
+    live_when: tuple = ()                       # live only when one of these fields is set (weather: a station)
     box: dict = field(default_factory=lambda: dict(FILL))
     defaults: dict = field(default_factory=dict)
     fields: list = field(default_factory=list)
@@ -78,16 +80,21 @@ class Widget:
     window: bool = False                        # its page can show only around its events (a sensor of ours)
     breakable: bool = False                     # the editor can break it into plain elements
 
-    def changes_every(self) -> int | None:
-        """Seconds: how often its value can change, from its fetchers' own intervals; None when it
-        changes only as Home Assistant's states do (a template)."""
-        got = [r.interval for r in self.readers if getattr(r, "interval", None)] + ([self.every] if self.every else [])
+    def changes_every(self, el: dict | None = None) -> int | None:
+        """Seconds: how often what it shows changes, for the editor's "changes faster than this device
+        updates" (the user's list: planes, scores, races, what's playing, the grid now, a weather
+        station), from its live readers' own intervals; None for what changes slowly. With an element,
+        `live_when` is checked against it."""
+        if el is not None and self.live_when and not any(str(el.get(k) or "").strip() for k in self.live_when):
+            return None
+        got = [r.interval for r in self.live if getattr(r, "interval", None)]
         return int(min(got)) if got else None
 
     def describe(self) -> dict:
         """What the editor reads (/api/catalog)."""
         return {"name": self.name, "icon": self.icon, "box": self.box, "defaults": self.defaults,
                 "fields": self.fields, "changes_every": self.changes_every(),
+                **({"changes_when": list(self.live_when)} if self.live_when else {}),
                 "sub_items": self.items is not None, "window": self.window, "breakable": self.breakable}
 
 
@@ -204,7 +211,7 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
     Widget("weather_forecast", "Weather", "cloud", _weather,
            lambda el, now: layout._parse_val_json(examples.eval_fixture_template(
                layout.collect_templates({"elements": [{**el, "entity": el.get("entity") or "weather.forecast_home"}]})[0], own=False)),
-           readers=(ha_services.fetch_weather_forecast, station.fetch_station),
+           live=(station.fetch_station,), live_when=("now_entity",) + station.SENSORS,
            defaults={"entity": "", "show_border": True}, breakable=True,
            fields=[entity("entity", "Weather", ["weather"], ph="The first one Home Assistant has"),
                    sel("layout_mode", "Layout", [["auto", "Fit the box"], ["split", "Now and forecast side by side"],
@@ -213,37 +220,36 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
                    sel("forecast_days", "Days", [["3", "3"], ["4", "4"], ["5", "5"]], "4"),
                    toggle("show_details", "Humidity and wind", True), BORDER, *STATION_FIELDS]),
     Widget("sun_times", "Sunrise and sunset", "sun", _sun, lambda el, now: {**examples.sun(now), "tz": None},
-           readers=(home.fetch_sun,), defaults={"style": "next"},
+           defaults={"style": "next"},
            fields=[sel("style", "Style", [["next", "Next one first"], ["both", "Both alike"]], "next")]),
     # A date of yours or your bins, no calendar needed; nothing fetched, so it changes only as the day does.
     Widget("countdown", "Countdown", "calendar", _countdown, lambda el, now: {"tz": None},
            defaults={"to": "date", "name": "", "at": "", "yearly": False, "show_before": 0},
            fields=[sel("to", "Counts down to", [["date", "A date"], ["bins", "Bin day"]], "date"), {"kind": "countdown"}]),
     # Up to four cities, alike, fitted to the box; "" is Home Assistant's own zone. A sleeping device shows hours apart.
-    Widget("world_clock", "World clock", "clock", _world_clock, lambda el, now: {"tz": None}, every=60,
+    Widget("world_clock", "World clock", "clock", _world_clock, lambda el, now: {"tz": None},
            defaults={"zones": [{"tz": "", "label": ""}]},
            fields=[{"kind": "zones", "key": "zones", "most": 4, "label": "Cities"}]),
     Widget("energy_total", "Energy total", "chart", _energy_total,
            lambda el, now: examples.total(str(el.get("period") or "month"), now),
-           readers=(energy.fetch_total,), defaults={"source": "solar", "entity": "", "period": "month"},
+           defaults={"source": "solar", "entity": "", "period": "month"},
            fields=[sel("source", "Shows", [["solar", "Solar, from the Energy dashboard"], ["grid_import", "Bought from the grid"],
                                            ["grid_export", "Sold to the grid"], ["entity", "A sensor"]], "solar"),
                    entity("entity", "Sensor", when={"key": "source", "is": "entity"}),
                    sel("period", "For", [["day", "Today"], ["month", "This month"], ["year", "This year"]], "month")]),
     Widget("grid_now", "Grid now", "plug", _grid, lambda el, now: examples.grid(now),
-           readers=(energy.fetch_grid_power, energy.fetch_grid_hours), defaults={"entity": "", "invert": False},
+           live=(energy.fetch_grid_power,), defaults={"entity": "", "invert": False},
            fields=[entity("entity", "Power sensor, if not the dashboard's"), toggle("invert", "Above zero when selling", False)]),
-    Widget("energy_cost", "Energy cost", "value", _cost, lambda el, now: dict(examples.COST), readers=(energy.fetch_cost,)),
+    Widget("energy_cost", "Energy cost", "value", _cost, lambda el, now: dict(examples.COST)),
     Widget("now_playing", "Now playing", "play", _now_playing, lambda el, now: list(examples.PLAYING),
-           readers=(home.fetch_now_playing,), defaults={"entity": ""}, items=(5, "media"),
+           live=(home.fetch_now_playing,), defaults={"entity": ""}, items=(5, "media"),
            fields=[text("entity", "Players", "All of them")]),
     Widget("tv_week", "On TV this week", "calendar", _tv, lambda el, now: {"events": examples.episodes(now), "tz": None},
-           readers=(ha_services.fetch_calendar_events,), defaults={"entity": "", "days": 7},
+           defaults={"entity": "", "days": 7},
            fields=[entity("entity", "Calendar of shows", ["calendar"]), num("days", "Days ahead", "7", 1, 31),
                    text("title", "Title", "On TV this week")]),
     Widget("calendar_month", "Month", "calendar", _calendar,
            lambda el, now: examples.eval_fixture_template(layout.collect_templates({"elements": [el]}).get(0, ""), own=False) or None,
-           readers=(ha_services.fetch_calendar_events,),
            box={"x": 20, "y": 14, "w": 360, "h": 230},
            defaults={"show_header": True, "show_weekdays": True, "first_weekday": 0, "highlight_today": True,
                      "show_border": True, "entity": ""},
@@ -252,7 +258,7 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
                    toggle("highlight_today", "Mark today", True), BORDER]),
     Widget("calendar_agenda", "Agenda", "list", _calendar,
            lambda el, now: examples.eval_fixture_template(layout.collect_templates({"elements": [el]}).get(0, ""), own=False) or None,
-           readers=(ha_services.fetch_calendar_events,), breakable=True,
+           breakable=True,
            box={"x": "margin", "y": 14, "w": 380, "h": 230},
            defaults={"title": "Coming up", "max_events": 4, "show_border": True, "entity": ""},
            fields=[entity("entity", "Calendar", ["calendar"]), text("title", "Title", "Coming up"),
@@ -261,7 +267,7 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
     Widget("todo_list", "To-do list", "todo", _todo,
            lambda el, now: (lambda got: {**got, "tz": None} if got else None)(
                examples.fixture_todo(str(el.get("entity") or "todo.chores")) or examples.fixture_todo("todo.chores")),
-           readers=(ha_services.fetch_todo_items,), defaults={"entity": ""}, window=True,
+           defaults={"entity": ""}, window=True,
            fields=[entity("entity", "List", ["todo"]),
                    sel("show", "Shows", [["open", "Everything to do"], ["due", "Due today or overdue"]], "open"),
                    # render/todo.STYLES but "plain" (kept as the way back, not offered).
@@ -276,14 +282,14 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
                      "items": [{"entity": "", "name": "Spot 1", "icon": "mdi:radiator"}, {"entity": "", "name": "Spot 2", "icon": "mdi:radiator"}]},
            fields=[{"kind": "grid"}]),
     Widget("flight_tracker", "Flights", "plane", _flights, lambda el, now: list(examples.AIRCRAFT),
-           readers=(flights.fetch_overhead_aircraft,), items=(5, "flight"), window=True, breakable=True,
+           live=(flights.fetch_overhead_aircraft,), items=(5, "flight"), window=True, breakable=True,
            defaults={"radius": 35, "style": "card", "show_border": True},
            fields=[sel("style", "Style", [["card", "Details"], ["split", "Radar and details"], ["radar", "Radar"]], "card"),
                    {"kind": "place"}, num("radius", "Radius, km", "35", 5, 250),
                    {"kind": "window", "label": "Only show while a plane is near"},
                    toggle("show_sub_metrics", "Second units", True), BORDER, {"kind": "sensorid"}]),
     Widget("sports_racing", "Racing", "flag", _racing, lambda el, now: examples.race(el.get("series") or "f1"),
-           readers=(racing.fetch_racing_data,), window=True, breakable=True,
+           live=(racing.fetch_racing_data,), window=True, breakable=True,
            defaults={"series": "f1", "entity": "", "show_border": True},
            fields=[sel("series", "Series", "series", "f1"), entity("entity", "Sensor, if you have one"),
                    sel("max_drivers", "Leaderboard", [["6", "Top 6, extra large"], ["8", "Top 8, large"], ["10", "Top 10"]], "10"),
@@ -294,7 +300,7 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
                    {"kind": "sensorid"}]),
     Widget("sports_match", "Scores", "ball", _match,
            lambda el, now: examples.match(el.get("league") or el.get("entity") or "soccer/eng.1"),
-           readers=(sports.fetch_sports_match,), items=(6, "sports"), window=True, breakable=True,
+           live=(sports.fetch_sports_match,), items=(6, "sports"), window=True, breakable=True,
            defaults={"league": "soccer/eng.1", "team": "", "entity": "", "show_border": True},
            fields=[sel("league", "League", "leagues", "soccer/eng.1"), text("team", "Team", "Any team"),
                    entity("entity", "Team Tracker sensor"),
