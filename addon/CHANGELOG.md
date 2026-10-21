@@ -1,6 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.19.0
+Add-on only; no firmware change, so nothing to reinstall on the panel.
+
+In short: race pages read each series' own calendar first, so Formula E
+already shows season 13 (Jeddah, 18 Dec), and between seasons they say so
+instead of showing an old race; setting up Scores says when a busy day won't
+all fit an always-on panel, and a trimmed page says how many it shows; the
+racing calendar no longer reports a failure for next year's file.
+The details:
 
 - **Fixed:** the add-on reported the racing calendar as failing every minute
   ("HTTP 404" in its log, and its problem sensor), because next year's F1
