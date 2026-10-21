@@ -294,6 +294,7 @@ async def api_entities(request):
                 "name": info.get("friendly_name") or eid,
                 "state": info.get("state"),
                 "unit": info.get("unit") or "",
+                "device_class": info.get("device_class") or "",
                 "is_epaper": eid.startswith("sensor.epaper_"),
             }
     else:
@@ -312,6 +313,8 @@ async def api_entities(request):
                     "name": attrs.get("friendly_name") or eid,
                     "state": s.get("state"),
                     "unit": attrs.get("unit_of_measurement") or "",
+                    # So a preset can list, say, temperature sensors first.
+                    "device_class": attrs.get("device_class") or "",
                     "is_epaper": eid.startswith("sensor.epaper_") or attrs.get("source") == "epaper_studio",
                 }
 
@@ -323,6 +326,7 @@ async def api_entities(request):
             "name": attrs.get("friendly_name") or eid,
             "state": info.get("state"),
             "unit": attrs.get("unit_of_measurement") or "",
+            "device_class": attrs.get("device_class") or "",
             "is_epaper": True,
         }
 

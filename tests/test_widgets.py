@@ -450,3 +450,13 @@ class TestNoMadeUpScores(unittest.TestCase):
             el = {**el, "x": 24, "y": 14, "w": 744, "h": 208, "show_border": False}
             self.assertEqual(ink(render(el, None)), 0, el["type"])
             self.assertEqual(ink(render(el, [])), 0, el["type"])
+
+
+class TestEntitiesForPresets(EditorClient):
+    async def test_rows_say_what_kind_of_sensor_they_are(self):
+        rows = {r["entity_id"]: r for r in await (await self.ed.get("/api/entities")).json()}
+        self.assertEqual(rows["sensor.indoor_temperature"]["device_class"], "temperature")
+        self.assertEqual(rows["binary_sensor.front_door"]["device_class"], "door")
+        self.assertEqual(rows["sensor.cat_location"]["device_class"], "")
+        for eid in ("calendar.family", "calendar.bins", "calendar.tv", "weather.forecast_home", "media_player.living_room"):
+            self.assertIn(eid, rows)
