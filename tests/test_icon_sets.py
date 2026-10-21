@@ -494,6 +494,27 @@ console.log(JSON.stringify([
         self.assertEqual(names, ["mdi:cat", "mdi:cat", "phu:France2", "", "mdi", "pets/a"])
         self.assertEqual(layers, {"view": [0, 0, 48, 24], "layers": [{"d": "M0 0Z", "rule": "nonzero"}, {"d": "M1 1Z", "rule": "evenodd"}, {"d": "M2 2L3 3", "width": 2}]})
 
+    def test_an_icon_that_didnt_arrive_is_asked_for_again(self):
+        # The add-on restarting while the picker is open: no icon stays blank for good.
+        got = self.run_js("""
+const made = [];
+globalThis.document = { createElementNS: (ns, t) => { const n = { t, a: {}, kids: [], isConnected: true, classList: { add() {} },
+  setAttribute(k, v) { this.a[k] = v; }, getAttribute(k) { return this.a[k]; }, replaceChildren(...k) { this.kids = k; } }; made.push(n); return n; } };
+let calls = 0, listCalls = 0;
+const post = async (path, body) => { calls++; if (calls === 1) throw new Error("Failed to fetch"); return { icons: Object.fromEntries(body.names.map((n) => [n, "M0 0H24V24H0Z"])) }; };
+const get = async () => { listCalls++; if (listCalls === 1) throw new Error("Failed to fetch"); return { sets: [{ prefix: "phu", count: 2 }], names: { phu: ["ARD", "Kika"] } }; };
+const g = new G.Glyphs(get, post);
+const a = g.node("phu:ARD"), b = g.node("phu:Kika"), gone = g.node("phu:Kika");
+await g.load();                                   // the list fails: not ready, asked again
+const readyAfterFail = g.ready();
+await new Promise((r) => setTimeout(r, 2100));    // ... and arrives
+gone.isConnected = false;
+await new Promise((r) => setTimeout(r, 50));      // the outlines fail once
+const blankAfterFail = a.kids.length === 0;
+await new Promise((r) => setTimeout(r, 2100));    // asked again
+console.log(JSON.stringify({ readyAfterFail, ready: g.ready(), blankAfterFail, a: a.kids.length, b: b.kids.length, gone: gone.kids.length, calls }));""")
+        self.assertEqual(got, {"readyAfterFail": False, "ready": True, "blankAfterFail": True, "a": 1, "b": 1, "gone": 0, "calls": 2})
+
     def test_the_editor_draws_from_outlines_only(self):
         web = support.APP / "web"
         for f in [*sorted((web / "app").glob("*.js")), web / "index.html", web / "editor.css"]:

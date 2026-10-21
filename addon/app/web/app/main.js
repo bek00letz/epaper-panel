@@ -244,6 +244,7 @@ class App {
 
   /* Icons, drawn from the outlines the panel draws (glyphs.js): every set the add-on has. */
   async loadIcons() {
+    this.glyphs.onLoad = () => this.refresh();
     await this.glyphs.load();
     this.refresh();
   }

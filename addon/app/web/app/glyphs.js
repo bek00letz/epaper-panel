@@ -88,7 +88,11 @@ export class Glyphs {
       const got = await this.get("api/icons");
       this.sets = Array.isArray(got?.sets) ? got.sets : [];
       this.names = got?.names && typeof got.names === "object" ? got.names : {};
-    } catch (_) { this.sets = this.sets || []; }
+    } catch (_) {
+      // Not this time: the picker says it's loading, and the list is asked for again shortly.
+      setTimeout(() => this.load().then(() => this.onLoad?.()), (this.tries = (this.tries || 0) + 1) < 5 ? 2000 : 15000);
+      return;
+    }
     this.known = new Set(Object.entries(this.names).flatMap(([p, ns]) => ns.map((n) => `${p}:${n}`)));
     const w = this.waiters; this.waiters = []; w.forEach((f) => f());
   }
@@ -118,12 +122,27 @@ export class Glyphs {
   }
   async fetch() {
     this.timer = 0;
+    // Asking again: only icons still on screen (a closed picker's aren't asked for).
+    if (this.wait) for (const [k, svgs] of this.pending) { const still = svgs.filter((s) => s.isConnected !== false); if (still.length) this.pending.set(k, still); else this.pending.delete(k); }
     const want = [...this.pending.keys()].slice(0, PAGE);
     const nodes = want.map((k) => [k, this.pending.get(k)]);
     want.forEach((k) => this.pending.delete(k));
+    if (!want.length) return;
     if (this.pending.size) this.timer = setTimeout(() => this.fetch(), 0);
-    let got = {};
-    try { got = (await this.post("api/icons/outlines", { names: want }))?.icons || {}; } catch (_) { return; }
+    let got;
+    try { got = (await this.post("api/icons/outlines", { names: want }))?.icons || {}; } catch (_) { got = null; }
+    if (got === null) {
+      // The add-on didn't answer (restarting, or the connection dropped): ask again for the icons
+      // still on screen, a little later each time, so none is left blank for good.
+      for (const [k, svgs] of nodes) {
+        const still = svgs.filter((s) => s.isConnected !== false);
+        if (still.length) this.pending.set(k, [...(this.pending.get(k) || []), ...still]);
+      }
+      this.wait = Math.min(30000, (this.wait || 1000) * 2);
+      if (this.pending.size && !this.timer) this.timer = setTimeout(() => this.fetch(), this.wait);
+      return;
+    }
+    this.wait = 0;
     for (const [k, svgs] of nodes) {
       if (!(k in got)) continue;
       this.outlines.set(k, got[k]);
