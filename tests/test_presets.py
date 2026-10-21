@@ -502,6 +502,41 @@ class TestDateOnASleepingDevice(unittest.TestCase):
         self.assertIn("changeTimers(app, scr,", (APP_JS / "screenbar.js").read_text(), "the screen bar goes through the same function")
 
 
+@unittest.skipUnless(shutil.which("node"), "no node to read the editor's presets")
+class TestNotedNeverHidden(unittest.TestCase):
+    """The user's call (21 Oct): what changes faster than a sleeping device updates is noted with
+    its interval, never hidden. One rule (presets.changesEvery), not a list of presets."""
+    ASLEEP = {"timing": {"always_on": False, "update_minutes": 15}}
+
+    def test_the_rule_finds_the_five(self):
+        got = run_js("console.log(JSON.stringify(P.PRESETS.filter((p) => P.presetChangesEvery(p) != null).map((p) => p.title)))")
+        self.assertEqual(sorted(got), sorted(["Planes overhead", "Now playing", "Scores", "Grid now", "Battery and solar"]))
+
+    def test_the_line_names_the_devices_own_interval(self):
+        got = run_js(f"""const asleep = {json.dumps(self.ASLEEP)};
+          console.log(JSON.stringify([P.staleNote(1, asleep), P.staleNote(1, asleep, {{ short: true }}),
+            P.staleNote(1, {{ timing: {{ always_on: false, update_minutes: 120 }} }}), P.staleNote(1, {{ timing: {{ always_on: true, update_minutes: 1 }} }}),
+            P.staleNote(null, asleep)]))""")
+        self.assertEqual(got, ["Changes faster than this device updates (every 15 min), so it can be up to 15 min old.",
+                               "Up to 15 min old here",
+                               "Changes faster than this device updates (every 2 hours), so it can be up to 2 hours old.", "", ""])
+
+    def test_watts_are_now_watt_hours_are_not(self):
+        got = run_js("""const ents = new Map([["sensor.load", { unit: "kW" }], ["sensor.today", { unit: "kWh" }]]);
+          console.log(JSON.stringify([{ type: "number", entity: "sensor.load" }, { type: "number", entity: "sensor.today" }, { type: "bar", suffix: " W" },
+            { type: "flight_tracker" }, { type: "weather_forecast" }, { type: "text", value: "Hello" }].map((e) => P.changesEvery(e, ents))))""")
+        self.assertEqual(got, [1, None, 1, 1, None, None])
+
+    def test_shown_in_the_sheet_and_the_inspector_not_hidden(self):
+        js = (APP_JS / "newpage.js").read_text()
+        self.assertIn("const stale = staleNote(presetChangesEvery(p), app.screen, { short: true });", js)
+        self.assertIn("const stale = staleNote(presetChangesEvery(p), app.screen);", (APP_JS / "setup.js").read_text())
+        insp = (APP_JS / "inspector.js").read_text()
+        self.assertIn("staleNote(pageChangesEvery(p.elements, app.entMap), app.screen)", insp)
+        self.assertIn("staleNote(changesEvery(el, app.entMap), app.screen)", insp)
+        self.assertNotIn("presetChangesEvery(p) != null && sleeps", js, "never filtered out")
+
+
 class TestTheSheet(unittest.TestCase):
     """New page's wiring and look, pinned in its source."""
 

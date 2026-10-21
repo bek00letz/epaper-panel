@@ -359,6 +359,42 @@ export function dateInstead(elements) {
   return elements.map((e) => (showsTime(e) ? { ...e, value: "{{ now().strftime('%-d %B') }}" } : e));
 }
 
+/* How fast what a page shows changes, as a rule rather than a list of
+   presets: live things (planes overhead, what's playing, a score, the grid
+   now) and any value in watts (power is always "now") change every minute.
+   On a device that sleeps longer than that between updates, such a page is
+   noted, never hidden (the user's call, 21 Oct: "14 minute old plane data
+   isn't tragic"); a clock is the exception, it becomes the Date. In minutes;
+   null when it changes slowly enough. */
+export const LIVE_TYPES = ["flight_tracker", "now_playing", "sports_match", "grid_now"];
+const POWER_UNIT = /^\s*[kMm]?W\s*$/;                    // W, kW, MW; never Wh
+export function changesEvery(el, entMap) {
+  if (!el) return null;
+  if (LIVE_TYPES.includes(el.type)) return 1;
+  if (["number", "text", "bar", "curve", "bar_chart"].includes(el.type)) {
+    const unit = (el.entity && entMap?.get?.(el.entity)?.unit) || el.suffix || "";
+    if (POWER_UNIT.test(unit)) return 1;
+  }
+  return null;
+}
+export function pageChangesEvery(elements, entMap) {
+  const all = (elements || []).map((e) => changesEvery(e, entMap)).filter((m) => m != null);
+  return all.length ? Math.min(...all) : null;
+}
+const inWords = (m) => (m < 60 ? `${m} min` : m % 60 ? `${+(m / 60).toFixed(1)} hours` : m === 60 ? "1 hour" : `${m / 60} hours`);
+/* The one line, with the device's own interval; "" when it keeps up. `short` for a card. */
+export function staleNote(minutes, screen, { short = false } = {}) {
+  const every = screen?.timing?.update_minutes;
+  if (minutes == null || !sleepsBetweenUpdates(screen) || !every || every <= minutes) return "";
+  return short ? `Up to ${inWords(every)} old here`
+    : `Changes faster than this device updates (every ${inWords(every)}), so it can be up to ${inWords(every)} old.`;
+}
+/* A preset's, from what its looks show. */
+export const presetChangesEvery = (p) => {
+  const all = p.looks.map((l) => pageChangesEvery(l.make(""))).filter((m) => m != null);
+  return all.length ? Math.min(...all) : null;
+};
+
 export const presetById = (id) => PRESETS.find((p) => p.id === id);
 export const groupName = (id) => (GROUPS.find(([g]) => g === id) || [id, id])[1];
 export const lookOf = (p, i = 0) => p.looks[Math.min(Math.max(0, i | 0), p.looks.length - 1)];

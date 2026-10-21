@@ -7,7 +7,7 @@ import { field, input, number, select, seg, textarea, toggle, toggleRow, section
 import { TYPES, BREAKABLE, isWidget, hasText, elName, normalizeLineParity, GROUP_STYLES, GROUP_PAD } from "./elements.js";
 import { OPS, parseShowIf, compileShowIf, evaluate, describe, syncWidgetShowIf, syncDynamicGridShowIf } from "./conditions.js";
 import { explodeWidget, getWidgetSensorId, suggestIconForEntity } from "./legacy.js";
-import { LEAGUES, SERIES, sportWord } from "./presets.js";
+import { LEAGUES, SERIES, sportWord, staleNote, changesEvery, pageChangesEvery } from "./presets.js";
 
 const SHOWS = [["state", "Its value"], ["unit", "Its unit, following the value"], ["attribute", "One of its details"], ["last_changed", "When it last changed"], ["last_updated", "When it last updated"],
   ["days_until", "Days until it"], ["date_formatted", "Its date"], ["calendar_title", "The event's name"]];
@@ -100,6 +100,8 @@ function element(app, head, body, el, i) {
   const set = setter(app, el);
   const doc = app.doc, g = app.geometry();
   if (el._auto) body.append(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: `Placed automatically for ${app.screen?.name || "this device"}. Move or resize it and this device keeps its own place for it.` })));
+  const stale = staleNote(changesEvery(el, app.entMap), app.screen);
+  if (stale) body.append(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: stale })));
 
   if (hasText(el)) {
     body.append(shows(app, el, set));
@@ -538,6 +540,9 @@ function page(app, head, body) {
   name.addEventListener("keydown", (e) => { if (e.key === "Enter") name.blur(); if (e.key === "Escape") { name.value = cur; err.textContent = ""; name.blur(); } });
   name.addEventListener("change", () => app.renamePage(cur, name.value));
   head.append(h("div", { class: "ttl" }, h("span", { class: "kind", text: "Page" }), name), err);
+  // What changes faster than a sleeping device updates is noted, never hidden (presets.staleNote).
+  const stale = staleNote(pageChangesEvery(p.elements, app.entMap), app.screen);
+  if (stale) body.append(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: stale })));
 
   const tier = p.tier || "rotate";
   const when = section("Shows", seg([["rotate", "Always"], ["when", "Only when"], ["alert", "As an alert"]], tier, (v) => app.setTier(v), "When this page shows"));

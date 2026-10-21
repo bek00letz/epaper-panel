@@ -10,7 +10,7 @@
 
 import { h, icon, api } from "./util.js";
 import { select, linkButton } from "./ui.js";
-import { lookOf, pageFor, examplePage, rankSensors, groupName, sensorOf, freeSourceName, energyRoles } from "./presets.js";
+import { lookOf, pageFor, examplePage, rankSensors, groupName, sensorOf, freeSourceName, energyRoles, staleNote, presetChangesEvery } from "./presets.js";
 
 const WHAT = { calendar: "Which calendar should it show?", todo: "Which list should it show?", weather: "Which weather should it show?",
   binary_sensor: "Which sensor should it show?", sensor: "Which sensor should it show?", jellyfin: "Whose Jellyfin should it show?" };
@@ -75,6 +75,8 @@ export function setupStep(app, p, { thumb, add, foot, initialLook = 0, rememberL
   const caption = h("p", { class: "fnote pvcap", "aria-live": "polite" });
   const notes = [h("p", { class: "fnote", text: `In ${groupName(p.group)}` })];
   if (p.was) notes.push(h("p", { class: "fnote", text: `Was called “${p.was}”.` }));
+  const stale = staleNote(presetChangesEvery(p), app.screen);
+  if (stale) notes.push(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: stale })));
   node.append(h("div", { class: "lead" }, h("div", {}, preview, caption), h("div", { class: "leadtext" }, h("p", { class: "desc", text: p.desc }), ...notes)));
   const need = p.needs && SETUPS[p.needs] ? SETUPS[p.needs]({ app, p, changed }) : null;
   const asksEntity = p.asks && !need;           // a setup decides what its page shows

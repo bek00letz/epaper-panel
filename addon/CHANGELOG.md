@@ -194,6 +194,13 @@
   why the time won't keep up, and offers to show the date (Undo puts the
   clock back). Back to always on, a clock stays as it is.
 
+- **Pages that change faster than a sleeping device say so.** On a device
+  that sleeps between updates, Planes overhead, Now playing, Scores, Grid
+  now and Battery and solar are still offered, with one line: "Changes
+  faster than this device updates (every 15 min), so it can be up to 15
+  min old." The same line shows in the inspector for a page like that.
+  Anything showing watts counts, since power is always "now".
+
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) for the quiet-hours fix below.

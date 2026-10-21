@@ -8,7 +8,7 @@ import { h, icon, api, clone, slug, prefs } from "./util.js";
 import { sheet, toast } from "./ui.js";
 import { syncDynamicGridShowIf } from "./conditions.js";
 import { reflowPageElements } from "./legacy.js";
-import { PRESETS as ALL_PRESETS, GROUPS, forDevice, sleepsBetweenUpdates, lookOf, pageFor, examplePage, pageName, search, rankSensors, fitToCanvas } from "./presets.js";
+import { PRESETS as ALL_PRESETS, GROUPS, forDevice, sleepsBetweenUpdates, staleNote, presetChangesEvery, lookOf, pageFor, examplePage, pageName, search, rankSensors, fitToCanvas } from "./presets.js";
 import { thumbnail } from "./strip.js";
 import { setupStep } from "./setup.js";
 
@@ -57,8 +57,10 @@ export function openPresets(app) {
 
     const yours = () => app.doc.spec.custom_presets || [];
     function card(p) {
-      const look = lookOf(p, 0), sub = count(p) || (p.was ? `Was “${p.was}”` : "");
-      return h("button", { class: "pbtn", "aria-label": `${p.title}${count(p) ? `, ${count(p)}` : ""}. ${p.desc}`, onclick: () => pick(p) },
+      // Noted, never hidden: on a device that sleeps, what changes faster than it updates says how old it can be.
+      const stale = staleNote(presetChangesEvery(p), app.screen, { short: true });
+      const look = lookOf(p, 0), sub = stale || count(p) || (p.was ? `Was “${p.was}”` : "");
+      return h("button", { class: "pbtn", "aria-label": `${p.title}${count(p) ? `, ${count(p)}` : ""}. ${p.desc}${stale ? " " + staleNote(presetChangesEvery(p), app.screen) : ""}`, onclick: () => pick(p) },
         thumb(app, `preset:${look.id}:example`, examplePage(p, look), { example: true }),
         h("span", { class: "pt", text: p.title }), h("span", { class: "sub", text: sub || " ", "aria-hidden": "true" }));
     }
