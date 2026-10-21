@@ -11,7 +11,9 @@ from pathlib import Path
 from aiohttp import web
 
 import examples
+from sources.geo import get_home_timezone
 import feeds
+import widgets
 import live_data
 from render import binding, clock, epf, layout, sleep, stripmeta, subitems, theme as T
 import airports
@@ -297,6 +299,7 @@ async def api_entities(request):
                 "unit": info.get("unit") or "",
                 "device_class": info.get("device_class") or "",
                 "state_class": info.get("state_class") or "",
+                "changes_every": widgets.sensor_changes_every(info),
                 "is_epaper": eid.startswith("sensor.epaper_"),
             }
     else:
@@ -319,6 +322,7 @@ async def api_entities(request):
                     "device_class": attrs.get("device_class") or "",
                     # A running total (total, total_increasing) can show its change today (binding "change_today").
                     "state_class": attrs.get("state_class") or "",
+                    "changes_every": widgets.sensor_changes_every(attrs),
                     "is_epaper": eid.startswith("sensor.epaper_") or attrs.get("source") == "epaper_studio",
                 }
 
@@ -394,6 +398,38 @@ async def api_preview(request):
     return await _drawn(request, body, page, vals, series, today=await date_for_time(kinds.of(dev).sleeps(dev)))
 
 
+def _fit(elements: list, from_canvas: str, display: str, orientation: int) -> list:
+    """Elements made on `from_canvas` ("792x272"), placed for a device's size as an arrangement would
+    place them automatically (render/arrange.auto_box): the one way a page moves between sizes."""
+    from render import arrange
+    try:
+        arrange.parse_canvas(from_canvas)
+    except (TypeError, ValueError):
+        raise web.HTTPBadRequest(text="from_canvas is a size like 792x272")
+    target = arrange.canvas_key(*T.canvas_dims(orientation, display))
+    if target == from_canvas:
+        return elements
+    return [{**el, **arrange.auto_box(el, from_canvas, target)} if isinstance(el, dict) else el for el in elements]
+
+
+async def api_fit(request):
+    """POST {elements, from_canvas, display?, orientation?} -> {elements}: a page made on one size, placed
+    for a device's (the editor's own device by default), for adding a preset's page."""
+    body = await _body(request)
+    view = load_layouts(_device(request)["id"])
+    display = body.get("display") or view.get("display", T.DEFAULT_DISPLAY)
+    try:
+        orient = int(body.get("orientation") if "orientation" in body else view.get("orientation", 0))
+    except (TypeError, ValueError):
+        orient = 0
+    if orient not in (0, 90, 180, 270):
+        orient = 0
+    els = body.get("elements")
+    if not isinstance(els, list):
+        raise web.HTTPBadRequest(text="expected {elements, from_canvas}")
+    return web.json_response({"elements": _fit(els, str(body.get("from_canvas") or ""), display, orient)})
+
+
 async def api_example(request):
     """A page drawn with example values only (examples.py), for preset thumbnails: never the person's own
     data, and nothing asked of Home Assistant, the internet or a data source. Same body as /api/preview."""
@@ -415,6 +451,8 @@ async def _drawn(request, body: dict, page: dict, vals: dict, series: dict, toda
     if orient not in (0, 90, 180, 270):
         orient = 0
     display = body.get("display") or view.get("display", T.DEFAULT_DISPLAY)
+    if body.get("from_canvas"):                         # a page made for another size, placed for this one
+        page = {**page, "elements": _fit(page.get("elements") or [], str(body["from_canvas"]), display, orient)}
     metrics = []
     try:
         dist = float(body.get("distance") or 3.0)
@@ -455,6 +493,13 @@ async def api_catalog(request):
         "widgets": widgets.catalog(),
         "time_format": timeformat.describe(*await get_home_locale(runtime.SESSION))["resolved"],
     })
+
+
+async def api_timezones(request):
+    """The cities a world clock can show: {"home": Home Assistant's zone, "zones": [{"tz", "city", "region",
+    "offset"}]}, from the time zone database (render/worldclock.catalog)."""
+    from render import worldclock
+    return web.json_response({"home": await get_home_timezone(runtime.SESSION), "zones": worldclock.catalog()})
 
 
 async def api_shows_time(request):
@@ -1084,11 +1129,13 @@ def make_apps():
         web.get("/api/airport", api_airport),
         web.get("/api/energy", api_energy),
         web.get("/api/catalog", api_catalog),
+        web.get("/api/timezones", api_timezones),
         web.post("/api/shows-time", api_shows_time),
         web.get("/api/settings/time", api_time_get),
         web.put("/api/settings/time", api_time_put),
         web.post("/api/preview", api_preview),
         web.post("/api/example", api_example),
+        web.post("/api/fit", api_fit),
         web.post("/api/push", api_push),
         web.get("/api/sources", api_sources_get),
         web.put("/api/sources", api_sources_put),
