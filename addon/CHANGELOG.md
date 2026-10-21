@@ -106,6 +106,14 @@
   uses Home Assistant's sun, so there's nothing to set up. It's under
   Insert › Widgets too.
 
+- **Solar this month, Grid now and Energy cost in New page**, under Energy.
+  They read your Energy dashboard themselves, so there's nothing to pick:
+  the next step says which of its sensors they use. When the dashboard
+  hasn't got what they need, Solar this month and Grid now take a sensor
+  of yours instead, right there, and Energy cost says where to add prices.
+  Solar today opens with the dashboard's solar sensor picked. All three are
+  under Insert › Widgets too.
+
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) for the quiet-hours fix below.

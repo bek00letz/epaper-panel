@@ -10,17 +10,17 @@
 
 import { h, icon, api } from "./util.js";
 import { select, linkButton } from "./ui.js";
-import { lookOf, pageFor, examplePage, rankSensors, groupName, sensorOf, freeSourceName } from "./presets.js";
+import { lookOf, pageFor, examplePage, rankSensors, groupName, sensorOf, freeSourceName, energyRoles } from "./presets.js";
 
 const WHAT = { calendar: "Which calendar should it show?", todo: "Which list should it show?", weather: "Which weather should it show?",
   binary_sensor: "Which sensor should it show?", sensor: "Which sensor should it show?", jellyfin: "Whose Jellyfin should it show?" };
 const NONE = { calendar: "No calendars in Home Assistant yet. Search for one, or skip.", todo: "No to-do lists in Home Assistant yet. Add one under Settings, Devices & services, or skip.",
   weather: "No weather in Home Assistant yet. Search for one, or skip." };
 
-// The Energy dashboard's sensors, asked once per editor session.
+// The Energy dashboard, asked once per editor session (presets.energyRoles).
 let energy = null;
 export async function energySensors() {
-  if (!energy) energy = api("api/energy").then((r) => r.body || {}, () => ({}));
+  if (!energy) energy = api("api/energy").then((r) => energyRoles(r.body || {}), () => ({ known: false }));
   return energy;
 }
 
@@ -37,6 +37,33 @@ function radioKeys(group, onPick) {
     onPick(n);
     group.querySelectorAll('[role="radio"]')[n]?.focus();          // drawn again by the pick
   });
+}
+
+/* A searchable list of entities, sensible ones first (rankSensors), the
+   pick ticked. rank() re-sorts once the Energy dashboard is known and says
+   which one it would pick. */
+function sensorPicker(app, p, onPick, label) {
+  let ent = "", ranked = rankSensors(p, app.ents);
+  const q = h("input", { type: "search", placeholder: "Search", "aria-label": "Search", autocomplete: "off", spellcheck: "false" });
+  const list = h("div", { class: "optlist", role: "listbox", "aria-label": label || WHAT[p.asks] || "Which one" });
+  const pick = (id) => { ent = id; draw(); onPick(id); };
+  function draw() {
+    const s = q.value.trim().toLowerCase();
+    const rows = s ? app.ents.filter((e) => e.entity_id.includes(s) || (e.name || "").toLowerCase().includes(s)).map((e) => ({ e, tag: (ranked.find((r) => r.e === e) || {}).tag || "" })) : ranked;
+    list.replaceChildren(...rows.slice(0, 80).map(({ e, tag }) => h("button", { class: "opt", role: "option", "aria-selected": String(ent === e.entity_id), onclick: () => pick(e.entity_id) },
+      h("span", { class: "ock", "aria-hidden": "true" }, ent === e.entity_id ? icon("check", "sm") : null),
+      h("span", { class: "otext" }, h("span", { class: "o1", text: e.name || e.entity_id }), h("span", { class: "o2", text: e.entity_id })),
+      tag ? h("span", { class: "otag", text: tag }) : null,
+      h("span", { class: "ov", text: `${e.state ?? ""}${e.unit ? " " + e.unit : ""}` }))));
+    if (!rows.length) list.append(h("p", { class: "empty-note", text: s ? "Nothing matches. Try part of the name." : NONE[p.asks] || "No sensors of this kind. Search for one, or skip." }));
+  }
+  q.addEventListener("input", draw);
+  draw();
+  return {
+    node: h("div", { class: "picker" }, h("div", { class: "search" }, icon("search", "sm"), q), list),
+    pick,
+    rank: (en) => { ranked = rankSensors(p, app.ents, en); draw(); return ranked[0]?.tag ? ranked[0].e.entity_id : ""; },
+  };
 }
 
 export function setupStep(app, p, { thumb, add, foot, initialLook = 0, rememberLook }) {
@@ -89,31 +116,10 @@ export function setupStep(app, p, { thumb, add, foot, initialLook = 0, rememberL
 
   /* What it shows: the right kind of entity first, sensibly picked. */
   if (asksEntity) {
-    const q = h("input", { type: "search", placeholder: "Search", "aria-label": "Search", autocomplete: "off", spellcheck: "false" });
-    const list = h("div", { class: "optlist", role: "listbox", "aria-label": WHAT[p.asks] || "Which one" });
-    let ranked = rankSensors(p, app.ents);
-    const draw = () => {
-      const s = q.value.trim().toLowerCase();
-      const rows = s ? app.ents.filter((e) => e.entity_id.includes(s) || (e.name || "").toLowerCase().includes(s)).map((e) => ({ e, tag: (ranked.find((r) => r.e === e) || {}).tag || "" })) : ranked;
-      list.replaceChildren(...rows.slice(0, 80).map(({ e, tag }) => h("button", { class: "opt", role: "option", "aria-selected": String(ent === e.entity_id),
-        onclick: () => { ent = e.entity_id; draw(); changed(); } },
-        h("span", { class: "ock", "aria-hidden": "true" }, ent === e.entity_id ? icon("check", "sm") : null),
-        h("span", { class: "otext" }, h("span", { class: "o1", text: e.name || e.entity_id }), h("span", { class: "o2", text: e.entity_id })),
-        tag ? h("span", { class: "otag", text: tag }) : null,
-        h("span", { class: "ov", text: `${e.state ?? ""}${e.unit ? " " + e.unit : ""}` }))));
-      if (!rows.length) list.append(h("p", { class: "empty-note", text: s ? "Nothing matches. Try part of the name."
-        : NONE[p.asks] || "No sensors of this kind. Search for one, or skip." }));
-    };
-    q.addEventListener("input", draw);
-    node.append(h("div", { class: "stepsec" }, h("h3", { class: "slab", text: WHAT[p.asks] || "Which one should it show?" }), h("div", { class: "search" }, icon("search", "sm"), q), list));
-    draw();
+    const picker = sensorPicker(app, p, (id) => { ent = id; changed(); });
+    node.append(h("div", { class: "stepsec" }, h("h3", { class: "slab", text: WHAT[p.asks] || "Which one should it show?" }), picker.node));
     // The Energy dashboard's own sensor is the answer already: picked, and said so.
-    if (p.prefer?.energy) energySensors().then((en) => {
-      if (!node.isConnected) return;
-      ranked = rankSensors(p, app.ents, en);
-      if (!ent && ranked[0]?.tag) { ent = ranked[0].e.entity_id; drawPreview(); }
-      ready(); draw();
-    });
+    if (p.prefer?.energy) energySensors().then((en) => { const first = picker.rank(en); if (!ent && first) picker.pick(first); });
   }
 
   if (need) node.append(need.node);
@@ -127,7 +133,7 @@ export function setupStep(app, p, { thumb, add, foot, initialLook = 0, rememberL
 }
 
 /* ---------- what presets set up in place ---------- */
-const SETUPS = { wifi: wifiSetup, jellyfin: jellyfinSetup };
+const SETUPS = { wifi: wifiSetup, jellyfin: jellyfinSetup, energy: energySetup };
 
 /* Guest Wi-Fi: the network goes into the code, so it's asked for. */
 function wifiSetup({ changed }) {
@@ -249,6 +255,57 @@ function jellyfinSetup({ app, changed }) {
         return { ent: sensorOf(src) };
       } catch (e) { problem = `Couldn't save the connection: ${e.message}`; draw(); return null; }
     },
+    dispose: () => clearTimeout(loading),
+  };
+}
+
+/* The Energy dashboard's widgets read it themselves, so nothing is picked
+   when it has what they need. When it hasn't, Solar this month and Grid now
+   take a sensor instead, here; Energy cost needs the dashboard's prices,
+   which only Home Assistant sets, so it says where. */
+const ENERGY = {
+  solar: { has: (en) => en.solar_energy.length, list: (en) => en.solar_energy, what: "solar",
+    pick: { asks: "sensor", prefer: { device_class: ["energy"], units: ["kWh", "Wh", "MWh"] } }, label: "A sensor that counts what your panels make",
+    missing: "Your Energy dashboard has no solar yet. Add your panels there (in Home Assistant: Settings › Dashboards › Energy), or pick a sensor that counts what they make." },
+  grid: { has: (en) => en.grid.length, list: (en) => en.grid_power.length ? en.grid_power : en.grid, what: "the grid",
+    pick: { asks: "sensor", prefer: { device_class: ["power"], units: ["W", "kW"] } }, label: "Your grid power sensor",
+    missing: "Your Energy dashboard has no grid yet. Add it there (in Home Assistant: Settings › Dashboards › Energy), or pick the sensor that measures your grid power." },
+  cost: { has: (en) => en.has_cost, list: () => [], what: "prices",
+    missing: "Energy cost needs prices: add them to the grid in your Energy dashboard (in Home Assistant: Settings › Dashboards › Energy). Until then the page says so." },
+};
+function energySetup({ app, p, changed }) {
+  const role = ENERGY[p.energy];
+  let en = null, ent = "", invert = false;
+  const node = h("div", { class: "stepsec" });
+  const loading = setTimeout(() => { if (!en) node.replaceChildren(h("p", { class: "fnote", text: "Checking your Energy dashboard…" })); }, 300);
+  energySensors().then((x) => { clearTimeout(loading); en = x; draw(); changed(); });
+  const has = () => !!(en && en.known && role.has(en));
+  const name = (id) => app.entMap.get(id)?.name || id;
+
+  function draw() {
+    if (has()) {
+      const ids = role.list(en);
+      node.replaceChildren(h("p", { class: "note good" }, icon("check", "sm"), h("span", { text: ids.length
+        ? `From your Energy dashboard: ${ids.map(name).join(", ")}.` : "From your Energy dashboard." })),
+        p.energy === "grid" && !en.grid_power.length ? h("p", { class: "fnote", text: "Your dashboard has no grid power sensor, so the page shows today's balance instead." }) : null);
+      return;
+    }
+    const why = en.known ? role.missing : "Home Assistant didn't say how your Energy dashboard is set up." + (role.pick ? " Pick a sensor instead, or try again later." : " The page shows what it finds.");
+    const parts = [h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: why }))];
+    if (role.pick) {
+      const picker = sensorPicker(app, role.pick, (id) => { ent = id; changed(); }, role.label);
+      parts.push(h("h3", { class: "slab", text: role.label }), picker.node);
+      if (p.energy === "grid") parts.push(h("div", { class: "group" }, h("div", { class: "gr" }, h("span", { class: "gl", text: "Above zero when" }),
+        select([["false", "Buying"], ["true", "Selling"]], String(invert), (v) => { invert = v === "true"; changed(); }, { "aria-label": "Above zero when" }))));
+    }
+    node.replaceChildren(...parts);
+  }
+  return {
+    node,
+    ready: () => !!en && (has() || !role.pick || !!ent),
+    shows: () => (has() ? { mine: true, caption: "From your Energy dashboard." }
+      : ent ? { mine: true, extra: { entity: ent, invert }, caption: `With ${name(ent)}.` } : { mine: false }),
+    commit: async () => ({ extra: has() || !ent ? undefined : { entity: ent, invert } }),
     dispose: () => clearTimeout(loading),
   };
 }

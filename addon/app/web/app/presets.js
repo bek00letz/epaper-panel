@@ -149,8 +149,16 @@ export const PRESETS = [
     ] }],
   },
   {
+    id: "solar_month", group: "energy", title: "Solar this month", kw: "pv panels kwh month statistics production",
+    desc: "This month's production, with a bar for each day, from Home Assistant's long-term statistics.",
+    asks: "", needs: "energy", energy: "solar",
+    looks: [{ id: "solar_month", name: "Solar this month", make: (_, x = {}) => [
+      { type: "energy_total", source: x.entity ? "entity" : "solar", entity: x.entity || "", period: "month", x: 24, y: 14, w: 744, h: 208 },
+    ] }],
+  },
+  {
     id: "energy_gauges", group: "energy", title: "Battery and solar", desc: "Home battery and house load as gauges, with today's solar as bars.", kw: "load gauges storage",
-    asks: "sensor", prefer: { energy: "battery", device_class: ["battery"], units: ["%"] }, example: "sensor.home_battery",
+    asks: "sensor", prefer: { device_class: ["battery"], units: ["%"] }, example: "sensor.home_battery",
     looks: [{ id: "energy_gauges", name: "Battery and solar", make: (ent) => [
       { type: "box", x: 18, y: 14, w: 356, h: 218, fill: "outline", radius: 14, thickness: 3 },
       { type: "text", value: "ENERGY & STORAGE", size: 18, bold: true, invert: true, radius: 8, x: 34, y: 28, w: 280, h: 32, align: "center" },
@@ -158,6 +166,19 @@ export const PRESETS = [
       { type: "bar", entity: "", title: "HOUSE LOAD", bar_style: "solid", min_val: 0, max_val: 5000, suffix: " W", decimals: 0, show_label: true, x: 34, y: 152, w: 324, h: 64 },
       { type: "bar_chart", entity: "", title: "24H GENERATION", hours: 24, bars: 12, show_labels: true, show_border: true, x: 390, y: 14, w: 384, h: 218 },
     ] }],
+  },
+
+  {
+    id: "grid_now", group: "energy", title: "Grid now", kw: "import export buying selling power electricity",
+    desc: "Buying or selling right now, and today's hours, from your Energy dashboard's grid sensors.",
+    asks: "", needs: "energy", energy: "grid",
+    looks: [{ id: "grid_now", name: "Grid now", make: (_, x = {}) => [{ type: "grid_now", entity: x.entity || "", invert: !!x.invert, x: 24, y: 14, w: 744, h: 208 }] }],
+  },
+  {
+    id: "energy_cost", group: "energy", title: "Energy cost", kw: "money profit net cost tariff price earned spent",
+    desc: "What you earned or spent today and this month, from the prices in your Energy dashboard, in your Home Assistant currency.",
+    asks: "", needs: "energy", energy: "cost",
+    looks: [{ id: "energy_cost", name: "Energy cost", make: () => [{ type: "energy_cost", x: 24, y: 14, w: 744, h: 208 }] }],
   },
 
   /* ---------- outside ---------- */
@@ -329,6 +350,21 @@ export function rankSensors(p, ents, energy = {}) {
     .map(({ e, s }) => ({ e, tag: s === 0 ? "From your Energy dashboard" : "" }));
 }
 
+/* The Energy dashboard, asked once per editor session (GET /api/energy:
+   {solar: [{energy, power}], grid: [{flows, power}], has_cost, currency}),
+   with the sensors it uses by role for rankSensors. `known` is false when
+   Home Assistant didn't say. */
+export function energyRoles(body) {
+  const solar = body.solar || [], grid = body.grid || [];
+  const ids = (xs) => [...new Set(xs.filter(Boolean))];
+  return {
+    known: true, has_cost: !!body.has_cost, currency: body.currency || "",
+    solar: ids(solar.flatMap((x) => [x.energy, x.power])),
+    solar_energy: ids(solar.map((x) => x.energy)),
+    grid: ids(grid.flatMap((x) => [...(x.flows || []).flatMap((f) => [f.import, f.export]), x.power?.plus, x.power?.minus])),
+    grid_power: ids(grid.flatMap((x) => [x.power?.plus, x.power?.minus])),
+  };
+}
 /* A data source a preset sets up: the sensor it makes, and a name no other
    source has (feeds publish sensor.epaper_<name>). */
 export const sensorOf = (src) => `sensor.epaper_${src.name}`;

@@ -284,6 +284,57 @@ class TestSetsUpWhatItNeeds(unittest.TestCase):
         self.assertIn('"aria-label": "Whose unwatched"', self.js)
 
 
+@unittest.skipUnless(shutil.which("node"), "no node to read the editor's presets")
+class TestEnergy(unittest.TestCase):
+    """The Energy dashboard's presets read it themselves, and set up a sensor in place when it lacks one."""
+    # GET /api/energy, as sources/energy.summarise gives it (widgets-015).
+    DASHBOARD = {"solar": [{"energy": "sensor.solar_energy", "power": "sensor.solar_power"}],
+                 "grid": [{"flows": [{"import": "sensor.grid_in", "export": "sensor.grid_out", "cost": "", "compensation": ""}],
+                           "power": {"plus": "sensor.grid_power", "minus": ""}}],
+                 "has_cost": True, "currency": "EUR"}
+
+    def dashboard(self):
+        try:
+            from sources import energy               # widgets-015's, once both are merged
+            return {**energy.summarise(energy.OFFLINE_PREFS, energy.OFFLINE_INFO), "currency": "EUR"}
+        except ImportError:
+            return self.DASHBOARD
+
+    def test_the_energy_shelf(self):
+        titles = run_js('console.log(JSON.stringify(P.PRESETS.filter((p) => p.group === "energy").map((p) => p.title)))')
+        self.assertEqual(titles, ["Solar today", "Solar this month", "Battery and solar", "Grid now", "Energy cost"])
+
+    def test_the_dashboards_sensors_by_role(self):
+        roles = run_js(f"console.log(JSON.stringify(P.energyRoles({json.dumps(self.dashboard())})))")
+        self.assertTrue(roles["known"])
+        self.assertTrue(roles["solar_energy"] and set(roles["solar_energy"]) <= set(roles["solar"]))
+        self.assertTrue(roles["grid"] and set(roles["grid_power"]) <= set(roles["grid"]))
+        self.assertTrue(roles["has_cost"])
+        self.assertEqual(run_js("console.log(JSON.stringify(P.energyRoles({})))")["solar"], [], "no dashboard, nothing picked")
+
+    def test_solar_today_opens_with_the_dashboards_sensor(self):
+        roles = run_js(f"console.log(JSON.stringify(P.energyRoles({json.dumps(self.dashboard())})))")
+        ents = [{"entity_id": "sensor.other_kwh", "unit": "kWh"}] + [{"entity_id": e, "unit": "kWh"} for e in roles["solar_energy"]]
+        got = run_js(f"console.log(JSON.stringify(P.rankSensors(P.presetById('solar'), {json.dumps(ents)}, {json.dumps(roles)})[0]))")
+        self.assertEqual((got["e"]["entity_id"], got["tag"]), (roles["solar_energy"][0], "From your Energy dashboard"))
+
+    def test_nothing_to_pick_with_a_dashboard_a_sensor_without(self):
+        got = run_js("""const p = P.presetById("solar_month"), g = P.presetById("grid_now");
+          console.log(JSON.stringify([p.needs, p.energy, P.pageFor(p, p.looks[0], "").elements[0], P.pageFor(p, p.looks[0], "", { entity: "sensor.pv" }).elements[0],
+            P.pageFor(g, g.looks[0], "", { entity: "sensor.meter", invert: true }).elements[0], P.presetById("energy_cost").looks[0].make()[0].type]))""")
+        needs, role, from_dash, from_sensor, grid, cost = got
+        self.assertEqual((needs, role), ("energy", "solar"))
+        self.assertEqual((from_dash["type"], from_dash["source"], from_dash["period"], from_dash["entity"]), ("energy_total", "solar", "month", ""))
+        self.assertEqual((from_sensor["source"], from_sensor["entity"]), ("entity", "sensor.pv"))
+        self.assertEqual((grid["type"], grid["entity"], grid["invert"]), ("grid_now", "sensor.meter", True))
+        self.assertEqual(cost, "energy_cost")
+
+    def test_it_says_where_to_set_the_dashboard_up(self):
+        js = (APP_JS / "setup.js").read_text()
+        self.assertIn("const SETUPS = { wifi: wifiSetup, jellyfin: jellyfinSetup, energy: energySetup };", js)
+        self.assertEqual(js.count("(in Home Assistant: Settings › Dashboards › Energy)"), 3)
+
+
 class TestTheSheet(unittest.TestCase):
     """New page's wiring and look, pinned in its source."""
 

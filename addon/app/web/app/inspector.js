@@ -298,6 +298,12 @@ const TYPE_FIELDS = {
     F.text("timezone", "Time zone", "Home Assistant's"), F.on("show_stats", "Team stats", true), F.on("show_scorers", "Scorers", true), BORDER_ON, { kind: "sensorid" }],
   // render/sun.STYLES; "next" turns round at sunrise and at sunset.
   sun_times: [F.sel("style", "Style", [["next", "Next one first"], ["both", "Both alike"]], "next")],
+  // The Energy dashboard's widgets (render/energy.py) read it themselves; a sensor only stands in for it.
+  energy_total: [F.sel("source", "Shows", [["solar", "Solar, from the Energy dashboard"], ["grid_import", "Bought from the grid"], ["grid_export", "Sold to the grid"], ["entity", "A sensor"]], "solar"),
+    { kind: "entity", key: "entity", label: "Sensor", when: (el) => el.source === "entity" },
+    F.sel("period", "For", [["day", "Today"], ["month", "This month"], ["year", "This year"]], "month")],
+  grid_now: [F.entity("entity", "Power sensor, if not the dashboard's"), F.on("invert", "Above zero when selling", false)],
+  energy_cost: [],
   flight_tracker: [F.sel("style", "Style", [["card", "Details"], ["split", "Radar and details"], ["radar", "Radar"]], "card"), { kind: "place" },
     F.num("radius", "Radius, km", "35", 5, 250), { kind: "window", label: "Only show while a plane is near" }, F.on("show_sub_metrics", "Second units", true), BORDER_ON, { kind: "sensorid" }],
 };
