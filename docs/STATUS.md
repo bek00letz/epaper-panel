@@ -28,25 +28,33 @@ Nothing. Worker notes are in the coordinator's notes folder
 
 ## Backlog, most important first
 
-1. **Sleeping on the real 5.79" (since 0.13).** Always on first (nothing should change), then
+1. **A sleeping panel redraws when the sleep screen's reason changes**
+   (user's call, 21 Oct). At 06:00 quiet hours' clock part ended but presence
+   kept the panel asleep; nothing woke it, so it kept saying "back at 6:00"
+   instead of "back when someone's home". Push once when the sleep text
+   changes; never on every check.
+2. **Sleeping on the real 5.79" (since 0.13).** Always on first (nothing should change), then
    sleeping: sleep current through the USB meter (an upper bound), the
    change after a wake without a flash, a full refresh every 8th change,
    buttons waking it, a power cut. Steps in `firmware-013.md`. Way back if it
    misbehaves: `firmware_gen.KEEP_DISPLAY_ASLEEP = False` and a release.
    First observation (20 Oct): always on, through Home Assistant's address,
    on an Anker power bank for 5+ hours with no visible drop (its time-left
-   readout isn't reliable at this draw).
-2. **The editor's new parts by eye**, in Safari and inside Home Assistant:
+   readout isn't reliable at this draw). Overnight 20–21 Oct: no outage in
+   12+ hours, battery still at 100%. Sub-second drops of Home Assistant's
+   connection at 00:00:20 and 06:00:22, as quiet hours started and ended;
+   harmless, watch whether they grow.
+3. **The editor's new parts by eye**, in Safari and inside Home Assistant:
    the screen bar, Add a screen with power first, rename in place, and Fit
    in Safari (reasoned from screenshots, not reproduced).
-3. **The 5.79" away from home:** fetching over HTTPS through Home
+4. **The 5.79" away from home:** fetching over HTTPS through Home
    Assistant's address and a Cloudflare tunnel works (20 Oct, once the
    integration's entry existed). Still untried: a second Wi-Fi network, and
    "Through your own address".
-4. **Setup from the browser** (next month, large, firmware): a design pass
+5. **Setup from the browser** (next month, large, firmware): a design pass
    with the user first on how the panel keeps its Home Assistant actions and
    entities without a per-panel key (ROADMAP, open question).
-5. **The rest of next month** (ROADMAP): the screen's words in Home
+6. **The rest of next month** (ROADMAP): the screen's words in Home
    Assistant's language (which languages first is open), share a page, to-do
    lists, a "how it went" report, TRMNL-compatible screens.
 
