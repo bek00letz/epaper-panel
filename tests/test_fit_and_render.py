@@ -133,6 +133,32 @@ class TestPushPolicy(Base):
         self.assertEqual(pushes, [], "only alerts, quiet hours and people wake the panel early")
 
 
+    async def test_a_new_sleep_screen_wakes_it_once(self):
+        """06:00: the schedule ends but nobody's home, so it stays asleep with new words."""
+        pushes = []
+
+        async def fake_push(device_id, reason="update"):
+            pushes.append(reason)
+            return True
+        reasons = iter([(True, "schedule (00:00–06:00)"), (True, "schedule (00:00–06:00)"),
+                        (True, "away (person.me: not_home)"), (True, "away (person.me: not_home)"),
+                        (True, "away (person.me: away)")])
+
+        async def fake_quiet(session, spec, dev=None):
+            return next(reasons)
+        save_layouts(dict(self.spec, quiet_hours={"enabled": True, "start": "00:00", "end": "06:00"}))
+        real_push, real_quiet = frames.push_panel_update, frames.evaluate_quiet_hours
+        frames.push_panel_update, frames.evaluate_quiet_hours = fake_push, fake_quiet
+        try:
+            async with aiohttp.ClientSession() as s:
+                for _ in range(5):
+                    await frames.refresh_frames(s)
+        finally:
+            frames.push_panel_update, frames.evaluate_quiet_hours = real_push, real_quiet
+        self.assertEqual(pushes, ["sleep screen changed"],
+                         "one wake when the words change; none for the same words, however the reason is put")
+
+
 class TestIdentities(unittest.TestCase):
     def test_a_page_listed_twice_has_its_own_items(self):
         _, sub_ids = subitems.compute_identities(["cat", "solar", "cat"], [["0"], ["0"], ["0"]])

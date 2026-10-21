@@ -571,6 +571,12 @@ async def _refresh_device(session, dev: dict, spec: dict, st: DesignState) -> Fr
     old_f = rt.frames
     has_prev = bool(getattr(old_f, "rendered_at", None))
     quiet_changed = bool(has_prev and old_f.quiet_active != quiet_active)
+    # Still in quiet hours, but the sleep screen says something else now ("back at
+    # 06:00" became "back when someone's home"): the panel, asleep, won't fetch it
+    # by itself. One wake when the words change, never on every render.
+    qh_now = spec.get("quiet_hours") or {}
+    sleep_text_changed = bool(has_prev and quiet_active and old_f.quiet_active
+                              and _sleep_text(old_f.quiet_reason, qh_now) != _sleep_text(quiet_reason, qh_now))
     if has_prev and old_f.strip_etag == nxt.strip_etag and old_f.last_modified:
         nxt.last_modified = old_f.last_modified
     else:
@@ -595,7 +601,7 @@ async def _refresh_device(session, dev: dict, spec: dict, st: DesignState) -> Fr
     # A screen's Update every (timing.py) is the contract: new content waits
     # for it, however often pages come and go (a panel on a battery may fetch
     # every hour). The add-on wakes it early only for alerts (render loop),
-    # quiet hours starting or ending, and what a person does (Send, Push, the
+    # quiet hours starting, ending or changing what the sleep screen says, and what a person does (Send, Push, the
     # Refresh button, the action endpoint).
     qh = spec.get("quiet_hours") or {}
     if quiet_changed or (not has_prev and qh.get("enabled") and not quiet_active):
@@ -604,7 +610,15 @@ async def _refresh_device(session, dev: dict, spec: dict, st: DesignState) -> Fr
         # restart we can't know whether it is still asleep, so wake it once.
         print(f"{dev['name']}: quiet hours {'started' if quiet_active else 'ended'} ({quiet_reason})", flush=True)
         await push_panel_update(dev["id"], "quiet hours " + ("started" if quiet_active else "ended"))
+    elif sleep_text_changed:
+        print(f"{dev['name']}: still in quiet hours, now {quiet_reason}: showing the new sleep screen", flush=True)
+        await push_panel_update(dev["id"], "sleep screen changed")
     return nxt
+
+
+def _sleep_text(reason: str, qh: dict) -> str:
+    """What the sleep screen says for a quiet-hours reason."""
+    return sleep.wake_text(str(reason or ""), quiet_window(qh)[1])
 
 
 def _per_device(label: str, dev: dict) -> str:

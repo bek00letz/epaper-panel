@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed:** a panel asleep for quiet hours kept saying "back at 06:00" when
+  the schedule ended but nobody was home, because nothing woke it to show
+  "back when someone's home". It's now woken once when the sleep screen's
+  words change, and never more often than that.
+
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) for the quiet-hours fix below.
