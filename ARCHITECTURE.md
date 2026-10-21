@@ -351,6 +351,11 @@ all read it, so nothing offers an icon that draws as nothing.
   never kept, and nothing of the file is shown as it is.
 - A render never waits on any of this: the copy runs in the background and
   swaps a whole set in when it's ready (`icons.install`).
+- One icon can't cost more than about twice the largest real one
+  (`vector.MAX_*`: characters, commands, shapes, the area they cover,
+  points): beyond that it's refused when copied and draws as nothing, so a
+  crafted file can't slow a render. A zip member is read no further than the
+  size it states, which is checked first.
 - Sizes are what the old icon font gave: an icon fills its box's width by its
   whole square, and its height by its ink (`layout._fit_outline`). The font
   (`fonts/mdi.ttf`) stays, switched off, as the way back

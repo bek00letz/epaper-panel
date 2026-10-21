@@ -28,6 +28,16 @@ from functools import lru_cache
 from PIL import Image, ImageChops, ImageDraw
 
 GRID = (0.0, 0.0, 24.0, 24.0)
+
+# What one icon may cost to read and draw, about twice the largest real one (a brand icon: 248k
+# characters, 14,080 commands, 2,625 shapes, ~47k points; Material Design's are far smaller). An
+# icon beyond any of these is refused when its set is copied (`check`) and draws as nothing, so a
+# crafted file can't make a render slow.
+MAX_CHARS = 512_000
+MAX_SEGMENTS = 30_000
+MAX_SHAPES = 6_000
+MAX_AREA = 16.0                 # its shapes' boxes added up, in squares of its view box (real: under 5)
+MAX_POINTS = 120_000            # past this, curves are cut coarser rather than into more points
 OVER = 8                                    # drawn this many times larger, then averaged
 
 _TOKEN = re.compile(r"[MmLlHhVvCcSsQqTtAaZz]|[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?")
@@ -83,13 +93,18 @@ def _split_flags(tokens):
 
 
 def segments(d: str):
-    """The path as absolute segments: ("M", p), ("L", p0, p1), ("C", p0, c1, c2, p1), ("Z", p0, p1)."""
+    """The path as absolute segments: ("M", p), ("L", p0, p1), ("C", p0, c1, c2, p1), ("Z", p0, p1).
+    A path longer than MAX_CHARS or MAX_SEGMENTS isn't read (PathError)."""
+    if len(str(d or "")) > MAX_CHARS:
+        raise PathError("too long to be an icon")
     toks = _split_flags(_tokens(d))
     segs, i = [], 0
     cur = start = (0.0, 0.0)
     last_c = last_q = None                      # the previous curve's second control point
     cmd = None
     while i < len(toks):
+        if len(segs) > MAX_SEGMENTS:
+            raise PathError("too many commands to be an icon")
         t = toks[i]
         if t.isalpha():
             cmd = t
@@ -209,8 +224,10 @@ def _arc(p0, rx, ry, phi_deg, large, sweep, p1):
 
 
 def _subpaths(segs, scale):
-    """Flattened subpaths (lists of points), curves cut finer the larger they're drawn."""
+    """Flattened subpaths (lists of points), curves cut finer the larger they're drawn, within
+    MAX_POINTS for the path."""
     out, cur = [], None
+    most = max(2, min(96, MAX_POINTS // max(1, sum(1 for s in segs if s[0] == "C"))))
     for s in segs:
         if s[0] == "M":
             if cur and len(cur) > 2:
@@ -225,7 +242,7 @@ def _subpaths(segs, scale):
                 cur = [s[1]]
             p0, c1, c2, p1 = s[1:]
             length = (math.dist(p0, c1) + math.dist(c1, c2) + math.dist(c2, p1)) * scale
-            n = max(2, min(96, int(math.sqrt(length) * 1.6) + 1))
+            n = max(2, min(most, int(math.sqrt(length) * 1.6) + 1))
             for j in range(1, n + 1):
                 t = j / n
                 u = 1 - t
@@ -256,12 +273,32 @@ def parts(record):
     raise PathError("not an icon")
 
 
+def budget(d, e, v, strokes) -> None:
+    """Raise PathError when an icon costs more than any real one could (MAX_*): too many commands,
+    shapes, or shapes covering too much (each is drawn over its own box)."""
+    unit = max(v[2], v[3])
+    shapes, area = 0, 0.0
+    paths = [x for x in (d, e) if x] + [sd for sd, _ in strokes]
+    if sum(len(x) for x in paths) > MAX_CHARS:
+        raise PathError("too long to be an icon")
+    for x in paths:
+        segs = segments(x)
+        for sp in _subpaths(segs, 1.0) + _open_runs(segs, 1.0):
+            shapes += 1
+            xs, ys = [p[0] for p in sp], [p[1] for p in sp]
+            area += (max(xs) - min(xs) + unit / 64) * (max(ys) - min(ys) + unit / 64) / (unit * unit)
+        if shapes > MAX_SHAPES or area > MAX_AREA:
+            raise PathError("too many shapes to be an icon")
+
+
 def check(record) -> bool:
-    """Whether a record is one this draws: its paths read, its view box has a size, it has ink."""
+    """Whether a record is one this draws: its paths read, its view box has a size, it has ink, and
+    it costs no more than a real icon could (`budget`)."""
     try:
         d, e, v, strokes = parts(record)
         if len(v) != 4 or v[2] <= 0 or v[3] <= 0:
             return False
+        budget(d, e, v, strokes)
         any_ink = any(bool(x) and bool(_subpaths(segments(x), 1.0)) for x in (d, e))
         for sd, w in strokes:
             any_ink = (bool(segments(sd)) and w > 0) or any_ink
@@ -296,6 +333,10 @@ def _cut_cached(key, size, crop):
 
 
 def _draw(d, e, v, strokes, size):
+    try:
+        budget(d, e, v, strokes)
+    except (PathError, ValueError, ZeroDivisionError):
+        return Image.new("L", (size, size), 0)          # refused: nothing, and quickly
     big = size * OVER
     vx, vy, vw, vh = v
     scale = big / max(vw, vh)                           # fitted and centred, as SVG's "meet"
@@ -318,9 +359,15 @@ def _draw(d, e, v, strokes, size):
     if e:                                                # even-odd: each subpath flips what's under it
         odd = Image.new("1", (big, big), 0)
         for pts in _subpaths(segments(e), scale):
-            one = Image.new("1", (big, big), 0)
-            ImageDraw.Draw(one).polygon([tf(p) for p in pts], fill=1)
-            odd = ImageChops.logical_xor(odd, one)
+            q = [tf(p) for p in pts]
+            x0, y0 = max(0, int(min(x for x, _ in q)) - 1), max(0, int(min(y for _, y in q)) - 1)
+            x1, y1 = min(big, int(max(x for x, _ in q)) + 2), min(big, int(max(y for _, y in q)) + 2)
+            if x1 <= x0 or y1 <= y0:
+                continue
+            one = Image.new("1", (x1 - x0, y1 - y0), 0)       # only where this subpath is
+            ImageDraw.Draw(one).polygon([(x - x0, y - y0) for x, y in q], fill=1)
+            box = (x0, y0, x1, y1)
+            odd.paste(ImageChops.logical_xor(odd.crop(box), one), box)
         ink = ImageChops.lighter(ink, odd.convert("L"))
     if strokes:
         dr = ImageDraw.Draw(ink)

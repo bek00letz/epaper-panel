@@ -156,6 +156,32 @@ class TestOutlines(unittest.TestCase):
         for bad in ("", "12 12", "M1", "Mx,y", {"d": SQUARE, "v": [0, 0, 0, 24]}, 42):
             self.assertFalse(vector.check(bad), repr(bad))
 
+    def test_a_crafted_outline_cant_make_a_render_slow(self):
+        # Each refused when its set is copied, and drawn as nothing (quickly) if it got through anyway.
+        tiny = "M1 1h.1v.1h-.1z"
+        crafted = {
+            "too long": "M0 0" + " L1 1" * 200_000,
+            "too many commands": "M0 0" + "L1 1L2 2" * 20_000,
+            "too many shapes": tiny * 7_000,
+            "covering too much": "M0 0H24V24H0Z" * 40,
+            "even-odd, too much": {"e": "M0 0H24V24H0Z" * 40},
+            "strokes, too much": {"s": [["M0 0L24 24", 2]] * 7_000},
+            "svg, too many shapes": iconsets.svg_record("<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'>"
+                                                        + "<circle cx='12' cy='12' r='11'/>" * 30 + "</svg>"),
+        }
+        for what, rec in crafted.items():
+            t = time.monotonic()
+            self.assertFalse(rec and vector.check(rec), what)
+            if rec:
+                self.assertIsNone(vector.cut(rec, 272, crop=True), what)
+            self.assertLess(time.monotonic() - t, 2.0, what)
+        # Many curves within the limits: allowed, but cut coarser, so it still draws quickly.
+        curvy = "M2 12" + "C2 2 22 2 22 12C22 22 2 22 2 12" * 9_000 + "Z"
+        self.assertTrue(vector.check(curvy))
+        t = time.monotonic()
+        vector.cut(curvy, 272)
+        self.assertLess(time.monotonic() - t, 3.0)
+
     def test_the_same_shapes_as_the_old_font(self):
         # Drawn from outlines, every icon matches what the font drew to within a few percent of its
         # ink at 48 px, an edge pixel here and there (the font's hinting differs most at small sizes).
@@ -429,6 +455,29 @@ class TestCustomSets(IconTest):
         self.assertEqual(iconsets.copy_custom(self.cfg, frozenset({"ph"})), "ph: 1")
         self.assertTrue(layout.can_draw_icon("ph:cat"))
         self.assertEqual(icons.set_for("ph")["name"], "Phosphor")
+
+    def test_a_zip_that_lies_about_its_size_is_read_no_further(self):
+        # A member that says it's small and inflates to 50 MB: reading stops at the size it states,
+        # which is what's checked, and the set is left out.
+        import struct
+        body = json.dumps({"prefix": "ph", "icons": {"cat": {"body": "<path d='M0 0H9V9Z'/>"}}}).encode() + b" " * 50_000_000
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr("icon-sets-master/json/ph.json", body)
+        raw = bytearray(buf.getvalue())
+        for sig, at in ((b"PK\x03\x04", 22), (b"PK\x01\x02", 24)):      # its uncompressed size, both copies
+            i = raw.find(sig)
+            struct.pack_into("<I", raw, i + at, 1000)
+        write(self.cfg / "custom_icons" / "x.svg", CAT_SVG)
+        (self.cfg / "custom_icons" / "iconify-icon-sets-master.zip").write_bytes(bytes(raw))
+        with zipfile.ZipFile(self.cfg / "custom_icons" / "iconify-icon-sets-master.zip") as zf:
+            self.assertEqual(zf.getinfo("icon-sets-master/json/ph.json").file_size, 1000)
+            with zf.open("icon-sets-master/json/ph.json") as f:
+                with self.assertRaises(zipfile.BadZipFile):
+                    f.read()
+        t = time.monotonic()
+        self.assertEqual(iconsets.copy_custom(self.cfg, frozenset({"ph"})), "none")
+        self.assertLess(time.monotonic() - t, 2.0)
 
     def test_a_script_set_like_brand_icons(self):
         js = """var icons = {
