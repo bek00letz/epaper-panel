@@ -11,6 +11,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Version | Date | What |
 |---|---|---|
+| 0.18.0 | 21 Oct | The panel's clock is right within seconds (draws just after each minute, the panel fetches right after; sleeping devices wake just after a minute); icons from your own Home Assistant, custom sets included; condition suggestions from the add-on's one list. Firmware change. |
 | 0.17.0 | 21 Oct | Any icon can change with a sensor (an icon and a look per state); From switches between any choices; no inspector switcher cuts off a choice. Add-on only. |
 | 0.16.0 | 21 Oct | The editor shows what isn't sent yet, per page, with undo for each change; Duplicate and Delete on every page tile, larger strip sizes; a "changed in the last N minutes" condition for pages and alerts. Add-on only. |
 | 0.15.0 | 21 Oct | New page on shelves with new presets (sunrise and sunset, energy, Now playing, On TV, your own weather station, world clock, Countdown and Bin day without a calendar, to-do lists); alerts that end on a condition; "device" everywhere; zoom; 12/24-hour time; a sleeping device shows the date for a clock; the framework review's 14 fixes; the Wi-Fi network name. Firmware change. |
@@ -25,19 +26,16 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 ## In flight
 
-| Work | Where | State |
-|---|---|---|
-| Icons from the user's Home Assistant (the whole set copied locally, custom ones included, the shipped set as fallback, never fetched per icon or from the internet); the condition suggestions read the catalog instead of KNOWN_STATES (session "ha-icons") | branch `ha-icons` from main | Done 21 Oct: 2 commits, 801 tests pass, add-on only, no new dependency; notes `ha-icons.md`. Its one place with certificate checks off: fetching Home Assistant's public icon outlines from the internal host name. Before release (user asked, 21 Oct): read Custom Icons' settings through Home Assistant's API, never .storage/core.config_entries (it holds every integration's secrets); cap one outline's complexity |
-| The add-on draws just after each minute starts, and always-on panels fetch a couple of seconds later, lined up from their first fetch; sleeping devices' wakes too (session "clock-align") | branch `clock-align` from main | Started 21 Oct; a firmware change |
+Nothing.
 
 Worker notes are in the notes folders (`break-it-0.12.0.md`,
 `timers-addon.md`, `firmware-013.md`, `fixes-0131.md`, `editor-polish.md`,
 `alerts-todo.md` in the first coordinator's; `widgets-015.md`,
 `presets-015.md`, `framework-review.md`, `checklist-0.15.0.md`,
-`unsent-changes.md`, `icon-follows.md` in this one's).
+`unsent-changes.md`, `icon-follows.md`, `ha-icons.md`, `clock-align.md` in this one's).
 Merged worktrees kept until the user OKs removing them: `release-next`,
 `presets-015`, `widgets-015`, `editor-zoom`, `unsent-changes`,
-`changed-condition`, `icon-follows`.
+`changed-condition`, `icon-follows`, `ha-icons`, `clock-align`.
 
 ## Framework review
 
