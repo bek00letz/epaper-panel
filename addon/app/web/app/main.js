@@ -565,7 +565,7 @@ class App {
     if (v === "alert") doc.spec.rotation = doc.spec.rotation.filter((n) => n !== doc.cur);
     else if (!doc.spec.rotation.includes(doc.cur)) doc.spec.rotation.push(doc.cur);
     if (v === "when") { syncDynamicGridShowIf(p); syncWidgetShowIf(p); }
-    this.rawCondition = false;
+    this.rawCondition = this.rawUntil = false;
     doc.commit();
   }
   savePreset() { savePresetSheet(this); }

@@ -742,6 +742,13 @@ pages that currently have something to say. `watch` drops out when nothing is
 new rather than showing "nothing new" on the wall; `dryer` exists only while the
 timer runs. When an `alert` page fires, the server replaces the strip with a
 single-page alert frame for `hold_minutes` and pushes a refresh to the panel.
+An alert that ends "when something happens" (`ends: until`, `until_if`) is
+the same alert with the condition "it started and its Until hasn't happened
+yet", and `hold_minutes` as its limit (`frames.check_alerts`,
+`conditions.py`): it lets go when either changes or at the limit, and comes
+back when the Until is undone while the start still holds. A held alert is
+in memory only: a restart forgets it, and a start that's still true fires
+again.
 
 **The panel owns which page is shown; the server owns what the pages are.**
 (For an always-on CrowPanel. A TRMNL can't page on its own, and a sleeping

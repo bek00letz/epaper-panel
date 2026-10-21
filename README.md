@@ -241,7 +241,11 @@ choose **Only when** and pick a sensor and its state, like a timer that's
 `active`. The sports, racing and flights widgets set this up for you with
 one switch ("Only show on match days"). **As an alert** takes over the panel
 the moment the condition turns true and hands it back after the minutes you
-set. Now on the panel lists every hidden page and why it's hidden.
+set. Or, under **Ends**, choose **When something happens** and an **Until**:
+"Watch battery is below 20" until "Watch battery state is charging" holds
+until you put it on the charger (it's still below 20 while it charges), at
+most for the minutes you set, and comes back if you take it off too soon.
+Now on the panel lists every hidden page and why it's hidden.
 
 A page that appears or disappears reaches the panel at its next update, so a
 panel that sleeps between updates isn't woken for it. On an always-on panel,

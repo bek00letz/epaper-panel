@@ -351,6 +351,13 @@ async def check_alerts(session, spec, state: dict):
     Edge-triggered, not level: an alert that stays true all evening fires
     once, rather than grabbing the panel every refresh. `state` is the
     design's (runtime.alert): every screen showing it is seized together.
+
+    An alert that ends "when something happens" (`conditions.ending`) is
+    one whose condition is "it started and that hasn't happened yet":
+    `hold_minutes` is then its limit. So it lets go when the start turns
+    false, when its Until is met or at the limit, and it fires again when
+    the Until is undone while the start still holds (the Watch unplugged at
+    15%). An Until that can't be read isn't met.
     """
     now = time.time()
     defs = spec.get("pages", {})
@@ -360,8 +367,12 @@ async def check_alerts(session, spec, state: dict):
         state["name"], state["until"] = None, 0.0
         return None
 
-    states = await resolve_templates(session, {n: conditions.guarded(p["show_if"]) for n, p in alerts.items()})
-    truthy = {n for n, v in states.items() if conditions.is_true(v)}
+    asks = {n: conditions.guarded(p["show_if"]) for n, p in alerts.items()}
+    ends = {n: until for n, p in alerts.items() if (until := conditions.ending(p))}
+    asks.update({f"{n}:until": conditions.guarded(until) for n, until in ends.items()})
+    states = await resolve_templates(session, asks)
+    truthy = {n for n in alerts if conditions.is_true(states.get(n, ""))
+              and not (n in ends and conditions.is_true(states.get(f"{n}:until", "")))}
 
     # release an expired or no-longer-true alert
     if state["name"] and (now > state["until"] or state["name"] not in truthy):
@@ -371,7 +382,7 @@ async def check_alerts(session, spec, state: dict):
     for name in truthy:
         if state["fired"].get(name):
             continue                                  # already handled this episode
-        hold = max(1, min(1440, int(alerts[name].get("hold_minutes", 10)))) * 60
+        hold = conditions.hold_minutes(alerts[name]) * 60
         state.update(name=name, until=now + hold)
         state["fired"][name] = True
         print(f"alert {name} fired, holding {hold}s", flush=True)

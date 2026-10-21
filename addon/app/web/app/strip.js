@@ -107,7 +107,7 @@ function tile(app, n, { again, out }) {
     badge = h("span", { class: "badge when", text: "when" });
     if (!showing) dim = true;
   }
-  if (p.tier === "alert") { sub = `Alert · holds ${p.hold_minutes || 10} min`; badge = h("span", { class: "badge alert", text: "alert" }); }
+  if (p.tier === "alert") { sub = p.ends === "until" ? "Alert · until something happens" : `Alert · holds ${p.hold_minutes || 10} min`; badge = h("span", { class: "badge alert", text: "alert" }); }
   if (again) sub = "Again";
   if (out) sub = "Not in rotation";
   const img = h("img", { class: "thumb", alt: "", "data-thumb": n, draggable: "false" });

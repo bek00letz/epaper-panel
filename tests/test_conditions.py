@@ -115,5 +115,17 @@ console.log(JSON.stringify([
         self.assertEqual(out, [False, False, True])
 
 
+class TestUntilInTheEditor(unittest.TestCase):
+    """The editor has no JavaScript test runner for its DOM, so this pins the
+    wiring: what it writes is what layouts_store keeps and frames reads."""
+
+    def test_an_alert_offers_both_ways_to_end(self):
+        src = (support.APP / "web" / "app" / "inspector.js").read_text()
+        self.assertIn('[["time", "After a time"], ["until", "When something happens"]]', src)
+        self.assertIn('key: "until_if"', src)
+        self.assertIn("const HOLD = { time: %d, until: %d };" % (conditions.HOLD_DEFAULT, conditions.UNTIL_LIMIT_DEFAULT), src)
+        self.assertIn('if (v === "until") p.ends = "until"', src)
+
+
 if __name__ == "__main__":
     unittest.main()

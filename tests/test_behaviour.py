@@ -50,6 +50,66 @@ class TestAlerts(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(await self.check(False, 1060))
 
 
+class TestAlertsUntil(unittest.IsolatedAsyncioTestCase):
+    """An alert that ends when something happens: Watch battery below 20%,
+    until it's charging (it's still below 20% while it charges)."""
+
+    def setUp(self):
+        self.state = runtime.new_alert()
+        self.page = {"tier": "alert", "show_if": "{{ low }}", "ends": "until",
+                     "until_if": "{{ charging }}", "hold_minutes": 120}
+        self.spec = {"pages": {"watch_low": self.page}}
+        self.asked = {}
+
+    async def check(self, low, charging, at):
+        async def resolve(session, templates):
+            self.asked = dict(templates)
+            out = {"watch_low": "true" if low else "false"}
+            if charging is not None:                  # None: Home Assistant couldn't say
+                out["watch_low:until"] = "True" if charging else "False"
+            return {k: out.get(k, "") for k in templates}
+        with mock.patch.object(frames, "resolve_templates", resolve), \
+             mock.patch.object(frames.time, "time", return_value=at):
+            return await frames.check_alerts(None, self.spec, self.state)
+
+    async def test_holds_until_it_happens_not_for_a_time(self):
+        self.assertEqual(await self.check(True, False, 1000), "watch_low")
+        self.assertEqual(self.asked, {"watch_low": "{{ low }}", "watch_low:until": "{{ charging }}"})
+        self.assertEqual(await self.check(True, False, 1000 + 3600), "watch_low", "an hour on: still held")
+        self.assertIsNone(await self.check(True, True, 1000 + 3660), "charging ends it while still low")
+        self.assertIsNone(await self.check(True, True, 1000 + 3720), "and it stays away while it charges")
+
+    async def test_comes_back_when_the_end_is_undone(self):
+        await self.check(True, False, 1000)
+        await self.check(True, True, 1060)
+        self.assertEqual(await self.check(True, False, 1120), "watch_low", "unplugged at 15%: back")
+
+    async def test_lets_go_when_the_start_turns_false(self):
+        await self.check(True, False, 1000)
+        self.assertIsNone(await self.check(False, False, 1060))
+
+    async def test_the_limit_ends_it_and_it_waits_for_a_new_start(self):
+        await self.check(True, False, 1000)
+        self.assertIsNone(await self.check(True, False, 1000 + 7201), "released at the 2-hour limit")
+        self.assertIsNone(await self.check(True, False, 1000 + 7300), "doesn't fire again at once")
+        self.assertIsNone(await self.check(False, False, 1000 + 7400))
+        self.assertEqual(await self.check(True, False, 1000 + 7500), "watch_low")
+
+    async def test_an_until_it_cant_read_isnt_met(self):
+        self.assertEqual(await self.check(True, None, 1000), "watch_low")
+
+    async def test_never_fires_if_it_has_already_happened(self):
+        self.assertIsNone(await self.check(True, True, 1000), "already charging when it drops below 20%")
+
+    async def test_without_an_until_it_is_todays_alert(self):
+        for page in ({"ends": "until"}, {"until_if": "{{ charging }}"}):
+            self.state = runtime.new_alert()
+            self.spec = {"pages": {"watch_low": {"tier": "alert", "show_if": "{{ low }}", "hold_minutes": 10, **page}}}
+            self.assertEqual(await self.check(True, True, 1000), "watch_low")
+            self.assertNotIn("watch_low:until", self.asked)
+            self.assertIsNone(await self.check(True, True, 1000 + 601), "released after hold_minutes")
+
+
 class TestQuietHours(unittest.IsolatedAsyncioTestCase):
     async def evaluate(self, qh, hour, minute=0, presence_state=None):
         ha = mock.AsyncMock(return_value={"state": presence_state})
@@ -98,6 +158,7 @@ class TestSavingLayouts(unittest.TestCase):
         self.assertEqual(clean["rotation"], ["solar", "flights"], "alerts and unknown pages never rotate")
         self.assertEqual(clean["pages"]["flights"]["tier"], "rotate")
         self.assertEqual(clean["pages"]["dryer"]["hold_minutes"], 1440)
+        self.assertNotIn("ends", clean["pages"]["dryer"])
         self.assertEqual(clean["orientation"], 0)
         self.assertNotIn("rotate_seconds", clean, "Rotate every is the screen's own, never sent with pages")
         self.assertEqual(clean["quiet_hours"]["start"], "23:00")
@@ -106,6 +167,18 @@ class TestSavingLayouts(unittest.TestCase):
         self.assertTrue(clean["quiet_hours"]["sleep_screen"])
         self.assertEqual(clean["pages"]["flights"]["elements"][0]["entity"], "sensor.epaper_flights_overhead",
                          "0.8 entity names are migrated")
+
+    def test_an_alert_keeps_its_until(self):
+        pages = layouts_store.sanitize_layouts({"pages": {
+            "low": {"tier": "alert", "show_if": "{{ a }}", "ends": "until", "until_if": " {{ b }} "},
+            "timed": {"tier": "alert", "show_if": "{{ a }}", "ends": "nonsense", "until_if": "{{ b }}"},
+            "when": {"tier": "when", "show_if": "{{ a }}", "ends": "until", "until_if": "{{ b }}"},
+        }})["pages"]
+        self.assertEqual(pages["low"], {"tier": "alert", "elements": [], "show_if": "{{ a }}",
+                                        "ends": "until", "until_if": "{{ b }}", "hold_minutes": 120})
+        self.assertEqual(pages["timed"]["hold_minutes"], 10)
+        self.assertNotIn("until_if", pages["timed"])
+        self.assertNotIn("ends", pages["when"], "only alerts end")
 
     def test_pages_must_be_an_object(self):
         with self.assertRaises(ValueError):

@@ -509,9 +509,7 @@ function page(app, head, body) {
   const tier = p.tier || "rotate";
   const when = section("Shows", seg([["rotate", "Always"], ["when", "Only when"], ["alert", "As an alert"]], tier, (v) => app.setTier(v), "When this page shows"));
   if (tier !== "rotate") when.append(conditionRows(app, p));
-  if (tier === "alert") {
-    when.append(field("Holds for", number(p.hold_minutes ?? 10, (v) => { p.hold_minutes = Math.max(1, Math.min(1440, Number(v) || 10)); doc.commit(); }, { min: "1", max: "1440" }), { note: "Minutes. It takes over the panel when its condition turns true, then gives it back." }));
-  }
+  if (tier === "alert") when.append(...endRows(app, p));
   body.append(when);
 
   if (tier !== "alert") {
@@ -531,33 +529,59 @@ function page(app, head, body) {
   body.append(h("p", { class: "empty-note", text: doc.els().length ? "Select something on the canvas to change it." : "This page is empty. Insert a sensor, text or an icon." }));
 }
 
-function conditionRows(app, p) {
+// How an alert ends: after a time (hold_minutes), or when its Until comes
+// true, with hold_minutes as the most it holds (conditions.py, frames.check_alerts).
+const HOLD = { time: 10, until: 120 };
+function endRows(app, p) {
+  const doc = app.doc, ends = p.ends === "until" ? "until" : "time";
+  const pick = (v) => {
+    if (v === ends) return;
+    // Each way of ending has its own sensible default; a time you chose stays.
+    if (p.hold_minutes == null || p.hold_minutes === HOLD[ends]) p.hold_minutes = HOLD[v];
+    if (v === "until") p.ends = "until"; else delete p.ends;
+    app.rawUntil = false;
+    doc.commit();
+  };
+  const minutes = (label, note) => field(label, number(p.hold_minutes ?? HOLD[ends], (v) => { p.hold_minutes = Math.max(1, Math.min(1440, Math.round(Number(v)) || HOLD[ends])); doc.commit(); }, { min: "1", max: "1440", step: "1" }), { note });
+  const rows = [field("Ends", select([["time", "After a time"], ["until", "When something happens"]], ends, pick))];
+  if (ends === "time") rows.push(minutes("Holds for", "Minutes. It takes over the panel when its condition turns true, then gives it back."));
+  else rows.push(conditionRows(app, p, UNTIL), minutes("At most", "Minutes. It gives the panel back sooner if this happens or its start stops being true, and comes back if this is undone."));
+  return rows;
+}
+
+// The condition a page shows by (show_if), or the Until an alert ends by.
+const SHOW = { key: "show_if", raw: "rawCondition", label: "While", rawNote: "A Home Assistant template that's true while the page should show.", now: [ "True now, so it's showing.", "False now" ] };
+const UNTIL = { key: "until_if", raw: "rawUntil", label: "Until", rawNote: "A Home Assistant template that's true once the alert should end.", now: [ "True now, so the alert would end.", "False now" ] };
+
+function conditionRows(app, p, c = SHOW) {
   const doc = app.doc;
-  const parsed = parseShowIf(p.show_if);
+  const parsed = parseShowIf(p[c.key]);
   const wrap = h("div", { class: "cond" });
-  if (parsed.mode === "raw" || app.rawCondition) {
-    wrap.append(field("Condition", textarea(p.show_if, (v) => { if (v.trim()) p.show_if = v.trim(); else delete p.show_if; doc.commit(); }), { wide: true, note: "A Home Assistant template that's true while the page should show." }));
-    const back = parseShowIf(p.show_if);
-    if (back.mode === "simple") wrap.append(linkButton("Use the simple form", () => { app.rawCondition = false; app.refresh(); }));
+  if (parsed.mode === "raw" || app[c.raw]) {
+    wrap.append(field(c === SHOW ? "Condition" : "Until", textarea(p[c.key], (v) => { if (v.trim()) p[c.key] = v.trim(); else delete p[c.key]; doc.commit(); }), { wide: true, note: c.rawNote }));
+    const back = parseShowIf(p[c.key]);
+    if (back.mode === "simple") wrap.append(linkButton("Use the simple form", () => { app[c.raw] = false; app.refresh(); }));
     return wrap;
   }
-  const upd = (patch) => { const next = { ...parsed, ...patch }; const c = compileShowIf(next); if (c) p.show_if = c; else delete p.show_if; doc.commit(); };
-  wrap.append(entityButton(app, parsed.ent, (id) => {
+  const upd = (patch) => { const next = { ...parsed, ...patch }; const v = compileShowIf(next); if (v) p[c.key] = v; else delete p[c.key]; doc.commit(); };
+  const pickBtn = entityButton(app, parsed.ent, (id) => {
     const dom = id.split(".")[0], st = app.entMap.get(id)?.state;
     upd({ ent: id, op: "eq", val: (KNOWN_STATES[dom] || [])[0] || st || "" });
-  }, { label: "While" }));
+  }, { label: c.label });
+  // "Shows" heads the page's own condition; an Until needs its word in sight.
+  wrap.append(c === SHOW ? pickBtn : field(c.label, pickBtn));
   if (parsed.ent) {
     const dom = parsed.ent.split(".")[0], known = KNOWN_STATES[dom];
-    const opSel = select(OPS, parsed.op, (v) => upd({ op: v }), { "aria-label": "Comparison" });
-    const valIn = input(parsed.val, (v) => upd({ val: v }), { "aria-label": "Value", placeholder: "Value" });
+    const opSel = select(OPS, parsed.op, (v) => upd({ op: v }), { "aria-label": c.label + " comparison" });
+    const valIn = input(parsed.val, (v) => upd({ val: v }), { "aria-label": c.label + " value", placeholder: "Value" });
     wrap.append(h("div", { class: "inline cmp" }, opSel, valIn));
     if (known && (parsed.op === "eq" || parsed.op === "ne")) wrap.append(h("div", { class: "chips" }, ...known.map((s) => h("button", { class: "chipbtn", "aria-pressed": String(parsed.val === s), onclick: () => upd({ val: s }) }, s.replace(/_/g, " ")))));
     const holds = evaluate(parsed, app.entMap);
     if (holds !== null) {
-      const d = describe(p.show_if, app.entMap);
-      wrap.append(h("div", { class: "note " + (holds ? "good" : "warn"), role: "note" }, h("span", { class: "led" }), h("span", { text: holds ? "True now, so it's showing." : `False now: ${d.why}` })));
+      const d = describe(p[c.key], app.entMap);
+      wrap.append(h("div", { class: "note " + (holds ? "good" : "warn"), role: "note" }, h("span", { class: "led" }), h("span", { text: holds ? c.now[0] : `${c.now[1]}: ${d.why}` })));
     }
   }
-  wrap.append(linkButton("Use a custom condition", () => { app.rawCondition = true; app.refresh(); }));
+  wrap.append(linkButton("Use a custom condition", () => { app[c.raw] = true; app.refresh(); }));
   return wrap;
 }

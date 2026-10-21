@@ -18,6 +18,13 @@
 - **The device menu can remove a device too.** Under the device's name: your
   devices, then Rename and Remove, then Add new device. Removing shows an
   Undo, as in Settings.
+- **Alerts can end when something happens**, not only after a time. Under
+  Ends, choose When something happens and pick what ends it: "Watch battery
+  is below 20" until "Watch is charging" stays up until you put it on the
+  charger, even though it's still below 20 while it charges, and comes back
+  if you take it off too soon. At most sets how long it can hold if that
+  never happens (2 hours to start with). Alerts that end after a time work
+  as before.
 - **Fixed:** "Watch battery is below 20" came true for a moment every time
   Home Assistant restarted, because a sensor with no value yet counted as 0.
   A sensor that's unavailable or unknown now never meets "is below", "is

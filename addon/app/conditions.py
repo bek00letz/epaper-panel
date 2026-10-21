@@ -13,6 +13,12 @@ import re
 
 TRUE = ("true", "on", "yes", "1")
 
+# How long an alert holds, in minutes: for one that ends after a time, the
+# time; for one that ends when something happens, the most it holds.
+HOLD_DEFAULT = 10
+UNTIL_LIMIT_DEFAULT = 120
+HOLD_MAX = 1440
+
 # The simple form's "isn't" and number comparisons as written before the guard.
 _UNGUARDED = re.compile(
     r"^\{\{\s*("
@@ -33,3 +39,19 @@ def guarded(expr: str) -> str:
 
 def is_true(value) -> bool:
     return str(value).strip().lower() in TRUE
+
+
+def ending(page: dict) -> str:
+    """An alert's Until condition when it ends "when something happens", else ""."""
+    if page.get("ends") != "until":
+        return ""
+    return str(page.get("until_if") or "").strip()
+
+
+def hold_minutes(page: dict) -> int:
+    default = UNTIL_LIMIT_DEFAULT if page.get("ends") == "until" else HOLD_DEFAULT
+    try:
+        minutes = int(page.get("hold_minutes") or default)
+    except (TypeError, ValueError):
+        minutes = default
+    return max(1, min(HOLD_MAX, minutes))
