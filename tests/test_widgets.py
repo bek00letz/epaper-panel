@@ -414,3 +414,25 @@ class TestStationInTheRenderCycle(unittest.IsolatedAsyncioTestCase):
              unittest.mock.patch.object(frames, "fetch_weather_forecast", unittest.mock.AsyncMock(return_value=None)):
             await frames.enrich_page_values(None, {"elements": [el]}, vals)
         self.assertEqual((vals[0]["temperature"], vals[0]["condition"], vals[0]["unit"]), (23, "partlycloudy", "°C"))
+
+
+class TestWeatherAtEverySize(Sizes, unittest.TestCase):
+    element = {"type": "weather_forecast", "x": 24, "y": 14, "w": 744, "h": 208}
+    value = {"condition": "rainy", "temperature": 23, "unit": "°C", "humidity": 82, "wind_speed": 0, "wind_unit": "km/h",
+             "pressure_trend": "falling", "forecast": [
+                 {"datetime": f"2026-10-2{k}T09:00:00+00:00", "condition": "sunny", "temperature": 20, "templow": 9,
+                  "precipitation_probability": 70} for k in range(1, 6)]}
+
+    def test_details_that_dont_fit_are_left_out_not_run_on(self):
+        txt, f = layout._fit_parts(["HUM 82%", "WIND 0 km/h", "PRESSURE FALLING"], 160, 15, "  •  ")
+        self.assertLessEqual(T.text_width(txt, f), 160)
+        self.assertTrue(txt.startswith("HUM 82%"))
+        self.assertNotIn("PRESSURE", txt)
+
+    def test_a_wide_small_box_splits_instead_of_stacking_portrait_rows(self):
+        # The 2.9" box (about 285 x 80) once got the portrait layout: day rows drawn over each other.
+        target = arrange.canvas_key(*T.canvas_dims(0, "crowpanel_290"))
+        box = arrange.auto_box(self.element, BASE, target)
+        img = render(self.element, self.value, "crowpanel_290")
+        divider = box["x"] + int(box["w"] * 0.42)              # the split layout's line between now and the days
+        self.assertGreater(ink(img, (divider, box["y"], divider + 1, box["y"] + box["h"])), box["h"] // 2)

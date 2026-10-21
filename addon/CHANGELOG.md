@@ -83,6 +83,10 @@
   pressure sensor, it says when pressure is rising or falling. A solar
   radiation sensor can decide sunny or cloudy in the daytime, but only if
   you choose one: a station in the shade would read cloudy in full sun.
+- **Fixed:** the Weather page drew over itself on the 4.2" and 2.9": the
+  details ran into the coming days, and on the 2.9" the days were stacked
+  on top of each other. It now keeps its usual look at every size, shows
+  as many days and details as fit, and leaves out what doesn't.
 - **Fixed:** a Race weekend page set to NASCAR or IndyCar showed Formula 1's
   race, drivers and status. Each series now reads its own results, and its
   page names it ("NASCAR · …"). Whether the page shows still followed the

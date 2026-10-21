@@ -1310,6 +1310,18 @@ _WEATHER_LABEL_MAP = {
 }
 
 
+def _fit_parts(parts, max_w, size, sep, min_sz=11):
+    """As many of the parts as fit max_w at a readable size, in order, and the font: never text running on."""
+    parts = list(parts)
+    while parts:
+        txt = sep.join(parts)
+        f = _fit_font(txt, max_w, size, min_sz=min_sz, bold=True)
+        if T.text_width(txt, f) <= max_w:
+            return txt, f
+        parts.pop()
+    return "", T.font(min_sz, bold=True)
+
+
 def _draw_weather_forecast(img, d, el, raw_val, display=None):
     x, y, w, h = _clamp_box(el, 752, 235, display=display)
     fscale = _font_scale(el)
@@ -1378,13 +1390,13 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
                 th, tl = today_f.get("temperature"), today_f.get("templow")
                 if th is not None and tl is not None:
                     chip_parts.append(f"H {th:.0f}° · L {tl:.0f}°")
-            if chip_parts:
-                chip_text = "   •   ".join(chip_parts)
-                mf = _fit_font(chip_text, w - 48, _s(16, fscale, 12, 26), min_sz=11, bold=True)
+            chip_text, mf = _fit_parts(chip_parts, w - 48, _s(16, fscale, 12, 26), "   •   ")
+            if chip_text:
                 d.text((x + 24, y + h - 22), chip_text, font=mf, fill=T.BLACK, anchor="lm")
         return
 
-    is_split = (layout_mode == "split") or (layout_mode == "auto" and ((w >= 480) or (w >= 340 and w >= h)))
+    # Any landscape box splits (a 2.9" screen's is 285 x 80); stacked is for portrait cards.
+    is_split = (layout_mode == "split") or (layout_mode == "auto" and ((w >= 480) or (w >= 340 and w >= h) or w >= h * 1.3))
     if layout_mode == "forecast_only":
         is_split = True
 
@@ -1398,11 +1410,12 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
             fore_x = x + hero_w
             fore_w = w - hero_w
 
-            hero_mid_y = y + int(h * (0.40 if show_details else 0.50))
-            isz = min(84, max(48, int(h * 0.38)))
-            _draw_icon_glyph(d, cur_icon, x + 18 + isz // 2, hero_mid_y, isz)
+            hero_mid_y = y + int(h * (0.40 if show_details and h >= 110 else 0.50))
+            isz = min(84, max(28, int(h * 0.38)))
+            pad = max(6, min(18, w // 40))
+            _draw_icon_glyph(d, cur_icon, x + pad + isz // 2, hero_mid_y, isz)
 
-            tx = x + 18 + isz + 14
+            tx = x + pad + isz + max(6, min(14, isz // 4))
             avail_hero_w = max(60, fore_x - tx - 12)
             temp_str = f"{temp}{unit}" if str(temp).endswith("°") or unit.startswith("°") else f"{temp}°"
             target_tf_sz = _s(min(56, max(32, int(h * 0.27))), fscale, 24, 88)
@@ -1436,26 +1449,26 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
                         line2_parts.append(f"RAIN {float(precip):.1f}mm")
 
                 avail_chip_w = fore_x - x - 32
-                combined = "  •  ".join(line1_parts + line2_parts)
                 target_chip_sz = _s(15, fscale, 11, 24)
                 if line2_parts and h >= 165:
                     # Two clean, large detail lines instead of 1 squeezed microscopic line
-                    l1_txt = "   •   ".join(line1_parts) if line1_parts else "   •   ".join(line2_parts)
-                    l2_txt = "   •   ".join(line2_parts) if line1_parts else ""
-                    mf1 = _fit_font(l1_txt, avail_chip_w, target_chip_sz, min_sz=11, bold=True)
+                    l1_txt, mf1 = _fit_parts(line1_parts or line2_parts, avail_chip_w, target_chip_sz, "   •   ")
+                    l2_txt, mf2 = _fit_parts(line2_parts if line1_parts else [], avail_chip_w, target_chip_sz, "   •   ")
                     d.text((x + 18, y + h - (36 if l2_txt else 20)), l1_txt, font=mf1, fill=T.BLACK, anchor="lm")
                     if l2_txt:
-                        mf2 = _fit_font(l2_txt, avail_chip_w, target_chip_sz, min_sz=11, bold=True)
                         d.text((x + 18, y + h - 16), l2_txt, font=mf2, fill=T.BLACK, anchor="lm")
-                elif combined:
-                    mf = _fit_font(combined, avail_chip_w, target_chip_sz, min_sz=10, bold=True)
-                    d.text((x + 18, y + h - 20), combined, font=mf, fill=T.BLACK, anchor="lm")
+                elif h >= 110:
+                    # One line: as many details as fit, most useful first, rather than text running into the days
+                    txt, mf = _fit_parts(line2_parts[:1] + line1_parts + line2_parts[1:], avail_chip_w, target_chip_sz, "  •  ")
+                    if txt:
+                        d.text((x + 18, y + h - 20), txt, font=mf, fill=T.BLACK, anchor="lm")
 
             # Vertical divider
             d.line([(fore_x, y + 12), (fore_x, y + h - 12)], fill=T.BLACK, width=1)
 
         # Forecast strip
-        display_forecast = forecast[1:1 + max_f_days] if len(forecast) > max_f_days else forecast[:max_f_days]
+        fit_days = max(1, min(max_f_days, int(fore_w // 56)))     # a day narrower than this can't be read
+        display_forecast = forecast[1:1 + fit_days] if len(forecast) > fit_days else forecast[:fit_days]
         n_days = len(display_forecast)
         if n_days > 0:
             day_w = fore_w / float(n_days)
@@ -1494,7 +1507,7 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
                     rain_str = f"{float(pop):.0f}% rain"
                 elif precip is not None and float(precip) > 0:
                     rain_str = f"{float(precip):.1f} mm"
-                if rain_str:
+                if rain_str and h >= 100:                 # below that it would sit on the temperatures
                     rf = _fit_font(rain_str, int(day_w - 6), _s(14, fscale, 10, 22), min_sz=10, bold=True)
                     d.text((cx, y + int(h * 0.90)), rain_str, font=rf, fill=T.BLACK, anchor="mm")
         else:
@@ -1520,9 +1533,9 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
                 parts.append(f"WIND {wind} {wind_unit}")
             if pressure_trend in ("rising", "falling"):
                 parts.append(f"PRESSURE {pressure_trend.upper()}")
-            if parts:
-                mf = _fit_font("   •   ".join(parts), w - 36, _s(14, fscale, 10, 22), min_sz=10, bold=True)
-                d.text((x + 20, y + hero_h - 14), "   •   ".join(parts), font=mf, fill=T.BLACK, anchor="lm")
+            txt, mf = _fit_parts(parts, w - 36, _s(14, fscale, 10, 22), "   •   ")
+            if txt:
+                d.text((x + 20, y + hero_h - 14), txt, font=mf, fill=T.BLACK, anchor="lm")
 
         d.line([(x + 10, y + hero_h), (x + w - 10, y + hero_h)], fill=T.BLACK, width=1)
 
