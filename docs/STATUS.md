@@ -100,7 +100,11 @@ tickets dropped), so tunnels like Cloudflare and Home Assistant Cloud still
 work; a very old proxy offering only RSA key exchange wouldn't. Release checks
 use 2026.10.0 from 21 Oct (`.esphome-venv`; the way back is
 `pip install esphome==2026.9.1` there); every offered size passes its
-`esphome config` test with it. Worth a look: devices that dial Home
+`esphome config` test with it.
+`.esphome-venv` is a link to `~/.local/share/epaper-panel/esphome-venv`
+(21 Oct): ~/Documents syncs with iCloud Drive, which made 7,469 "file 2"
+duplicates inside the old folder after an in-place upgrade and broke a
+compile. Keep tool folders and builds outside ~/Documents. Worth a look: devices that dial Home
 Assistant themselves (#18919, could let a panel away from home keep its
 Home Assistant link and be woken), the device onboarding wizard (#19966, the
 browser setup's open question), suspend_loop / loop_interval (#18136, power),
