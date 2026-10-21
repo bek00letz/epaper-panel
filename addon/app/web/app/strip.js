@@ -64,8 +64,34 @@ export function statusSummary(app) {
   return { tone, line1, line2 };
 }
 
+/* What's waiting to be sent for a page (doc.changes), in words: "2 changes",
+   "Added", "Renamed from Clock · moved". Null when the panel has it as it is,
+   and for a page renamed away (its new name says it). */
+const changeCount = (p) => p.elements ? p.elements.added.length + p.elements.removed.length + p.elements.changed.length + (p.order ? 1 : 0) + (p.settings ? 1 : 0) : 0;
+const plural = (k) => `${k} change${k === 1 ? "" : "s"}`;
+export function unsentWords(pend, n) {
+  const p = pend.pages[n], placed = pend.placed[n];
+  if (p?.status === "removed") return p.to ? null : "Removed";
+  const parts = [], k = p ? changeCount(p) : 0;
+  if (p?.status === "added") parts.push("Added");
+  if (p?.status === "renamed") parts.push(`Renamed from ${pageTitle(p.from)}`);
+  if (k || p?.status === "changed") parts.push(k ? plural(k) : "Changed");
+  if (placed) parts.push(parts.length ? { in: "put in the rotation", out: "taken out of the rotation", moved: "moved" }[placed]
+    : { in: "Put in the rotation", out: "Taken out of the rotation", moved: "Moved in the rotation" }[placed]);
+  return parts.length ? parts.join(" · ") : null;
+}
+/* The same, short enough for a tile: "2 changes, not sent". */
+export function tileWords(pend, n) {
+  const p = pend.pages[n], placed = pend.placed[n];
+  if (!unsentWords(pend, n)) return null;
+  const k = p ? changeCount(p) : 0;
+  const what = p?.status === "added" ? "New" : p?.status === "removed" ? "Removed" : k ? plural(k)
+    : p?.status === "renamed" ? "Renamed" : p ? "Changed" : { in: "Put in rotation", out: "Taken out", moved: "Moved" }[placed];
+  return `${what}, not sent`;
+}
+
 export function renderStrip(app) {
-  const doc = app.doc, spec = doc.spec;
+  const doc = app.doc, spec = doc.spec, pend = doc.pending();
   const strip = h("div", { class: "strip" });
   const { tone, line1, line2 } = statusSummary(app);
   const head = h("button", { class: "stathead", "aria-label": `Now on the panel: ${line1}. ${line2}`, "aria-haspopup": "dialog" },
@@ -80,7 +106,7 @@ export function renderStrip(app) {
   const seen = new Set();
   const slots = spec.rotation.map((n, i) => {
     const again = seen.has(n); seen.add(n);
-    return tile(app, n, { again, slot: i });
+    return tile(app, n, { again, slot: i, pend });
   }).filter(Boolean);
   slots.forEach((t) => list.append(t.box));
   reorderable(list, slots, (from, to) => {
@@ -94,11 +120,17 @@ export function renderStrip(app) {
   const alerts = Object.keys(spec.pages).filter((n) => spec.pages[n].tier === "alert");
   if (out.length) {
     list.append(h("span", { class: "groupsep", role: "presentation" }), h("span", { class: "grouplab", text: "Not in rotation" }));
-    out.forEach((n) => { const t = tile(app, n, { out: true }); t.addEventListener("click", () => doc.openPage(n)); list.append(t.box); });
+    out.forEach((n) => { const t = tile(app, n, { out: true, pend }); t.addEventListener("click", () => doc.openPage(n)); list.append(t.box); });
   }
   if (alerts.length) {
     list.append(h("span", { class: "groupsep", role: "presentation" }), h("span", { class: "grouplab", text: "Alerts" }));
-    alerts.forEach((n) => { const t = tile(app, n, {}); t.addEventListener("click", () => doc.openPage(n)); list.append(t.box); });
+    alerts.forEach((n) => { const t = tile(app, n, { pend }); t.addEventListener("click", () => doc.openPage(n)); list.append(t.box); });
+  }
+  // Pages removed since the last send stay in sight until it, to put back.
+  const gone = Object.keys(pend.pages).filter((n) => pend.pages[n].status === "removed" && !pend.pages[n].to && doc.live.pages[n]);
+  if (gone.length) {
+    list.append(h("span", { class: "groupsep", role: "presentation" }), h("span", { class: "grouplab", text: "Removed, not sent" }));
+    gone.forEach((n) => list.append(ghostTile(app, n)));
   }
   // It slides like New page's shelves: edges that fade while there's more, arrows towards more.
   strip.style.setProperty("--aspect", String(app.geometry().W / app.geometry().H));
@@ -106,7 +138,17 @@ export function renderStrip(app) {
   return strip;
 }
 
-function tile(app, n, { again, out, slot }) {
+/* A page removed since the last send: what the panel still has, greyed; a click puts it back. */
+function ghostTile(app, n) {
+  const img = h("img", { class: "thumb", alt: "", "data-thumb": n, draggable: "false" });
+  const t = h("button", { class: "tile ghost unsent", title: "Put it back", "aria-label": `${pageTitle(n)}. Removed, not sent. Put it back`, onclick: () => app.revertPage(n) },
+    h("span", { class: "thumbwrap", style: { aspectRatio: `${app.geometry().W} / ${app.geometry().H}` } }, img, h("span", { class: "ghostact", "aria-hidden": "true" }, icon("revert", "sm"), "Put back")),
+    h("span", { class: "tname" }, h("span", { class: "udot", "aria-hidden": "true" }), h("span", { class: "tn", text: pageTitle(n) })), h("span", { class: "tsub", text: "Removed, not sent" }));
+  requestAnimationFrame(() => thumbnail(app, n, img, app.doc.live.pages[n]));
+  return h("span", { class: "tilebox" }, t);
+}
+
+function tile(app, n, { again, out, slot, pend }) {
   const doc = app.doc, p = doc.spec.pages[n];
   if (!p) return null;
   const live = (app.status?.pages || []).includes(n);
@@ -122,11 +164,14 @@ function tile(app, n, { again, out, slot }) {
   if (p.tier === "alert") { sub = p.ends === "until" ? "Alert · until something happens" : `Alert · holds ${p.hold_minutes || 10} min`; badge = h("span", { class: "badge alert", text: "alert" }); }
   if (again) sub = "Again";
   if (out) sub = "Not in rotation";
+  // Not sent yet: an orange ring and dot, and what's waiting in the line under it (on its first tile).
+  const words = unsentWords(pend, n), short = words && tileWords(pend, n);
+  if (short && !again) sub = short;
   const img = h("img", { class: "thumb", alt: "", "data-thumb": n, draggable: "false" });
-  const t = h("button", { class: "tile" + (dim ? " dim" : ""), role: "option", "aria-selected": String(n === doc.cur && !again), "aria-current": n === doc.cur && !again ? "page" : null,
-    "aria-label": `${pageTitle(n)}. ${sub}${p.tier === "when" ? ". " + describe(p.show_if, app.entMap).text : ""}` },
+  const t = h("button", { class: "tile" + (dim ? " dim" : "") + (words ? " unsent" : ""), role: "option", title: words ? `${words}. Not sent yet` : null, "aria-selected": String(n === doc.cur && !again), "aria-current": n === doc.cur && !again ? "page" : null,
+    "aria-label": `${pageTitle(n)}. ${words ? `Not sent yet: ${words}` : sub}${p.tier === "when" ? ". " + describe(p.show_if, app.entMap).text : ""}` },
     h("span", { class: "thumbwrap", style: { aspectRatio: `${app.geometry().W} / ${app.geometry().H}` } }, img),
-    h("span", { class: "tname" }, h("span", { class: "tn", text: pageTitle(n) }), badge), h("span", { class: "tsub", text: sub }));
+    h("span", { class: "tname" }, words ? h("span", { class: "udot", "aria-hidden": "true" }) : null, h("span", { class: "tn", text: pageTitle(n) }), badge), h("span", { class: "tsub", text: sub }));
   t.addEventListener("contextmenu", (e) => { e.preventDefault(); app.openPageMenu(e, n); });
   // A countdown says what its page does (render/countdown.status): Passed is outlined and greyed,
   // to reuse with another date or delete; one waiting says when it starts showing.
@@ -136,8 +181,9 @@ function tile(app, n, { again, out, slot }) {
     box.classList.toggle("passed", c?.state === "passed");       // its buttons stay showing
     if (!c || c.state === "showing" || again || out) return;
     const said = c.state === "passed" ? `Passed · ${c.on}` : `Shows from ${c.from}`;
-    t.querySelector(".tsub").textContent = said;
     t.classList.add("dim");
+    if (words) { t.setAttribute("aria-label", `${pageTitle(n)}. ${said}. Not sent yet: ${words}`); return; }   // what's waiting keeps the line
+    t.querySelector(".tsub").textContent = said;
     t.setAttribute("aria-label", `${pageTitle(n)}. ${said}`);
   });
   requestAnimationFrame(() => thumbnail(app, n, img));

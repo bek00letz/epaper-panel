@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+- **The page strip shows what isn't on the panel yet.** A page you've
+  changed since you last sent gets an orange outline and a dot by its name,
+  and the line under it says what's waiting: "2 changes, not sent", "New,
+  not sent", "Moved, not sent". A page you removed stays at the end of the
+  strip, greyed, under "Removed, not sent", until you send; click it to put
+  it back. A countdown that has passed is now greyed without an outline, so
+  an orange outline only ever means "not sent yet".
+
 ## 0.15.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) to see which Wi-Fi network it's

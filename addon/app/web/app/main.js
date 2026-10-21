@@ -4,7 +4,7 @@
 
 import { h, icon, api, prefs, clone, pageTitle, slug, modKey, isMac, setDevice } from "./util.js";
 import { menu, toast, closeAll, isOpen } from "./ui.js";
-import { Doc } from "./doc.js";
+import { Doc, SETTING_NAMES } from "./doc.js";
 import { Canvas } from "./canvas.js";
 import { renderStrip, statusSummary } from "./strip.js";
 import { renderInspector } from "./inspector.js";
@@ -573,6 +573,19 @@ class App {
     doc.commit(); doc.emit("page");
     toast(`Deleted ${pageTitle(name)}.`, { label: "Undo", run: () => doc.undo() });
     if (!Object.keys(doc.spec.pages).length) this.firstRun();
+  }
+  /* A page, or a setting sent with the pages, back to what the panel has (doc.changes): an Undo, never a question. */
+  revertPage(name) {
+    const doc = this.doc, p = doc.pending().pages[name];
+    const back = p?.from || p?.to || name;
+    doc.revertPage(name); doc.emit("page");
+    toast(p?.status === "added" ? `Removed ${pageTitle(name)}. The panel doesn't have it.` : p?.status === "removed" && !p.to ? `Put ${pageTitle(name)} back.`
+      : `${pageTitle(p?.status === "renamed" ? back : name)} is back to what the panel has.`, { label: "Undo", run: () => doc.undo() });
+  }
+  revertSetting(k) {
+    const doc = this.doc;
+    doc.revertSetting(k);
+    toast(`${SETTING_NAMES[k] || k} back to what the panel has.`, { label: "Undo", run: () => doc.undo() });
   }
   setTier(v) {
     const doc = this.doc, p = doc.page();

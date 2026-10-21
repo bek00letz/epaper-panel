@@ -139,7 +139,10 @@ class TestKeptAndWaiting(unittest.TestCase):
         insp = (APP_JS / "inspector.js").read_text()
         self.assertIn('h("button", { class: "btn tinted danger", onclick: () => app.deletePage() }, icon("trash", "sm"), "Delete")', insp)
         css = (support.APP / "web" / "editor.css").read_text()
-        self.assertIn(".tile.passed .thumbwrap { box-shadow: 0 0 0 2px var(--orange); opacity: 0.55; }", css, "an outline, not just a pill")
+        # Greyed with its orange "Passed" line and its Delete; the orange ring means "not sent yet"
+        # (the user's call, 21 Oct).
+        self.assertIn(".tile.passed .thumbwrap { opacity: 0.55; }", css)
+        self.assertIn(".tile.passed .tsub { color: var(--orange); font-weight: 600; }", css)
         self.assertNotIn("deletePage", (APP_JS / "countdown.js").read_text())
         # A page's buttons over the right third of its picture, beside the tile in its box; showing
         # all the time on a passed countdown (the user's design, 21 Oct).

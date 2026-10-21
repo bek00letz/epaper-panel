@@ -2,19 +2,28 @@
 (`doc.changes`), which the 409 merge, the page strip and "Not sent yet" all
 read, and putting one page or one setting back to what the panel has."""
 import json
+import re
 import shutil
 import subprocess
 import unittest
 
 import support
 
-DOC_JS = support.APP / "web" / "app" / "doc.js"
+WEB = support.APP / "web"
+DOC_JS = WEB / "app" / "doc.js"
+STRIP_JS = WEB / "app" / "strip.js"
+CSS = re.sub(r"/\*.*?\*/", "", (WEB / "editor.css").read_text(), flags=re.S)
+
+
+def css_rule(selector):
+    return next(body for sel, body in re.findall(r"([^{}]+)\{([^{}]*)\}", CSS) if sel.strip() == selector)
 
 
 def run_js(body):
     """Run `body` with the editor's doc module as `D`; it prints JSON."""
     script = ("globalThis.navigator ??= { platform: '' };\n"
               f"const D = await import({json.dumps(DOC_JS.as_uri())});\n"
+              f"const S = await import({json.dumps(STRIP_JS.as_uri())});\n"
               "const live = () => D.normalize({ pages: {"
               " solar: { elements: [{ id: 'a', type: 'text', x: 1 }, { id: 'b', type: 'text', x: 2 }] },"
               " clock: { elements: [{ id: 'c', type: 'text' }] },"
@@ -168,6 +177,55 @@ class TestPuttingBack(unittest.TestCase):
         c = self.doc("m.quiet_hours.enabled = true; m.pages.solar.elements[0].x = 9", "doc.revertSetting('quiet_hours');")
         self.assertEqual(c["pending"]["settings"], [])
         self.assertEqual(list(c["pending"]["pages"]), ["solar"])
+
+
+@unittest.skipUnless(shutil.which("node"), "no node to run the editor's strip")
+class TestTheStripSaysWhatsWaiting(unittest.TestCase):
+    def test_in_words(self):
+        c = run_js("""const m = live();
+            m.pages.solar.elements[0].x = 9; m.pages.solar.elements.push({ id: 'z', type: 'text' });
+            m.pages.clock_big = m.pages.clock; delete m.pages.clock;
+            delete m.pages.bins; m.pages.todo = { elements: [] };
+            m.rotation = ['news', 'solar', 'clock_big', 'todo'];
+            const p = D.changes(live(), m);
+            const names = ['solar', 'clock_big', 'clock', 'bins', 'todo', 'news'];
+            console.log(JSON.stringify(names.map((n) => [S.unsentWords(p, n), S.tileWords(p, n)])));""")
+        self.assertEqual(c, [
+            ["2 changes", "2 changes, not sent"],
+            ["Renamed from Clock", "Renamed, not sent"],
+            [None, None],                                # renamed away: its new name says it
+            ["Removed", "Removed, not sent"],
+            ["Added", "New, not sent"],
+            ["Moved in the rotation", "Moved, not sent"],
+        ])
+
+    def test_changes_and_a_new_place_together(self):
+        c = run_js("""const m = live(); m.pages.solar.elements[0].x = 9; m.rotation = ['clock', 'bins', 'news', 'solar'];
+            console.log(JSON.stringify(S.unsentWords(D.changes(live(), m), 'solar')));""")
+        self.assertEqual(c, "1 change · moved")
+
+    def test_orange_ring_means_only_not_sent(self):
+        self.assertIn("var(--orange)", css_rule(".tile.unsent .thumbwrap"))
+        self.assertNotIn("box-shadow", css_rule(".tile.passed .thumbwrap"), "a passed countdown is greyed, not ringed")
+        self.assertIn("var(--accent)", css_rule('.tile.unsent[aria-current="page"] .thumbwrap'), "the open page keeps its ring")
+        self.assertIn("box-shadow", css_rule(".tile.unsent:focus-visible .thumbwrap"), "and the focus ring shows")
+
+    def test_every_tile_reads_the_one_comparison(self):
+        strip = STRIP_JS.read_text()
+        self.assertIn("pend = doc.pending()", strip)
+        calls = re.findall(r"(?<!function )\btile\(app, n, \{[^}]*\}", strip)
+        self.assertEqual(len(calls), 3, "rotation, not in rotation and alerts")
+        for c in calls:
+            self.assertIn("pend", c)
+
+    def test_removed_pages_stay_until_sent_and_a_click_puts_one_back(self):
+        strip = STRIP_JS.read_text()
+        self.assertIn('"Removed, not sent"', strip)
+        self.assertIn("thumbnail(app, n, img, app.doc.live.pages[n])", strip, "drawn as the panel has it")
+        self.assertIn("onclick: () => app.revertPage(n)", strip)
+        main = (WEB / "app" / "main.js").read_text()
+        self.assertRegex(main, r"revertPage\(name\) \{[^}]*doc\.revertPage\(name\)")
+        self.assertIn('{ label: "Undo", run: () => doc.undo() }', main[main.index("revertPage(name) {"):main.index("setTier(v)")])
 
 
 if __name__ == "__main__":
