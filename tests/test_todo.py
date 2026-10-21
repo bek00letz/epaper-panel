@@ -41,21 +41,33 @@ class TestWhatAListShows(unittest.TestCase):
         self.assertEqual([i["summary"] for i in todo.items_for(items, "due", NOW)], ["Old", "Tonight", "Bins out"])
 
     def test_due_labels(self):
-        cases = {"2026-10-20": ("Overdue", True), "2026-10-21": ("Today", True),
-                 "2026-10-21T18:00:00+03:00": ("Today 18:00", True), "2026-10-21T09:00:00+03:00": ("Overdue", True),
-                 "2026-10-21T15:30:00Z": ("Today 18:30", True),          # in Home Assistant's zone
-                 "2026-10-22": ("Tomorrow", False), "2026-10-24": ("Sat", False), "2026-11-03": ("3 Nov", False),
-                 "": ("", False), "soon": ("", False)}
+        cases = {"2026-10-20": ("Overdue", "overdue"), "2026-10-21": ("Today", "today"),
+                 "2026-10-21T18:00:00+03:00": ("Today 18:00", "today"), "2026-10-21T09:00:00+03:00": ("Overdue", "overdue"),
+                 "2026-10-21T15:30:00Z": ("Today 18:30", "today"),       # in Home Assistant's zone
+                 "2026-10-22": ("Tomorrow", ""), "2026-10-24": ("Sat", ""), "2026-11-03": ("3 Nov", ""),
+                 "": ("", ""), "soon": ("", "")}
         for due, want in cases.items():
             self.assertEqual(todo.due_label(item("x", due), NOW), want, due)
 
     def test_how_many_fit(self):
-        # The preset's box on the 5.79": five rows of 28 px under the header.
-        top = 22 + 9
-        self.assertEqual(todo.fit(5, 220 - top, 28)[1:], (5, 0))
-        self.assertEqual(todo.fit(7, 220 - top, 28)[1:], (4, 3), "four items, then \"and 3 more\"")
-        self.assertEqual(todo.fit(7, 40, 28)[1:], (1, 0), "one row: the header's count says the rest")
-        self.assertEqual(todo.fit(0, 40, 28)[1:], (0, 0))
+        # The preset's box on the 5.79", under the header: pill rows of 30 px
+        # text are 40 tall every 46 (the user's renders), the first look 41.
+        avail = 220 - (22 + 10)
+        pill, plain = todo.rows("urgency", 30), todo.rows("plain", 30)
+        self.assertEqual(pill, (40, 46))
+        self.assertEqual(todo.fit(7, avail, *pill), (3, 4), "three items, then \"and 4 more\"")
+        self.assertEqual(todo.fit(4, avail, *pill), (4, 0))
+        self.assertEqual(todo.fit(7, avail, *plain), (3, 4))
+        self.assertEqual(todo.fit(7, 50, *pill), (1, 0), "one row: the header's count says the rest")
+        self.assertEqual(todo.fit(0, 50, *pill), (0, 0))
+        self.assertEqual(todo.rows("due", 30), pill, "every pill style keeps one pitch")
+
+    def test_each_style_is_loud_where_it_says(self):
+        looks = {style: [todo.row_look(style, u) for u in ("overdue", "today", "")] for style in todo.STYLES}
+        self.assertEqual(looks, {"urgency": ["invert", "outline", "plain"], "due": ["invert", "invert", "outline"],
+                                 "outlined": ["outline", "outline", "outline"], "plain": ["plain", "plain", "plain"]})
+        self.assertEqual(todo.style_of({}), "urgency", "the user's default")
+        self.assertEqual(todo.style_of({"style": "nonsense"}), "urgency")
 
 
 class TestFetching(unittest.IsolatedAsyncioTestCase):
@@ -151,6 +163,16 @@ class TestDrawing(unittest.TestCase):
         self.assertEqual(self.ink(None, region=middle), 0, "not fetched yet: nothing claims it's empty")
         self.assertGreater(self.ink(None, el={**self.BOX, "entity": ""}, region=middle), 300, "Choose a to-do list")
 
+    def test_every_style_draws_its_rows(self):
+        data = {"entity": "todo.chores", "name": "Chores", "tz": "UTC",
+                "items": [item("Cat food", "2000-01-01"), item("Parcel", datetime.now(timezone.utc).date().isoformat()), item("Milk")]}
+        first_row = (40, 46, 752, 86)                    # under the header, the overdue row
+        ink = {st: self.ink(data, el={**self.BOX, "style": st}, region=first_row) for st in todo.STYLES}
+        self.assertGreater(ink["urgency"], 15000, "overdue: a solid pill")
+        self.assertGreater(ink["due"], 15000)
+        self.assertLess(ink["outlined"], ink["urgency"] / 3, "outlined: only its outline and text")
+        self.assertLess(ink["plain"], ink["outlined"], "plain: no pill at all")
+
     def test_reports_its_text_size_for_the_legibility_note(self):
         metrics = []
         layout.render_page({"elements": [self.BOX]}, {0: {"items": [], "tz": "UTC"}}, metrics=metrics)
@@ -191,6 +213,11 @@ import("%s").then((L) => {
         sensor = todo.due_sensor("todo.chores")
         self.assertEqual(got, ["{{ has_value('%s') and states('%s') | float(0) > 0 }}" % (sensor, sensor), sensor, ""],
                          "the editor names the sensor the add-on publishes")
+
+    def test_the_style_menu_offers_the_three_styles(self):
+        src = (support.APP / "web" / "app" / "inspector.js").read_text()
+        self.assertIn('F.sel("style", "Style", [["urgency", "By urgency"], ["due", "Inverted when due"], ["outlined", "Outlined"]], "%s")'
+                      % todo.DEFAULT_STYLE, src)
 
     def test_new_page_names_it_after_the_list(self):
         src = (support.APP / "web" / "app" / "sheets.js").read_text()

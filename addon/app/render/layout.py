@@ -1048,7 +1048,7 @@ def _draw_calendar_month(img, d, el, raw_val, display=None):
 
 # A to-do list (render/todo.py says what it shows). Sizes are the 5.79"'s and
 # scale with the element's text size; hierarchy is size and weight, no grey.
-TODO_ITEM_PX = 28
+TODO_ITEM_PX = 30
 TODO_HEAD_PX = 22
 
 
@@ -1092,36 +1092,55 @@ def _draw_todo_list(img, d, el, raw_val, metrics=None, distance_m=3.0, display=N
         d.text((x + w // 2, (top + y + h) // 2), todo.empty_text(show), font=T.font(item_px, bold=True), fill=T.BLACK, anchor="mm")
         return
 
-    row_h, n_shown, more = todo.fit(len(items), y + h - top, item_px)
-    shown = items[:n_shown]
+    style = todo.style_of(el)
+    row_h, pitch = todo.rows(style, item_px)
+    n_shown, more = todo.fit(len(items), y + h - top, row_h, pitch)
 
     box = round(item_px * 0.72)                        # the empty square before each item
     stroke = max(4, round(box / 6))                    # thinner disappears on e-ink
-    label_px = max(10, round(item_px * 0.8))
+    # Inside a pill: content starts where the pill's curve allows, and the
+    # label pill sits concentric with the row (its radius = the row's - inset),
+    # just clear of the outline.
+    pad = 0 if style == "plain" else round(row_h * 0.42)
+    line = max(4, round(row_h / 10))                   # a pill's outline; thinner disappears on e-ink
+    inset = line + max(3, round(row_h / 13))
+    label_px = max(10, round(item_px * (0.8 if style == "plain" else 0.72)))
     label_f = T.font(label_px, bold=True)
-    for k, item in enumerate(shown):
-        mid = top + k * row_h + row_h // 2
-        d.rounded_rectangle([(x, mid - box // 2), (x + box, mid + box // 2)], radius=max(2, box // 5),
-                            outline=T.BLACK, width=stroke)
-        tx = x + box + max(10, item_px // 2)
-        right = x + w
-        label, urgent = todo.due_label(item, now)
+    text_x = x + pad + box + max(10, item_px // 2)
+    for k, item in enumerate(items[:n_shown]):
+        r0 = top + k * pitch
+        mid = r0 + row_h // 2
+        label, urgency = todo.due_label(item, now)
+        look = todo.row_look(style, urgency)
+        ink, paper = (T.WHITE, T.BLACK) if look == "invert" else (T.BLACK, T.WHITE)
+        if look == "invert":
+            d.rounded_rectangle([(x, r0), (x + w, r0 + row_h)], radius=row_h // 2, fill=T.BLACK)
+        elif look == "outline":
+            d.rounded_rectangle([(x, r0), (x + w, r0 + row_h)], radius=row_h // 2, outline=T.BLACK, width=line)
+        d.rounded_rectangle([(x + pad, mid - box // 2), (x + pad + box, mid + box // 2)], radius=max(2, box // 5),
+                            outline=ink, width=stroke)
+        right = x + w - (inset if look != "plain" else 0)
         if label:
             lw = T.text_width(label, label_f)
-            if urgent:                                 # overdue or today: inverted
-                ph, pad = label_px + 8, 8
-                d.rounded_rectangle([(right - lw - pad * 2, mid - ph // 2), (right, mid + ph // 2)],
-                                    radius=ph // 2, fill=T.BLACK)
-                d.text((right - pad, mid), label, font=label_f, fill=T.WHITE, anchor="rm")
-                right -= lw + pad * 2 + 12
+            if urgency:                                # overdue or today: a pill of the other colour
+                lh = min(row_h - 2 * inset, label_px + 10) if look != "plain" else label_px + 8
+                lp = 8 if look == "plain" else max(6, lh * 2 // 5)
+                d.rounded_rectangle([(right - lw - lp * 2, mid - lh // 2), (right, mid + lh // 2)],
+                                    radius=lh // 2, fill=ink)
+                d.text((right - lp, mid), label, font=label_f, fill=paper, anchor="rm")
+                right -= lw + lp * 2 + 12
             else:
-                d.text((right, mid), label, font=label_f, fill=T.BLACK, anchor="rm")
+                if look != "plain":
+                    right -= max(6, item_px // 4)      # clear of the pill's curve
+                d.text((right, mid), label, font=label_f, fill=ink, anchor="rm")
                 right -= lw + 12
-        d.text((tx, mid), _shorten(str(item.get("summary") or ""), item_f, max(1, right - tx)),
-               font=item_f, fill=T.BLACK, anchor="lm")
+        elif look != "plain":
+            right -= max(6, item_px // 4)
+        d.text((text_x, mid), _shorten(str(item.get("summary") or ""), item_f, max(1, right - text_x)),
+               font=item_f, fill=ink, anchor="lm")
     if more:
-        mid = top + len(shown) * row_h + row_h // 2
-        d.text((x + box + max(10, item_px // 2), mid), f"and {more} more", font=item_f, fill=T.BLACK, anchor="lm")
+        mid = top + n_shown * pitch + row_h // 2
+        d.text((text_x, mid), f"and {more} more", font=item_f, fill=T.BLACK, anchor="lm")
 
 
 def _draw_calendar_agenda(img, d, el, raw_val, display=None):

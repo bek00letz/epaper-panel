@@ -25,6 +25,11 @@
   the list has something on it. Each list is its own page, named after
   the list, so a work list and a chores list rotate, repeat or sit out like
   any other pages. Also under Insert › Widgets.
+- **To-do rows that show what's urgent.** Under Style: By urgency (the
+  start: an overdue item is a solid black row, today's is outlined, the
+  rest plain), Inverted when due (overdue and today solid, the rest
+  outlined), or Outlined (every row outlined). The due label sits inside
+  its row, so it reads as part of the item.
 - **Only what's due today.** A to-do list page can show only what's due
   today or overdue, and then shows only while something is. The add-on
   counts those items for each list on a page, so an alert can use the count

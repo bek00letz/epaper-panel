@@ -79,35 +79,71 @@ def items_for(items, show: str, now: datetime) -> list[dict]:
     return [i for i, _ in with_due] + [i for i, due in dated if due is None]
 
 
-def due_label(item: dict, now: datetime) -> tuple[str, bool]:
-    """The short label for an item's due date, and whether it's urgent
-    (overdue or today), which the page draws inverted. ("", False) for none."""
+def due_label(item: dict, now: datetime) -> tuple[str, str]:
+    """The short label for an item's due date, and how urgent it is:
+    "overdue", "today" or "" (later, or no date). ("", "") for none."""
     due = due_of(item, now)
     if due is None:
-        return "", False
+        return "", ""
     if _overdue(due, now):
-        return "Overdue", True
+        return "Overdue", "overdue"
     day = _day(due)
     if day == now.date():
-        return (f"Today {due:%H:%M}" if isinstance(due, datetime) else "Today"), True
+        return (f"Today {due:%H:%M}" if isinstance(due, datetime) else "Today"), "today"
     if day == now.date() + timedelta(days=1):
-        return "Tomorrow", False
+        return "Tomorrow", ""
     if day < now.date() + timedelta(days=7):
-        return f"{day:%a}", False
-    return f"{day.day} {day:%b}", False
+        return f"{day:%a}", ""
+    return f"{day.day} {day:%b}", ""
 
 
-def fit(count: int, avail_h: int, item_px: int) -> tuple[int, int, int]:
-    """How a list of `count` items fills `avail_h`: (row height, items shown,
-    how many more). When they don't all fit, "and 4 more" takes the last
-    row; with room for only one row, the count in the header says it."""
-    row_h = item_px + max(8, round(item_px * 0.36))
-    rows = max(1, (avail_h - item_px) // row_h + 1)   # the last row needs no space under it
-    if count <= rows:
-        return row_h, count, 0
-    if rows == 1:
-        return row_h, 1, 0
-    return row_h, rows - 1, count - (rows - 1)
+# How rows look (the user's call, 21 Oct). Each row is "invert" (a solid
+# pill, white inside), "outline" (a pill drawn round it) or "plain".
+#   urgency:  overdue inverted, today outlined, the rest plain: loud only where it matters
+#   due:      overdue and today inverted, the rest outlined
+#   outlined: every row outlined
+#   plain:    no pills, labels at the right edge: the first look, kept as the
+#             way back until the pill styles have proven themselves on a panel;
+#             the editor doesn't offer it (the user's call, 21 Oct)
+STYLES = ("urgency", "due", "outlined", "plain")
+DEFAULT_STYLE = "urgency"
+
+
+def style_of(el: dict) -> str:
+    return el.get("style") if el.get("style") in STYLES else DEFAULT_STYLE
+
+
+def row_look(style: str, urgency: str) -> str:
+    if style == "urgency":
+        return {"overdue": "invert", "today": "outline"}.get(urgency, "plain")
+    if style == "due":
+        return "invert" if urgency else "outline"
+    if style == "outlined":
+        return "outline"
+    return "plain"
+
+
+def rows(style: str, item_px: int) -> tuple[int, int]:
+    """(row height, pitch) for a style. Pill rows (every style but plain) are
+    drawn 4/3 of the text tall with a gap, so a row never touches the next;
+    every row keeps that pitch, so nothing moves when an item falls due."""
+    if style == "plain":
+        row_h = item_px + max(8, round(item_px * 0.36))
+        return row_h, row_h
+    row_h = round(item_px * 4 / 3)
+    return row_h, row_h + max(4, round(item_px / 5))
+
+
+def fit(count: int, avail_h: int, row_h: int, pitch: int) -> tuple[int, int]:
+    """How a list of `count` items fills `avail_h`: (items shown, how many
+    more). When they don't all fit, "and 4 more" takes the last row; with
+    room for only one row, the count in the header says it."""
+    n = max(1, (avail_h - row_h) // pitch + 1)         # the last row needs no gap under it
+    if count <= n:
+        return count, 0
+    if n == 1:
+        return 1, 0
+    return n - 1, count - (n - 1)
 
 
 def due_sensor(entity_id: str) -> str:

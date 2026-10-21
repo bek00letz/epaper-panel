@@ -278,6 +278,8 @@ const TYPE_FIELDS = {
   bar_chart: [F.entity("entity", "Sensor"), F.text("title", "Title", "Last 24 hours"), F.num("hours", "Hours", "24", 1, 168), F.num("bars", "Bars", "12", 2, 48), F.on("show_labels", "Lowest and highest", true), F.on("show_border", "Border", false)],
   calendar_month: [F.entity("entity", "Calendar", ["calendar"]), F.sel("first_weekday", "Week starts", [["0", "Monday"], ["6", "Sunday"]], "0"), F.on("show_header", "Month name", true), F.on("show_weekdays", "Weekday names", true), F.on("highlight_today", "Mark today", true), BORDER_ON],
   todo_list: [F.entity("entity", "List", ["todo"]), F.sel("show", "Shows", [["open", "Everything to do"], ["due", "Due today or overdue"]], "open"),
+    // render/todo.STYLES but "plain" (kept as the way back, not offered); the default is todo.DEFAULT_STYLE.
+    F.sel("style", "Style", [["urgency", "By urgency"], ["due", "Inverted when due"], ["outlined", "Outlined"]], "urgency"),
     F.text("title", "Title", "The list's name"),
     { kind: "window", label: (el) => (el.show === "due" ? "Only show when something's due" : "Only show when there's something to do") },
     { kind: "sensorid" }],

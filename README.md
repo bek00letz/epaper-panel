@@ -257,7 +257,8 @@ alerts, quiet hours and **Send to panel** reach it at once.
 shopping list, Local To-do, Google Tasks, Todoist. What's still to do, with
 anything that has a due date first (Overdue and Today stand out), then the
 rest in the list's own order. As many as fit at a readable size, then "and 4
-more". It shows only while the list has something on it; turn that off with
+more". **Style** sets how loud a due item is: By urgency (an overdue item is
+a solid black row, today's is outlined), Inverted when due, or Outlined. It shows only while the list has something on it; turn that off with
 **Only show when there's something to do**. Each list is a page of its own,
 named after the list: a work list and a chores list rotate like any two
 pages, and to keep one up, take the other out of the rotation or hold the
