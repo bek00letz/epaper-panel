@@ -410,6 +410,14 @@ class TestWatchAndListen(unittest.TestCase):
         got = run_js(f"console.log(JSON.stringify(P.rankSensors(P.presetById('tv_week'), {json.dumps(ents)}).map(({{ e }}) => e.entity_id)))")
         self.assertEqual(got, ["calendar.sonarr", "calendar.family"])
 
+    def test_a_rain_total_is_refused_with_its_reason(self):
+        """Framework review #13: a rate or an on/off sensor; a total is refused in the field, plainly."""
+        src = (APP_JS / "inspector.js").read_text()
+        self.assertIn('{ ...F.entity("rain_sensor", "Rain sensor", ["sensor", "binary_sensor"]), check: rainCheck }', src)
+        self.assertIn("if (/\\/\\s*h$/i.test(unit)) return \"\";", src)
+        self.assertIn("so the page would say it's raining all day after a shower. Pick a rain rate, in mm/h or in/h, or a sensor that's on while it rains.", src)
+        self.assertIn('if (why) { s.querySelector(".note.refused")?.remove();', src, "and keeps what it had")
+
     def test_the_inspector_knows_them(self):
         src = (APP_JS / "inspector.js").read_text()
         self.assertIn('now_playing: [F.text("entity", "Players", "All of them")],', src)

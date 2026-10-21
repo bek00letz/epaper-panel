@@ -270,6 +270,15 @@ function replacements(app, el) {
   return wrap;
 }
 
+/* Rain now, not rain so far (sources/station.py): a rate (mm/h, in/h) or a sensor that's on while it
+   rains. A total keeps counting after the shower, so the page would say rain all day. */
+function rainCheck(e) {
+  if (e.entity_id.startsWith("binary_sensor.")) return "";
+  const unit = String(e.unit || "").trim();
+  if (/\/\s*h$/i.test(unit)) return "";
+  return `${e.name || e.entity_id} counts rain so far${unit ? ` (${unit})` : ""}, so the page would say it's raining all day after a shower. Pick a rain rate, in mm/h or in/h, or a sensor that's on while it rains.`;
+}
+
 /* ---------- per-type settings for everything that isn't text ---------- */
 const F = {
   entity: (key, label, domains) => ({ kind: "entity", key, label, domains }),
@@ -300,7 +309,7 @@ const TYPE_FIELDS = {
     // The sky guess is opt-in: only a chosen sunlight sensor turns it on (the user doesn't trust theirs).
     F.entity("now_entity", "Now from", ["weather"]), F.entity("temperature_sensor", "Temperature sensor", ["sensor"]),
     F.entity("humidity_sensor", "Humidity sensor", ["sensor"]), F.entity("wind_sensor", "Wind sensor", ["sensor"]),
-    F.entity("rain_sensor", "Rain sensor", ["sensor", "binary_sensor"]), F.entity("pressure_sensor", "Pressure sensor", ["sensor"]),
+    { ...F.entity("rain_sensor", "Rain sensor", ["sensor", "binary_sensor"]), check: rainCheck }, F.entity("pressure_sensor", "Pressure sensor", ["sensor"]),
     F.entity("solar_sensor", "Guess the sky from sunlight", ["sensor"])],
   sports_racing: [F.sel("series", "Series", SERIES, "f1"), F.entity("entity", "Sensor, if you have one"),
     F.sel("max_drivers", "Leaderboard", [["6", "Top 6, extra large"], ["8", "Top 8, large"], ["10", "Top 10"]], "10"),
@@ -337,6 +346,9 @@ function typeSections(app, el, set, i) {
   for (const f of fields) {
     if (f.when && !f.when(el)) continue;
     if (f.kind === "entity") s.append(field(f.label, entityButton(app, el[f.key], (id) => {
+      // A field that takes only some sensors says plainly why it won't take this one, and keeps what it had.
+      const why = id && f.check ? f.check(app.entMap.get(id) || { entity_id: id }) : "";
+      if (why) { s.querySelector(".note.refused")?.remove(); s.append(h("p", { class: "note warn refused", role: "status" }, icon("info", "sm"), h("span", { text: why }))); return; }
       // A to-do list's page shows by its list: follow it, in the same undo step.
       if (el.type === "todo_list" && app.doc.page().tier === "when") { el[f.key] = id; syncWidgetShowIf(app.doc.page(), el); }
       set(f.key, id);

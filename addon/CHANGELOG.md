@@ -250,6 +250,11 @@
   empty gauge and no number; it shows its sensor's unit, or none, and its
   decimals ("1.8 kW").
 
+- **Weather's rain field takes rain now, not rain so far.** Pick a rain total
+  (mm, in) and it says plainly that the page would then say it's raining
+  all day after a shower, and asks for a rate (mm/h, in/h) or a sensor
+  that's on while it rains.
+
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) for the quiet-hours fix below.
