@@ -443,6 +443,65 @@ class TestThumbnailsHaveValues(unittest.TestCase):
                         self.assertNotIn(got, (None, "", "--", "unknown", "unavailable", [], {}))
 
 
+@unittest.skipUnless(shutil.which("node"), "no node to read the editor's presets")
+class TestDateOnASleepingDevice(unittest.TestCase):
+    """The user's call (21 Oct): on a device that sleeps between updates a clock would stop at its
+    last update and flash at every wake, so Clock is a large Date there."""
+
+    def test_clock_is_a_date_where_the_device_sleeps(self):
+        got = run_js("""const c = P.presetById("clock");
+          console.log(JSON.stringify([P.forDevice(c, true).title, P.forDevice(c, true).looks.map((l) => l.id), P.forDevice(c, false).title,
+            P.PRESETS.filter((p) => p.id !== "clock").every((p) => P.forDevice(p, true) === p)]))""")
+        self.assertEqual(got, ["Date", ["date"], "Clock", True])
+
+    def test_sleeping_is_read_from_the_timers_not_the_kind(self):
+        got = run_js("""console.log(JSON.stringify([{ timing: { always_on: false } }, { timing: { always_on: true } }, { kind: "trmnl", timing: { always_on: false } },
+          { sleeps: true }, {}, null].map(P.sleepsBetweenUpdates)))""")
+        self.assertEqual(got, [True, False, True, True, False, False])
+        self.assertNotIn("trmnl", (APP_JS / "presets.js").read_text().split("export const sleepsBetweenUpdates", 1)[1].split("\n", 1)[0])
+
+    def test_the_date_shows_no_time(self):
+        els = run_js("console.log(JSON.stringify(P.DATE_LOOK.make()))")
+        texts = [e["value"] for e in els if e["type"] == "text"]
+        self.assertEqual(texts, ["{{ now().strftime('%A') }}", "{{ now().strftime('%-d %B %Y') }}"])
+        self.assertFalse(run_js("console.log(JSON.stringify(P.DATE_LOOK.make().some(P.showsTime)))"))
+
+    def test_the_date_fits_at_every_size(self):
+        base = arrange.canvas_key(792, 272)
+        page = {"elements": run_js("console.log(JSON.stringify(P.DATE_LOOK.make()))")}
+        long = {0: "Wednesday", 1: "30 September 2026"}
+        for key, d in T.DISPLAYS.items():
+            if d.get("offered") is False:
+                continue
+            placed = json.loads(json.dumps(page))
+            for el in placed["elements"]:
+                el.update(arrange.auto_box(el, base, arrange.canvas_key(d["w"], d["h"])))
+            metrics = []
+            layout.render_page(placed, long, metrics=metrics, display=key)
+            with self.subTest(display=key):
+                self.assertEqual([m for m in metrics if m.get("overflow")], [])
+
+    def test_a_clock_page_turns_into_the_date_where_it_was(self):
+        got = run_js("""const clock = P.presetById("clock").looks[0].make().map((e, k) => ({ ...e, id: "e" + k }));
+          const small = P.fitToCanvas(clock, { W: 400, H: 300, safeH: 268, portrait: false });
+          const mixed = [{ type: "text", id: "t", value: "{{ now().strftime('%I:%M %p') }}" }, { type: "number", id: "n", entity: "sensor.x" }];
+          console.log(JSON.stringify([P.dateInstead(clock), P.dateInstead(small), P.dateInstead(mixed), P.clockPages({ a: { elements: clock }, b: { elements: mixed }, c: { elements: [] } })]))""")
+        full, small, mixed, pages = got
+        self.assertEqual([e["id"] for e in full], ["e0", "e1", "e2"], "each part keeps its ID, so its other sizes stay")
+        self.assertEqual(full, [{**e, "id": f"e{k}"} for k, e in enumerate(run_js("console.log(JSON.stringify(P.DATE_LOOK.make()))"))])
+        self.assertTrue(all(e["x"] + e["w"] <= 400 and e["y"] + e["h"] <= 268 for e in small), "a clock fitted to a 4.2\" stays on it")
+        self.assertEqual(mixed, [{"type": "text", "id": "t", "value": "{{ now().strftime('%-d %B') }}"}, {"type": "number", "id": "n", "entity": "sensor.x"}])
+        self.assertEqual(pages, ["a", "b"])
+
+    def test_new_page_and_switching_to_sleep_use_it(self):
+        self.assertIn("const PRESETS = ALL_PRESETS.map((p) => forDevice(p, sleepsBetweenUpdates(app.screen)));", (APP_JS / "newpage.js").read_text())
+        src = (APP_JS / "sheets.js").read_text()
+        self.assertIn("if (!wasAsleep && sleepsBetweenUpdates(now) && offerTheDate(app, now)) return;", src, "only when it starts sleeping")
+        self.assertIn('label: "Show the date"', src)
+        self.assertIn('{ label: "Undo", run: () => doc.undo() }', src.split("function offerTheDate", 1)[1])
+        self.assertIn("changeTimers(app, scr,", (APP_JS / "screenbar.js").read_text(), "the screen bar goes through the same function")
+
+
 class TestTheSheet(unittest.TestCase):
     """New page's wiring and look, pinned in its source."""
 

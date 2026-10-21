@@ -320,6 +320,45 @@ export function playingShowIf(entity) {
   return `{{ ${which} | selectattr('state', 'eq', 'playing') | list | count > 0 }}`;
 }
 
+/* A device that sleeps between updates (Update every 2 minutes or more, a
+   TRMNL) shows what it got at its last update, so a clock there would stop
+   at that time, and changing at every wake it would download and flash each
+   time. There the Clock preset is a large Date instead (the user's call,
+   21 Oct); the footer says "updated HH:MM" for the same reason. Read from the
+   device's timers (timing.py), never its kind. */
+export const sleepsBetweenUpdates = (screen) => (screen?.timing ? !screen.timing.always_on : !!screen?.sleeps);
+export const DATE_LOOK = { id: "date", name: "Date", make: () => [
+  { type: "text", value: "{{ now().strftime('%A') }}", size: 96, bold: true, x: 40, y: 24, w: 560, h: 120, align: "left" },
+  { type: "text", value: "{{ now().strftime('%-d %B %Y') }}", size: 40, bold: false, x: 44, y: 152, w: 560, h: 52, align: "left" },
+  { type: "icon", icon: "mdi:calendar-today", x: 620, y: 40, w: 120, h: 120 },
+] };
+export function forDevice(p, sleeps) {
+  if (p.id !== "clock" || !sleeps) return p;
+  return { ...p, title: "Date", kw: `${p.kw} clock day weekday`, looks: [DATE_LOOK],
+    desc: "Today's weekday and date, large. This device sleeps between updates, so a clock would stop at the time of its last one." };
+}
+
+/* A clock on a page: a text whose template shows the time of day. */
+const TIME = /now\(\)[^}]*strftime\([^)]*%-?[HIklMp]/;
+export const showsTime = (el) => el?.type === "text" && TIME.test(String(el.value || ""));
+export const clockPages = (pages) => Object.keys(pages || {}).filter((n) => (pages[n].elements || []).some(showsTime));
+/* The date instead: a page made from the Clock preset becomes the Date
+   look, in the same place on the canvas; elsewhere a clock's text shows the
+   day and month. Returns the elements, ready to replace the page's. */
+export function dateInstead(elements) {
+  const clockish = elements.every((e) => showsTime(e) || (e.type === "text" && /strftime/.test(String(e.value || ""))) || (e.type === "icon" && /clock/.test(String(e.icon || ""))));
+  if (clockish && elements.some(showsTime)) {
+    const made = DATE_LOOK.make();
+    const time = elements.find(showsTime), base = presetById("clock").looks[0].make()[0];
+    const s = time.w / base.w || 1, ox = time.x - base.x * s, oy = time.y - base.y * s;   // where the clock was put, and how big
+    // Each keeps the ID of the part it replaces, so its places on other sizes stay its own.
+    const was = [time, elements.find((e) => e !== time && e.type === "text"), elements.find((e) => e.type === "icon")];
+    return made.map((e, k) => ({ ...e, ...(was[k]?.id ? { id: was[k].id } : {}), x: Math.round(e.x * s + ox), y: Math.round(e.y * s + oy), w: Math.round(e.w * s), h: Math.round(e.h * s),
+      ...(e.size ? { size: Math.max(8, Math.round(e.size * s)) } : {}) }));
+  }
+  return elements.map((e) => (showsTime(e) ? { ...e, value: "{{ now().strftime('%-d %B') }}" } : e));
+}
+
 export const presetById = (id) => PRESETS.find((p) => p.id === id);
 export const groupName = (id) => (GROUPS.find(([g]) => g === id) || [id, id])[1];
 export const lookOf = (p, i = 0) => p.looks[Math.min(Math.max(0, i | 0), p.looks.length - 1)];

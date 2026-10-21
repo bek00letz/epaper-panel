@@ -8,7 +8,7 @@ import { h, icon, api, clone, slug, prefs } from "./util.js";
 import { sheet, toast } from "./ui.js";
 import { syncDynamicGridShowIf } from "./conditions.js";
 import { reflowPageElements } from "./legacy.js";
-import { PRESETS, GROUPS, lookOf, pageFor, examplePage, pageName, search, rankSensors, fitToCanvas } from "./presets.js";
+import { PRESETS as ALL_PRESETS, GROUPS, forDevice, sleepsBetweenUpdates, lookOf, pageFor, examplePage, pageName, search, rankSensors, fitToCanvas } from "./presets.js";
 import { thumbnail } from "./strip.js";
 import { setupStep } from "./setup.js";
 
@@ -31,6 +31,8 @@ function thumb(app, key, page, { example = false, fit = true, cls = "" } = {}) {
 
 export function openPresets(app) {
   const g = app.geometry();
+  // What this device can show well: a Date, not a Clock, on one that sleeps between updates.
+  const PRESETS = ALL_PRESETS.map((p) => forDevice(p, sleepsBetweenUpdates(app.screen)));
   const tall = g.W / g.H < 1;
   let query = "", step = null;
 
@@ -123,7 +125,7 @@ export function openPresets(app) {
     }
     function drawResults() {
       const s = query.trim().toLowerCase();
-      const hits = search(s);
+      const hits = search(s, PRESETS);
       const mine = yours().map((cp, k) => [cp, k]).filter(([cp]) => `${cp.title || cp.name} ${cp.desc || ""}`.toLowerCase().includes(s));
       const n = hits.length + mine.length;
       results.replaceChildren(n

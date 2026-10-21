@@ -185,6 +185,15 @@
 - **Fixed:** New page showed the word "null" above the shelves when you had
   no presets of your own, and in an energy preset's step.
 
+- **A large Date instead of a Clock on a device that sleeps.** A device
+  that sleeps between updates (Update every 2 minutes or more, and every
+  TRMNL) shows what it got at its last update, so a clock there would stop
+  at that time, and changing at every wake it would download and flash each
+  time. New page offers Date there instead: the weekday, large, and the
+  date. Switch a device with a clock page to sleeping and the editor says
+  why the time won't keep up, and offers to show the date (Undo puts the
+  clock back). Back to always on, a clock stays as it is.
+
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) for the quiet-hours fix below.

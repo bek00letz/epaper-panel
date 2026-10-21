@@ -7,7 +7,7 @@ import { sheet, popover, field, input, number, select, seg, toggle, toggleRow, s
 import { DISPLAYS, isWidget } from "./elements.js";
 import { describe, parseShowIf, syncDynamicGridShowIf } from "./conditions.js";
 import { reflowPageElements } from "./legacy.js";
-import { LOOKS as PRESETS } from "./presets.js";
+import { LOOKS as PRESETS, sleepsBetweenUpdates, clockPages, dateInstead } from "./presets.js";
 import { thumbnail, statusSummary } from "./strip.js";
 
 const thumbImg = (app, key, page) => {
@@ -555,11 +555,31 @@ async function panelPane(app, pane, show) {
 /* The one way the editor changes a screen's timers: Settings › Device and the screen bar both use it. */
 export async function changeTimers(app, scr, body, said) {
   try {
+    const wasAsleep = sleepsBetweenUpdates(scr);
     const r = (await api(`api/devices/${encodeURIComponent(scr.id)}`, { method: "PATCH", body })).body;
     app.applyScreens(r);
     app.refresh();                                     // the inspector, the strip and the bar say how pages turn
+    const now = (r.devices || []).find((d) => d.id === scr.id) || app.screen;
+    if (!wasAsleep && sleepsBetweenUpdates(now) && offerTheDate(app, now)) return;
     toast(r.note || said);
   } catch (e) { toast(`Couldn't change it: ${e.message}`); }
+}
+
+/* A device that starts sleeping between updates can't keep a clock: it
+   would stop at the time of its last update. Say so, and offer the date in
+   its place (one undo puts the clock back). Back to always on, a clock is
+   fine, so nothing changes then. */
+function offerTheDate(app, scr) {
+  const doc = app.doc, pages = clockPages(doc.spec.pages);
+  if (!pages.length) return false;
+  const which = pages.length === 1 ? pageTitle(pages[0]) : `${pages.length} pages`;
+  toast(`${scr.name || "This device"} sleeps between updates now, so a clock would stop at the time of its last update. ${which} can show the date instead.`, {
+    label: "Show the date", run: () => {
+      pages.forEach((n) => { doc.spec.pages[n].elements = dateInstead(doc.spec.pages[n].elements || []); });
+      doc.commit();
+      toast(pages.length === 1 ? `${which} shows the date now.` : `Those pages show the date now.`, { label: "Undo", run: () => doc.undo() });
+    } });
+  return true;
 }
 export const updateLabel = (m) => (m === 1 ? "1 minute · always on" : span(m));
 export const updateSaid = (m) => (m === 1 ? "It's always on." : `It updates every ${span(m)} from its next update.`);
