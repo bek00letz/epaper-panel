@@ -10,6 +10,7 @@ import { explodeWidget, getWidgetSensorId, suggestIconForEntity } from "./legacy
 import { dateEditor, binsEditor } from "./countdown.js";
 import { zonesEditor } from "./zones.js";
 import { staleNote, changesEvery, pageChangesEvery, sleepsBetweenUpdates } from "./presets.js";
+import { busyNote, leftOutNote } from "./busyday.js";
 import { widget, leagueOptions, seriesOptions, sportWord, stateWords } from "./catalog.js";
 import { FROM, CLOCK_FORMATS, sourceOf, switchSource, isTemplate } from "./shows.js";
 import { isFollowing, startFollowing, stopFollowing, setEntity, addState, removeState, setStateIcon, setStateLook, suggestions, wordFor,
@@ -106,6 +107,7 @@ function element(app, head, body, el, i) {
   if (el._auto) body.append(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: `Placed automatically for ${app.screen?.name || "this device"}. Move or resize it and this device keeps its own place for it.` })));
   const stale = staleNote(changesEvery(el, app.entMap), app.screen);
   if (stale) body.append(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: stale })));
+  if (widget(el.type)?.sub_items) body.append(leftOutNote(app, doc.cur));   // its page's items left out to fit
   // A device that sleeps draws the date where the time would be; the renderer says which elements
   // it changed (render/clocktime.py, the one place that knows what shows the time).
   const asleep = app.canvas.metrics.find((x) => x.i === i);
@@ -454,13 +456,15 @@ function typeSections(app, el, set, i) {
     }, { domains: f.domains, allowNone: true })));
     else if (f.kind === "text") s.append(field(f.label, input(el[f.key], (v) => set(f.key, v), { placeholder: f.ph || "" })));
     else if (f.kind === "num") s.append(field(f.label, number(el[f.key], (v) => set(f.key, v), { placeholder: f.ph || "", min: f.min, max: f.max, step: f.step })));
-    else if (f.kind === "sel") s.append(field(f.label, select(f.options, el[f.key] ?? f.def, (v) => {
+    else if (f.kind === "sel") { s.append(field(f.label, select(f.options, el[f.key] ?? f.def, (v) => {
       // What a to-do list shows is what its page shows by: follow it, in the same undo step.
       if (el.type === "todo_list" && app.doc.page().tier === "when") { el[f.key] = v; syncWidgetShowIf(app.doc.page(), el); }
       const num = /^(first_weekday|max_events|forecast_days|max_drivers)$/.test(f.key);
       set(f.key, num ? Number(v) : v);
       if ((f.key === "league" || f.key === "series") && app.doc.page().tier === "when") { syncWidgetShowIf(app.doc.page(), el); app.doc.commit(); }
     })));
+      if (f.key === "league") s.append(busyNote(app, app.doc.spec));   // could a busy day pass what the device holds (busyday.js)
+    }
     else if (f.kind === "toggle") s.append(toggleRow(f.label, f.def ? el[f.key] !== false : !!el[f.key], (v) => set(f.key, f.def ? (v ? "" : false) : (v ? true : ""))));
     else if (f.kind === "window") s.append(toggleRow(typeof f.label === "function" ? f.label(el) : f.label, app.doc.page().tier === "when", (v) => {
       const p = app.doc.page();
@@ -672,6 +676,7 @@ function page(app, head, body) {
   // What changes faster than a sleeping device updates is noted, never hidden (presets.staleNote).
   const stale = staleNote(pageChangesEvery(p.elements, app.entMap), app.screen);
   if (stale) body.append(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: stale })));
+  body.append(leftOutNote(app, cur));         // what the panel left out of it to fit, while it does
 
   const tier = p.tier || "rotate";
   const when = section("Shows", seg([["rotate", "Always"], ["when", "Only when"], ["alert", "As an alert"]], tier, (v) => app.setTier(v), "When this page shows"));

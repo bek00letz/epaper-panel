@@ -100,6 +100,12 @@ class Kind:
         wakes (paging.py): anything but always on. Its Update every says, never its kind."""
         return timing.sleeps(dev, **self.timers)
 
+    def room(self, dev: dict) -> tuple[int, int] | None:
+        """(bytes a page takes, bytes it holds) for a screen that keeps its whole rotation in its own
+        memory and can run out of room (an always-on CrowPanel); None for one that fetches a page
+        at a time, which never does."""
+        return None
+
     async def switched(self, old: dict, dev: dict) -> str | None:
         """The screen started or stopped sleeping between updates (`sleeps`). What the editor should
         say about when that takes effect, or None."""

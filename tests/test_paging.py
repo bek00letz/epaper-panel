@@ -49,6 +49,22 @@ class TestTheCursor(unittest.TestCase):
         self.assertEqual(paging.step(plans, {"pos": 5, "name": "c", "item": 0}, False), (2, 1), "found by name")
         self.assertEqual(paging.step(plans, {"pos": 1, "name": "gone", "item": 0}, False), (0, 0))
 
+    def test_only_what_a_wake_can_reach_is_drawn_ahead(self):
+        # A Scores page with 80 games: not 80 pictures a minute, only what the next wakes can ask for.
+        plans = [{"name": "cfb", "want": 80}, {"name": "b", "want": 1}, {"name": "c", "want": 3}]
+        got = paging.reachable(plans, {"pos": 0, "name": "cfb", "item": 5}, steps=2)
+        self.assertEqual(got, [(0, 0), (0, 1), (0, 5), (0, 6), (0, 7), (1, 0), (2, 0), (2, 1)])
+        self.assertEqual(paging.reachable(plans, {"pos": 2, "name": "c", "item": 2}, steps=2),
+                         [(0, 0), (0, 1), (1, 0), (2, 0), (2, 1), (2, 2)], "round again from the end")
+        self.assertEqual(paging.reachable([], {}, 2), [])
+
+    def test_steps_ahead_cover_the_wakes_a_cycle_spans(self):
+        dev = {"id": "9", "kind": "crowpanel", "update_minutes": 2}
+        self.assertEqual(paging.steps_ahead(dev), 2, "a cycle a minute, a wake every two")
+        with mock.patch.object(config, "REFRESH", 600):
+            self.assertEqual(paging.steps_ahead(dev), 6, "ten minutes between cycles: five wakes")
+            self.assertEqual(paging.steps_ahead({**dev, "rotate_updates": 3}), 3)
+
     def test_the_day_joins_the_time_once_it_is_not_today(self):
         now = datetime(2026, 10, 20, 9, 0)
         self.assertEqual(paging.updated_label(datetime(2026, 10, 20, 8, 5), now), "updated 08:05")

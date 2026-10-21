@@ -6,6 +6,7 @@ import asyncio
 import os
 import sys
 import unittest
+import unittest.mock
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -86,8 +87,86 @@ class TestFitThePanel(unittest.TestCase):
     def test_what_was_left_out_is_recorded(self):
         plans = [{"name": "sport", "want": 6}, {"name": "cat", "want": 1}]
         fit = frames.record_fit(plans, [2, 1], 1 << 20)
-        self.assertEqual(fit["trimmed"], [{"page": "sport", "shown": 2, "of": 6}])
+        self.assertEqual(fit["trimmed"], [{"page": "sport", "shown": 2, "of": 6, "items": "items"}])
         self.assertEqual((fit["pages_shown"], fit["pages_wanted"]), (3, 7))
+
+    def test_what_was_left_out_is_said_in_the_pages_own_words(self):
+        # "Showing 14 of 23 games" on its tile: never a Premier League match called a game.
+        def plan(sub_type, *els, feed=None):
+            return {"name": "p", "want": 9, "sub_type": sub_type, "elements": list(els), "feed_entity": feed}
+        self.assertEqual(frames.items_word(plan("sports", {"type": "sports_match", "league": "basketball/nba"})), "games")
+        self.assertEqual(frames.items_word(plan("sports", {"type": "sports_match", "league": "epl"})), "matches")
+        self.assertEqual(frames.items_word(plan("flight", {"type": "flight_tracker"})), "planes")
+        self.assertEqual(frames.items_word(plan("media", {"type": "now_playing"})), "players")
+        with unittest.mock.patch.object(feeds, "load", lambda _: [{"type": "jellyfin", "name": "Watch"}]):
+            self.assertEqual(frames.items_word(plan("feed", {"type": "text"}, feed="sensor.epaper_watch")), "titles")
+            self.assertEqual(frames.items_word(plan("feed", {"type": "text"}, feed="sensor.epaper_news")), "items")
+
+
+def _scores(league, team=""):
+    return {"elements": [{"type": "sports_match", "league": league, "team": team}]}
+
+
+TWO_MB = 2 * 1024 * 1024
+PLAIN = {"elements": [{"type": "text", "value": "Hi"}]}
+
+
+class TestBusyDay(unittest.TestCase):
+    """The editor's line while setting up Scores: could the leagues' busiest day outgrow the panel?"""
+
+    def test_what_a_page_can_have_at_once(self):
+        self.assertEqual(subitems.busiest(_scores("basketball/nba")), 15)
+        self.assertEqual(subitems.busiest(_scores("premier_league")), 10, "an alias, as a page may say it")
+        self.assertEqual(subitems.busiest({"elements": [{"type": "sports_match", "league": "nba",
+                                                         "entity": "sensor.team_tracker"}]}), 1, "a Team Tracker sensor is one game")
+        self.assertEqual(subitems.busiest(_scores("soccer/xyz.9")), 1, "a league it doesn't know promises nothing")
+        self.assertEqual(subitems.busiest({"elements": [{"type": "flight_tracker"}]}), 5)
+        self.assertEqual(subitems.busiest({"elements": [{"type": "text", "entity": "sensor.epaper_watch"}]}), 5)
+        self.assertEqual(subitems.busiest(PLAIN), 1)
+
+    def test_three_leagues_can_outgrow_a_579(self):
+        spec = {"pages": {"weather": PLAIN, "calendar": PLAIN, "pl": _scores("soccer/eng.1"),
+                          "nba": _scores("basketball/nba"), "cfb": _scores("football/college-football")},
+                "rotation": ["weather", "calendar", "pl", "nba", "cfb"]}
+        got = frames.busy_day(spec, PAGE_579, TWO_MB)["scores"]
+        # 76 pages fit besides the sleep screen; weather and the calendar take two.
+        self.assertEqual(got, {"busiest": 105, "room": 74, "teams": False, "leagues": 3})
+
+    def test_nothing_to_say_when_a_busy_day_fits(self):
+        spec = {"pages": {"weather": PLAIN, "pl": _scores("soccer/eng.1", "Arsenal"), "nba": _scores("basketball/nba", "Celtics")},
+                "rotation": ["weather", "pl", "nba"]}
+        self.assertEqual(frames.busy_day(spec, PAGE_579, TWO_MB)["scores"], {"busiest": 25, "room": 25, "teams": True, "leagues": 2})
+
+    def test_a_page_twice_counts_twice_and_alerts_not_at_all(self):
+        spec = {"pages": {"nba": _scores("basketball/nba"), "goal": {**_scores("soccer/eng.1"), "tier": "alert"}},
+                "rotation": ["nba", "nba", "goal", "gone"]}
+        self.assertEqual(frames.busy_day(spec, PAGE_579, TWO_MB)["scores"]["busiest"], 30)
+
+    def test_no_scores_page_no_line(self):
+        self.assertIsNone(frames.busy_day({"pages": {"a": PLAIN}, "rotation": ["a"]}, PAGE_579, TWO_MB)["scores"])
+
+
+class TestBusyDayForTheEditor(Base):
+    async def test_only_an_always_on_panel_can_run_out(self):
+        _, editor = web.make_apps()
+        body = {"pages": {"cfb": _scores("football/college-football")}, "rotation": ["cfb"]}
+        runtime.set_panel_capacity(self.dev_id, TWO_MB)
+        async with TestClient(TestServer(editor)) as c:
+            got = await (await c.post("/api/busy_day", json=body)).json()
+            self.assertEqual(got["scores"], {"busiest": 80, "room": 76, "teams": False, "leagues": 1})
+            devices.update(self.dev_id, update_minutes=10)       # it sleeps between updates: a page a wake
+            self.addCleanup(devices.update, self.dev_id, update_minutes=None)
+            self.assertIsNone((await (await c.post("/api/busy_day", json=body)).json())["scores"])
+
+    async def test_what_was_left_out_reaches_the_editor_only_while_always_on(self):
+        _, editor = web.make_apps()
+        runtime.device(self.dev_id).fit = {"trimmed": [{"page": "nba", "shown": 14, "of": 23, "items": "games"}]}
+        async with TestClient(TestServer(editor)) as c:
+            got = await (await c.get("/api/status")).json()
+            self.assertEqual(got["fit"]["trimmed"][0]["items"], "games")
+            devices.update(self.dev_id, update_minutes=10)
+            self.addCleanup(devices.update, self.dev_id, update_minutes=None)
+            self.assertIsNone((await (await c.get("/api/status")).json())["fit"])
 
 
 class TestPanelCapacity(Base):

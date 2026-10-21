@@ -6,6 +6,7 @@
 import { h, icon, api, pageTitle, span, seconds } from "./util.js";
 import { describe, parseShowIf, evaluate } from "./conditions.js";
 import { slider } from "./slider.js";
+import { leftOut, leftOutShort } from "./busyday.js";
 
 /* Thumbnails come from the same renderer as everything else, one at a time,
    cached by what the page contains. */
@@ -162,6 +163,9 @@ function tile(app, n, { again, out, slot, pend }) {
     if (!showing) dim = true;
   }
   if (p.tier === "alert") { sub = p.ends === "until" ? "Alert · until something happens" : `Alert · holds ${p.hold_minutes || 10} min`; badge = h("span", { class: "badge alert", text: "alert" }); }
+  // Games (or planes) left out to fit an always-on panel: "Showing 14 of 23 games" (busyday.js).
+  const cut = leftOut(app, n);
+  if (cut) sub = leftOutShort(cut);
   if (again) sub = "Again";
   if (out) sub = "Not in rotation";
   // Not sent yet: an orange ring and dot, and what's waiting in the line under it (on its first tile).

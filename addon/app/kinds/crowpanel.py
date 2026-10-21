@@ -156,6 +156,10 @@ class CrowPanel(Kind):
             rt.link = PanelLink(runtime.HASS, preferred, sole=only_panel, ha_name=ha_name)
         return rt.link
 
+    def room(self, dev):
+        # Asleep between updates it fetches one page a wake (paging.py), so it never runs out.
+        return None if self.sleeps(dev) else _memory(dev)
+
     async def render(self, session, dev, spec, st, quiet_active, quiet_reason) -> runtime.Frames:
         orient = int(spec.get("orientation") or 0)
         if orient not in (0, 90, 180, 270):
@@ -193,8 +197,8 @@ class CrowPanel(Kind):
         # item; extra items are shared out fairly; the rest are left out, and
         # said so (DeviceRuntime.fit, /api/status, sensor.epaper_panel_pages).
         plans = st.plans
-        capacity = runtime.panel_capacity(dev["id"])
-        counts = frames.fit_counts([p["want"] for p in plans], page_bytes=((dw + 7) // 8) * dh,
+        page_bytes, capacity = _memory(dev, display)
+        counts = frames.fit_counts([p["want"] for p in plans], page_bytes=page_bytes,
                                    capacity=capacity, extra_pages=0 if alert else 1)
         rt.fit = frames.record_fit(plans, counts, capacity, rt.fit, dev.get("name") or "the panel")
 
@@ -290,6 +294,12 @@ class CrowPanel(Kind):
         )
         return _frames(frames._png(strip), slice_pngs[0], slice_pngs, live, cat_offsets, cat_sizes, cat_names,
                        cat_pill_widths, rot_sec, cat_ids, sub_ids, epf_data, epf.extract_page_epf(epf_data, 0))
+
+
+def _memory(dev: dict, display: str | None = None) -> tuple[int, int]:
+    """(bytes a page takes, bytes the panel holds): what it says on each download (?cap=), at its size."""
+    dw, dh = T.panel_dims(display or dev.get("display") or T.DEFAULT_DISPLAY)
+    return ((dw + 7) // 8) * dh, runtime.panel_capacity(dev["id"])
 
 
 def _frames(strip, single, slices, names, cat_offsets, cat_sizes, cat_names, cat_pill_widths, rot_sec,

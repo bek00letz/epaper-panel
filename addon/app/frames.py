@@ -11,7 +11,9 @@ from email.utils import formatdate
 from render import binding, countdown, epf, layout, sleep, stripmeta, subitems, theme as T, todo
 import cadence
 import conditions
+import config
 import devices
+import feeds
 import health
 import kinds
 import runtime
@@ -174,16 +176,52 @@ def fit_counts(wants: list[int], page_bytes: int, capacity: int, extra_pages: in
     return counts
 
 
+def items_word(plan: dict) -> str:
+    """What a page's items are called, in its own words: games or matches (its league's sport),
+    planes, players, titles (widgets.py's items_word, feeds.ITEM_WORDS); "items" otherwise."""
+    for el in plan.get("elements") or []:
+        if isinstance(el, dict) and el.get("type") in subitems.WIDGET_WORDS \
+                and subitems.WIDGET_ITEMS[el["type"]][1] == plan.get("sub_type"):
+            return subitems.WIDGET_WORDS[el["type"]](el)
+    if plan.get("feed_entity"):
+        return feeds.items_word(plan["feed_entity"], feeds.load(config.DATA_DIR))
+    return "items"
+
+
 def record_fit(plans: list[dict], counts: list[int], capacity: int, previous: dict | None = None,
                device_name: str = "the panel") -> dict:
-    """What was left out to fit a panel, for the editor and Home Assistant."""
-    trimmed = [{"page": p["name"], "shown": c, "of": p["want"]} for p, c in zip(plans, counts) if c < p["want"]]
+    """What was left out to fit a panel, for the editor (each page's tile and inspector say it, in
+    its own words) and Home Assistant."""
+    trimmed = [{"page": p["name"], "shown": c, "of": p["want"], "items": items_word(p)}
+               for p, c in zip(plans, counts) if c < p["want"]]
     fit = {"capacity": capacity, "pages_shown": sum(counts),
            "pages_wanted": sum(p["want"] for p in plans), "trimmed": trimmed}
     if trimmed and fit["trimmed"] != (previous or {}).get("trimmed"):
         what = ", ".join(f"{t['page']} {t['shown']} of {t['of']}" for t in trimmed)
         print(f"frames: {device_name} holds {fit['pages_shown']} of {fit['pages_wanted']} pages; showing {what}", flush=True)
     return fit
+
+
+def busy_day(spec: dict, page_bytes: int, capacity: int) -> dict:
+    """How a design's rotation fits a panel on a busy day, when every page has the most items it
+    can (subitems.busiest: a league's busiest day, five planes), shared out as a render would
+    (fit_counts). For the editor's line while setting up Scores: {"scores": {"busiest", "room",
+    "teams", "leagues"}}, the games its Scores pages can have, how many of them the panel has room
+    for, whether every one has a team picked, and how many leagues; None with no Scores page."""
+    pages = spec.get("pages") or {}
+    rotation = [n for n in spec.get("rotation") or [] if isinstance(pages.get(n), dict)
+                and pages[n].get("tier") != "alert"]
+    wants = [subitems.busiest(pages[n]) for n in rotation]
+    counts = fit_counts(wants, page_bytes=page_bytes, capacity=capacity)
+    scores = [(n, w, c) for n, w, c in zip(rotation, wants, counts)
+              if any(isinstance(el, dict) and el.get("type") == "sports_match" for el in pages[n].get("elements") or [])]
+    if not scores:
+        return {"scores": None}
+    els = [el for n, _, _ in scores for el in pages[n].get("elements") or []
+           if isinstance(el, dict) and el.get("type") == "sports_match"]
+    return {"scores": {"busiest": sum(w for _, w, _ in scores), "room": sum(c for _, _, c in scores),
+                       "teams": all(str(el.get("team") or el.get("entity") or "").strip() for el in els),
+                       "leagues": len({str(el.get("league") or "") for el in els})}}
 
 
 def split_page_values(page):

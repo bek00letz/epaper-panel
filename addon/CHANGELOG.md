@@ -6,6 +6,25 @@
   ("HTTP 404" in its log, and its problem sensor), because next year's F1
   and Formula E calendars aren't published yet. A missing next year is now a
   normal answer; this year's calendar was never affected.
+- **A Scores page shows every game of the day,** not just six: your teams
+  first, then live, upcoming and finished. On a busy day an always-on panel
+  can run out of room; it then keeps the most important games.
+- **A device that sleeps draws only what it can show next.** Each minute the
+  add-on drew every item of every page for it; now it draws the page it's
+  on, the next few, and the first of each page (where a button press goes).
+  A busy Scores day costs the add-on a few pictures a minute, not 80.
+- **Setting up Scores says when a busy day won't all fit.** On a device that's
+  always on, picking a league (in New page, or under League in the
+  inspector) shows a line when your leagues' busiest day, with your other
+  pages, could have more games than the device holds: "On a busy day your
+  leagues can have a lot of scores, and Kitchen can only show about 25 of
+  them." Nothing shows when it all fits, or on a device that sleeps between
+  updates or a TRMNL, which have no such limit.
+- **A page that's cut short says so.** When an always-on device can't hold
+  every game, its Scores page's tile says "Showing 14 of 23 games" (or
+  matches, in football's word), and its inspector says which come first.
+  Planes, Now playing and New to watch say it the same way, in their own
+  words. It goes away by itself once everything fits again.
 
 ## 0.18.0
 **Firmware change:** install the panel again (Settings › Install or update,

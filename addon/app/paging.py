@@ -6,8 +6,10 @@ updates every 2 minutes or more (timing.py). The kind keeps only its protocol
 are worked out here.
 
 - **Drawn ahead** (`draw_ahead`, from the kind's `render` in every render
-  cycle). Everything the screen can fetch at its next wakes: every item of
-  every live page, the empty page, and the sleep screen. A page says
+  cycle). Everything the screen can fetch at its next wakes, and nothing
+  more (`reachable`): the item it's on and the next few, the first few of
+  every page (a press goes to the next page), the empty page and the sleep
+  screen. Not every item: a Scores page can have 80 games. A page says
   "updated" when it last changed, not when the screen woke (`steady`), so an
   unchanged page keeps its picture and the screen neither downloads nor
   flashes. Quiet hours, presence included, come from the cycle.
@@ -150,17 +152,43 @@ async def draw_ahead(dev: dict, spec: dict, st, quiet: bool, reason: str, art: A
 
     if not st.live or not plans:
         await keep(EMPTY_KEY, lambda: steady(dev, EMPTY_KEY, now, lambda clock: art.empty(dev, spec, clock)))
-    for pos, plan in enumerate(plans):
-        for item in range(max(1, plan["want"])):
-            key = page_key(plan["name"], item)
-            if key in pictures:
-                continue                              # a page twice in the rotation is one picture
-            await keep(key, lambda pos=pos, item=item, key=key: steady(
-                dev, key, now, lambda clock: art.page(dev, spec, st, plans, pos, item, clock)))
+    for pos, item in reachable(plans, devices.state(dev["id"]).get("cursor") or {}, steps_ahead(dev)):
+        key = page_key(plans[pos]["name"], item)
+        if key in pictures:
+            continue                                  # a page twice in the rotation is one picture
+        await keep(key, lambda pos=pos, item=item, key=key: steady(
+            dev, key, now, lambda clock: art.page(dev, spec, st, plans, pos, item, clock)))
 
     ahead = Ahead(T.get_display(spec.get("display"))["id"], spec, st, quiet, reason, pictures)
     runtime.device(dev["id"]).kind["ahead"] = ahead       # whole, at once: a wake never sees half a cycle
     return ahead
+
+
+def steps_ahead(dev: dict) -> int:
+    """How many items the cursor can move on before the next cycle draws again: one per Rotate
+    every, for each wake a cycle can span (Update every is 2 minutes or more; the cycle a minute,
+    or REFRESH_SECONDS), and one to spare. A wake that finds nothing drawn still gets its page
+    (`wake`, logged), so this only has to be right in the usual case."""
+    import config
+    wakes = -(-max(60, config.REFRESH) // update_seconds(dev))
+    return max(2, -(-wakes // rotate_updates(dev)) + 1)
+
+
+def reachable(plans: list[dict], cursor: dict, steps: int) -> list[tuple[int, int]]:
+    """(page position, item) of every picture a wake can ask for before the next cycle: where the
+    cursor is and `steps` timer steps on from it, and the first `steps` items of every page, which
+    a press reaches (it goes to the next page). In rotation order, each once."""
+    if not plans:
+        return []
+    out = {(pos, item) for pos, p in enumerate(plans) for item in range(min(steps, max(1, p["want"])))}
+    at = here(plans, cursor)
+    out.add(at)
+    walk = {"pos": at[0], "name": plans[at[0]]["name"], "item": at[1]}
+    for _ in range(steps):
+        pos, item = step(plans, walk, by_page=False)
+        out.add((pos, item))
+        walk = {"pos": pos, "name": plans[pos]["name"], "item": item}
+    return sorted(out)
 
 
 # ---------------------------------------------------------------- "updated" is when the page last changed

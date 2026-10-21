@@ -18,6 +18,7 @@ import { CATEGORY_TERMS } from "./legacy.js";
 import { unitsRows } from "./units.js";
 import { Glyphs } from "./glyphs.js";
 import { renderScreenBar } from "./screenbar.js";
+import { refreshLeftOut } from "./busyday.js";
 
 const ZOOM_STEPS = [0.75, 1, 1.25, 1.5, 2];
 const ZOOM_MIN = 0.5, ZOOM_MAX = 3;                  // a pinch can go a little past the steps
@@ -216,6 +217,7 @@ class App {
   async poll() {
     try { this.status = (await api("api/status")).body; } catch (_) { this.status = this.status || {}; }
     this.renderStrip();
+    refreshLeftOut(this);
   }
   async loadDevice() {
     try { this.device = (await api("api/panel-device")).body; } catch (_) { this.device = null; }

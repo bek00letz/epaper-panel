@@ -111,6 +111,16 @@ def interval_of(src: dict) -> float:
         return float(INTERVALS.get(src.get("type"), 120))
 
 
+# What a kind of source's items are called, where it's more than "items".
+ITEM_WORDS = {"jellyfin": "titles"}
+
+
+def items_word(entity: str, sources: list[dict]) -> str:
+    """What the items of a feed sensor are called: its source kind's word, or "items"."""
+    src = next((s for s in sources if entity in source_entities(s)), None)
+    return ITEM_WORDS.get((src or {}).get("type"), "items")
+
+
 def source_entities(src: dict) -> set[str]:
     """The entity IDs a configured source publishes, whether or not it is answering."""
     slug = clean_slug(src.get("name"))

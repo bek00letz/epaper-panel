@@ -537,6 +537,16 @@ class TestSportWords(unittest.TestCase):
         self.assertEqual(sport.words("football/nfl").event, "game")
         self.assertEqual(sport.words("racing").event, "race")
         self.assertEqual(sport.words("rugby/premiership").event, "match")
+        self.assertEqual((sport.words("soccer/eng.1").events, sport.words("hockey/nhl").events), ("matches", "games"))
+        self.assertEqual(sport.OTHER.events, "matches")
+
+    def test_every_league_knows_its_busiest_day(self):
+        # What the editor's "on a busy day" line counts with: a round, a week, a busy Saturday.
+        busiest = {lg.slug: lg.busiest_day for lg in sports.LEAGUES}
+        self.assertEqual((busiest["premier_league"], busiest["nba"], busiest["nfl"], busiest["bundesliga"]), (10, 15, 16, 9))
+        self.assertGreater(busiest["college_football"], 50)
+        for lg in sports.LEAGUES:
+            self.assertGreater(lg.busiest_day, 1, lg.slug)
 
     def _event(self, league):
         start = datetime.now(TZ).replace(hour=20, minute=0, second=0, microsecond=0)
@@ -552,6 +562,20 @@ class TestSportWords(unittest.TestCase):
     def test_with_no_league_name_the_heading_is_the_sports_word(self):
         self.assertEqual(self._event("soccer/eng.1")["league"], "MATCH")
         self.assertEqual(self._event("hockey/nhl")["league"], "GAME")
+
+
+class TestEveryGame(unittest.TestCase):
+    def test_a_scores_page_has_every_game_of_the_day(self):
+        # Not six: the panel's room is the only limit, shared out by frames.fit_counts.
+        games = [{"id": str(i), "home_team": f"H{i}", "away_team": f"A{i}"} for i in range(15)]
+        page = {"elements": [{"type": "sports_match", "league": "basketball/nba"}]}
+        n, kind, keys, items, _ = subitems.inspect_category_subitems(page, {0: games})
+        self.assertEqual((n, kind, len(set(keys)), len(items)), (15, "sports", 15, 15))
+
+    def test_planes_still_stop_at_five(self):
+        planes = [{"id": f"p{i}", "callsign": f"P{i}"} for i in range(9)]
+        n, kind, *_ = subitems.inspect_category_subitems({"elements": [{"type": "flight_tracker"}]}, {0: planes})
+        self.assertEqual((n, kind), (5, "flight"))
 
 
 class TestRaceColumns(unittest.TestCase):
@@ -746,6 +770,7 @@ class TestCatalog(EditorClient):
         self.assertEqual([lg["path"] for lg in got["leagues"]], [lg.path for lg in sports.LEAGUES])
         nfl = next(lg for lg in got["leagues"] if lg["slug"] == "nfl")
         self.assertEqual((nfl["sensor"], nfl["words"]["event"]), ("sensor.epaper_sports_nfl", "game"))
+        self.assertEqual((nfl["busiest_day"], nfl["words"]["events"]), (16, "games"))
         nascar = next(s for s in got["series"] if s["slug"] == "nascar")
         self.assertIn("nascar_cup", nascar["aliases"])
         self.assertEqual({s["slug"] for s in got["series"]}, set(racing.SERIES), "every series is offered")

@@ -257,8 +257,19 @@ machine) with no ESP-IDF in it, and is compiled and tested on the host by
   first item, extra items are shared out in rotation order, and pages at the
   end are left out only if one each doesn't fit. Items within a page are in
   order of importance (your teams, live, upcoming, finished; the closest
-  aircraft; the newest episode). What was left out is in
-  `sensor.epaper_panel_pages` and `/api/status` (`fit`).
+  aircraft; the newest episode). A Scores page has every game of the day
+  (no cap; planes, players and feed items stop at five), so the panel's
+  room is the only limit. What was left out is in
+  `sensor.epaper_panel_pages` and `/api/status` (`fit`, each trimmed page
+  with what its items are called: `frames.items_word`), and the editor says
+  it only where it happened, never as a page count (the user's call, 21
+  Oct): "Showing 14 of 23 games" on the page's tile, a fuller line in its
+  inspector. Before it happens, while setting up Scores, `POST
+  /api/busy_day` shares out a busy day (each league's `busiest_day` in
+  `sources/sports.LEAGUES`, `subitems.busiest`) the same way, and the editor
+  says when it could pass what the device holds. Both only for a device that
+  keeps its whole rotation in memory (`Kind.room`: an always-on CrowPanel);
+  one that sleeps fetches a page a wake and never runs out.
 - **A failed download is owed** (`note_fetch`, `fetch_due`): retried after
   30 s, doubling to 10 min, even while resting, because only a download can
   tell a sleeping panel that quiet hours are over. A refresh asked for while a
@@ -439,11 +450,16 @@ Assistant. Each CrowPanel device has its own link. It never guesses names:
 more, sleep between updates and let the add-on pick the page. They share one mode; each kind keeps
 only its protocol (how a wake asks, how the answer is said).
 
-- **Drawn ahead** (`draw_ahead`, from the kind's `render`). Every item of
-  every live page, the empty page and the sleep screen, each as the kind's
-  picture (a TRMNL's PNG, a CrowPanel's one-page frame file), kept whole per
-  screen until the next cycle replaces it. All of them rather than just the
-  next one, so wakes close together (a press, then another) still find theirs.
+- **Drawn ahead** (`draw_ahead`, from the kind's `render`). What the wakes
+  before the next cycle can ask for (`reachable`): the item the cursor is on
+  and the next few (`steps_ahead`: as many as the wakes a cycle can span,
+  and one to spare), the first few items of every live page, the empty page
+  and the sleep screen, each as the kind's picture (a TRMNL's PNG, a
+  CrowPanel's one-page frame file), kept whole per screen until the next
+  cycle replaces it. Every page's first item, so wakes close together (a
+  press, then another, each going to the next page) still find theirs; not
+  every item, since a Scores page can have 80 games. A wake that finds
+  nothing drawn still gets its page, drawn then (logged).
 - **"updated" is when the page last changed** (`steady`). A page is drawn
   again with the time it had; if it comes out the same, nothing changed and it
   keeps its bytes, so its name or ETag stays the same and the screen neither

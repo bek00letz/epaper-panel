@@ -27,7 +27,7 @@ import runtime
 import timing
 from config import ADDON_VERSION, FRAME_PORT, HA_BASE, HA_TOKEN, INGRESS_GATEWAY, REFRESH, SLEEP_PAGE, WEB_DIR, valid_entity_id
 from fixture import load_fixture
-from frames import _png, as_int, date_for_time, enrich_page_values, refresh_frames, split_page_values
+from frames import _png, as_int, busy_day, date_for_time, enrich_page_values, refresh_frames, split_page_values
 from ha import curve_series, ha_json, resolve_templates
 from layouts_store import clear_draft, layouts_etag, load_draft, load_layouts, load_sources, sanitize_layouts, save_draft, save_layouts
 from panel_ops import push_panel_update
@@ -156,8 +156,9 @@ async def status(request):
         # Every outside service and data source: last success, and the problem
         # if it is failing (also a problem sensor in Home Assistant).
         "services": health.status(),
-        # How many pages the panel holds, and what was left out to fit.
-        "fit": rt.fit,
+        # How many pages the panel holds, and what was left out to fit: only for a device that keeps its
+        # whole rotation in memory (Kind.room), which can run out. One that sleeps gets a page a wake.
+        "fit": rt.fit if kinds.of(dev).room(dev) else None,
         "ha_entities": runtime.PUBLISHER.status() if runtime.PUBLISHER is not None else
                        {"mode": "off", "problem": "not started", "entities": 0},
         "version": ADDON_VERSION,
@@ -440,6 +441,19 @@ async def api_fit(request):
     return web.json_response({"elements": _fit(els, str(body.get("from_canvas") or ""), display, orient)})
 
 
+async def api_busy_day(request):
+    """POST {rotation, pages} -> {"scores": {busiest, room, teams, leagues} | None}: on a busy day, how many
+    games a draft's Scores pages can have and how many the device has room for, with the rest of its
+    rotation (frames.busy_day). Only a device that keeps its whole rotation in memory can run out
+    (Kind.room: an always-on CrowPanel); for any other, scores is None."""
+    body = await _body(request)
+    dev = _device(request)
+    room = kinds.of(dev).room(dev)
+    if not room or not isinstance(body.get("pages"), dict) or not isinstance(body.get("rotation"), list):
+        return web.json_response({"scores": None})
+    return web.json_response(busy_day(body, page_bytes=room[0], capacity=room[1]))
+
+
 async def api_example(request):
     """A page drawn with example values only (examples.py), for preset thumbnails: never the person's own
     data, and nothing asked of Home Assistant, the internet or a data source. Same body as /api/preview."""
@@ -492,10 +506,11 @@ async def api_catalog(request):
     from sources.geo import get_home_locale
 
     def said(w):
-        return {"event": w.event, "start": w.start, "day": w.day}
+        return {"event": w.event, "events": w.events, "start": w.start, "day": w.day}
     return web.json_response({
         "leagues": [{"path": lg.path, "slug": lg.slug, "name": lg.name, "aliases": list(lg.aliases),
-                     "sensor": lg.sensor, "words": said(sport.words(lg.path))} for lg in sports.LEAGUES],
+                     "sensor": lg.sensor, "words": said(sport.words(lg.path)), "busiest_day": lg.busiest_day}
+                    for lg in sports.LEAGUES],
         "series": [{"slug": s.slug, "code": s.code, "title": s.title, "aliases": list(s.aliases),
                     "sensor": f"sensor.epaper_racing_{s.slug}"} for s in racing.SERIES.values()],
         "sport_words": {**{k: said(v) for k, v in sport.SPORTS.items()}, "other": said(sport.OTHER)},
@@ -1222,6 +1237,7 @@ def make_apps():
         web.post("/api/preview", api_preview),
         web.post("/api/example", api_example),
         web.post("/api/fit", api_fit),
+        web.post("/api/busy_day", api_busy_day),
         web.post("/api/as_template", api_as_template),
         web.post("/api/push", api_push),
         web.get("/api/sources", api_sources_get),
