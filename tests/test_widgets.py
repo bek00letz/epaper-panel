@@ -174,7 +174,10 @@ class TestEnergyFetches(unittest.IsolatedAsyncioTestCase):
 
         async def no_web(session, path, **kw):
             return {"currency": "RON", "time_zone": "Europe/Bucharest"} if path == "/config" else {}
+        async def fresh_dashboard(session):          # never the shared store: other tests read it too
+            return await energy.fetch_dashboard.direct(session)
         self.patches = [unittest.mock.patch.object(energy, "ha_json", no_web),
+                        unittest.mock.patch.object(energy, "dashboard", fresh_dashboard),
                         unittest.mock.patch.object(energy, "get_home_timezone", unittest.mock.AsyncMock(return_value="Europe/Bucharest"))]
         for p in self.patches:
             p.start()
