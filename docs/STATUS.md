@@ -11,6 +11,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Version | Date | What |
 |---|---|---|
+| 0.15.0 | 21 Oct | New page on shelves with new presets (sunrise and sunset, energy, Now playing, On TV, your own weather station, world clock, Countdown and Bin day without a calendar, to-do lists); alerts that end on a condition; "device" everywhere; zoom; 12/24-hour time; a sleeping device shows the date for a clock; the framework review's 14 fixes; the Wi-Fi network name. Firmware change. |
 | 0.14.0 | 21 Oct | The screen bar under the canvas, power first when adding a screen, rename in place, clearer refusals, Safari Fit; the integration sets itself up, Send to ESPHome, editable hotspot password; quiet-hours wake from Home Assistant fixed. Firmware change. |
 | 0.13.0 | 20 Oct | Update every and Rotate every replace Low Power Mode; no flash after a wake (untried); the 4.2" and 2.9" build, the 7.5" and 10.2" aren't offered; sleep survives the add-on being down; audits #9 and #14; the classic editor removed. Firmware change. |
 | 0.12.0 | 20 Oct | Low Power Mode for CrowPanels (untried on a real panel), TRMNL screens (untried on one), screens drawn ahead, footer and editor fixes, and the no-own-Wi-Fi compile fix. Firmware change. |
@@ -22,44 +23,25 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 ## In flight
 
-0.15.0 is everything together (user, 21 Oct), assembled on `release-next`
-(worktree `~/Documents/HA/epaper-worktrees/release-next`): the held 0.14.1
-(device wording, zoom, the sleep-screen fix, the Wi-Fi network name; a
-firmware change), alerts that end on a condition and to-do lists with three
-row styles (merged in).
-The user approved tagging and pushing it once both workers are done and the
-full suite and the firmware compile pass, with no break-it pass first; they
-get a hands-on checklist after (21 Oct). Still being built (including a world
-clock look for Clock, up to 4 time zones filling the page; user's request,
-21 Oct, both workers after the review fixes):
-
-| Work | Where | State |
-|---|---|---|
-| Racing fix and the new presets' widgets: Sunrise and sunset, Solar this month, Grid now, Energy cost, Now playing, On TV this week, and Weather from your own station (session "widgets-015") | branch `widgets-015` from `release-next` | Done 21 Oct: 14 commits, 478 tests pass, no firmware change; every widget rendered at every size; also the APIs presets-015 asked for and the per-sport words (render/sport.py). Weather station's inspector fields are presets-015's. Not tried: the energy and statistics websocket calls against the real Home Assistant |
-| The New page sheet: shelves, groups, renames, one preset per thing, sensible sensor first, example thumbnails, setup in place, Guest Wi-Fi text (session "presets-015") | branch `presets-015`, merged into `release-next` | Done 21 Oct (534 tests pass together). Clock → Date and the "up to N min old" notes are in `release-next` (544 tests). Now: on a shared design, a sleeping device draws the date in place of the clock at render time, the design unchanged (user's call, 21 Oct). Next: Bin day and Countdown without a calendar (a repeat rule or a date picked in place; user's request) |
-| Screen menu and zoom, "device" everywhere (editor-polish) | `editor-zoom`, already in `release-next` | Its worktree can go once 0.15.0 ships |
-
-Worker notes are in the coordinator's notes folder
-(`break-it-0.12.0.md`, `timers-addon.md`, `firmware-013.md`,
-`fixes-0131.md`, `editor-polish.md`, `alerts-todo.md`); `widgets-015.md` is in
-the coordinator's own notes folder.
+Nothing. Worker notes are in the notes folders (`break-it-0.12.0.md`,
+`timers-addon.md`, `firmware-013.md`, `fixes-0131.md`, `editor-polish.md`,
+`alerts-todo.md` in the first coordinator's; `widgets-015.md`,
+`presets-015.md`, `framework-review.md`, `checklist-0.15.0.md` in this one's).
+Merged worktrees kept until the user OKs removing them: `release-next`,
+`presets-015`, `widgets-015`, `editor-zoom`.
 
 ## Framework review
 
-Last review: v0.12.0 to `release-next` at e8e65c2 (21 Oct, session
-"framework-review"; findings in the coordinator's notes, framework-review.md).
-14 findings, all going into 0.15.0 (user, 21 Oct): server half with
-widgets-015, editor half with presets-015. User's calls: Solar today shows a
-running total's change today; times follow Home Assistant's 12/24-hour with
-a setting; New page offers Clock everywhere (a sleeping device draws the
-date). Server half done on widgets-015 (11 commits, byte-identical firmware
-files); editor half partly done on presets-015, the rest after the two
-branches are combined. Next review when a good amount of work has piled up
-since e8e65c2.
+Last review: v0.12.0 to e8e65c2 (21 Oct); all 14 findings fixed in 0.15.0.
+Next one when a good amount of work has piled up since v0.15.0.
 
 ## Backlog, most important first
 
-1. **Sleeping on the real 5.79" (since 0.13).** Always on first (nothing should change), then
+1. **0.15.0 by hand**: the checklist (`checklist-0.15.0.md`); almost all of
+   it is tested by code, little has met the real Home Assistant or an eye.
+2. **The world clock on the 4.2"** sits in a band a third of the height
+   (Fit scales by width); a full-height box would read larger.
+3. **Sleeping on the real 5.79" (since 0.13).** Always on first (nothing should change), then
    sleeping: sleep current through the USB meter (an upper bound), the
    change after a wake without a flash, a full refresh every 8th change,
    buttons waking it, a power cut. Steps in `firmware-013.md`. Way back if it
@@ -70,21 +52,21 @@ since e8e65c2.
    12+ hours, battery still at 100%. Sub-second drops of Home Assistant's
    connection at 00:00:20 and 06:00:22, as quiet hours started and ended;
    harmless, watch whether they grow.
-2. **The editor's new parts by eye**, in Safari and inside Home Assistant:
+4. **The editor's new parts by eye**, in Safari and inside Home Assistant:
    the screen bar, Add a screen with power first, rename in place, and Fit
    in Safari (reasoned from screenshots, not reproduced).
-3. **The 5.79" away from home:** fetching over HTTPS through Home
+5. **The 5.79" away from home:** fetching over HTTPS through Home
    Assistant's address and a Cloudflare tunnel works (20 Oct, once the
    integration's entry existed). Still untried: a second Wi-Fi network, and
    "Through your own address".
-4. **Setup from the browser** (next month, large, firmware): a design pass
+6. **Setup from the browser** (next month, large, firmware): a design pass
    with the user first on how the panel keeps its Home Assistant actions and
    entities without a per-panel key (ROADMAP, open question).
-5. **The rest of next month** (ROADMAP): the screen's words in Home
+7. **The rest of next month** (ROADMAP): the screen's words in Home
    Assistant's language (which languages first is open), share a page, to-do
    lists, a "how it went" report, TRMNL-compatible screens.
 
-The New page presets plan is in ROADMAP.md and in flight for 0.15.0.
+The New page presets plan shipped in 0.15.0.
 
 **Waiting on hardware:** a TRMNL (pairing, pictures, HTTPS, battery); a
 second CrowPanel side by side; a 4.2" or 2.9" CrowPanel (they build, untried;
