@@ -25,6 +25,22 @@
   matches, in football's word), and its inspector says which come first.
   Planes, Now playing and New to watch say it the same way, in their own
   words. It goes away by itself once everything fits again.
+- **Fixed:** between seasons, the race page showed the season's last race as
+  if it were still coming (Formula E's London race, in October). Each series
+  now reads its own calendar first where it publishes one (Formula E's
+  already has next season), then the community calendars, which add exact
+  session times once they catch up. A finished race's result stays for a few
+  hours, then the page moves on to the next race; NASCAR's no longer waits
+  for ESPN to move on. When Formula E's calendar page stops listing its
+  season, the add-on's problem sensor says so. Dates read "Fri 23 Oct", like
+  the rest of the panel.
+- **Fixed:** during a live Formula E session the badge said "runtime.LIVE".
+- **New:** the race page between seasons shows the next season and its
+  first race ("Jeddah E-Prix", "Season starts Fri 18 Dec") with an Off
+  season badge, or "Season over" while no calendar has the next season yet.
+  Outside race weekends the page still stays out of the rotation. The card
+  before a race now fits on every device size, and names the race when no
+  calendar says where it is.
 
 ## 0.18.0
 **Firmware change:** install the panel again (Settings › Install or update,

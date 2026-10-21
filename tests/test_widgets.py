@@ -592,6 +592,51 @@ class TestRaceColumns(unittest.TestCase):
         self.assertEqual(gap.histogram()[0], 0)
 
 
+OFF_SEASON = {"series": "FE", "series_name": "Formula E", "event_name": "Jeddah E-Prix", "circuit": "Jeddah",
+              "status": "OFF", "season": "Season 13", "clock": "OFF SEASON", "detail": "Season starts Fri 18 Dec",
+              "standings": []}
+
+
+def words_drawn(el, value) -> list[str]:
+    from PIL import ImageDraw
+    said = []
+    real = ImageDraw.ImageDraw.text
+
+    def text(self, xy, txt, *a, **kw):
+        said.append(txt)
+        return real(self, xy, txt, *a, **kw)
+    with unittest.mock.patch.object(ImageDraw.ImageDraw, "text", text):
+        render(el, value)
+    return said[:-1]                    # the footer's clock last
+
+
+class TestOffSeason(Sizes, unittest.TestCase):
+    """The user's choice (22 Oct): the next season's first race as the card, an OFF SEASON badge."""
+    element = {"type": "sports_racing", "series": "fe", "x": 24, "y": 14, "w": 744, "h": 208}
+    value = OFF_SEASON
+
+    def test_the_season_its_first_race_and_when(self):
+        said = words_drawn({**self.element, "show_border": False}, OFF_SEASON)
+        self.assertEqual(said, ["OFF SEASON", "FE · SEASON 13", "Jeddah E-Prix", "Season starts Fri 18 Dec"])
+
+    def test_with_no_calendar_out_the_season_is_over(self):
+        value = {**OFF_SEASON, "series": "INDYCAR", "series_name": "IndyCar", "event_name": "", "circuit": "",
+                 "detail": "Next season's calendar isn't out yet"}
+        value.pop("season")
+        said = words_drawn(self.element, value)
+        self.assertEqual(said, ["OFF SEASON", "INDYCAR", "Season over", "Next season's calendar isn't out yet"])
+
+
+class TestBeforeARace(Sizes, unittest.TestCase):
+    element = {"type": "sports_racing", "series": "nascar", "x": 24, "y": 14, "w": 744, "h": 208}
+    value = {"series": "NASCAR", "series_name": "NASCAR", "event_name": "NASCAR Cup Series at Talladega", "circuit": "",
+             "status": "PRE", "clock": "SCHEDULED", "detail": "Race · Sun 25 Oct · 23:00 EET", "standings": []}
+
+    def test_a_race_no_calendar_places_is_named_in_the_middle_not_left_blank(self):
+        said = words_drawn(self.element, self.value)
+        self.assertEqual(said, ["SCHEDULED", "NASCAR", "NASCAR Cup Series at Talladega", "Race · Sun 25 Oct · 23:00 EET"])
+
+
 class TestExampleTemplates(unittest.TestCase):
     def test_the_clock_and_a_calendars_title_and_date(self):
         from render import binding

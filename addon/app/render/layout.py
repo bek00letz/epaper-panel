@@ -1924,6 +1924,30 @@ def _draw_flight_tracker(img, d, el, raw_val, display=None):
             d.text((mid_col_x, cols_y + int(cols_h * 0.84)), val_sub, font=sub_mf, fill=T.BLACK, anchor="mm")
 
 
+def _draw_race_card(d, x, y, w, h, icon, name, detail, fscale):
+    """A race's (or a season's) card in the box x, y, w, h: icon, name, detail, as one centred stack."""
+    max_w = max(20, w - 24)
+    gap = 6
+    for name_px, detail_px, icon_px in ((20, 15, 50), (17, 13, 36), (15, 12, 0), (13, 11, 0)):
+        nf = _fit_font(name, max_w, _s(name_px, fscale, 12, 32), min_sz=_s(name_px - 3, fscale, 11, 28))
+        df = _fit_font(detail, max_w, _s(detail_px, fscale, 10, 24), min_sz=_s(detail_px - 2, fscale, 10, 22), bold=False)
+        name_h, detail_h = nf.size + 2, (df.size + 2 if detail else 0)
+        total = (icon_px + gap if icon_px else 0) + name_h + (gap // 2 + detail_h if detail else 0)
+        if total <= h - 8:
+            break
+    else:
+        return                          # no room for even a name: nothing outside the box
+    cy = y + max(4, (h - total) // 2)
+    mid_x = x + w // 2
+    if icon_px:
+        _draw_icon_glyph(d, icon, mid_x, cy + icon_px // 2, icon_px)
+        cy += icon_px + gap
+    d.text((mid_x, cy + name_h // 2), _fit_text(name, max_w, nf), font=nf, fill=T.BLACK, anchor="mm")
+    cy += name_h + gap // 2
+    if detail:
+        d.text((mid_x, cy + detail_h // 2), _fit_text(detail, max_w, df), font=df, fill=T.BLACK, anchor="mm")
+
+
 def _draw_sports_racing(img, d, el, raw_val, display=None):
     x, y, w, h = _clamp_box(el, 752, 235, display=display)
     fscale = _font_scale(el)
@@ -1954,28 +1978,37 @@ def _draw_sports_racing(img, d, el, raw_val, display=None):
     bw = T.text_width(status_txt, bf) + 16
     bx1 = x + w - 16
     bx0 = bx1 - bw
-    d.rounded_rectangle([(bx0, y + 8), (bx1, y + 34)], radius=5, fill=T.BLACK)
-    d.text((bx0 + bw // 2, y + 21), status_txt, font=bf, fill=T.WHITE, anchor="mm")
+    if bx0 - (x + 46) - 10 >= 56:      # the badge steps aside where it would leave the header no room
+        d.rounded_rectangle([(bx0, y + 8), (bx1, y + 34)], radius=5, fill=T.BLACK)
+        d.text((bx0 + bw // 2, y + 21), status_txt, font=bf, fill=T.WHITE, anchor="mm")
+    else:
+        bx0 = x + w - 4
 
-    # Header
+    # Header: the series and the race; off-season, the series and its season. The middle names
+    # what the header doesn't: before a race its circuit (or the race, when no calendar says where).
+    off = status == "OFF"
+    circuit = str(data.get("circuit") or "")
+    if off:
+        hero = str(data.get("event_name") or "Season over")
+        named = str(data.get("season") or default_name).upper()
+    elif circuit:
+        hero, named = circuit, event_name
+    else:
+        hero, named = str(data.get("event_name") or default_name), str(default_name).upper()
     hdr_icon = "mdi:car-electric" if series == "FE" else "mdi:flag-checkered"
     _draw_icon_glyph(d, hdr_icon, x + 24, y + 21, 26)
     hf = T.font(_s(16, fscale, 12, 24), bold=True)
-    header_txt = _fit_text(f"{series} · {event_name}", max(80, bx0 - (x + 46) - 10), hf)
+    header_txt = _fit_text(series if named == series else f"{series} · {named}", max(20, bx0 - (x + 46) - 10), hf)
     d.text((x + 46, y + 21), header_txt, font=hf, fill=T.BLACK, anchor="lm")
 
     d.line([(x + 14, y + 42), (x + w - 14, y + 42)], fill=T.BLACK, width=1)
 
     if not standings:
-        # Pre-race or schedule view
-        mid_x = x + w // 2
-        mid_y = y + h // 2
+        # Before a race, or the off-season: an icon, a name and one line, centred under the header,
+        # smaller where the box is, the icon left out where there's no room for it
         mid_icon = "mdi:car-electric" if series == "FE" else "mdi:racing-helmet"
-        _draw_icon_glyph(d, mid_icon, mid_x, mid_y - 22, 50)
-        circ = data.get("circuit") or ""
-        d.text((mid_x, mid_y + 18), circ, font=T.font(_s(20, fscale, 14, 32), bold=True), fill=T.BLACK, anchor="mm")
-        detail = data.get("detail") or "Session scheduled soon"
-        d.text((mid_x, mid_y + 44), detail, font=T.font(_s(15, fscale, 11, 24), bold=False), fill=T.BLACK, anchor="mm")
+        detail = str(data.get("detail") or "")
+        _draw_race_card(d, x, y + 42, w, h - 42, mid_icon, hero, detail, fscale)
         return
 
     # Leaderboard (2 columns)
