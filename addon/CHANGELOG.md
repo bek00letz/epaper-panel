@@ -75,6 +75,14 @@
 - **On TV this week**: the next episodes from any calendar of shows, such
   as Sonarr's or Trakt's, a row each ("Tonight  Slow Horses  S6 E6"), as
   many as read well and then "and 3 more".
+- **Weather from your own station.** The Weather page can take what it
+  says about now (temperature, humidity, wind) from your station's own
+  weather entity or from single sensors, while highs, lows and the coming
+  days stay with the forecast. With a rain sensor, the big icon shows rain
+  whenever it's raining at your house, whatever the forecast says. With a
+  pressure sensor, it says when pressure is rising or falling. A solar
+  radiation sensor can decide sunny or cloudy in the daytime, but only if
+  you choose one: a station in the shade would read cloudy in full sun.
 - **Fixed:** a Race weekend page set to NASCAR or IndyCar showed Formula 1's
   race, drivers and status. Each series now reads its own results, and its
   page names it ("NASCAR · …"). Whether the page shows still followed the

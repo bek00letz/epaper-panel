@@ -1342,6 +1342,7 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
     humidity = data.get("humidity")
     wind = data.get("wind_speed")
     wind_unit = str(data.get("wind_unit") or "km/h")
+    pressure_trend = str(data.get("pressure_trend") or "")         # from your own station (sources/station.py)
     forecast = data.get("forecast") or []
 
     cur_icon = _WEATHER_ICON_MAP.get(cond, "mdi:weather-cloudy")
@@ -1370,6 +1371,8 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
                 chip_parts.append(f"HUM {humidity}%")
             if wind is not None:
                 chip_parts.append(f"WIND {wind} {wind_unit}")
+            if pressure_trend in ("rising", "falling"):
+                chip_parts.append(f"PRESSURE {pressure_trend.upper()}")
             if forecast:
                 today_f = forecast[0]
                 th, tl = today_f.get("temperature"), today_f.get("templow")
@@ -1417,6 +1420,8 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
                     line1_parts.append(f"HUM {humidity}%")
                 if wind is not None:
                     line1_parts.append(f"WIND {wind} {wind_unit}")
+                if pressure_trend in ("rising", "falling"):
+                    line1_parts.append(f"PRESSURE {pressure_trend.upper()}")
                 if forecast:
                     today_f = forecast[0]
                     th = today_f.get("temperature")
@@ -1513,6 +1518,8 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
                 parts.append(f"HUM {humidity}%")
             if wind is not None:
                 parts.append(f"WIND {wind} {wind_unit}")
+            if pressure_trend in ("rising", "falling"):
+                parts.append(f"PRESSURE {pressure_trend.upper()}")
             if parts:
                 mf = _fit_font("   •   ".join(parts), w - 36, _s(14, fscale, 10, 22), min_sz=10, bold=True)
                 d.text((x + 20, y + hero_h - 14), "   •   ".join(parts), font=mf, fill=T.BLACK, anchor="lm")

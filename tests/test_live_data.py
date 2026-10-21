@@ -82,11 +82,11 @@ class TestLiveData(unittest.IsolatedAsyncioTestCase):
 
 class TestServerRendersWithoutWaiting(unittest.IsolatedAsyncioTestCase):
     async def test_every_outside_fetcher_goes_through_the_store(self):
-        from sources import energy, flights, ha_services, home, racing, sports
+        from sources import energy, flights, ha_services, home, racing, sports, station
         for mod, name in ((flights, "fetch_overhead_aircraft"), (ha_services, "fetch_weather_forecast"),
                           (ha_services, "fetch_calendar_events"), (racing, "fetch_racing_data"),
                           (racing, "compute_racing_active_window"), (sports, "compute_sports_active_window"),
-                          (sports, "fetch_sports_match"), (home, "fetch_sun"), (home, "fetch_now_playing"), (energy, "fetch_dashboard"),
+                          (sports, "fetch_sports_match"), (home, "fetch_sun"), (home, "fetch_now_playing"), (station, "fetch_station"), (energy, "fetch_dashboard"),
                           (energy, "fetch_total"), (energy, "fetch_grid_power"), (energy, "fetch_grid_hours"),
                           (energy, "fetch_cost")):
             self.assertTrue(hasattr(getattr(mod, name), "direct"), name)

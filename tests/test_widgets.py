@@ -1,8 +1,9 @@
 """The 0.15 widgets: what each shows, at every size a screen can have."""
 import asyncio
+import urllib.parse
 import unittest.mock
 import unittest
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import support  # noqa: F401
@@ -314,3 +315,102 @@ class TestTvWeek(Sizes, unittest.TestCase):
     def test_no_calendar_and_nothing_this_week_say_so(self):
         self.assertGreater(ink(render({**self.element, "entity": ""}, None)), 200)
         self.assertGreater(ink(render(self.element, {"tz": "UTC", "events": []})), 200)
+
+
+# ---------------------------------------------------------------- weather from your own station
+
+from sources import station  # noqa: E402
+
+
+class TestStation(unittest.TestCase):
+    def test_only_the_parts_you_chose(self):
+        el = {"type": "weather_forecast", "entity": "weather.forecast_home", "now_entity": "weather.idumbr13",
+              "rain_sensor": "sensor.rain_rate", "solar_sensor": "", "pressure_sensor": "not an id"}
+        self.assertEqual(station.wanted(el), {"now_entity": "weather.idumbr13", "rain_sensor": "sensor.rain_rate"})
+
+    def test_rain_falling_now(self):
+        self.assertEqual(station.raining({"state": "0.0", "attributes": {"unit_of_measurement": "mm/h"}}), None)
+        self.assertEqual(station.raining({"state": "1.2", "attributes": {"unit_of_measurement": "mm/h"}}), "rainy")
+        self.assertEqual(station.raining({"state": "0.4", "attributes": {"unit_of_measurement": "in/h"}}), "pouring")
+        self.assertEqual(station.raining({"state": "on"}), "rainy")
+        self.assertEqual(station.raining({"state": "unavailable"}), None)
+
+    def test_sky_from_sunlight_only_when_the_sun_is_up_enough(self):
+        clear = station.clear_sky(45)
+        self.assertEqual(station.sky(clear * 0.9, 45), "sunny")
+        self.assertEqual(station.sky(clear * 0.5, 45), "partlycloudy")
+        self.assertEqual(station.sky(clear * 0.1, 45), "cloudy")
+        self.assertIsNone(station.sky(5.0, 4))           # dawn: too rough to judge
+        self.assertIsNone(station.sky(None, 45))
+
+    def test_pressure_says_where_its_heading(self):
+        now = datetime(2026, 10, 21, 12, tzinfo=TZ)
+        rows = lambda a, b: [{"last_changed": (now - timedelta(hours=3)).isoformat(), "state": a},   # noqa: E731
+                             {"last_changed": now.isoformat(), "state": b}]
+        self.assertEqual(station.trend(rows("1012.0", "1009.5"), now), "falling")
+        self.assertEqual(station.trend(rows("1009.0", "1011.0"), now), "rising")
+        self.assertEqual(station.trend(rows("1011.0", "1011.4"), now), "steady")
+        self.assertEqual(station.trend(rows("29.90", "29.80"), now), "falling")       # inHg
+        self.assertIsNone(station.trend(rows("1011", "1012")[1:], now))
+
+    def test_now_goes_over_the_forecast_and_the_days_stay(self):
+        fc = {"condition": "sunny", "temperature": 20.6, "humidity": 49, "forecast": [{"temperature": 22}]}
+        got = station.merge(fc, {"temperature": 23, "humidity": 82, "condition": "rainy"})
+        self.assertEqual((got["temperature"], got["humidity"], got["condition"]), (23, 82, "rainy"))
+        self.assertEqual(got["forecast"], [{"temperature": 22}])
+        self.assertIs(station.merge(fc, {}), fc)
+
+
+class TestStationFetch(unittest.IsolatedAsyncioTestCase):
+    STATES = {
+        "weather.idumbr13": {"state": "partlycloudy", "attributes": {"temperature": 23, "temperature_unit": "°C",
+                                                                    "humidity": 82, "wind_speed": 0, "wind_speed_unit": "km/h"}},
+        "sensor.rain_rate": {"state": "0.0", "attributes": {"unit_of_measurement": "mm/h"}},
+        "sensor.solar": {"state": "13.3", "attributes": {"unit_of_measurement": "W/m²"}},
+        "sensor.outside": {"state": "21.44", "attributes": {"unit_of_measurement": "°C"}},
+        "sun.sun": {"state": "above_horizon", "attributes": {"elevation": 33.4}},
+    }
+
+    async def asyncSetUp(self):
+        async def fake(session, path, **kw):
+            eid = urllib.parse.unquote(path.removeprefix("/states/"))
+            return self.STATES.get(eid)
+        self.patches = [unittest.mock.patch.object(station, "ha_json", fake),
+                        unittest.mock.patch.object(station, "HA_TOKEN", "t")]
+        for p in self.patches:
+            p.start()
+
+    async def asyncTearDown(self):
+        for p in self.patches:
+            p.stop()
+
+    async def test_the_stations_own_weather_and_a_sensor_over_it(self):
+        got = await station.fetch_station.direct(None, now_entity="weather.idumbr13", temperature_sensor="sensor.outside",
+                                                 rain_sensor="sensor.rain_rate")
+        self.assertEqual((got["temperature"], got["humidity"], got["condition"]), (21.4, 82, "partlycloudy"))
+
+    async def test_a_dim_sensor_under_trees_reads_cloudy_only_if_you_chose_it(self):
+        got = await station.fetch_station.direct(None, now_entity="weather.idumbr13")
+        self.assertEqual(got["condition"], "partlycloudy")
+        got = await station.fetch_station.direct(None, now_entity="weather.idumbr13", solar_sensor="sensor.solar")
+        self.assertEqual(got["condition"], "cloudy")
+
+    async def test_rain_now_beats_everything(self):
+        self.STATES = {**self.STATES, "sensor.rain_rate": {"state": "2.0", "attributes": {"unit_of_measurement": "mm/h"}}}
+        got = await station.fetch_station.direct(None, now_entity="weather.idumbr13", rain_sensor="sensor.rain_rate",
+                                                 solar_sensor="sensor.solar")
+        self.assertEqual(got["condition"], "rainy")
+
+
+class TestStationInTheRenderCycle(unittest.IsolatedAsyncioTestCase):
+    async def test_the_weather_page_gets_now_from_the_station(self):
+        el = {"type": "weather_forecast", "entity": "weather.forecast_home", "now_entity": "weather.idumbr13"}
+        vals = {0: '{"condition": "sunny", "temperature": 20.6, "unit": "°C"}'}
+
+        async def reader(session, **kw):
+            self.assertEqual(kw, {"now_entity": "weather.idumbr13"})
+            return {"temperature": 23, "condition": "partlycloudy"}
+        with unittest.mock.patch.object(station, "fetch_station", reader), \
+             unittest.mock.patch.object(frames, "fetch_weather_forecast", unittest.mock.AsyncMock(return_value=None)):
+            await frames.enrich_page_values(None, {"elements": [el]}, vals)
+        self.assertEqual((vals[0]["temperature"], vals[0]["condition"], vals[0]["unit"]), (23, "partlycloudy", "°C"))

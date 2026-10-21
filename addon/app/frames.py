@@ -21,7 +21,7 @@ from panel_ops import push_panel_update
 from sources.flights import fetch_overhead_aircraft, place_of
 from sources.geo import get_home_timezone
 from sources.ha_services import fetch_calendar_events, fetch_todo_items, fetch_weather_forecast, todo_list_id
-from sources import energy
+from sources import energy, station
 from sources.home import episodes, fetch_now_playing, fetch_sun, players
 from sources.racing import compute_racing_active_window, fetch_racing_data
 from sources.sports import compute_sports_active_window, fetch_sports_match
@@ -111,6 +111,11 @@ async def enrich_page_values(session, page, vals):
             wdata = await fetch_weather_forecast(session, el.get("entity", "weather.forecast_home"), fallback=vals.get(i))
             if wdata:
                 vals[i] = wdata
+            if station.wanted(el):                 # "now" from your own station, over the forecast
+                now_data = await station.fetch_station(session, **station.wanted(el))
+                merged = station.merge(layout._parse_val_json(vals.get(i)) if vals.get(i) else None, now_data)
+                if isinstance(merged, dict):
+                    vals[i] = merged
         elif t in ("calendar_month", "calendar_agenda"):
             cal_ent = el.get("entity")
             if cal_ent:
