@@ -54,9 +54,9 @@ function entityButton(app, entityId, onPick, opts = {}) {
 }
 /* An icon to choose. With `look` (follows.js LOOKS), its tile shows it and the picker offers it too. */
 function iconButton(app, value, onPick, label = "Icon", look) {
-  const glyph = app.mdiGlyph(value), said = look ? LOOKS.find(([v]) => v === look.value)?.[1] : "";
+  const drawn = app.glyphs.has(value), said = look ? LOOKS.find(([v]) => v === look.value)?.[1] : "";
   const b = h("button", { class: "iconbtn", "aria-label": `${label}: ${value || "none"}${said && look.value !== "plain" ? `, ${said.toLowerCase()}` : ""}. Change` },
-    h("span", { class: "glyph mdi" + (look ? " look-" + look.value : ""), text: glyph || "?" }), h("span", { class: "e1", text: value ? String(value).replace(/^mdi:/, "") : "Choose an icon" }), icon("chev", "sm"));
+    h("span", { class: "glyph mdi" + (look ? " look-" + look.value : "") }, drawn ? app.iconNode(value) : "?"), h("span", { class: "e1", text: value ? String(value).replace(/^mdi:/, "") : "Choose an icon" }), icon("chev", "sm"));
   b.addEventListener("click", () => app.openIconPicker(value, onPick, look));
   return b;
 }
@@ -261,7 +261,7 @@ function addStates(app, el, asked, word) {
     const got = asked?.got;
     if (got === undefined) return;
     const chips = suggestions(el, got).map((o) => h("button", { class: "chipbtn add", "aria-label": `Add ${o.word}`, onclick: () => { addState(el, o.state, o.icon); doc.commit(); } },
-      h("span", { class: "glyph mdi", "aria-hidden": "true", text: app.mdiGlyph(o.icon) }), o.word));
+      h("span", { class: "glyph mdi", "aria-hidden": "true" }, app.iconNode(o.icon)), o.word));
     const more = h("button", { class: "chipbtn add", onclick: () => { const inp = typed(); more.replaceWith(inp); inp.focus(); } }, icon("plus", "xs"), "Other state");
     const said = got === null ? `${asked.error || "Home Assistant didn't say what states it has."} Type one it has instead.`
       : !got.length && !Object.keys(el.state_icons).length ? "Home Assistant doesn't list states for it. Type one it has." : "";

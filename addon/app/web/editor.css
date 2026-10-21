@@ -73,7 +73,6 @@
 
 @font-face { font-family: "Lato"; src: url("../fonts/Lato-Regular.ttf") format("truetype"); font-weight: 400; }
 @font-face { font-family: "Lato"; src: url("../fonts/Lato-Bold.ttf") format("truetype"); font-weight: 700; }
-@font-face { font-family: mdi; src: url("../api/mdi/font") format("truetype"); font-display: block; }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }
@@ -89,7 +88,9 @@ code, .code { font-family: var(--mono); font-size: 12px; }
 code { background: var(--fill); padding: 1px 5px; border-radius: 5px; }
 code.sel { user-select: all; }
 kbd { font: 12px var(--font); background: var(--surface); border-radius: 5px; padding: 1px 6px; box-shadow: 0 0 0 0.5px var(--sep), 0 1px 0 var(--sep); white-space: nowrap; }
-.mdi { font-family: mdi; font-style: normal; line-height: 1; }
+.mdi { font-style: normal; line-height: 1; }
+/* An icon drawn from its outline (glyphs.js), sized by the text around it like a glyph. */
+.glyph-svg { width: 1em; height: 1em; display: inline-block; vertical-align: -0.15em; fill: currentColor; flex: none; overflow: visible; }
 
 /* ---------- icons ---------- */
 .ic { display: inline-flex; width: 18px; height: 18px; flex: none; }

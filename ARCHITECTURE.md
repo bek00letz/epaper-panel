@@ -322,6 +322,39 @@ their own caches still stop them hitting a service more often than it allows.
 The editor's preview (and its aircraft list) wait for fresh data, because
 there a person asked.
 
+## Icons
+
+Every icon is drawn from its outline (SVG path data), crisp at any size and
+cut to 1 bit with the rest of the page (`render/vector.py`). What the panel
+can draw is one list, by name (`render/icons.py`): `layout.can_draw_icon`,
+the editor's picker (`GET /api/icons`, outlines in pages from
+`POST /api/icons/outlines`, `app/glyphs.js`) and the states an icon offers
+all read it, so nothing offers an icon that draws as nothing.
+
+- **Material Design Icons ship with the add-on** (`icons/mdi.json.gz`, the
+  version Home Assistant served when it was built), so a first start, a Home
+  Assistant restart or Home Assistant being unreachable still draws them all.
+- **Home Assistant's own set is copied whole when it differs**
+  (`iconsets.copy_home_assistant`): its frontend serves Material Design Icons
+  as plain files on the add-on's network (`/static/mdi/iconMetadata.json`
+  names the version and its chunks). Checked at start and every five minutes,
+  but only fetched when Home Assistant's version changed and its icon version
+  isn't the shipped one; every chunk, every outline checked, or nothing.
+  Kept in `/data/icons/` and used from the next start before anything draws.
+- **Custom sets are copied whole when their files change**
+  (`iconsets.copy_custom`), from the mapped configuration folder: Custom
+  Icons' SVG folder (`local:`) and Iconify sets, the ones switched on in its
+  settings; and script sets HACS installs (custom-brand-icons' `phu:` and
+  those written like it). A custom SVG becomes outlines only: shapes,
+  groups, transforms, fill and stroke; scripts, links, pictures and text are
+  never kept, and nothing of the file is shown as it is.
+- A render never waits on any of this: the copy runs in the background and
+  swaps a whole set in when it's ready (`icons.install`).
+- Sizes are what the old icon font gave: an icon fills its box's width by its
+  whole square, and its height by its ink (`layout._fit_outline`). The font
+  (`fonts/mdi.ttf`) stays, switched off, as the way back
+  (`icons.FROM_FONT`).
+
 ## Sleeping
 
 The frame file always starts with a sleep page (`render/sleep.py`, flagged

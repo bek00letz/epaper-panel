@@ -5,7 +5,7 @@ import { h, icon, api } from "./util.js";
 import { popover, sheet, seg } from "./ui.js";
 import { LOOKS } from "./follows.js";
 import { TYPES, INSERT_GROUPS } from "./elements.js";
-import { CATEGORY_TERMS } from "./legacy.js";
+import { fullName, prefixOf, shortName } from "./glyphs.js";
 
 const DOMAIN_NAMES = { sensor: "Sensors", binary_sensor: "On or off", calendar: "Calendars", weather: "Weather", climate: "Climate", person: "People",
   switch: "Switches", light: "Lights", timer: "Timers", lock: "Locks", input_number: "Numbers", input_text: "Texts", input_boolean: "Toggles" };
@@ -86,34 +86,49 @@ export function openAttributePicker(app, anchor, entity, onPick) {
   }, { label: "Choose a detail", align: "left", focus: "input" });
 }
 
-/* Icons: the full Material Design set the panel draws with. */
+/* Icons: every icon the panel can draw (glyphs.js), Material Design and any custom sets. Search
+   looks in all of them; with more than one set, chips narrow it to one (the user's call, 21 Oct),
+   and the Pets/Heating/... shortcuts are Material Design's. */
 /* `look` ({ value, set }): an icon that changes with a sensor chooses each state's look here too
    (follows.js LOOKS), applied at once; the grid shows the icons in it. */
 export function openIconPicker(app, current, onPick, look) {
   sheet("Choose an icon", (node, close) => {
-    const q = h("input", { type: "search", placeholder: "Search 7,000 icons: cat, radiator, sun…", "aria-label": "Search icons", autocomplete: "off", spellcheck: "false" });
+    const total = () => (app.glyphs.sets || []).reduce((n, s) => n + s.count, 0);
+    const many = (n) => (n >= 1000 ? `${Math.floor(n / 1000).toLocaleString()},000` : String(n));
+    const q = h("input", { type: "search", "aria-label": "Search icons", autocomplete: "off", spellcheck: "false" });
     const meta = h("p", { class: "fnote", role: "status", "aria-live": "polite" });
     const grid = h("div", { class: "icongrid", role: "listbox", "aria-label": "Icons" });
     const cats = [["", "Popular"], ["cat", "Pets"], ["radiator", "Heating"], ["bed", "Furniture"], ["power", "Power"], ["light", "Lights"], ["home", "Home"], ["weather", "Weather"], ["thermometer", "Climate"]];
-    let cat = "";
+    const was = prefixOf(current);
+    let cat = "", only = was && was !== "mdi" ? was : "";
+    const setRow = h("div", { class: "chips", role: "group", "aria-label": "Icon sets" });
     const catRow = h("div", { class: "chips" });
     const draw = () => {
+      const sets = app.glyphs.sets || [];
+      if (only && !sets.some((s) => s.prefix === only)) only = "";
+      q.placeholder = `Search ${many(total() || 7000)} icons: cat, radiator, sun…`;
+      setRow.hidden = sets.length < 2;
+      setRow.replaceChildren(...[["", "All"], ...sets.map((s) => [s.prefix, s.name])].map(([v, l]) =>
+        h("button", { class: "chipbtn", "aria-pressed": String(only === v), onclick: () => { only = v; draw(); } }, l)));
+      catRow.hidden = only !== "" && only !== "mdi";
       catRow.replaceChildren(...cats.map(([v, l]) => h("button", { class: "chipbtn", "aria-pressed": String(cat === v && !q.value), onclick: () => { cat = v; q.value = ""; draw(); } }, l)));
-      const items = app.searchIcons(q.value || cat);
-      meta.textContent = !app.mdiReady() ? "Loading icons…" : q.value ? `${items.length === 250 ? "250+" : items.length} icons` : "";
-      grid.replaceChildren(...items.map(([n, glyph]) => h("button", { class: "iconcell" + ("mdi:" + n === current ? " current" : ""), role: "option", "aria-label": n.replace(/-/g, " "), title: "mdi:" + n,
-        onclick: () => { close(); onPick("mdi:" + n); } }, h("span", { class: "mdi", text: glyph }), h("span", { class: "in", text: n }))));
-      if (app.mdiReady() && !items.length) grid.append(h("p", { class: "empty-note", text: `No icon called “${q.value}”. Try a simpler word.` }));
+      const items = app.searchIcons(q.value || (catRow.hidden ? "" : cat), only);
+      const shown = (n) => (prefixOf(n) === "mdi" ? shortName(n) : n);
+      meta.textContent = !app.glyphs.ready() ? "Loading icons…" : q.value ? `${items.length === 250 ? "250+" : items.length} icons` : "";
+      grid.replaceChildren(...items.map((n) => h("button", { class: "iconcell" + (n === fullName(current) ? " current" : ""), role: "option",
+        "aria-label": `${shortName(n).replace(/[-_/]/g, " ")}${prefixOf(n) === "mdi" ? "" : `, ${app.glyphs.setName(prefixOf(n))}`}`, title: n,
+        onclick: () => { close(); onPick(n); } }, h("span", { class: "mdi" }, app.iconNode(n)), h("span", { class: "in", text: shown(n) }))));
+      if (app.glyphs.ready() && !items.length) grid.append(h("p", { class: "empty-note", text: `No icon called “${q.value}”. Try a simpler word.` }));
     };
     q.addEventListener("input", draw);
-    app.whenMdi(draw);
+    app.glyphs.whenReady(draw);
     const lookRow = look ? h("div", { class: "field" }, h("span", { class: "lab", text: "Look" })) : null;
     const drawLook = () => {
       lookRow.replaceChildren(lookRow.firstChild, seg(LOOKS, look.value, (v) => { look.value = v; look.set(v); drawLook(); lookRow.querySelector('[aria-checked="true"]')?.focus(); }, "Look"));
       grid.dataset.look = look.value;
     };
     if (look) drawLook();
-    node.append(h("div", { class: "sheet-body" }, lookRow, h("div", { class: "search" }, icon("search", "sm"), q), catRow, meta, grid));
+    node.append(h("div", { class: "sheet-body" }, lookRow, h("div", { class: "search" }, icon("search", "sm"), q), setRow, catRow, meta, grid));
     draw();
   }, { cls: "wide tall", focus: "input" });
 }

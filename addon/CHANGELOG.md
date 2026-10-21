@@ -1,6 +1,15 @@
 # Changelog
 
 ## Unreleased
+- **Icons come from your Home Assistant.** The add-on still ships the whole
+  Material Design set, so icons always draw, but when Home Assistant has a
+  different version it copies Home Assistant's set across in one go and
+  uses it, so a new icon Home Assistant shows can be on your pages too.
+  Custom icon sets are copied the same way and appear in the icon picker:
+  your own SVGs from Custom Icons (`local:`), its Iconify sets, and sets
+  like Custom Brand Icons (`phu:`). The picker searches all of them, with a
+  chip per set to narrow it down. Icons are now drawn from their outlines,
+  so they're crisp at any size; they keep the size they had.
 - **A page's "While" and an alert's "Until" suggest the values a sensor
   really has**: Home Assistant's own for its kind, named as Home Assistant
   names them ("Away" for not_home), then the choices it lists and the states
