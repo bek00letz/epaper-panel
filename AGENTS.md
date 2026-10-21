@@ -401,6 +401,19 @@ up to v0.12.0). `app/legacy.js` keeps the pieces of it this one still uses.
 - **Edits save as you go, to the draft (`/api/draft`), never to the panel.**
   Only Send to panel writes `/api/layouts` (with `If-Match`) and pushes. A
   409 merges by page; only a page changed in both places asks the user.
+- **What isn't sent is shown, never guessed at** (the user's call, 21 Oct).
+  One comparison of the draft with what the panel has, `doc.changes`: by
+  page and by element ID, each page's place in the rotation, and the
+  settings sent with the pages. The 409 merge, the page strip and the status
+  card all read it; don't compare a second way. In the strip, an orange ring
+  and a dot by the name mean "not sent yet" and nothing else (a passed
+  countdown is greyed, not ringed); a removed page stays at the end, greyed,
+  until it's sent or put back. The status card lists what's waiting by
+  page; a line opens its page with its changed elements outlined until the
+  first click or edit, and Undo puts that one page or setting back to what
+  the panel has (`doc.revertPage`, `revertSetting`), with an Undo toast.
+  Equal means equal as data (`same`): the order keys were written in is
+  never a change.
 - **No confirmation dialogs.** Deleting shows an undo toast instead. There is
   a 60-deep undo stack; use it rather than asking "are you sure?".
 - **One floating system** (`app/ui.js`): popover, menu, sheet, toast. No

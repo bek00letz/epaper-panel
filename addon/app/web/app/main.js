@@ -6,7 +6,7 @@ import { h, icon, api, prefs, clone, pageTitle, slug, modKey, isMac, setDevice }
 import { menu, toast, closeAll, isOpen } from "./ui.js";
 import { Doc, SETTING_NAMES } from "./doc.js";
 import { Canvas } from "./canvas.js";
-import { renderStrip, statusSummary } from "./strip.js";
+import { renderStrip, statusSummary, unsentWords } from "./strip.js";
 import { renderInspector } from "./inspector.js";
 import { openEntityPicker, openAttributePicker, openIconPicker, openInsert } from "./pickers.js";
 import { openPresets } from "./newpage.js";
@@ -573,6 +573,18 @@ class App {
     doc.commit(); doc.emit("page");
     toast(`Deleted ${pageTitle(name)}.`, { label: "Undo", run: () => doc.undo() });
     if (!Object.keys(doc.spec.pages).length) this.firstRun();
+  }
+  /* A page from "Not sent yet": opened, with what differs from the panel outlined on the canvas. */
+  showChanges(name) {
+    const doc = this.doc, pend = doc.pending(), p = pend.pages[name];
+    doc.openPage(name);
+    // A new page is new all over: nothing to single out.
+    if (p?.elements) {
+      const was = doc.live.pages[p.from || name]?.elements || [];
+      this.canvas.showChanges([...p.elements.added, ...p.elements.changed], was.filter((e) => e.type !== "group" && p.elements.removed.includes(e.id)));
+    }
+    this.say(`${pageTitle(name)}. Not sent yet: ${unsentWords(pend, name)}.`);
+    requestAnimationFrame(() => this.el.strip.querySelector('[aria-current="page"]')?.scrollIntoView({ inline: "nearest", block: "nearest" }));
   }
   /* A page, or a setting sent with the pages, back to what the panel has (doc.changes): an Undo, never a question. */
   revertPage(name) {

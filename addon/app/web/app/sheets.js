@@ -8,7 +8,7 @@ import { DISPLAYS, isWidget } from "./elements.js";
 import { describe, parseShowIf, syncDynamicGridShowIf } from "./conditions.js";
 import { reflowPageElements } from "./legacy.js";
 import { LOOKS as PRESETS, clockPages, dateInstead } from "./presets.js";
-import { thumbnail, statusSummary, forgetThumbnails } from "./strip.js";
+import { thumbnail, statusSummary, forgetThumbnails, unsentWords } from "./strip.js";
 import { SETTING_NAMES } from "./doc.js";
 
 const thumbImg = (app, key, page) => {
@@ -126,7 +126,10 @@ export function openStatus(app, anchor) {
     if (s.panel_link?.pending_refresh) lines.push(`The panel hasn't picked up the last change yet${s.panel_link.last_error ? `: ${s.panel_link.last_error}` : ""}. It keeps trying.`);
     if (s.panel_link?.problem && !s.panel_link?.node) lines.push(`No panel found: ${s.panel_link.problem}.`);
     if (s.error) lines.push(`The last render failed: ${s.error}`);
-    pop.append(h("div", { class: "sthead" }, h("span", { class: "led " + tone }), h("span", { text: line1 })), ...lines.map((l) => h("p", { class: "fnote", text: l })));
+    const notes = lines.map((l) => h("p", { class: "fnote", text: l }));
+    // What isn't sent comes right under the line that says so.
+    pop.append(h("div", { class: "sthead" }, h("span", { class: "led " + tone }), h("span", { text: line1 })), ...notes.slice(0, 1),
+      ...(doc.dirty && doc.saving !== "error" ? [unsentList(app, close)] : []), ...notes.slice(1));
 
     const live = s.pages || [];
     pop.append(h("div", { class: "poplab", text: "Rotating" }), h("p", { class: "fnote", text: live.length ? `${live.map(pageTitle).join(", ")}, ${turning(t)}.` : "Nothing at the moment." }));
@@ -145,10 +148,47 @@ export function openStatus(app, anchor) {
     if (dev.can_clear) actions.append(h("button", { class: "btn tinted", onclick: async () => { close(); await app.deviceSet({ clear_ghosting: true }, "The panel is clearing its ghosting."); } }, icon("sparkle", "sm"), "Clear ghosting"));
     actions.append(h("button", { class: "btn tinted", onclick: () => { close(); openFullStrip(app); } }, icon("eye", "sm"), app.screen?.picks_page === "addon" ? "See what it shows" : "See every page"));
     pop.append(actions);
-    if (doc.dirty) pop.append(h("button", { class: "btn tinted danger wide", onclick: () => { close(); doc.revert(); toast("Went back to what's on the panel.", { label: "Undo", run: () => doc.undo() }); } }, icon("revert", "sm"), "Throw away unsent changes"));
+    if (doc.dirty) pop.append(h("button", { class: "btn tinted danger wide", onclick: () => { close(); doc.revert(); toast("Went back to what's on the panel.", { label: "Undo", run: () => doc.undo() }); } }, icon("revert", "sm"), "Throw away all unsent changes"));
     // Fresh device state for next time; the buttons above use what's known now.
     app.loadDevice();
   }, { label: "Now on the panel", align: "left" });
+}
+
+/* What the panel doesn't have yet (doc.changes), a line each: a page and what's waiting for it, in
+   the strip's order, then the settings sent with the pages. A line opens its page with its changes
+   outlined; Undo puts that one thing back to what the panel has, with an Undo toast, and the list
+   stays open for the next, with focus where it was. */
+function unsentList(app, close) {
+  const doc = app.doc, box = h("div", { class: "ulist", role: "group", "aria-label": "Not sent yet" });
+  const draw = (focusAt = -1) => {
+    const pend = doc.pending();
+    if (!pend.any) { close(); return; }
+    const lines = [];
+    const names = [...new Set([...doc.spec.rotation, ...Object.keys(doc.spec.pages), ...Object.keys(pend.pages)])];
+    for (const n of names) {
+      const words = unsentWords(pend, n);
+      if (!words) continue;
+      const removed = pend.pages[n]?.status === "removed";
+      lines.push({ name: pageTitle(n), words, open: removed ? null : () => { close(); app.showChanges(n); }, undoLabel: removed ? "Put back" : "Undo", undo: () => app.revertPage(n) });
+    }
+    for (const s of pend.settings) {
+      // A new model or mounting placed every page for it: that goes back with Throw away, or in Settings.
+      const placing = s === "display" || s === "orientation";
+      const where = s === "quiet_hours" ? "quiet" : placing ? "panel" : null;
+      lines.push({ name: SETTING_NAMES[s] || s, words: placing ? "Changed. Change it back in Settings" : "Changed",
+        open: where ? () => { close(); openSettings(app, where); } : null, undoLabel: "Undo", undo: placing ? null : () => app.revertSetting(s) });
+    }
+    const rows = lines.map(({ name, words, open, undoLabel, undo }, i) => {
+      const what = [h("span", { class: "udot", "aria-hidden": "true" }), h("span", { class: "un", text: name }), h("span", { class: "uw", text: words })];
+      return h("div", { class: "urow" },
+        open ? h("button", { class: "uopen", "aria-label": `${name}: ${words}. Open it`, onclick: open }, ...what) : h("span", { class: "uopen" }, ...what),
+        undo ? h("button", { class: "btn tinted small", "aria-label": undoLabel === "Put back" ? `Put ${name} back` : `Undo ${name}: back to what the panel has`, onclick: () => { undo(); draw(i); } }, undoLabel) : null);
+    });
+    box.replaceChildren(...rows);
+    if (focusAt >= 0) box.querySelectorAll(".urow")[Math.min(focusAt, rows.length - 1)]?.querySelector("button:last-child")?.focus({ preventScroll: true });
+  };
+  draw();
+  return box;
 }
 
 export function openFullStrip(app) {

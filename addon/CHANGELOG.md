@@ -11,6 +11,14 @@
   strip, greyed, under "Removed, not sent", until you send; click it to put
   it back. A countdown that has passed is now greyed without an outline, so
   an orange outline only ever means "not sent yet".
+- **"Not sent yet" says what isn't sent.** Click the pill at the head of
+  the page strip: under it, a line for each page with something waiting
+  ("Solar today · 2 changes", "Clock · Added", "Bins · Removed", "Cat ·
+  Moved in the rotation") and for quiet hours and the other settings sent
+  with your pages. Click a line to open that page with what changed
+  outlined in orange (dashed where something was removed) until your first
+  click; Undo puts just that page back to what the panel has, with an Undo
+  of its own.
 
 ## 0.15.0
 **Firmware change:** install the panel again (Settings › Install or update,

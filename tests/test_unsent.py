@@ -236,5 +236,65 @@ class TestTheStripSaysWhatsWaiting(unittest.TestCase):
         self.assertIn('{ label: "Undo", run: () => doc.undo() }', main[main.index("revertPage(name) {"):main.index("setTier(v)")])
 
 
+class TestTheStatusCardListsIt(unittest.TestCase):
+    """The "Not sent yet" pill opens the status card, which lists what's waiting by page (the
+    user's call, 21 Oct): a line opens its page, Undo puts that one back, never a question."""
+
+    def setUp(self):
+        sheets = (WEB / "app" / "sheets.js").read_text()
+        self.card = sheets[sheets.index("export function openStatus"):sheets.index("export function openFullStrip")]
+
+    def test_right_under_the_line_that_says_so(self):
+        self.assertIn('...notes.slice(0, 1),\n      ...(doc.dirty && doc.saving !== "error" ? [unsentList(app, close)] : []), ...notes.slice(1));', self.card)
+
+    def test_a_line_per_page_in_the_strips_order_then_the_settings(self):
+        self.assertIn("[...new Set([...doc.spec.rotation, ...Object.keys(doc.spec.pages), ...Object.keys(pend.pages)])]", self.card)
+        self.assertIn("unsentWords(pend, n)", self.card)
+        self.assertIn("for (const s of pend.settings)", self.card)
+        self.assertIn("SETTING_NAMES[s]", self.card)
+
+    def test_a_line_opens_its_page_with_its_changes_outlined(self):
+        self.assertIn("app.showChanges(n)", self.card)
+        main = (WEB / "app" / "main.js").read_text()
+        show = main[main.index("  showChanges(name) {"):]
+        self.assertIn("this.canvas.showChanges([...p.elements.added, ...p.elements.changed]", show)
+        self.assertIn("p.elements.removed.includes(e.id)", show, "dashed where removed ones were")
+
+    def test_undo_is_one_thing_with_a_toast_and_the_list_stays(self):
+        self.assertIn("undo: () => app.revertPage(n)", self.card)
+        self.assertIn("() => app.revertSetting(s)", self.card)
+        self.assertIn("onclick: () => { undo(); draw(i); }", self.card)
+        self.assertIn("if (!pend.any) { close(); return; }", self.card)
+        self.assertNotIn("confirm(", self.card)
+
+    def test_a_new_model_or_mounting_has_no_undo_of_its_own(self):
+        # Changing either placed every page for it: putting the setting back alone would leave them wrong.
+        self.assertIn('undo: placing ? null : () => app.revertSetting(s)', self.card)
+
+    def test_throw_away_says_all(self):
+        self.assertIn('"Throw away all unsent changes"', self.card)
+
+    def test_lines_are_big_enough_to_touch(self):
+        self.assertIn("min-height: 44px", css_rule(".urow"))
+        self.assertIn("min-height: 44px", css_rule(".uopen"))
+
+
+class TestTheCanvasOutlinesThemForAMoment(unittest.TestCase):
+    def setUp(self):
+        self.canvas = (WEB / "app" / "canvas.js").read_text()
+
+    def test_faded_by_the_first_click_or_edit(self):
+        self.assertIn('this.doc.on("change", () => this.fadeChanges());', self.canvas)
+        self.assertIn('p.addEventListener("pointerdown", (e) => {\n      this.fadeChanges();', self.canvas)
+        self.assertIn("animation: fadeout", css_rule(".ob.chg.going"))
+
+    def test_only_on_their_page(self):
+        self.assertIn("const ch = this.changes?.page === this.doc.cur ? this.changes : null;", self.canvas)
+
+    def test_orange_and_dashed_where_one_was_removed(self):
+        self.assertIn("var(--orange)", css_rule(".ob.chg"))
+        self.assertIn("dashed var(--orange)", css_rule(".ob.chg.gone"))
+
+
 if __name__ == "__main__":
     unittest.main()
