@@ -11,6 +11,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Version | Date | What |
 |---|---|---|
+| 0.19.0 | 21 Oct | Race pages read each series' own calendar first (Formula E shows season 13) and say so between seasons; Scores says when a busy day won't fit an always-on panel; next year's racing calendar missing isn't a failure. Add-on only. |
 | 0.18.0 | 21 Oct | The panel's clock is right within seconds (draws just after each minute, the panel fetches right after; sleeping devices wake just after a minute); icons from your own Home Assistant, custom sets included; condition suggestions from the add-on's one list. Firmware change. |
 | 0.17.0 | 21 Oct | Any icon can change with a sensor (an icon and a look per state); From switches between any choices; no inspector switcher cuts off a choice. Add-on only. |
 | 0.16.0 | 21 Oct | The editor shows what isn't sent yet, per page, with undo for each change; Duplicate and Delete on every page tile, larger strip sizes; a "changed in the last N minutes" condition for pages and alerts. Add-on only. |
@@ -26,21 +27,17 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 ## In flight
 
-| Work | Where | State |
-|---|---|---|
-| Say when Scores won't all fit an always-on CrowPanel: a line while setting up Scores, "showing 14 of 23 games" when trimming happens; no global counter (session "scores-fit") | branch `scores-fit` from main | Started 21 Oct |
-
-Merged into local main for the next release (user, 21 Oct): next year's racing
-calendar not being published yet no longer counts as the service failing.
+Nothing.
 
 Worker notes are in the notes folders (`break-it-0.12.0.md`,
 `timers-addon.md`, `firmware-013.md`, `fixes-0131.md`, `editor-polish.md`,
 `alerts-todo.md` in the first coordinator's; `widgets-015.md`,
 `presets-015.md`, `framework-review.md`, `checklist-0.15.0.md`,
-`unsent-changes.md`, `icon-follows.md`, `ha-icons.md`, `clock-align.md` in this one's).
+`unsent-changes.md`, `icon-follows.md`, `ha-icons.md`, `clock-align.md`, `racing-calendars.md` in this one's).
 Merged worktrees kept until the user OKs removing them: `release-next`,
 `presets-015`, `widgets-015`, `editor-zoom`, `unsent-changes`,
-`changed-condition`, `icon-follows`, `ha-icons`, `clock-align`.
+`changed-condition`, `icon-follows`, `ha-icons`, `clock-align`, `scores-fit`,
+`racing-calendars`.
 
 ## Framework review
 
