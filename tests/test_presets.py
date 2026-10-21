@@ -130,7 +130,7 @@ class TestGuestWifi(unittest.TestCase):
         p = run_js('console.log(JSON.stringify(P.presetById("guest_wifi").needs))')
         self.assertEqual(p, "wifi")
         src = (APP_JS / "setup.js").read_text()
-        self.assertIn('addBtn.disabled = (asksEntity && !ent) || (p.needs === "wifi" && !wifi.ssid.trim());', src)
+        self.assertTrue("ready: () => !!wifi.ssid.trim()," in src, "Add page waits for the network's name")
 
     def test_the_words_stay_left_of_the_code(self):
         els = run_js('console.log(JSON.stringify(P.guestWifi({ ssid: "A network name of thirty-two ch" })))')
@@ -228,6 +228,42 @@ class TestSensibleFirst(unittest.TestCase):
         got = [e for e, _ in self.rank("status")]
         self.assertEqual(got[:2], ["binary_sensor.front_door", "person.sam"])
         self.assertNotIn("light.hall", got)
+
+
+class TestSetsUpWhatItNeeds(unittest.TestCase):
+    """New to watch connects Jellyfin in its own step and saves it where Settings shows it."""
+
+    def setUp(self):
+        self.js = (APP_JS / "setup.js").read_text()
+
+    def test_new_to_watch_needs_jellyfin(self):
+        self.assertEqual(run_js('console.log(JSON.stringify(P.presetById("watch").needs))'), "jellyfin")
+        self.assertIn("const SETUPS = { wifi: wifiSetup, jellyfin: jellyfinSetup", self.js)
+
+    def test_one_store_the_one_settings_shows(self):
+        self.assertIn('await api("api/sources", { method: "PUT", body: [...all, src] })', self.js)
+        self.assertIn('const src = { type: "jellyfin", name: freeSourceName(all), base: form.base.trim(), key: form.key.trim(), user, days: 30 };', self.js)
+        self.assertEqual(set(re.findall(r'"(\w+)", "', (APP_JS / "sheets.js").read_text().split("jellyfin: [", 1)[1].split("]],", 1)[0])),
+                         {"name", "base", "key", "user", "days"}, "the fields Settings › Data sources edits")
+
+    def test_a_second_page_reuses_it(self):
+        self.assertIn('mine = all.filter((s) => s.type === "jellyfin");', self.js)
+        self.assertIn("if (mine.length === 1) picked = mine[0];", self.js)
+        self.assertIn('return { ent: sensorOf(picked) };', self.js)
+
+    def test_a_new_one_never_takes_another_sources_name(self):
+        got = run_js("""console.log(JSON.stringify([P.freeSourceName([]), P.freeSourceName([{ name: "watch" }]),
+          P.freeSourceName([{ name: "watch" }, { name: "watch_2" }]), P.sensorOf({ name: "watch_2" })]))""")
+        self.assertEqual(got, ["watch", "watch_2", "watch_3", "sensor.epaper_watch_2"])
+
+    def test_it_says_where_the_key_is_and_fills_the_address_from_jellyha(self):
+        self.assertIn("In Jellyfin: Dashboard › API Keys, then +", self.js)
+        self.assertIn('api("api/sources/jellyfin/suggest")', self.js)
+        self.assertIn('h("small", { text: "From JellyHA" })', self.js)
+
+    def test_whose_unwatched_is_picked_from_who_is_there(self):
+        self.assertIn('api("api/sources/jellyfin/check", { method: "POST", body: { base: form.base.trim(), key: form.key.trim() } })', self.js)
+        self.assertIn('"aria-label": "Whose unwatched"', self.js)
 
 
 class TestTheSheet(unittest.TestCase):

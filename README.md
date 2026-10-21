@@ -165,8 +165,11 @@ panel shows them; drag to reorder. Select anything to change it on the right;
 select nothing and the right side shows the page: when it appears, how often,
 what it's called.
 
-- **New page** starts from a preset and asks which of your sensors it
-  should show, or starts blank.
+- **New page** starts from a preset, on shelves by what it's for (Your day,
+  Home, Energy, Outside, Sports, Watch and listen), or starts blank. A
+  preset asks for its look and which of your sensors it shows, with the
+  likely ones first, and sets up anything else it needs right there, like
+  the Jellyfin connection for New to watch.
 - **Insert** finds element types and your sensors in one search. Drag a
   sensor straight onto the canvas.
 - **Copy, paste, and paste and match** move things between pages in the same
@@ -180,7 +183,7 @@ what it's called.
   panel is up to date, what's rotating, which pages are hidden right now and
   why, and lets you put it to sleep or clear ghosting.
 
-![The New page sheet with presets for months, weather, planes, Formula 1, scores, devices and more](docs/new-page.png)
+![The New page sheet with presets for months, weather, planes, race weekends, scores, devices and more](docs/new-page.png)
 
 It follows your system's light or dark mode, works with the keyboard (press
 **?** for every shortcut), and works on a phone in the Home Assistant app.
@@ -228,8 +231,8 @@ the firmware it has.
 ### 3. Your first page
 
 1. Choose **New page** at the front of the page strip.
-2. Pick a preset, say **Match score** or **Solar today**, and your sensor if
-   it asks for one.
+2. Pick a preset, say **Match** or **Solar today**, then its league or your
+   sensor if it asks for one.
 3. Choose **Add page**, then **Send to panel**.
 
 ## Doing more
@@ -327,8 +330,10 @@ panel.
 
 Jellyfin's details come separately, so a page can show just the part it
 wants: the episode's name, which episode (S02E04), how many are new, when it
-arrived, a film's year and length, and the next few titles. **New page** has
-three Jellyfin presets: **New to watch**, **Episode card** and **Up next**.
+arrived, a film's year and length, and the next few titles. **New page ›
+New to watch** shows them in three styles (Newest, Episode card, Up next),
+and connects Jellyfin itself the first time: the server's address (filled in
+from JellyHA if you have it), an API key, and whose unwatched to show.
 
 ### When something stops answering
 

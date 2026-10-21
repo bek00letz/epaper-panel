@@ -319,6 +319,16 @@ export function rankSensors(p, ents, energy = {}) {
     .map(({ e, s }) => ({ e, tag: s === 0 ? "From your Energy dashboard" : "" }));
 }
 
+/* A data source a preset sets up: the sensor it makes, and a name no other
+   source has (feeds publish sensor.epaper_<name>). */
+export const sensorOf = (src) => `sensor.epaper_${src.name}`;
+export function freeSourceName(sources, base = "watch") {
+  const taken = new Set(sources.map((s) => s.name));
+  if (!taken.has(base)) return base;
+  let k = 2; while (taken.has(`${base}_${k}`)) k++;
+  return `${base}_${k}`;
+}
+
 /* Every look as a preset of its own, the shape the 0.10 sheet used: kept for
    the way back (sheets.openPresetsGrid) and for the tests. */
 export const LOOKS = PRESETS.flatMap((p) => p.looks.map((l) => ({

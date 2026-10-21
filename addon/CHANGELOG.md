@@ -91,6 +91,12 @@
   Status takes any sensor's state now (a door, a person, a lock), door and
   window sensors first.
 
+- **New to watch connects Jellyfin itself.** The first time, its next step
+  asks for the server's address (filled in from JellyHA if you have it) and
+  an API key, says where Jellyfin keeps it, connects, and asks whose
+  unwatched to show. The connection is saved under Settings › Data sources
+  like one you add there, and the next Jellyfin page offers it.
+
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) for the quiet-hours fix below.
