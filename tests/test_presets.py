@@ -359,6 +359,14 @@ class TestSetsUpWhatItNeeds(unittest.TestCase):
         self.assertIn('"aria-label": "Whose unwatched"', self.js)
 
 
+class TestCitiesEditorCanBeClicked(unittest.TestCase):
+    def test_its_class_is_not_the_canvas_guides(self):
+        """The canvas's guides are .zones (absolute, no pointer events): the editor named so couldn't be clicked."""
+        self.assertIn('class: "zones"', (APP_JS / "canvas.js").read_text())
+        self.assertNotIn('class: "zones"', (APP_JS / "zones.js").read_text())
+        self.assertIn('h("div", { class: "cities" })', (APP_JS / "zones.js").read_text())
+
+
 @unittest.skipUnless(shutil.which("node"), "no node to read the editor's presets")
 class TestEnergy(unittest.TestCase):
     """The Energy dashboard's presets read it themselves, and set up a sensor in place when it lacks one."""

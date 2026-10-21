@@ -17,7 +17,7 @@ const cityOf = (tz) => String(tz || "").split("/").pop().replace(/_/g, " ");
 export function zonesEditor(el, changed, { most = 4, live = false } = {}) {
   if (!Array.isArray(el.zones) || !el.zones.length) el.zones = [{ tz: "", label: "" }];
   let tz = { home: "", zones: [] }, picking = null;            // picking: a row's index, or "new"
-  const box = h("div", { class: "zones" });
+  const box = h("div", { class: "cities" });  // not "zones": that is the canvas's guides
   const save = () => changed();
   const nameOf = (z) => (z.tz ? (tz.zones.find((x) => x.tz === z.tz)?.city || cityOf(z.tz)) : `Here${tz.home ? `, ${cityOf(tz.home)}` : ""}`);
 
