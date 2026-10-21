@@ -934,7 +934,7 @@ class TestTheSheet(unittest.TestCase):
 
     def test_keyboard_moves_along_a_shelf_and_esc_goes_back(self):
         self.assertIn('if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;', self.js)
-        self.assertIn('if (e.key === "Escape" && step) { e.preventDefault(); e.stopImmediatePropagation(); leave(); } }, true);', self.js)
+        self.assertIn('if (e.key === "Escape" && step && !e.target.closest?.("[data-own-esc]")) { e.preventDefault(); e.stopImmediatePropagation(); leave(); }', self.js)
 
     def test_title_shelves_and_footer_start_on_one_line(self):
         self.assertIn(".npsheet .sheet-head { padding-left: var(--gutter); }", CSS)
