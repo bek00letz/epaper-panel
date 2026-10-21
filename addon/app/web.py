@@ -746,6 +746,38 @@ async def api_sources_test(request):
                               "error": errors[0] if errors else None})
 
 
+async def api_jellyfin_check(request):
+    """Try a Jellyfin address and key before a preset saves them: {"ok", "users", "titles"} or {"ok": false, "error"}.
+    A key shown masked (editing a saved source, `name` or `id` given) is the saved one."""
+    from feeds import jellyfin
+    body = await _json(request)
+    if not isinstance(body, dict):
+        raise web.HTTPBadRequest(text="expected {base, key}")
+    src = feeds.unmask_secrets([{"type": "jellyfin", "name": body.get("name") or "watch", "id": body.get("id"),
+                                 "key": str(body.get("key") or "")}], load_sources())[0]
+    return web.json_response(await jellyfin.check(str(body.get("base") or ""), src.get("key") or "", runtime.SESSION))
+
+
+async def api_jellyfin_suggest(request):
+    """Jellyfin's address from JellyHA, when it's installed, so the preset can fill it in: {"address": "" | url}.
+    JellyHA doesn't share its API key, so that's still typed."""
+    if not HA_TOKEN:
+        return web.json_response({"address": ""})
+    try:
+        registry = await runtime.HASS.ws({"type": "config/entity_registry/list"}) or []
+        mine = [e.get("entity_id") for e in registry if isinstance(e, dict) and e.get("platform") == "jellyha"]
+        for eid in mine:
+            if not valid_entity_id(str(eid or "")):
+                continue
+            st = await ha_json(runtime.SESSION, f"/states/{urllib.parse.quote(eid, safe='.')}")
+            url = str(((st or {}).get("attributes") or {}).get("config_external_url") or "").strip().rstrip("/")
+            if url.startswith(("http://", "https://")):
+                return web.json_response({"address": url})
+    except Exception as exc:
+        print(f"jellyfin suggest: {health.describe(exc)}", flush=True)
+    return web.json_response({"address": ""})
+
+
 def _masked_setup(cfg: dict, dev: dict) -> dict:
     """A panel's setup for the browser: passwords masked."""
     out = dict(cfg)
@@ -975,6 +1007,8 @@ def make_apps():
         web.get("/api/sources", api_sources_get),
         web.put("/api/sources", api_sources_put),
         web.post("/api/sources/test", api_sources_test),
+        web.post("/api/sources/jellyfin/check", api_jellyfin_check),
+        web.get("/api/sources/jellyfin/suggest", api_jellyfin_suggest),
         web.get("/api/devices", api_devices),
         web.post("/api/devices", api_devices_add),
         web.patch("/api/devices/{id}", api_devices_update),

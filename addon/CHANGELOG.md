@@ -92,6 +92,11 @@
   weather is back, like every other value. Race weekend and Match did the
   same with a made-up race and match, before their results arrived or
   when there were none; they now stay empty too.
+- **New to watch connects Jellyfin where you add it.** The address and
+  API key are tried before anything is saved, with a plain answer when
+  something's wrong (the key, the address, or not Jellyfin at all), and
+  then you pick whose unwatched to show. With JellyHA installed, the
+  address is filled in for you.
 - **Fixed:** a Race weekend page set to NASCAR or IndyCar showed Formula 1's
   race, drivers and status. Each series now reads its own results, and its
   page names it ("NASCAR · …"). Whether the page shows still followed the
