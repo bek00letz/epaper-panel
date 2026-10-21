@@ -29,11 +29,20 @@ WED = datetime(2026, 9, 30, 12, 34)
 
 class TestWhatShowsTheTime(unittest.TestCase):
     def test_times_and_not_times(self):
-        yes = ["{{ now().strftime('%H:%M') }}", "{{ now().strftime('%I:%M %p') }}", "{{ now().strftime(\"%-H.%M\") }}", "at {{ now().strftime('%H:%M') }}"]
-        no = ["{{ now().strftime('%A, %-d %B') }}", "{{ states('sensor.time') }}", "12:30", ""]
+        yes = ["{{ now().strftime('%H:%M') }}", "{{ now().strftime('%I:%M %p') }}", "{{ now().strftime(\"%-H.%M\") }}", "at {{ now().strftime('%H:%M') }}",
+               # The ways people write a clock in Home Assistant (framework review #11).
+               "{{ as_timestamp(now()) | timestamp_custom('%H:%M') }}", "{{ states('sensor.time') }}",
+               "{{ states.sensor.date_time.state }}", "{{ now().hour ~ ':' ~ '%02d' | format(now().minute) }}"]
+        no = ["{{ now().strftime('%A, %-d %B') }}", "{{ as_timestamp(states.sensor.door.last_changed) | timestamp_custom('%H:%M') }}",
+              "{{ states('sensor.timer_kitchen') }}", "{{ now().day }}", "12:30", ""]
         self.assertTrue(all(clocktime.shows_time({"type": "text", "value": v}) for v in yes))
         self.assertFalse(any(clocktime.shows_time({"type": "text", "value": v}) for v in no))
         self.assertFalse(clocktime.shows_time({"type": "number", "value": yes[0]}))
+        # Bindings: the add-on's own clock, and the Time & Date sensor picked as an entity.
+        self.assertTrue(clocktime.shows_time({"type": "text", "show": "now"}))
+        self.assertTrue(clocktime.shows_time({"type": "text", "show": "now", "format": "time_12"}))
+        self.assertFalse(clocktime.shows_time({"type": "text", "show": "now", "format": "day_full"}))
+        self.assertTrue(clocktime.shows_time({"type": "text", "entity": "sensor.time", "show": "state"}))
 
     def test_the_clock_reads_as_the_date(self):
         page, before = {"elements": CLOCK}, copy.deepcopy(CLOCK)

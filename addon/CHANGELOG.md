@@ -108,6 +108,14 @@
   NFL game is a game, and the time before one starts reads "Kick-off
   20:00", "Tip-off 20:00", "First pitch 20:00" or "Puck drop 20:00". Home
   Assistant's sensor for a league says Matchday or Game day to match.
+- **12- or 24-hour time on every device.** Sunrise, to-do due times,
+  kick-offs, race sessions, the clock in the corner and "updated" all
+  follow one setting: Automatic (the way clocks read in Home Assistant's
+  country, so 2:05 PM in the US and 14:05 in Romania), 12-hour or 24-hour.
+- **A clock is a clock however it's written.** A device that sleeps shows
+  the date instead of the time it went to sleep with, now also for clocks
+  written as `as_timestamp(now()) | timestamp_custom(...)`, the Time & Date
+  sensor, or `now().hour`.
 - **Fixed:** a Race weekend page set to NASCAR or IndyCar showed Formula 1's
   race, drivers and status. Each series now reads its own results, and its
   page names it ("NASCAR · …"). Whether the page shows still followed the

@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 import aiohttp
 
 import runtime
-from render import sport
+from render import clock, sport
 from sources.geo import get_home_timezone
 
 
@@ -86,7 +86,7 @@ def _parse_espn_event(ev, league_title="", tz_name=None, league="soccer"):
                     kickoff_dt = kickoff_dt.astimezone(local_tz)
                 except Exception:
                     pass
-            kickoff_time_str = kickoff_dt.strftime("%H:%M")
+            kickoff_time_str = clock.hm(kickoff_dt)
             now_local = datetime.now(kickoff_dt.tzinfo)
             if kickoff_dt.date() != now_local.date():
                 kickoff_day_str = kickoff_dt.strftime("%a ")

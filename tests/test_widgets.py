@@ -577,3 +577,64 @@ class TestExampleTemplates(unittest.TestCase):
         self.assertEqual(ev(binding.template_for({**bins, "show": "calendar_title"}), own=False), "Recycling")
         self.assertIn(ev(binding.template_for({**bins, "show": "days_until"}), own=False), ("3", "4"))   # by time of day
         self.assertTrue(ev(binding.template_for({"entity": "calendar.family", "show": "date_formatted"}), own=False))
+
+
+# ---------------------------------------------------------------- 12- or 24-hour
+
+import timeformat  # noqa: E402
+from render import binding, clock, todo  # noqa: E402
+
+
+class TestTimeFormat(unittest.TestCase):
+    def tearDown(self):
+        clock.use(False)
+        try:
+            (support.DATA_DIR / timeformat.FILE).unlink()
+        except FileNotFoundError:
+            pass
+        support.use_test_data_dir()
+
+    def test_automatic_follows_home_assistants_country(self):
+        support.use_test_data_dir()
+        self.assertTrue(timeformat.twelve_hour("US", "en"))
+        self.assertFalse(timeformat.twelve_hour("RO", "ro"))
+        self.assertFalse(timeformat.twelve_hour("CA", "fr"))
+        self.assertTrue(timeformat.twelve_hour("CA", "en"))
+        self.assertFalse(timeformat.twelve_hour(None, None))
+
+    def test_the_setting_overrides_it(self):
+        support.use_test_data_dir()
+        timeformat.save("24h")
+        self.assertFalse(timeformat.twelve_hour("US"))
+        timeformat.save("12h")
+        self.assertEqual(timeformat.describe("RO"), {"format": "12h", "resolved": "12h", "country": "RO"})
+        with self.assertRaises(ValueError):
+            timeformat.save("13h")
+
+    def test_every_time_on_the_panel_follows_it(self):
+        at = datetime(2026, 10, 21, 14, 5, tzinfo=TZ)
+        clock.use(True)
+        self.assertEqual(clock.hm(at), "2:05 PM")
+        self.assertEqual(sun.facts({"rising": at.isoformat(), "setting": at.isoformat()}, at)[0].value, "2:05 PM")
+        self.assertEqual(todo.due_label({"due": at.isoformat()}, at.replace(hour=9))[0], "Today 2:05 PM")
+        self.assertEqual(binding.now_text({"show": "now"}, at), "2:05 PM")
+        self.assertIn("%-I:%M %p", binding.template_for({"entity": "sensor.door", "show": "last_changed", "format": "time"}))
+        self.assertEqual(sports._parse_espn_event({"date": at.isoformat(), "competitions": [{"status": {"type": {"state": "pre"}}}]},
+                                                  "", tz_name="Europe/Bucharest", league="soccer/eng.1")["clock"], "Kick-off 2:05 PM")
+        clock.use(False)
+        self.assertEqual(clock.hm(at), "14:05")
+        self.assertEqual(binding.now_text({"show": "now", "format": "day_full"}, at), "Wednesday, 21 October")
+
+
+class TestTimeForTheEditor(EditorClient):
+    async def test_set_and_read_and_which_elements_show_the_time(self):
+        r = await self.ed.put("/api/settings/time", json={"format": "12h"})
+        self.assertEqual((await r.json())["resolved"], "12h")
+        self.assertTrue(clock.twelve_hour())
+        r = await self.ed.put("/api/settings/time", json={"format": "sometimes"})
+        self.assertEqual(r.status, 400)
+        await self.ed.put("/api/settings/time", json={"format": "auto"})
+        r = await self.ed.post("/api/shows-time", json={"page": {"elements": [
+            {"type": "text", "value": "{{ states('sensor.time') }}"}, {"type": "text", "value": "Hello"}, {"type": "text", "show": "now"}]}})
+        self.assertEqual(await r.json(), {"time": [0, 2]})
+        clock.use(False)

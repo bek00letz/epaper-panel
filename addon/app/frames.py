@@ -14,12 +14,14 @@ import devices
 import health
 import kinds
 import runtime
+import timeformat
+from render.clock import hm as clock_text
 from config import HA_TOKEN, SLEEP_PAGE, valid_entity_id
 from entities import publish_category_sensors, publish_computed, publish_entity, sync_entities
 from ha import curve_series, ha_json, resolve_templates
 from panel_ops import push_panel_update
 from sources.flights import fetch_overhead_aircraft, place_of
-from sources.geo import get_home_timezone
+from sources.geo import get_home_locale, get_home_timezone
 from sources.ha_services import fetch_calendar_events, fetch_todo_items, fetch_weather_forecast, todo_list_id
 from sources import energy, station
 from sources.home import episodes, fetch_now_playing, fetch_sun, players
@@ -579,7 +581,7 @@ def empty_page(orient: int, display: str, clock: str | None = None):
     """What a screen shows when its design has no pages. `clock`: the footer's time (now)."""
     cw, _ = T.canvas_dims(orient, display=display)
     page = {"elements": [{"type": "text", "value": "no pages", "x": 24, "y": 60, "w": cw - 48, "h": 120}]}
-    return layout.render_page(page, {}, clock=clock or datetime.now().strftime("%H:%M"), label="empty",
+    return layout.render_page(page, {}, clock=clock or clock_text(datetime.now()), label="empty",
                               orientation=orient, display=display)
 
 
@@ -617,6 +619,7 @@ async def refresh_frames(session) -> dict[str, Frames]:
 
 
 async def _refresh_all(session) -> dict[str, Frames]:
+    timeformat.apply(*await get_home_locale(session))          # 12- or 24-hour, for every device
     await publish_computed(session)
     # Devices of a kind that's switched off aren't drawn (kinds.shown).
     views = [(dev, spec) for dev, spec in devices.all_views() if kinds.shown(dev)]

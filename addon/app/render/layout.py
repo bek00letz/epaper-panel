@@ -31,6 +31,7 @@ from . import energy
 from . import media
 from . import sport
 from . import sun
+from . import clock
 from . import clocktime
 from . import todo
 from . import units
@@ -1222,7 +1223,7 @@ def _draw_calendar_agenda(img, d, el, raw_val, display=None):
                     else:
                         edt = datetime.fromisoformat(s_clean)
                         if edt.strftime("%Y-%m-%d") == today_ymd:
-                            dt_str = f"TODAY {edt.strftime('%H:%M')}"
+                            dt_str = f"TODAY {clock.hm(edt).upper()}"
                         else:
                             dt_str = edt.strftime("%a %-d %b").upper()
                 except Exception:
@@ -2180,6 +2181,8 @@ def render_page(page, vals, *, clock="", label="", footer=None, page_no=None, it
                     entry = {"i": i, **got[0]}
                     if i in swapped:
                         entry["date_for_time"] = True      # the editor says so on the element
+                    if el["type"] == "text" and clocktime.shows_time(el):
+                        entry["shows_time"] = True          # the editor asks here, never its own string match
                     if el["type"] == "number":
                         raw = vals.get(i, el.get("value", ""))
                         try:

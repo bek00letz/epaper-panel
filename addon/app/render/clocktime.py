@@ -22,28 +22,57 @@ from __future__ import annotations
 import re
 from datetime import datetime
 
+from . import binding, clock
 from . import theme as T
 
 # A template that shows the time of day: now() formatted with an hour, minute or am/pm.
 TIME = re.compile(r"now\(\)[^}]*strftime\(\s*['\"]([^'\"]*%-?[HIklMp][^'\"]*)['\"]")
 FORMAT = re.compile(r"now\(\)[^}]*strftime\(\s*['\"]([^'\"]*)['\"]")
 DAY = re.compile(r"%-?[de]")
+# The other ways people write a clock in Home Assistant.
+IDIOMS = (
+    TIME,
+    # as_timestamp(now()) | timestamp_custom('%H:%M'): a time pattern, on a template that reads now()
+    re.compile(r"now\(\).*timestamp_custom\(\s*['\"][^'\"]*%-?[HIklMp]", re.S),
+    # now().hour ~ ':' ~ now().minute
+    re.compile(r"now\(\)\s*\.\s*(?:hour|minute)\b"),
+    # The Time & Date integration's sensors: states('sensor.time'), states.sensor.date_time.state
+    re.compile(r"""(?:['"]|states\.)sensor\.(?:time|time_utc|date_time|date_time_utc|date_time_iso|time_date)(?:['"]|\b)"""),
+)
+
+
+def _template(el: dict) -> str:
+    """What the element shows, as a template: its own, or the one its binding makes."""
+    raw = el.get("value")
+    if isinstance(raw, str) and raw.strip():
+        return raw
+    return binding.template_for(el)
 
 
 def shows_time(el: dict) -> bool:
-    return isinstance(el, dict) and el.get("type") == "text" and bool(TIME.search(str(el.get("value") or "")))
+    """Whether a text element shows the time of day, however it's written: the one place that says."""
+    if not isinstance(el, dict) or el.get("type") != "text":
+        return False
+    if el.get("show") == "now" and not (isinstance(el.get("value"), str) and el["value"].strip()):
+        return bool(TIME.search("now().strftime('" + binding.pattern(el.get("format") or "time") + "')"))
+    text = _template(el)
+    return any(p.search(text) for p in IDIOMS)
+
+
+def times(page: dict) -> list[int]:
+    """The elements of a page that show the time (for the editor: /api/shows-time and the render metrics)."""
+    return [i for i, el in enumerate(page.get("elements") or []) if shows_time(el)]
 
 
 def _format(el: dict) -> str:
+    if el.get("show") == "now" and not (isinstance(el.get("value"), str) and el["value"].strip()):
+        return binding.pattern(el.get("format") or "time")
     m = FORMAT.search(str(el.get("value") or ""))
     return m.group(1) if m else ""
 
 
 def _strftime(now: datetime, fmt: str) -> str:
-    """strftime with the no-padding forms (%-d) on every platform."""
-    for code, value in (("%-d", str(now.day)), ("%-m", str(now.month)), ("%-H", str(now.hour)), ("%-I", str(int(now.strftime("%I"))))):
-        fmt = fmt.replace(code, value)
-    return now.strftime(fmt)
+    return clock.strftime(now, fmt)
 
 
 def date_for_time(page: dict, vals: dict, now: datetime) -> tuple[dict, dict, set[int]]:

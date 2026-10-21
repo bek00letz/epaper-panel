@@ -14,6 +14,12 @@ A raw `value` template still wins when present, so nothing already built
 breaks and power users keep the full language.
 """
 import json
+from datetime import datetime
+
+try:
+    from . import clock
+except ImportError:                     # imported as a top-level module
+    from render import clock
 
 TIME_FORMATS = {
     "time":     "%H:%M",
@@ -23,6 +29,18 @@ TIME_FORMATS = {
     "day_full": "%A, %-d %B",
     "datetime": "%-d %b %H:%M",
 }
+
+
+def pattern(fmt: str) -> str:
+    """A format's strftime pattern; a time of day follows the panel's 12/24-hour setting (clock.py)."""
+    if fmt in ("time", "datetime"):
+        return clock.pattern(fmt)
+    return TIME_FORMATS.get(fmt, clock.pattern("time"))
+
+
+def now_text(el, now: datetime | None = None) -> str:
+    """`show: "now"`: the add-on's own clock in the element's format (time by default), never asked of Home Assistant."""
+    return clock.strftime(now or datetime.now(), pattern(el.get("format") or "time"))
 
 
 def _quote(s):
@@ -46,6 +64,8 @@ def template_for(el):
     if isinstance(raw, str) and raw.strip():
         return raw                                   # explicit template wins
 
+    if el.get("show") == "now":                      # the clock: answered by the add-on (local_value)
+        return "{{ now().strftime('" + _quote(pattern(el.get("format") or "time")) + "') }}"
     ent = (el.get("entity") or "").strip()
     if not ent:
         return ""
@@ -61,8 +81,7 @@ def template_for(el):
         if fmt == "relative":
             core = f"relative_time({src}) if {cond} else ''"
         else:
-            pattern = TIME_FORMATS.get(fmt, TIME_FORMATS["time"])
-            core = f"as_timestamp({src}) | timestamp_custom('{pattern}') if {cond} else ''"
+            core = f"as_timestamp({src}) | timestamp_custom('{pattern(fmt)}') if {cond} else ''"
     elif show == "days_until":
         # Days remaining until a calendar event or future date sensor
         if ent.startswith("calendar."):
@@ -72,12 +91,12 @@ def template_for(el):
         core = f"((as_timestamp({src}) - as_timestamp(now())) / 86400) | round(0, 'ceil') | int"
     elif show == "date_formatted":
         fmt = el.get("format") or "date"
-        pattern = TIME_FORMATS.get(fmt, TIME_FORMATS["date"])
+        pat = pattern(fmt) if fmt in TIME_FORMATS else TIME_FORMATS["date"]
         if ent.startswith("calendar."):
             src = f"state_attr('{_quote(ent)}', 'start_time')"
         else:
             src = f"states('{_quote(ent)}')"
-        core = f"as_timestamp({src}) | timestamp_custom('{pattern}')"
+        core = f"as_timestamp({src}) | timestamp_custom('{pat}')"
     elif show == "unit":
         # The value itself; the renderer turns it into the unit it's shown in
         # and applies the replacements to that word (layout.element_text).
@@ -111,6 +130,8 @@ def local_value(el, registry):
     raw = el.get("value")
     if isinstance(raw, str) and raw.strip():
         return None
+    if el.get("show") == "now":
+        return now_text(el)
     ent = (el.get("entity") or "").strip()
     info = registry.get(ent) if ent else None
     if info is None:
