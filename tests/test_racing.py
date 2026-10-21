@@ -87,6 +87,15 @@ class TestEverySeriesFetchesItsOwn(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(any(want in u for u in web.asked), (series, web.asked))
             self.assertEqual(win["slug"], racing.series_of(series).slug)
 
+    async def test_a_live_formula_e_session_says_live(self):
+        from datetime import datetime, timedelta, timezone
+        started = (datetime.now(timezone.utc) - timedelta(minutes=20)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        web = FakeWeb()
+        web.get = lambda url, **kw: _Reply({"races": [{"name": "Live ePrix", "location": "Here",
+                                                       "sessions": {"qualifying": started}}]})
+        data = await racing.fetch_racing_data.direct(web, "fe", tz_name="UTC")
+        self.assertEqual((data["status"], data["clock"]), ("IN", "Qualifying LIVE"))
+
     def test_every_name_a_page_uses_finds_its_series(self):
         for alias, slug in (("nascar", "nascar"), ("NASCAR-premier", "nascar"), ("irl", "indycar"),
                             ("IndyCar", "indycar"), ("formula-e", "fe"), ("f1", "f1"), ("sensor.f1", "f1")):

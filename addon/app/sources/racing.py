@@ -214,7 +214,7 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_na
                     "circuit": circ_name,
                     "detail": detail_str or f"Status: {session_st}",
                     "status": session_st,
-                    "clock": f"{session_title} runtime.LIVE" if session_st == "IN" else ("SCHEDULED" if session_st == "PRE" else "FINAL"),
+                    "clock": f"{session_title} LIVE" if session_st == "IN" else ("SCHEDULED" if session_st == "PRE" else "FINAL"),
                     "standings": []
                 }
 
