@@ -11,6 +11,7 @@ import { dateEditor, binsEditor } from "./countdown.js";
 import { zonesEditor } from "./zones.js";
 import { staleNote, changesEvery, pageChangesEvery, sleepsBetweenUpdates } from "./presets.js";
 import { widget, leagueOptions, seriesOptions, sportWord, stateWords } from "./catalog.js";
+import { FROM, CLOCK_FORMATS, sourceOf, switchSource, isTemplate } from "./shows.js";
 import { isFollowing, startFollowing, stopFollowing, setEntity, addState, removeState, setStateIcon, setStateLook, suggestions, wordFor,
   LOOKS, styleOf, setStyle, iconOf, lookOf, framed } from "./follows.js";
 
@@ -46,7 +47,7 @@ function setter(app, el, after) {
 }
 function entityButton(app, entityId, onPick, opts = {}) {
   const e = entityId ? app.entMap.get(entityId) : null;
-  const b = h("button", { class: "entbtn", "aria-label": `${opts.label || "Sensor"}: ${e ? e.name : entityId || "none"}. Change` },
+  const b = h("button", { class: "entbtn" + (opts.cls ? " " + opts.cls : ""), "aria-label": `${opts.label || "Sensor"}: ${e ? e.name : entityId || "none"}. Change` },
     h("span", { class: "eb-text" }, h("span", { class: "e1", text: e ? (e.name || entityId) : entityId || opts.placeholder || "Choose a sensor" }),
       entityId ? h("span", { class: "e2", text: entityId }) : null),
     e ? h("span", { class: "ev", text: `${e.state}${e.unit ? " " + e.unit : ""}` }) : null,
@@ -275,17 +276,18 @@ function askStates(ent) {
 
 /* What a text or value shows. */
 function shows(app, el, set) {
-  const tpl = typeof el.value === "string" && /\{[{%]/.test(el.value);
-  // "Time": the add-on's own clock (binding show "now"), 12- or 24-hour as Settings › Time and language says.
-  const clockish = el.type === "text" && el.show === "now" && !el.entity && !tpl;
-  const source = clockish ? "clock" : el.entity && !el.value ? "sensor" : tpl ? "template" : el.value !== undefined && !el.entity ? "text" : el.entity ? "sensor" : el.type === "number" ? "sensor" : "text";
-  const s = section("Shows", h("div", { class: "field" }, h("span", { class: "lab", text: "From" }), seg([["text", "Text"], ["sensor", "Sensor"], ["clock", "Time"], ["template", "Template"]], source, (v) => {
-    if (v !== "clock" && el.show === "now") delete el.show;
-    if (v === "clock") { el.type = "text"; el.show = "now"; el.format = CLOCK_FORMATS.some(([f]) => f === el.format) ? el.format : "time"; delete el.value; delete el.entity; }
-    if (v === "text") { el.value = el.value && !/\{[{%]/.test(el.value) ? el.value : "Label"; delete el.entity; }
-    if (v === "sensor") { delete el.value; }
-    if (v === "template") { el.value = el.value && /\{[{%]/.test(el.value) ? el.value : `{{ states('${el.entity || "sensor.example"}') }}`; }
+  const source = sourceOf(el);
+  const s = section("Shows", h("div", { class: "field" }, h("span", { class: "lab", text: "From" }), seg(FROM, source, async (v) => {
+    if (v === source) return;
+    // A template starts from what it shows now, written out by the add-on (binding.as_template).
+    let template = "";
+    if (v === "template" && !isTemplate(el.value)) {
+      try { template = (await api("api/as_template", { method: "POST", body: { element: el } })).body?.template || ""; } catch (_) { /* its own words, below */ }
+    }
+    const pick = switchSource(el, v, { known: app.entMap, template });
     app.doc.commit();
+    // No sensor it reads (or more than one): ask for it straight away (the commit redrew the inspector).
+    if (pick) app.el.insp.querySelector(".shows-sensor")?.click();
   }, "Shows")));
   if (source === "clock") {
     s.append(field("Looks like", select(CLOCK_FORMATS, el.format || "time", (v) => set("format", v))),
@@ -296,13 +298,14 @@ function shows(app, el, set) {
     s.append(field("Template", textarea(el.value, (v) => set("value", v)), { wide: true, note: "Anything Home Assistant can render." }));
   } else {
     s.append(entityButton(app, el.entity, (id) => {
+      if (!id) return;
       // The unit follows the sensor when it was the old sensor's own (or none); words you typed stay.
       const was = String(app.entMap.get(el.entity)?.unit || "").trim(), mine = String(el.suffix || "").trim();
       el.entity = id;
       const e = app.entMap.get(id);
       if (el.type === "number" && (!mine || mine === was)) { if (e?.unit) el.suffix = e.unit === "%" ? "%" : " " + e.unit; else if (mine) delete el.suffix; }
       app.doc.commit();
-    }));
+    }, { cls: "shows-sensor" }));
     const show = el.show || "state";
     s.append(field("Show", select(SHOWS, show, (v) => {
       if (v === "unit") { showUnit(app, el); return; }
@@ -373,8 +376,6 @@ function replacements(app, el) {
   return wrap;
 }
 
-// The add-on's own clock's formats (render/binding.TIME_FORMATS); "time" follows the 12/24-hour setting.
-const CLOCK_FORMATS = [["time", "The time"], ["day_full", "Weekday and date"], ["day_date", "Short weekday and date"], ["date", "Date"], ["datetime", "Date and time"]];
 
 /* ---------- per-type settings for everything that isn't text ---------- */
 const F = {

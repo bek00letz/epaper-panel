@@ -412,6 +412,16 @@ def _fit(elements: list, from_canvas: str, display: str, orientation: int) -> li
     return [{**el, **arrange.auto_box(el, from_canvas, target)} if isinstance(el, dict) else el for el in elements]
 
 
+async def api_as_template(request):
+    """{"template"}: what an element shows, as a template (binding.as_template), for the editor's
+    From › Template; the editor keeps no copy of how a binding becomes Jinja."""
+    body = await _json(request)
+    el = body.get("element") if isinstance(body, dict) else None
+    if not isinstance(el, dict):
+        raise web.HTTPBadRequest(text="expected {element}")
+    return web.json_response({"template": binding.as_template(el)})
+
+
 async def api_fit(request):
     """POST {elements, from_canvas, display?, orientation?} -> {elements}: a page made on one size, placed
     for a device's (the editor's own device by default), for adding a preset's page."""
@@ -1173,6 +1183,7 @@ def make_apps():
         web.post("/api/preview", api_preview),
         web.post("/api/example", api_example),
         web.post("/api/fit", api_fit),
+        web.post("/api/as_template", api_as_template),
         web.post("/api/push", api_push),
         web.get("/api/sources", api_sources_get),
         web.put("/api/sources", api_sources_put),

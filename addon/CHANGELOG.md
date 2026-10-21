@@ -14,6 +14,10 @@
   "Outdoor Cat" can stand out. "Anything else" keeps the icon's own style.
   Inside an inverted group, an inverted state shows white so it still
   stands out. Pages made before keep drawing as they did.
+- **A text's "From" goes from any choice to any other.** A template could
+  switch to Text or Time but not to Sensor. Now Sensor picks the sensor
+  the template reads when there's one (or asks which), and Template starts
+  from what it showed, its detail, format and replaced words included.
 - **No error in the browser's console as the editor opens.** The page
   strip asked what isn't sent yet before the pages had loaded.
 - **An icon that follows a sensor matches its state whatever the case.**
