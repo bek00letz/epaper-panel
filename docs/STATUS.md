@@ -22,7 +22,11 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 ## In flight
 
-Nothing. Worker notes are in the coordinator's notes folder
+| Work | Where | State |
+|---|---|---|
+| Editor: screen menu (Rename, Remove, Add new device) and zoom (−/+, Fit to 200%, pinch, ⌘+/⌘−/⌘0) (session "editor-polish", asked by the user directly) | branch `editor-zoom`, worktree `~/Documents/HA/epaper-worktrees/editor-zoom` | Done 21 Oct, 370 tests pass, not seen by eye; waiting for a release |
+
+Worker notes are in the coordinator's notes folder
 (`break-it-0.12.0.md`, `timers-addon.md`, `firmware-013.md`,
 `fixes-0131.md`, `editor-polish.md`).
 
