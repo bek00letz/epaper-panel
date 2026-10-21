@@ -21,6 +21,7 @@ from panel_ops import push_panel_update
 from sources.flights import fetch_overhead_aircraft, place_of
 from sources.geo import get_home_timezone
 from sources.ha_services import fetch_calendar_events, fetch_todo_items, fetch_weather_forecast, todo_list_id
+from sources.home import fetch_sun
 from sources.racing import compute_racing_active_window, fetch_racing_data
 from sources.sports import compute_sports_active_window, fetch_sports_match
 from runtime import Frames
@@ -120,6 +121,10 @@ async def enrich_page_values(session, page, vals):
                 todo_data = await fetch_todo_items(session, todo_list_id(el.get("entity")))
                 if todo_data:
                     vals[i] = {**todo_data, "tz": home_tz}   # "Today" is Home Assistant's today
+        elif t == "sun_times":
+            sun_data = await fetch_sun(session)
+            if sun_data is not None:
+                vals[i] = {**sun_data, "tz": home_tz}
         elif t == "flight_tracker":
             custom_lat, custom_lon, radius, _ = place_of(el)
             fl_data = await fetch_overhead_aircraft(session, radius_km=radius, lat=custom_lat, lon=custom_lon)

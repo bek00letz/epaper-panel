@@ -55,6 +55,10 @@
   the schedule ended but nobody was home, because nothing woke it to show
   "back when someone's home". It's now woken once when the sleep screen's
   words change, and never more often than that.
+- **Sunrise and sunset**, from Home Assistant's sun, with nothing to set
+  up. Next one first shows whichever comes next large and the other beside
+  it, and turns round at sunrise and at sunset; Both alike shows them side
+  by side. In the far north, a sunrise more than a day away says which day.
 - **Fixed:** a Race weekend page set to NASCAR or IndyCar showed Formula 1's
   race, drivers and status. Each series now reads its own results, and its
   page names it ("NASCAR · …"). Whether the page shows still followed the

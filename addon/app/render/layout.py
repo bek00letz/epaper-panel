@@ -27,6 +27,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from . import theme as T
 from . import binding
+from . import sun
 from . import todo
 from . import units
 from .binding import template_for
@@ -2094,6 +2095,20 @@ DRAWERS = {
 }
 
 
+def _widget(draw):
+    """A widget that draws itself from its box and the value the render cycle fetched for it."""
+    def drawer(img, d, el, raw_val, display=None):
+        draw(img, d, _clamp_box(el, 712, 200, display=display), el, raw_val, scale=_font_scale(el))
+    return drawer
+
+
+# The widgets that size everything from their own box (render/hero.py).
+WIDGETS = {
+    "sun_times": sun.draw,
+}
+DRAWERS.update({t: _widget(fn) for t, fn in WIDGETS.items()})
+
+
 def element_text(el, vals, idx):
     """The string an element should display, after template resolution."""
     if el["type"] == "number":
@@ -2207,6 +2222,8 @@ def render_page(page, vals, *, clock="", label="", footer=None, page_no=None, it
                             # else, so say so rather than let it look broken.
                             entry["not_a_number"] = str(raw)[:60]
                     metrics.append(entry)
+            elif el["type"] in WIDGETS:
+                drawer(img, d, el, vals.get(i), display=display)
             elif el["type"] in ("bar", "qr", "dynamic_grid", "calendar_month", "calendar_agenda", "weather_forecast", "flight_tracker", "sports_racing", "sports_match"):
                 drawer(img, d, el, vals.get(i), display=display)
             else:
