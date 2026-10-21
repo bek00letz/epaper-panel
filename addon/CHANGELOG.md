@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- **"Not sent yet" no longer shows for pages you didn't change.** The
+  add-on and the editor write a page's details in a different order, and
+  after a reload that alone counted as a change.
 - **The page strip shows what isn't on the panel yet.** A page you've
   changed since you last sent gets an orange outline and a dot by its name,
   and the line under it says what's waiting: "2 changes, not sent", "New,

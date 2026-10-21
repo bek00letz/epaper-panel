@@ -43,6 +43,14 @@ class TestChanges(unittest.TestCase):
         c = run_js("console.log(JSON.stringify(D.changes(live(), live())));")
         self.assertEqual(c, {"pages": {}, "placed": {}, "rotation": False, "settings": [], "any": False})
 
+    def test_the_order_keys_were_written_in_isnt_a_change(self):
+        # The add-on writes a page "tier, show_if, elements"; a draft may have "tier, elements, show_if".
+        c = run_js("""const m = live(); m.pages.solar = { elements: m.pages.solar.elements.map((e) => ({ x: e.x, type: e.type, id: e.id })) };
+            const base = live(); base.pages.solar.tier = 'rotate'; m.pages.solar.tier = 'rotate';
+            const d = new D.Doc(); d.live = base; d.spec = m;
+            console.log(JSON.stringify([D.changes(base, m).any, d.dirty]));""")
+        self.assertEqual(c, [False, False])
+
     def test_elements_are_compared_by_id(self):
         c = run_js("""const m = live();
             m.pages.solar.elements[0].x = 5;                       // a moved
