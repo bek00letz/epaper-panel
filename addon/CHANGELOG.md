@@ -231,6 +231,8 @@
   min old." The same line shows in the inspector for a page like that.
   A sensor counts when Home Assistant describes it as always moving (power,
   current, wind and the like), whatever its unit.
+  A Weather page counts only with your own weather station's sensors; a
+  forecast alone changes slowly.
 
 - **Countdown and Bin day without a calendar.** New page › Countdown now
   counts down to a date you pick (with a time if you like, and Every year

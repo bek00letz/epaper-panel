@@ -44,13 +44,12 @@ export const widget = (type) => C.widgets[type] || null;
 export const isWidgetType = (type) => !!C.widgets[type];
 
 /* How often what a widget shows changes, in minutes (null: only when Home Assistant changes it).
-   The descriptors give seconds. Until they say only what really changes (asked of widgets-015,
-   21 Oct), only what's fetched more often than once a minute counts as live: a calendar fetched
-   every two minutes, or a to-do list every minute, doesn't change that often. */
+   The descriptors give seconds, and only for what really changes (a calendar's fetch interval
+   isn't one); `changes_when` names the fields that make it live (a Weather with your own station). */
 export function widgetChangesEvery(el) {
   const w = widget(el?.type);
   const s = w?.changes_every;
-  if (!s || s >= 60) return null;
+  if (!s) return null;
   if (Array.isArray(w.changes_when) && !w.changes_when.some((k) => el[k])) return null;
   return Math.max(1, Math.round(s / 60));
 }

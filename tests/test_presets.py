@@ -681,6 +681,14 @@ class TestNotedNeverHidden(unittest.TestCase):
             { type: "flight_tracker" }, { type: "weather_forecast" }, { type: "text", value: "Hello" }].map((e) => P.changesEvery(e, ents))))""")
         self.assertEqual(got, [1, None, 1, 1, None, None])
 
+    def test_a_widget_is_live_as_its_descriptor_says(self):
+        """widgets-015's descriptors give only what really changes (a calendar's fetch isn't one), so the
+        editor takes them as they are: a Weather is live with your own station, a forecast alone isn't."""
+        got = run_js("""console.log(JSON.stringify([{ type: "weather_forecast" }, { type: "weather_forecast", wind_sensor: "sensor.wind" },
+            { type: "calendar_agenda" }, { type: "todo_list" }, { type: "now_playing" }].map((e) => P.changesEvery(e, new Map()))))""")
+        self.assertEqual(got, [None, 1, None, None, 1])
+        self.assertNotIn("s >= 60", (APP_JS / "catalog.js").read_text(), "no cutoff of its own")
+
     def test_a_sensor_changes_as_the_entity_list_says(self):
         """/api/entities says how often each sensor changes (widgets.sensor_changes_every); the editor
         reads it, and falls back to the unit only for a sensor the list doesn't know."""
