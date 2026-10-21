@@ -11,6 +11,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Version | Date | What |
 |---|---|---|
+| 0.17.0 | 21 Oct | Any icon can change with a sensor (an icon and a look per state); From switches between any choices; no inspector switcher cuts off a choice. Add-on only. |
 | 0.16.0 | 21 Oct | The editor shows what isn't sent yet, per page, with undo for each change; Duplicate and Delete on every page tile, larger strip sizes; a "changed in the last N minutes" condition for pages and alerts. Add-on only. |
 | 0.15.0 | 21 Oct | New page on shelves with new presets (sunrise and sunset, energy, Now playing, On TV, your own weather station, world clock, Countdown and Bin day without a calendar, to-do lists); alerts that end on a condition; "device" everywhere; zoom; 12/24-hour time; a sleeping device shows the date for a clock; the framework review's 14 fixes; the Wi-Fi network name. Firmware change. |
 | 0.14.0 | 21 Oct | The screen bar under the canvas, power first when adding a screen, rename in place, clearer refusals, Safari Fit; the integration sets itself up, Send to ESPHome, editable hotspot password; quiet-hours wake from Home Assistant fixed. Firmware change. |
@@ -24,18 +25,16 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 ## In flight
 
-| Work | Where | State |
-|---|---|---|
-| "Follows" for any icon in the inspector: pick an entity, an icon per state, from Home Assistant's own icons and the entity's states, plain or inverted per state; plus two inspector bugs: From can't switch Template → Sensor, and its "Template" label is clipped (session "icon-follows") | branch `icon-follows` from main | Done 21 Oct: 9 commits, 764 tests pass, no firmware change, merges cleanly; not seen by eye |
+Nothing.
 
 Worker notes are in the notes folders (`break-it-0.12.0.md`,
 `timers-addon.md`, `firmware-013.md`, `fixes-0131.md`, `editor-polish.md`,
 `alerts-todo.md` in the first coordinator's; `widgets-015.md`,
 `presets-015.md`, `framework-review.md`, `checklist-0.15.0.md`,
-`unsent-changes.md` in this one's).
+`unsent-changes.md`, `icon-follows.md` in this one's).
 Merged worktrees kept until the user OKs removing them: `release-next`,
 `presets-015`, `widgets-015`, `editor-zoom`, `unsent-changes`,
-`changed-condition`.
+`changed-condition`, `icon-follows`.
 
 ## Framework review
 
