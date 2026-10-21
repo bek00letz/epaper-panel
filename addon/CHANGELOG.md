@@ -8,6 +8,9 @@
   page for the full list, Show again included. If you'd rather have them
   side by side across the bottom half of the picture, choose that in
   Settings › Editor; it's kept for each strip size.
+- **Holding a page on a phone shows its buttons**, not the iPhone's "Save
+  to Photos" menu for its picture (and on Android, not the page menu on
+  top of them).
 - **Larger page strip sizes**, so those buttons fit: Small, Standard and
   Large are now 188, 248 and 320 px wide (they were 104, 132 and 184). A
   size you'd picked before becomes the new Small.

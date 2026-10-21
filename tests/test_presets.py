@@ -946,6 +946,13 @@ class TestTheSheet(unittest.TestCase):
         self.assertIn("pointer-events: none;", re.search(r"\.tileacts \{([^}]*)\}", CSS).group(1), "the picture under them still opens the page")
         self.assertIn("@media (hover: hover) {\n  .tilebox:hover .tileacts, .tilebox:focus-within .tileacts { opacity: 1;", CSS)
 
+    def test_a_hold_on_a_phone_is_ours_not_the_photo_menus(self):
+        # iOS offered Save to Photos on a held thumbnail, over the page's buttons (the user, 21 Oct).
+        self.assertIn(".thumb, .tile, .tileact { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }", CSS)
+        strip = (APP_JS / "strip.js").read_text()
+        self.assertIn("if (!t.dataset.touched) app.openPageMenu(e, n);", strip, "nor Android's long-press menu")
+        self.assertIn('if (e.pointerType !== "touch") { delete t.dataset.touched; return; }', strip, "a mouse's right-click still opens it")
+
     def test_delete_is_a_choice_not_a_question(self):
         main = (APP_JS / "main.js").read_text()
         menu = main[main.index("  openDeleteMenu(n, anchor, slot) {"):main.index("  takeOut(n, slot) {")]

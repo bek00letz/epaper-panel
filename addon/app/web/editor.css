@@ -275,6 +275,9 @@ kbd { font: 12px var(--font); background: var(--surface); border-radius: 5px; pa
 .tile:active { transform: scale(0.97); }
 .thumbwrap { display: block; width: 100%; border-radius: 6px; overflow: hidden; background: var(--paper); box-shadow: 0 0 0 0.5px var(--sep), 0 1px 2px rgba(0, 0, 0, 0.08); transition: box-shadow var(--t-fast); }
 .thumb { display: block; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity 0.25s; image-rendering: auto; }
+/* A page's picture is a control, not a photo: a hold on a phone shows the page's buttons, never
+   iOS's Save to Photos menu, and never selects. */
+.thumb, .tile, .tileact { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 .thumb.ready { opacity: 1; }
 .tile[aria-current="page"] .thumbwrap { box-shadow: 0 0 0 2.5px var(--accent); }
 .tile:focus-visible { outline: none; }

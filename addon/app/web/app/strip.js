@@ -172,7 +172,9 @@ function tile(app, n, { again, out, slot, pend }) {
     "aria-label": `${pageTitle(n)}. ${words ? `Not sent yet: ${words}` : sub}${p.tier === "when" ? ". " + describe(p.show_if, app.entMap).text : ""}` },
     h("span", { class: "thumbwrap", style: { aspectRatio: `${app.geometry().W} / ${app.geometry().H}` } }, img),
     h("span", { class: "tname" }, words ? h("span", { class: "udot", "aria-hidden": "true" }) : null, h("span", { class: "tn", text: pageTitle(n) }), badge), h("span", { class: "tsub", text: sub }));
-  t.addEventListener("contextmenu", (e) => { e.preventDefault(); app.openPageMenu(e, n); });
+  // A right-click opens the page's menu. A long press on a touch screen is the hold that shows its
+  // buttons (holdToReveal), so the menu Android opens with it would only cover them.
+  t.addEventListener("contextmenu", (e) => { e.preventDefault(); if (!t.dataset.touched) app.openPageMenu(e, n); });
   // A countdown says what its page does (render/countdown.status): Passed is outlined and greyed,
   // to reuse with another date or delete; one waiting says when it starts showing.
   img.addEventListener("thumbmeta", (e) => {
@@ -212,7 +214,8 @@ function holdToReveal(t, box) {
   let timer = null, at = null;
   const stop = () => { clearTimeout(timer); timer = null; };
   t.addEventListener("pointerdown", (e) => {
-    if (e.pointerType !== "touch") return;
+    if (e.pointerType !== "touch") { delete t.dataset.touched; return; }
+    t.dataset.touched = "1";
     at = { x: e.clientX, y: e.clientY };
     timer = setTimeout(() => {
       timer = null; t.dataset.held = "1"; box.classList.add("held");
