@@ -36,6 +36,7 @@ MIN_HINT = 2.0              # an always-on panel never asks again sooner than th
 MIN_SLEEP = 30              # the panel's own floor (epf_core.h MIN_SLEEP_SEC)
 
 _took: deque[float] = deque(maxlen=10)
+wall_clock = time.time        # the add-on's clock (a test sets its own)
 
 
 def zone(name: str | None) -> tzinfo | None:
@@ -114,10 +115,10 @@ def next_fetch(now: float) -> float:
     return at
 
 
-def until_next_fetch_ms(now: float | None = None) -> int:
+def until_next_fetch_ms(at: float | None = None) -> int:
     """The X-EPF-Next hint: milliseconds from this answer until the panel's next timed fetch."""
-    now = time.time() if now is None else now
-    return int(math.ceil((next_fetch(now) - now) * 1000))
+    at = wall_clock() if at is None else at
+    return int(math.ceil((next_fetch(at) - at) * 1000))
 
 
 def align_sleep(seconds: float, now: float) -> int:

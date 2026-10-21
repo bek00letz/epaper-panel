@@ -8,11 +8,13 @@ to sleep, Rotate every, and that nothing tells it to sleep when it's always on.
 import os
 import time
 import unittest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from unittest import mock
 
 from aiohttp.test_utils import TestClient, TestServer
 
 import support
+import cadence
 import config
 import devices
 import frames
@@ -196,6 +198,24 @@ class TestAlwaysOn(LowPowerBase):
         hall = next(d for d in listed["devices"] if d["id"] == self.hall["id"])
         self.assertEqual((hall["owns_interval"], hall["can_wake"], hall["timing"]["always_on"]), ("device", True, True))
         self.assertEqual(hall["timing"]["update_minutes"], 1)
+
+    async def test_every_answer_says_when_to_fetch_next_just_after_the_minutes_render(self):
+        # The panel first fetched at :19 (its boot); the answer lines its own timer up with the
+        # add-on's render, so from then on it asks a moment after each minute starts.
+        cadence._took.clear()
+        self.addCleanup(cadence._took.clear)
+        now = datetime(2026, 10, 21, 10, 0, 19, tzinfo=timezone.utc).timestamp()
+        with mock.patch.object(cadence, "wall_clock", lambda: now):
+            r = await self.fetch()
+            self.assertEqual(r.status, 200)
+            self.assertEqual(int(r.headers["X-EPF-Next"]), round((41 + cadence.fetch_second()) * 1000))
+            r = await self.lan.get("/frames.epf", params={"token": self.key},
+                                   headers={"If-None-Match": r.headers["ETag"]})
+            self.assertEqual(r.status, 304)
+            self.assertIn("X-EPF-Next", r.headers, "a 304 says it too")
+        await self.ed.patch(f"/api/devices/{self.hall['id']}", json={"update_minutes": 15})
+        self.assertNotIn("X-EPF-Next", (await self.fetch(wake="timer")).headers,
+                         "asleep, X-EPF-Sleep says when it wakes")
 
 
 class TestSleeping(LowPowerBase):
