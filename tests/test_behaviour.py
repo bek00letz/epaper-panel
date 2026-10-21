@@ -216,7 +216,7 @@ class TestPanelSetupSave(unittest.IsolatedAsyncioTestCase):
     async def test_untouched_password_never_reaches_the_file_masked(self):
         await self.post({"device_name": "crowpanel-epaper", "wifi_ssid": "home", "wifi_password": "real-secret"})
         res = await self.post({"device_name": "crowpanel-epaper", "wifi_ssid": "home", "wifi_password": "••••••••"})
-        written = (Path(self.tmp.name) / "crowpanel_epaper.yaml").read_text()
+        written = (Path(self.tmp.name) / "crowpanel-epaper.yaml").read_text()
         self.assertIn('"real-secret"', written)
         self.assertNotIn("••••", written)
         self.assertNotIn("real-secret", res["yaml"], "the browser gets the masked copy")
@@ -225,19 +225,19 @@ class TestPanelSetupSave(unittest.IsolatedAsyncioTestCase):
         await self.post({"device_name": "crowpanel-epaper", "wifi_ssid": "home", "wifi_password": "one-one-one"})
         await self.post({"device_name": "crowpanel-epaper", "wifi_ssid": "home", "wifi_password": "two-two-two"})
         folder = Path(self.tmp.name)
-        self.assertIn('"two-two-two"', (folder / "crowpanel_epaper.yaml").read_text())
-        self.assertIn('"one-one-one"', (folder / "crowpanel_epaper.yaml.previous").read_text())
+        self.assertIn('"two-two-two"', (folder / "crowpanel-epaper.yaml").read_text())
+        self.assertIn('"one-one-one"', (folder / "crowpanel-epaper.yaml.previous").read_text())
 
     async def test_no_way_online_is_said_before_install_and_not_written(self):
         folder = Path(self.tmp.name)
         res = await self.post({"device_name": "crowpanel-epaper", "wifi_ssid": "home", "wifi_password": "long-enough"})
         self.assertEqual(res["problems"], [])
-        written = (folder / "crowpanel_epaper.yaml").read_text()
+        written = (folder / "crowpanel-epaper.yaml").read_text()
         res = await self.post({"device_name": "crowpanel-epaper", "wifi_ssid": "", "wifi_networks": [], "hotspot": False})
         self.assertEqual(len(res["problems"]), 1)
         self.assertIn("no way online", res["problems"][0])
         self.assertIn("wouldn't install", res["sent"])
-        self.assertEqual((folder / "crowpanel_epaper.yaml").read_text(), written, "the last good file stays")
+        self.assertEqual((folder / "crowpanel-epaper.yaml").read_text(), written, "the last good file stays")
         res = await self.post({"device_name": "crowpanel-epaper", "hotspot": True})
         self.assertEqual(res["problems"], [], "its own Wi-Fi is a way online: set up from a phone")
 
@@ -259,13 +259,13 @@ class TestPanelSetupSave(unittest.IsolatedAsyncioTestCase):
         res = await self.post({**base, "hotspot_password": "kitchen-panel"})
         self.assertEqual(res["problems"], [])
         self.assertEqual(res["config"]["hotspot_password"], "kitchen-panel", "shown, for typing on a phone")
-        self.assertIn('password: "kitchen-panel"', (folder / "crowpanel_epaper.yaml").read_text())
+        self.assertIn('password: "kitchen-panel"', (folder / "crowpanel-epaper.yaml").read_text())
         for password in ("short", "x" * 64):
             res = await self.post({**base, "hotspot_password": password})
             self.assertEqual(len(res["problems"]), 1, f"{len(password)} characters")
             self.assertIn("its own Wi-Fi", res["problems"][0])
             self.assertIn("wouldn't install", res["sent"], "ESPHome would refuse it")
-            self.assertIn('password: "kitchen-panel"', (folder / "crowpanel_epaper.yaml").read_text())
+            self.assertIn('password: "kitchen-panel"', (folder / "crowpanel-epaper.yaml").read_text())
         res = await self.post({**base, "hotspot_password": "x" * 63})
         self.assertEqual(res["problems"], [])
         res = await self.post({**base, "hotspot_password": ""})
@@ -369,3 +369,30 @@ class TestEsphomeDashboard(unittest.IsolatedAsyncioTestCase):
         self.ps._dashboard_cache.update(at=0.0, url=None)
         hass, _ = self.hass(fail=True)
         self.assertIsNone(await self.ps.esphome_dashboard(hass, clock=lambda: 1000.0))
+
+
+class TestESPHomeFileName(unittest.TestCase):
+    """Send to ESPHome names the file as ESPHome's own wizard does, so a panel set up there first keeps one file."""
+
+    def setUp(self):
+        import config
+        import tempfile
+        self.tmp = tempfile.TemporaryDirectory()
+        self.old = config.ESPHOME_DIR
+        config.ESPHOME_DIR = Path(self.tmp.name)
+
+    def tearDown(self):
+        import config
+        config.ESPHOME_DIR = self.old
+        self.tmp.cleanup()
+
+    def test_dashes_like_esphomes_wizard(self):
+        import panel_setup
+        for name, file in (("crowpanel-epaper", "crowpanel-epaper"), ("Kitchen Panel", "kitchen-panel"),
+                           ("hall_panel", "hall-panel"), ("Café 2", "cafe-2")):
+            self.assertEqual(panel_setup.esphome_path({"device_name": name}).name, f"{file}.yaml")
+
+    def test_a_file_the_add_on_wrote_before_is_kept(self):
+        import panel_setup
+        (Path(self.tmp.name) / "crowpanel_epaper.yaml").write_text("# 0.14")
+        self.assertEqual(panel_setup.esphome_path({"device_name": "crowpanel-epaper"}).name, "crowpanel_epaper.yaml")

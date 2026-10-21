@@ -114,6 +114,11 @@
   sensor, or `now().hour`.
 - **A Weather widget with no weather chosen shows the first one Home
   Assistant has**, instead of assuming it's called "Forecast Home".
+- **Fixed:** Send to ESPHome named the panel's file with underscores
+  (`crowpanel_epaper.yaml`), while ESPHome's own wizard uses dashes
+  (`crowpanel-epaper.yaml`), so a panel first set up in ESPHome ended up
+  with two files for one device. It now uses ESPHome's dashes; a file the
+  add-on already wrote keeps its name, so nobody gets a second one.
 - **Fixed:** a Race weekend page set to NASCAR or IndyCar showed Formula 1's
   race, drivers and status. Each series now reads its own results, and its
   page names it ("NASCAR · …"). Whether the page shows still followed the
