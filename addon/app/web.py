@@ -10,6 +10,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from aiohttp import web
 
+import examples
 import feeds
 import live_data
 from render import binding, epf, layout, sleep, stripmeta, subitems, theme as T
@@ -294,6 +295,7 @@ async def api_entities(request):
                 "name": info.get("friendly_name") or eid,
                 "state": info.get("state"),
                 "unit": info.get("unit") or "",
+                "device_class": info.get("device_class") or "",
                 "is_epaper": eid.startswith("sensor.epaper_"),
             }
     else:
@@ -312,6 +314,8 @@ async def api_entities(request):
                     "name": attrs.get("friendly_name") or eid,
                     "state": s.get("state"),
                     "unit": attrs.get("unit_of_measurement") or "",
+                    # So a preset can list, say, temperature sensors first.
+                    "device_class": attrs.get("device_class") or "",
                     "is_epaper": eid.startswith("sensor.epaper_") or attrs.get("source") == "epaper_studio",
                 }
 
@@ -323,6 +327,7 @@ async def api_entities(request):
             "name": attrs.get("friendly_name") or eid,
             "state": info.get("state"),
             "unit": attrs.get("unit_of_measurement") or "",
+            "device_class": attrs.get("device_class") or "",
             "is_epaper": True,
         }
 
@@ -371,14 +376,6 @@ async def api_preview(request):
     if not isinstance(body, dict) or not isinstance(body.get("page") or {}, dict):
         raise web.HTTPBadRequest(text="expected {page}")
     page = body.get("page") or {}
-    view = load_layouts(_device(request)["id"])
-    try:
-        orient = int(body.get("orientation") if "orientation" in body else view.get("orientation", 0))
-    except (TypeError, ValueError):
-        orient = 0
-    if orient not in (0, 90, 180, 270):
-        orient = 0
-    display = body.get("display") or view.get("display", T.DEFAULT_DISPLAY)
     vals, tpls = split_page_values(page)
     if tpls:
         vals.update(await resolve_templates(runtime.SESSION, tpls))
@@ -388,6 +385,30 @@ async def api_preview(request):
     for i, el in enumerate(page.get("elements", [])):
         if el.get("type") in ("curve", "bar_chart") and el.get("entity"):
             series[i] = await curve_series(runtime.SESSION, el["entity"], as_int(el.get("hours"), 24))
+    return await _drawn(request, body, page, vals, series)
+
+
+async def api_example(request):
+    """A page drawn with example values only (examples.py), for preset thumbnails: never the person's own
+    data, and nothing asked of Home Assistant, the internet or a data source. Same body as /api/preview."""
+    body = await _json(request)
+    if not isinstance(body, dict) or not isinstance(body.get("page") or {}, dict):
+        raise web.HTTPBadRequest(text="expected {page}")
+    page = body.get("page") or {}
+    vals, series = await asyncio.to_thread(examples.page_values, page)
+    return await _drawn(request, body, page, vals, series)
+
+
+async def _drawn(request, body: dict, page: dict, vals: dict, series: dict):
+    """A preview's PNG at the device's size and orientation, with the text sizes it got (X-Metrics)."""
+    view = load_layouts(_device(request)["id"])
+    try:
+        orient = int(body.get("orientation") if "orientation" in body else view.get("orientation", 0))
+    except (TypeError, ValueError):
+        orient = 0
+    if orient not in (0, 90, 180, 270):
+        orient = 0
+    display = body.get("display") or view.get("display", T.DEFAULT_DISPLAY)
     metrics = []
     try:
         dist = float(body.get("distance") or 3.0)
@@ -403,6 +424,18 @@ async def api_preview(request):
     # what you actually got, in millimetres, rather than what you asked for.
     return web.Response(body=_png(T.to_1bit(img)), content_type="image/png",
                         headers={"X-Metrics": json.dumps(metrics)})
+
+
+async def api_energy(request):
+    """What the Energy dashboard is set up with, so a preset can say where its numbers come from
+    (or that it needs setting up there): {"solar": [{"energy", "power"}], "grid": [{"flows", "power"}],
+    "has_cost", "currency"}. Empty lists when there's no dashboard; 502 when Home Assistant didn't answer."""
+    from sources import energy
+    with live_data.waiting_for_fresh():
+        got = await energy.fetch_dashboard(runtime.SESSION)
+    if got is None:
+        return web.json_response({"error": "Home Assistant didn't say how its Energy dashboard is set up"}, status=502)
+    return web.json_response(got)
 
 
 async def api_airport(request):
@@ -730,6 +763,38 @@ async def api_sources_test(request):
                               "error": errors[0] if errors else None})
 
 
+async def api_jellyfin_check(request):
+    """Try a Jellyfin address and key before a preset saves them: {"ok", "users", "titles"} or {"ok": false, "error"}.
+    A key shown masked (editing a saved source, `name` or `id` given) is the saved one."""
+    from feeds import jellyfin
+    body = await _json(request)
+    if not isinstance(body, dict):
+        raise web.HTTPBadRequest(text="expected {base, key}")
+    src = feeds.unmask_secrets([{"type": "jellyfin", "name": body.get("name") or "watch", "id": body.get("id"),
+                                 "key": str(body.get("key") or "")}], load_sources())[0]
+    return web.json_response(await jellyfin.check(str(body.get("base") or ""), src.get("key") or "", runtime.SESSION))
+
+
+async def api_jellyfin_suggest(request):
+    """Jellyfin's address from JellyHA, when it's installed, so the preset can fill it in: {"address": "" | url}.
+    JellyHA doesn't share its API key, so that's still typed."""
+    if not HA_TOKEN:
+        return web.json_response({"address": ""})
+    try:
+        registry = await runtime.HASS.ws({"type": "config/entity_registry/list"}) or []
+        mine = [e.get("entity_id") for e in registry if isinstance(e, dict) and e.get("platform") == "jellyha"]
+        for eid in mine:
+            if not valid_entity_id(str(eid or "")):
+                continue
+            st = await ha_json(runtime.SESSION, f"/states/{urllib.parse.quote(eid, safe='.')}")
+            url = str(((st or {}).get("attributes") or {}).get("config_external_url") or "").strip().rstrip("/")
+            if url.startswith(("http://", "https://")):
+                return web.json_response({"address": url})
+    except Exception as exc:
+        print(f"jellyfin suggest: {health.describe(exc)}", flush=True)
+    return web.json_response({"address": ""})
+
+
 def _masked_setup(cfg: dict, dev: dict) -> dict:
     """A panel's setup for the browser: passwords masked."""
     out = dict(cfg)
@@ -953,11 +1018,15 @@ def make_apps():
         web.get("/api/attributes", api_attributes),
         web.get("/api/aircraft", api_aircraft),
         web.get("/api/airport", api_airport),
+        web.get("/api/energy", api_energy),
         web.post("/api/preview", api_preview),
+        web.post("/api/example", api_example),
         web.post("/api/push", api_push),
         web.get("/api/sources", api_sources_get),
         web.put("/api/sources", api_sources_put),
         web.post("/api/sources/test", api_sources_test),
+        web.post("/api/sources/jellyfin/check", api_jellyfin_check),
+        web.get("/api/sources/jellyfin/suggest", api_jellyfin_suggest),
         web.get("/api/devices", api_devices),
         web.post("/api/devices", api_devices_add),
         web.patch("/api/devices/{id}", api_devices_update),

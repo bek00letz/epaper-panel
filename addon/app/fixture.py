@@ -40,10 +40,24 @@ def fixture_todo(entity_id: str) -> dict | None:
     return {"entity": entity_id, "name": name, "items": out}
 
 
-def eval_fixture_template(tpl: str) -> str:
-    """Evaluate common HA templates against fixture.json when running offline."""
-    states = dict(load_fixture().get("states", {}))
-    for eid, info in runtime.PUBLISHED.items():
+def _dated(info: dict) -> dict:
+    """A fixture state with `<key>_in_days` turned into `<key>`, counted from today, so samples never go stale
+    ("start_time_in_days": 4 is a start_time four days from now, at 07:00)."""
+    if not isinstance(info, dict) or not any(k.endswith("_in_days") for k in info):
+        return info
+    out = dict(info)
+    day = datetime.now().astimezone().replace(hour=7, minute=0, second=0, microsecond=0)
+    for k, v in info.items():
+        if k.endswith("_in_days"):
+            out[k[:-len("_in_days")]] = (day + timedelta(days=int(v))).isoformat()
+    return out
+
+
+def eval_fixture_template(tpl: str, own: bool = True) -> str:
+    """Evaluate common HA templates against fixture.json when running offline.
+    `own`: the add-on's own values count too (not for examples, which never show someone's data)."""
+    states = {eid: _dated(info) for eid, info in (load_fixture().get("states") or {}).items()}
+    for eid, info in (runtime.PUBLISHED.items() if own else ()):
         attrs = dict(info.get("attributes") or {})
         attrs["state"] = info.get("state", "")
         states[eid] = attrs
@@ -100,6 +114,11 @@ def eval_fixture_template(tpl: str) -> str:
         expr = s[2:-2].strip()
     else:
         expr = s
+
+    # The clock: `now().strftime('%H:%M')`
+    m = re.match(r"^now\(\)\.strftime\(\s*'([^']*)'\s*\)$", expr)
+    if m:
+        return datetime.now().strftime(m.group(1))
 
     # The simple form's no-value guard: `has_value('entity') and <condition>`
     m = re.match(r"^has_value\(\s*'([^']+)'\s*\)\s+and\s+(.+)$", expr)

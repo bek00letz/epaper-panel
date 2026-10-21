@@ -55,6 +55,59 @@
   the schedule ended but nobody was home, because nothing woke it to show
   "back when someone's home". It's now woken once when the sleep screen's
   words change, and never more often than that.
+- **Sunrise and sunset**, from Home Assistant's sun, with nothing to set
+  up. Next one first shows whichever comes next large and the other beside
+  it, and turns round at sunrise and at sunset; Both alike shows them side
+  by side. In the far north, a sunrise more than a day away says which day.
+- **Energy at a glance**, straight from your Energy dashboard, with nothing
+  to pick: Solar this month (the total and a bar for each day, from Home
+  Assistant's long-term statistics; also by day or year, and for what you
+  bought or sold), Grid now (buying or selling right now, with today's
+  hours as bars, up when buying and down when selling) and Energy cost
+  (earned or spent today and this month, from the prices in your Energy
+  dashboard, in Home Assistant's currency). If the dashboard doesn't have
+  what a page needs, the page says what to add there.
+- **Now playing**: what's playing on any media player in Home Assistant
+  (Spotify, Sonos, Apple TV, Chromecast, Plex, Jellyfin through JellyHA),
+  with the artist or show and where it's playing. Follow the players you
+  choose, or all of them; when several play, each is its own item of the
+  page, latest started first, like planes overhead.
+- **On TV this week**: the next episodes from any calendar of shows, such
+  as Sonarr's or Trakt's, a row each ("Tonight  Slow Horses  S6 E6"), as
+  many as read well and then "and 3 more".
+- **Weather from your own station.** The Weather page can take what it
+  says about now (temperature, humidity, wind) from your station's own
+  weather entity or from single sensors, while highs, lows and the coming
+  days stay with the forecast. With a rain sensor, the big icon shows rain
+  whenever it's raining at your house, whatever the forecast says. With a
+  pressure sensor, it says when pressure is rising or falling. A solar
+  radiation sensor can decide sunny or cloudy in the daytime, but only if
+  you choose one: a station in the shade would read cloudy in full sun.
+- **Fixed:** the Weather page drew over itself on the 4.2" and 2.9": the
+  details ran into the coming days, and on the 2.9" the days were stacked
+  on top of each other. It now keeps its usual look at every size, shows
+  as many days and details as fit, and leaves out what doesn't.
+- **Fixed:** while Home Assistant was restarting, the Weather page showed
+  made-up weather (8.5° and rain). It now stays empty until the real
+  weather is back, like every other value. Race weekend and Match did the
+  same with a made-up race and match, before their results arrived or
+  when there were none, and Planes overhead with two made-up aircraft;
+  they now stay empty too. The examples live in one place and are only
+  used for the New page sheet's pictures.
+- **New to watch connects Jellyfin where you add it.** The address and
+  API key are tried before anything is saved, with a plain answer when
+  something's wrong (the key, the address, or not Jellyfin at all), and
+  then you pick whose unwatched to show. With JellyHA installed, the
+  address is filled in for you.
+- **Each sport in its own words.** A football match is a match, an NBA or
+  NFL game is a game, and the time before one starts reads "Kick-off
+  20:00", "Tip-off 20:00", "First pitch 20:00" or "Puck drop 20:00". Home
+  Assistant's sensor for a league says Matchday or Game day to match.
+- **Fixed:** a Race weekend page set to NASCAR or IndyCar showed Formula 1's
+  race, drivers and status. Each series now reads its own results, and its
+  page names it ("NASCAR · …"). Whether the page shows still followed the
+  right series before; only what it showed was wrong. A wide driver code
+  (HAM) no longer runs into its team's name.
 
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,

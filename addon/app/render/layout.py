@@ -27,6 +27,10 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from . import theme as T
 from . import binding
+from . import energy
+from . import media
+from . import sport
+from . import sun
 from . import todo
 from . import units
 from .binding import template_for
@@ -1307,6 +1311,18 @@ _WEATHER_LABEL_MAP = {
 }
 
 
+def _fit_parts(parts, max_w, size, sep, min_sz=11):
+    """As many of the parts as fit max_w at a readable size, in order, and the font: never text running on."""
+    parts = list(parts)
+    while parts:
+        txt = sep.join(parts)
+        f = _fit_font(txt, max_w, size, min_sz=min_sz, bold=True)
+        if T.text_width(txt, f) <= max_w:
+            return txt, f
+        parts.pop()
+    return "", T.font(min_sz, bold=True)
+
+
 def _draw_weather_forecast(img, d, el, raw_val, display=None):
     x, y, w, h = _clamp_box(el, 752, 235, display=display)
     fscale = _font_scale(el)
@@ -1316,21 +1332,8 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
 
     data = _parse_val_json(raw_val)
     if not isinstance(data, dict):
-        data = {
-            "condition": "rainy",
-            "temperature": 8.5,
-            "unit": "°C",
-            "humidity": 95,
-            "wind_speed": 6.1,
-            "wind_unit": "km/h",
-            "forecast": [
-                {"datetime": "2026-10-17T09:00:00+00:00", "condition": "rainy", "temperature": 11.2, "templow": 8.5, "precipitation": 1.0, "precipitation_probability": 85},
-                {"datetime": "2026-10-18T09:00:00+00:00", "condition": "partlycloudy", "temperature": 15.5, "templow": 4.6, "precipitation": 0.0, "precipitation_probability": 10},
-                {"datetime": "2026-10-19T09:00:00+00:00", "condition": "partlycloudy", "temperature": 17.3, "templow": 7.7, "precipitation": 0.0, "precipitation_probability": 5},
-                {"datetime": "2026-10-20T09:00:00+00:00", "condition": "cloudy", "temperature": 15.1, "templow": 7.8, "precipitation": 0.1, "precipitation_probability": 30},
-                {"datetime": "2026-10-21T09:00:00+00:00", "condition": "rainy", "temperature": 22.7, "templow": 10.6, "precipitation": 0.6, "precipitation_probability": 70}
-            ]
-        }
+        # No weather from Home Assistant (it's restarting, say): blank says so. Made-up weather wouldn't.
+        return
 
     cond = str(data.get("condition") or "partlycloudy").lower()
     cond_label = _WEATHER_LABEL_MAP.get(cond, cond.replace("-", " ").replace("_", " ").title())
@@ -1339,6 +1342,7 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
     humidity = data.get("humidity")
     wind = data.get("wind_speed")
     wind_unit = str(data.get("wind_unit") or "km/h")
+    pressure_trend = str(data.get("pressure_trend") or "")         # from your own station (sources/station.py)
     forecast = data.get("forecast") or []
 
     cur_icon = _WEATHER_ICON_MAP.get(cond, "mdi:weather-cloudy")
@@ -1367,18 +1371,20 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
                 chip_parts.append(f"HUM {humidity}%")
             if wind is not None:
                 chip_parts.append(f"WIND {wind} {wind_unit}")
+            if pressure_trend in ("rising", "falling"):
+                chip_parts.append(f"PRESSURE {pressure_trend.upper()}")
             if forecast:
                 today_f = forecast[0]
                 th, tl = today_f.get("temperature"), today_f.get("templow")
                 if th is not None and tl is not None:
                     chip_parts.append(f"H {th:.0f}° · L {tl:.0f}°")
-            if chip_parts:
-                chip_text = "   •   ".join(chip_parts)
-                mf = _fit_font(chip_text, w - 48, _s(16, fscale, 12, 26), min_sz=11, bold=True)
+            chip_text, mf = _fit_parts(chip_parts, w - 48, _s(16, fscale, 12, 26), "   •   ")
+            if chip_text:
                 d.text((x + 24, y + h - 22), chip_text, font=mf, fill=T.BLACK, anchor="lm")
         return
 
-    is_split = (layout_mode == "split") or (layout_mode == "auto" and ((w >= 480) or (w >= 340 and w >= h)))
+    # Any landscape box splits (a 2.9" screen's is 285 x 80); stacked is for portrait cards.
+    is_split = (layout_mode == "split") or (layout_mode == "auto" and ((w >= 480) or (w >= 340 and w >= h) or w >= h * 1.3))
     if layout_mode == "forecast_only":
         is_split = True
 
@@ -1392,11 +1398,12 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
             fore_x = x + hero_w
             fore_w = w - hero_w
 
-            hero_mid_y = y + int(h * (0.40 if show_details else 0.50))
-            isz = min(84, max(48, int(h * 0.38)))
-            _draw_icon_glyph(d, cur_icon, x + 18 + isz // 2, hero_mid_y, isz)
+            hero_mid_y = y + int(h * (0.40 if show_details and h >= 110 else 0.50))
+            isz = min(84, max(28, int(h * 0.38)))
+            pad = max(6, min(18, w // 40))
+            _draw_icon_glyph(d, cur_icon, x + pad + isz // 2, hero_mid_y, isz)
 
-            tx = x + 18 + isz + 14
+            tx = x + pad + isz + max(6, min(14, isz // 4))
             avail_hero_w = max(60, fore_x - tx - 12)
             temp_str = f"{temp}{unit}" if str(temp).endswith("°") or unit.startswith("°") else f"{temp}°"
             target_tf_sz = _s(min(56, max(32, int(h * 0.27))), fscale, 24, 88)
@@ -1414,6 +1421,8 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
                     line1_parts.append(f"HUM {humidity}%")
                 if wind is not None:
                     line1_parts.append(f"WIND {wind} {wind_unit}")
+                if pressure_trend in ("rising", "falling"):
+                    line1_parts.append(f"PRESSURE {pressure_trend.upper()}")
                 if forecast:
                     today_f = forecast[0]
                     th = today_f.get("temperature")
@@ -1428,26 +1437,26 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
                         line2_parts.append(f"RAIN {float(precip):.1f}mm")
 
                 avail_chip_w = fore_x - x - 32
-                combined = "  •  ".join(line1_parts + line2_parts)
                 target_chip_sz = _s(15, fscale, 11, 24)
                 if line2_parts and h >= 165:
                     # Two clean, large detail lines instead of 1 squeezed microscopic line
-                    l1_txt = "   •   ".join(line1_parts) if line1_parts else "   •   ".join(line2_parts)
-                    l2_txt = "   •   ".join(line2_parts) if line1_parts else ""
-                    mf1 = _fit_font(l1_txt, avail_chip_w, target_chip_sz, min_sz=11, bold=True)
+                    l1_txt, mf1 = _fit_parts(line1_parts or line2_parts, avail_chip_w, target_chip_sz, "   •   ")
+                    l2_txt, mf2 = _fit_parts(line2_parts if line1_parts else [], avail_chip_w, target_chip_sz, "   •   ")
                     d.text((x + 18, y + h - (36 if l2_txt else 20)), l1_txt, font=mf1, fill=T.BLACK, anchor="lm")
                     if l2_txt:
-                        mf2 = _fit_font(l2_txt, avail_chip_w, target_chip_sz, min_sz=11, bold=True)
                         d.text((x + 18, y + h - 16), l2_txt, font=mf2, fill=T.BLACK, anchor="lm")
-                elif combined:
-                    mf = _fit_font(combined, avail_chip_w, target_chip_sz, min_sz=10, bold=True)
-                    d.text((x + 18, y + h - 20), combined, font=mf, fill=T.BLACK, anchor="lm")
+                elif h >= 110:
+                    # One line: as many details as fit, most useful first, rather than text running into the days
+                    txt, mf = _fit_parts(line2_parts[:1] + line1_parts + line2_parts[1:], avail_chip_w, target_chip_sz, "  •  ")
+                    if txt:
+                        d.text((x + 18, y + h - 20), txt, font=mf, fill=T.BLACK, anchor="lm")
 
             # Vertical divider
             d.line([(fore_x, y + 12), (fore_x, y + h - 12)], fill=T.BLACK, width=1)
 
         # Forecast strip
-        display_forecast = forecast[1:1 + max_f_days] if len(forecast) > max_f_days else forecast[:max_f_days]
+        fit_days = max(1, min(max_f_days, int(fore_w // 56)))     # a day narrower than this can't be read
+        display_forecast = forecast[1:1 + fit_days] if len(forecast) > fit_days else forecast[:fit_days]
         n_days = len(display_forecast)
         if n_days > 0:
             day_w = fore_w / float(n_days)
@@ -1486,7 +1495,7 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
                     rain_str = f"{float(pop):.0f}% rain"
                 elif precip is not None and float(precip) > 0:
                     rain_str = f"{float(precip):.1f} mm"
-                if rain_str:
+                if rain_str and h >= 100:                 # below that it would sit on the temperatures
                     rf = _fit_font(rain_str, int(day_w - 6), _s(14, fscale, 10, 22), min_sz=10, bold=True)
                     d.text((cx, y + int(h * 0.90)), rain_str, font=rf, fill=T.BLACK, anchor="mm")
         else:
@@ -1510,9 +1519,11 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
                 parts.append(f"HUM {humidity}%")
             if wind is not None:
                 parts.append(f"WIND {wind} {wind_unit}")
-            if parts:
-                mf = _fit_font("   •   ".join(parts), w - 36, _s(14, fscale, 10, 22), min_sz=10, bold=True)
-                d.text((x + 20, y + hero_h - 14), "   •   ".join(parts), font=mf, fill=T.BLACK, anchor="lm")
+            if pressure_trend in ("rising", "falling"):
+                parts.append(f"PRESSURE {pressure_trend.upper()}")
+            txt, mf = _fit_parts(parts, w - 36, _s(14, fscale, 10, 22), "   •   ")
+            if txt:
+                d.text((x + 20, y + hero_h - 14), txt, font=mf, fill=T.BLACK, anchor="lm")
 
         d.line([(x + 10, y + hero_h), (x + w - 10, y + hero_h)], fill=T.BLACK, width=1)
 
@@ -1638,32 +1649,7 @@ def _draw_flight_tracker(img, d, el, raw_val, display=None):
         aircraft_list = [val_parsed]
 
     if not aircraft_list and raw_val is None:
-        aircraft_list = [
-            {
-                "callsign": "BAW71LK",
-                "country": "United Kingdom • British Airways",
-                "icao24": "40089A",
-                "distance_km": 8.4,
-                "bearing_deg": 225.0,
-                "bearing_cardinal": "SW",
-                "altitude_m": 10370,
-                "velocity_ms": 233.2,
-                "track_deg": 302,
-                "vertical_rate": 0.0
-            },
-            {
-                "callsign": "THY41Y",
-                "country": "Turkey • Turkish Airlines",
-                "icao24": "4BA982",
-                "distance_km": 19.2,
-                "bearing_deg": 45.0,
-                "bearing_cardinal": "NE",
-                "altitude_m": 11887,
-                "velocity_ms": 253.3,
-                "track_deg": 140,
-                "vertical_rate": -1.5
-            }
-        ]
+        return                        # not fetched yet: never made-up aircraft (examples.py has them)
 
     style = str(el.get("style") or "card").lower()
     loc_name = str(el.get("location_name") or el.get("name") or "").strip()
@@ -1840,31 +1826,10 @@ def _draw_sports_racing(img, d, el, raw_val, display=None):
 
     data = _parse_val_json(raw_val)
     if not isinstance(data, dict):
-        data = {
-            "series": "F1",
-            "event_name": "Italian Grand Prix",
-            "circuit": "Autodromo Nazionale Monza",
-            "session": "Race",
-            "status": "IN",
-            "lap": 42,
-            "total_laps": 53,
-            "leader": "VER",
-            "standings": [
-                {"pos": 1, "driver": "VER", "team": "Red Bull", "gap": "LEADER", "tyre": "M"},
-                {"pos": 2, "driver": "NOR", "team": "McLaren", "gap": "+2.1s", "tyre": "H"},
-                {"pos": 3, "driver": "PIA", "team": "McLaren", "gap": "+4.8s", "tyre": "H"},
-                {"pos": 4, "driver": "LEC", "team": "Ferrari", "gap": "+7.3s", "tyre": "H"},
-                {"pos": 5, "driver": "SAI", "team": "Ferrari", "gap": "+11.0s", "tyre": "M"},
-                {"pos": 6, "driver": "HAM", "team": "Mercedes", "gap": "+14.2s", "tyre": "M"},
-                {"pos": 7, "driver": "RUS", "team": "Mercedes", "gap": "+18.9s", "tyre": "H"},
-                {"pos": 8, "driver": "ALO", "team": "Aston Martin", "gap": "+25.1s", "tyre": "M"},
-                {"pos": 9, "driver": "TSU", "team": "RB", "gap": "+32.0s", "tyre": "H"},
-                {"pos": 10, "driver": "HUL", "team": "Haas", "gap": "+38.4s", "tyre": "H"}
-            ]
-        }
+        return                        # nothing yet (or ESPN is down): never a made-up race
 
     series = str(data.get("series") or "F1").upper()
-    default_name = "Formula E World Championship" if series == "FE" else "Formula 1 Grand Prix"
+    default_name = data.get("series_name") or series
     event_name = str(data.get("event_name") or default_name).upper()
     status = str(data.get("status") or "IN").upper()
     lap = data.get("lap")
@@ -1900,7 +1865,7 @@ def _draw_sports_racing(img, d, el, raw_val, display=None):
         mid_y = y + h // 2
         mid_icon = "mdi:car-electric" if series == "FE" else "mdi:racing-helmet"
         _draw_icon_glyph(d, mid_icon, mid_x, mid_y - 22, 50)
-        circ = data.get("circuit") or ("ePrix Circuit" if series == "FE" else "Grand Prix Circuit")
+        circ = data.get("circuit") or ""
         d.text((mid_x, mid_y + 18), circ, font=T.font(_s(20, fscale, 14, 32), bold=True), fill=T.BLACK, anchor="mm")
         detail = data.get("detail") or "Session scheduled soon"
         d.text((mid_x, mid_y + 44), detail, font=T.font(_s(15, fscale, 11, 24), bold=False), fill=T.BLACK, anchor="mm")
@@ -1921,6 +1886,9 @@ def _draw_sports_racing(img, d, el, raw_val, display=None):
     gap_f = T.font(_s(min(15, max(11, int(row_h * 0.44))), fscale, 10, 24), bold=True)
     tyre_f = T.font(_s(11, fscale, 9, 16), bold=True)
 
+    # The code column is as wide as the widest code shown ("HAM" is wider than "VER").
+    code_w = max([T.text_width(str(dd.get("driver") or dd.get("code") or dd.get("name") or "DRV")[:3].upper(), drv_f)
+                  for dd in display_drivers] + [T.text_width("VER", drv_f)])
     for idx, drv in enumerate(display_drivers):
         is_right = idx >= n_rows
         cx0 = (x + 15) if not is_right else (mid_div + 15)
@@ -1939,7 +1907,7 @@ def _draw_sports_racing(img, d, el, raw_val, display=None):
         pos_w = max(32, T.text_width("P10", pos_f) + 6)
         d.text((cx0 + pos_w, ry_mid), code, font=drv_f, fill=T.BLACK, anchor="lm")
 
-        off_x = cx0 + pos_w + max(44, T.text_width("VER", drv_f) + 8)
+        off_x = cx0 + pos_w + max(44, code_w + 8)
         if tyre in ("S", "M", "H", "I", "W"):
             d.rounded_rectangle([(off_x, ry_mid - 8), (off_x + 16, ry_mid + 8)], radius=3, outline=T.BLACK, width=1)
             d.text((off_x + 8, ry_mid), tyre, font=tyre_f, fill=T.BLACK, anchor="mm")
@@ -1976,22 +1944,9 @@ def _draw_sports_match(img, d, el, raw_val, display=None):
     elif isinstance(raw_parsed, dict):
         data = raw_parsed
     else:
-        data = {
-            "league": "PREMIER LEAGUE",
-            "venue": "Emirates Stadium",
-            "clock": "74' · 2ND HALF",
-            "status": "IN",
-            "home_team": "ARSENAL",
-            "home_score": 2,
-            "home_stats": "14 Shots · 58% Poss",
-            "away_team": "CHELSEA",
-            "away_score": 1,
-            "away_stats": "6 Shots · 42% Poss",
-            "events_home": "Saka (22'), Havertz (58')",
-            "events_away": "Palmer (41' pen)"
-        }
+        return                        # nothing yet, or no matches: never a made-up match
 
-    league = str(data.get("league") or "MATCH").upper()
+    league = str(data.get("league") or sport.words(el.get("league")).event).upper()
     venue = str(data.get("venue") or "").upper()
     header_title = f"{league} · {venue}" if venue else league
     clock = str(data.get("clock") or data.get("status") or "LIVE").upper()
@@ -2092,6 +2047,25 @@ DRAWERS = {
     "sports_racing": _draw_sports_racing,
     "sports_match": _draw_sports_match,
 }
+
+
+def _widget(draw):
+    """A widget that draws itself from its box and the value the render cycle fetched for it."""
+    def drawer(img, d, el, raw_val, display=None):
+        draw(img, d, _clamp_box(el, 712, 200, display=display), el, raw_val, scale=_font_scale(el))
+    return drawer
+
+
+# The widgets that size everything from their own box (render/hero.py).
+WIDGETS = {
+    "sun_times": sun.draw,
+    "energy_total": energy.draw_total,
+    "grid_now": energy.draw_grid,
+    "energy_cost": energy.draw_cost,
+    "now_playing": media.draw_now_playing,
+    "tv_week": media.draw_tv_week,
+}
+DRAWERS.update({t: _widget(fn) for t, fn in WIDGETS.items()})
 
 
 def element_text(el, vals, idx):
@@ -2207,6 +2181,8 @@ def render_page(page, vals, *, clock="", label="", footer=None, page_no=None, it
                             # else, so say so rather than let it look broken.
                             entry["not_a_number"] = str(raw)[:60]
                     metrics.append(entry)
+            elif el["type"] in WIDGETS:
+                drawer(img, d, el, vals.get(i), display=display)
             elif el["type"] in ("bar", "qr", "dynamic_grid", "calendar_month", "calendar_agenda", "weather_forecast", "flight_tracker", "sports_racing", "sports_match"):
                 drawer(img, d, el, vals.get(i), display=display)
             else:

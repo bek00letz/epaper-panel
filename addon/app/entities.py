@@ -13,10 +13,10 @@ from config import HA_BASE, HA_TOKEN, PUBLISH_VIA_STATES_API, RETIRED_SENSORS, v
 from ha import call_ha_service, ha_json
 from layouts_store import load_layouts, load_sources
 from sources.flights import fetch_overhead_aircraft, place_of
-from render import todo
+from render import sport, todo
 from sources.geo import get_home_timezone
 from sources.ha_services import fetch_todo_items, todo_list_id
-from sources.racing import compute_racing_active_window, fetch_racing_data, series_slug
+from sources.racing import SERIES, compute_racing_active_window, fetch_racing_data, series_slug
 from sources.sports import compute_sports_active_window, league_slug
 
 
@@ -274,7 +274,7 @@ async def publish_computed(session):
             await publish_entity(
                 session, sensor_id, win_info["state"],
                 {
-                    "friendly_name": f"E-Paper · {win_info['league_name']} Matchday",
+                    "friendly_name": f"E-Paper · {win_info['league_name'] or slug.replace('_', ' ').title()} {sport.words(league_slug(lg)[0]).day}",
                     "is_active": win_info["is_active"],
                     "is_live": win_info["is_live"],
                     "matches_today": win_info["matches_today"],
@@ -317,16 +317,16 @@ async def publish_computed(session):
 
         seen_series = set()
         for ser, pre_b, post_b, w_mode, r_tz in series_to_publish:
-            if ser in seen_series:
+            if series_slug(ser)[0] in seen_series:       # "irl" and "indycar" are one sensor
                 continue
-            seen_series.add(ser)
+            seen_series.add(series_slug(ser)[0])
             win_info = await compute_racing_active_window(session, ser, pre_buffer_hours=pre_b, post_buffer_hours=post_b, window_mode=w_mode, tz_name=r_tz)
             if not win_info:
                 continue                                  # not fetched yet
             slug = win_info["slug"]
             sensor_id = f"sensor.epaper_racing_{slug}"
             r_data = await fetch_racing_data(session, slug, tz_name=r_tz)
-            r_icon = "mdi:car-electric" if slug == "fe" else "mdi:racing-helmet"
+            r_icon = SERIES[slug].icon
             await publish_entity(
                 session, sensor_id, win_info["state"],
                 {
