@@ -9,6 +9,8 @@
   state" adds one it hasn't been yet, and "Anything else" is the icon for
   the rest. Turn it off and the icon stays as it was. An icon Home
   Assistant uses that the panel can't draw isn't offered.
+- **No error in the browser's console as the editor opens.** The page
+  strip asked what isn't sent yet before the pages had loaded.
 - **An icon that follows a sensor matches its state whatever the case.**
   "outdoor cat" picks the same icon as "Outdoor Cat", as the Dynamic status
   spots already did.
