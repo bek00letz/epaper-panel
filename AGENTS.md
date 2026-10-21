@@ -387,7 +387,9 @@ up to v0.12.0). `app/legacy.js` keeps the pieces of it this one still uses.
 - **The editor keeps no copies of the add-on's tables** (framework review,
   21 Oct): leagues, series, sport words, state words and every widget's
   descriptor (name, icon, box, fields, `changes_every`) come from
-  `GET /api/catalog` at start (`app/catalog.js`). Basic elements (text,
+  `GET /api/catalog` at start (`app/catalog.js`). A condition's value
+  chips are the catalog's words for its kind, then what
+  `/api/entity_states` says it has (`conditions.valueChoices`). Basic elements (text,
   value, icon, card, divider, gauge, charts, QR) stay the editor's; a new
   widget is a descriptor in `widgets.py`, nothing in the editor.
 - **An icon follows a sensor in its own Icon section** (the user's design,

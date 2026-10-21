@@ -3,7 +3,7 @@
 // form can't express stays a custom template, untouched.
 
 import { getWidgetSensorId, todoShowIf } from "./legacy.js";
-import { widget } from "./catalog.js";
+import { widget, stateWords } from "./catalog.js";
 
 const NO_VALUE = ["unavailable", "unknown"];
 
@@ -60,6 +60,25 @@ export function compileShowIf({ ent, op, val, minutes }) {
   const sym = { gt: ">", lt: "<", ge: ">=", le: "<=" }[op] || ">";
   const n = Number(val);
   return `{{ has_value('${ent}') and states('${ent}') | float(0) ${sym} ${isNaN(n) ? 0 : n} }}`;
+}
+
+/* The values a condition on this entity offers as chips: [{ state, word }]. Home Assistant's own
+   for its kind (the catalog, so they show at once), then the states the add-on says it has
+   (`offered`, from GET /api/entity_states: its options and what it was), one per state whatever
+   its case. The kind's come first in both, so the answer only adds chips at the end. A no-value
+   state is never one. */
+export function valueChoices(entityId, deviceClass, offered) {
+  const kind = stateWords(entityId, deviceClass) || {};
+  const out = [], keys = new Set();
+  const add = (state, word) => {
+    const k = String(state ?? "").trim().toLowerCase();
+    if (!k || NO_VALUE.includes(k) || keys.has(k)) return;
+    keys.add(k);
+    out.push({ state: String(state).trim(), word: word || kind[state]?.word || String(state).trim() });
+  };
+  for (const [st, w] of Object.entries(kind)) add(st, w?.word);
+  for (const o of Array.isArray(offered) ? offered : []) if (o) add(o.state, o.word);
+  return out;
 }
 
 /* Does a simple condition hold with these states? null when it can't tell. */

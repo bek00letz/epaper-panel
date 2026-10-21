@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+- **A page's "While" and an alert's "Until" suggest the values a sensor
+  really has**: Home Assistant's own for its kind, named as Home Assistant
+  names them ("Away" for not_home), then the choices it lists and the states
+  it had in the last 10 days, so a sensor like a cat's location offers
+  "Indoor Cat" and "Outdoor Cat". Before, only a dozen kinds had any.
+
 ## 0.17.0
 Add-on only; no firmware change, so nothing to reinstall on the panel.
 
