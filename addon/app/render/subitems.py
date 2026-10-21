@@ -104,6 +104,12 @@ def inspect_category_subitems(
                 sub_count = max(sub_count, min(len(sm_list), 6))
                 sub_type = "sports"
                 items = sm_list[:sub_count]
+        elif el_t == "now_playing":
+            playing = page_vals.get(el_idx)
+            if isinstance(playing, list) and len(playing) > 1:
+                sub_count = max(sub_count, min(len(playing), 5))
+                sub_type = "media"
+                items = playing[:sub_count]
 
     # 2. Check for feed items (Watch/Jellyfin, RSS, or any sensor with an 'items' attribute)
     if not sub_type and feed_items_cache:

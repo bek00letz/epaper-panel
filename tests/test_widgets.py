@@ -249,3 +249,68 @@ class TestEnergyForTheEditor(EditorClient):
         self.assertEqual(energy.stats_for(got, "solar"), ["sensor.solar_energy"])      # offline example
         self.assertTrue(got["has_cost"])
         self.assertIn("currency", got)
+
+
+# ---------------------------------------------------------------- watch and listen
+
+from render import media, subitems  # noqa: E402
+from sources import home  # noqa: E402
+
+PLAYING = [{"entity": "media_player.tv", "key": "media_player.tv", "player": "Living room TV", "title": "Trojan's Horse",
+            "series": "Severance", "season": 2, "episode": 5, "kind": "episode", "since": "2026-10-21T10:05:00+00:00"},
+           {"entity": "media_player.kitchen", "key": "media_player.kitchen", "player": "Kitchen", "title": "Clair de lune",
+            "artist": "Debussy", "kind": "music", "since": "2026-10-21T10:00:00+00:00"}]
+
+
+class TestNowPlaying(Sizes, unittest.TestCase):
+    element = {"type": "now_playing", "entity": "", "x": 24, "y": 14, "w": 744, "h": 208}
+    value = PLAYING
+
+    def test_says_what_and_where(self):
+        self.assertEqual(media.describe(PLAYING[0])[:2], ("Trojan's Horse", "Severance · S2 E5 · Living room TV"))
+        self.assertEqual(media.describe(PLAYING[1])[:2], ("Clair de lune", "Debussy · Kitchen"))
+        self.assertEqual(media.describe({"app": "YouTube", "player": "Chromecast"})[:2], ("YouTube", "Chromecast"))
+        self.assertEqual(media.describe({"title": "Warm up", "app": "YouTube", "player": "Chromecast"})[1], "YouTube on Chromecast")
+
+    def test_each_playing_player_is_an_item_kept_by_its_player(self):
+        page = {"elements": [self.element]}
+        n, kind, keys, _, _ = subitems.inspect_category_subitems(page, {0: PLAYING})
+        self.assertEqual((n, kind, keys), (2, "media", ["media_player.tv", "media_player.kitchen"]))
+        one = render({**self.element, "sub_index": 1}, PLAYING)
+        self.assertNotEqual(one.tobytes(), render(self.element, PLAYING).tobytes())
+
+    def test_nothing_playing_and_not_fetched_yet(self):
+        self.assertGreater(ink(render(self.element, [])), 200)
+        self.assertEqual(ink(render(self.element, None)), 0)
+
+    def test_players_to_follow(self):
+        self.assertEqual(home.players("media_player.a, media_player.b,sensor.x, nope"), ["media_player.a", "media_player.b"])
+        self.assertIn("expand(['media_player.a'])", home._now_playing_template(["media_player.a"]))
+        self.assertIn("states.media_player", home._now_playing_template([]))
+
+
+class TestTvWeek(Sizes, unittest.TestCase):
+    element = {"type": "tv_week", "entity": "calendar.sonarr", "x": 24, "y": 14, "w": 744, "h": 208}
+    value = {"tz": "Europe/Bucharest", "events": [
+        {"summary": "Slow Horses - S06E06 - Judgement Day", "start": datetime.now(TZ).replace(hour=21).isoformat()}]}
+
+    def test_reads_the_ways_shows_are_written(self):
+        self.assertEqual(media.episode_of("Slow Horses - S06E06 - Judgement Day"), ("Slow Horses", "S6 E6", "Judgement Day"))
+        self.assertEqual(media.episode_of("Brothers (2026) - S01E06 - The Dance")[:2], ("Brothers", "S1 E6"))
+        self.assertEqual(media.episode_of("The Bear - 4x01 - Groundhog")[:2], ("The Bear", "S4 E1"))
+        self.assertEqual(media.episode_of("Severance S02E05")[:2], ("Severance", "S2 E5"))
+        self.assertEqual(media.episode_of("Dune: Part Three"), ("Dune: Part Three", "", ""))
+
+    def test_from_today_on_in_order_with_days_in_words(self):
+        now = datetime(2026, 10, 21, 13, 0, tzinfo=TZ)
+        events = [{"summary": "C - S01E03", "start": "2026-10-24T20:00:00+03:00"},
+                  {"summary": "Old - S01E01", "start": "2026-10-20T20:00:00+03:00"},
+                  {"summary": "A - S01E01", "start": {"dateTime": "2026-10-21T21:00:00+03:00"}},
+                  {"summary": "B - S01E02", "start": "2026-10-22T07:00:00+03:00"},
+                  {"summary": "Far - S01E09", "start": "2026-10-30T07:00:00+03:00"}]
+        got = media.upcoming(events, now)
+        self.assertEqual([(r["day"], r["show"]) for r in got], [("Tonight", "A"), ("Tomorrow", "B"), ("Saturday", "C")])
+
+    def test_no_calendar_and_nothing_this_week_say_so(self):
+        self.assertGreater(ink(render({**self.element, "entity": ""}, None)), 200)
+        self.assertGreater(ink(render(self.element, {"tz": "UTC", "events": []})), 200)

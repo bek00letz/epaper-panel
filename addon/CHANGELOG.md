@@ -67,6 +67,14 @@
   (earned or spent today and this month, from the prices in your Energy
   dashboard, in Home Assistant's currency). If the dashboard doesn't have
   what a page needs, the page says what to add there.
+- **Now playing**: what's playing on any media player in Home Assistant
+  (Spotify, Sonos, Apple TV, Chromecast, Plex, Jellyfin through JellyHA),
+  with the artist or show and where it's playing. Follow the players you
+  choose, or all of them; when several play, each is its own item of the
+  page, latest started first, like planes overhead.
+- **On TV this week**: the next episodes from any calendar of shows, such
+  as Sonarr's or Trakt's, a row each ("Tonight  Slow Horses  S6 E6"), as
+  many as read well and then "and 3 more".
 - **Fixed:** a Race weekend page set to NASCAR or IndyCar showed Formula 1's
   race, drivers and status. Each series now reads its own results, and its
   page names it ("NASCAR · …"). Whether the page shows still followed the

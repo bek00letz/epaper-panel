@@ -22,7 +22,7 @@ from sources.flights import fetch_overhead_aircraft, place_of
 from sources.geo import get_home_timezone
 from sources.ha_services import fetch_calendar_events, fetch_todo_items, fetch_weather_forecast, todo_list_id
 from sources import energy
-from sources.home import fetch_sun
+from sources.home import episodes, fetch_now_playing, fetch_sun, players
 from sources.racing import compute_racing_active_window, fetch_racing_data
 from sources.sports import compute_sports_active_window, fetch_sports_match
 from runtime import Frames
@@ -141,6 +141,15 @@ async def enrich_page_values(session, page, vals):
             got = await energy.fetch_cost(session)
             if got is not None:
                 vals[i] = got
+        elif t == "now_playing":
+            playing = await fetch_now_playing(session, tuple(players(el.get("entity"))))
+            if playing is not None:
+                vals[i] = playing
+        elif t == "tv_week":
+            if str(el.get("entity") or "").strip():
+                events = await episodes(session, str(el["entity"]), days=as_int(el.get("days"), 7))
+                if events is not None:
+                    vals[i] = {"events": events, "tz": home_tz}
         elif t == "flight_tracker":
             custom_lat, custom_lon, radius, _ = place_of(el)
             fl_data = await fetch_overhead_aircraft(session, radius_km=radius, lat=custom_lat, lon=custom_lon)
@@ -500,7 +509,7 @@ async def draw_category(plan: dict, sub_count: int, page_no: int, *, footer: dic
 
         for el_idx, el in enumerate(elements):
             el_c = dict(el)
-            if el.get("type") in ("flight_tracker", "sports_match"):
+            if el.get("type") in ("flight_tracker", "sports_match", "now_playing"):
                 el_c["sub_index"] = s_idx
             elif sub_type in ("feed", "watch") and feed_items and s_idx < len(feed_items):
                 item_data = feed_items[s_idx]

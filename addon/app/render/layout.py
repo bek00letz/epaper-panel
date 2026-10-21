@@ -28,6 +28,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 from . import theme as T
 from . import binding
 from . import energy
+from . import media
 from . import sun
 from . import todo
 from . import units
@@ -2109,6 +2110,8 @@ WIDGETS = {
     "energy_total": energy.draw_total,
     "grid_now": energy.draw_grid,
     "energy_cost": energy.draw_cost,
+    "now_playing": media.draw_now_playing,
+    "tv_week": media.draw_tv_week,
 }
 DRAWERS.update({t: _widget(fn) for t, fn in WIDGETS.items()})
 
