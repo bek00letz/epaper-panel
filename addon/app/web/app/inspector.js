@@ -329,8 +329,9 @@ export function fieldsFor(type) {
 function typeSections(app, el, set, i) {
   if (el.type === "line") return [lineSection(app, el)];
   if (el.type === "qr") return [qrSection(app, el, set)];
-  if (el.type === "dynamic_grid") return gridSections(app, el, set);
   const fields = fieldsFor(el.type);
+  // A descriptor whose field is the whole grid editor (the Devices widget): its own sections.
+  if (fields.some((f) => f.kind === "grid")) return gridSections(app, el, set);
   const s = section(TYPES[el.type]?.name || "Settings");
   for (const f of fields) {
     if (f.when && !f.when(el)) continue;

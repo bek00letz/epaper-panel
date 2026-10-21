@@ -359,6 +359,17 @@ class TestSetsUpWhatItNeeds(unittest.TestCase):
         self.assertIn('"aria-label": "Whose unwatched"', self.js)
 
 
+class TestEveryFieldKindHasAnEditor(unittest.TestCase):
+    """The inspector draws a widget's settings from its descriptor's fields, by kind: one path."""
+
+    def test_every_kind_a_descriptor_asks_for_has_an_editor(self):
+        insp = (APP_JS / "inspector.js").read_text()
+        kinds = {f["kind"] for w in catalog_json()["widgets"].values() for f in w.get("fields", []) if isinstance(f, dict) and f.get("kind")}
+        for k in sorted(kinds):
+            with self.subTest(kind=k):
+                self.assertIn(f'f.kind === "{k}"', insp)
+
+
 class TestCitiesEditorCanBeClicked(unittest.TestCase):
     def test_its_class_is_not_the_canvas_guides(self):
         """The canvas's guides are .zones (absolute, no pointer events): the editor named so couldn't be clicked."""
