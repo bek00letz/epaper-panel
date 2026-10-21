@@ -673,3 +673,26 @@ class TestStateClassForPresets(EditorClient):
         rows = {r["entity_id"]: r for r in await (await self.ed.get("/api/entities")).json()}
         self.assertEqual(rows["sensor.solar_today_production"]["state_class"], "total_increasing")
         self.assertEqual(rows["sensor.indoor_temperature"]["state_class"], "")
+
+
+# ---------------------------------------------------------------- state words
+
+from render import states as state_words  # noqa: E402
+
+
+class TestStateWords(unittest.TestCase):
+    def test_a_switch_never_reads_open(self):
+        self.assertEqual(state_words.words("switch.guest_mode")["on"][0], "On")
+        self.assertEqual(state_words.words("binary_sensor.hall", "motion")["on"][0], "Detected")
+        self.assertEqual(state_words.words("binary_sensor.front", "door")["off"][0], "Closed")
+        self.assertEqual(state_words.words("binary_sensor.washer", "running")["on"][0], "Running")
+        self.assertEqual(state_words.words("binary_sensor.thing", "")["on"][0], "On")
+        self.assertEqual(state_words.words("lock.front")["locked"][0], "Locked")
+        self.assertEqual(state_words.words("person.ada")["not_home"][0], "Away")
+        self.assertEqual(state_words.words("sensor.temperature"), {})
+
+    def test_every_icon_is_in_the_panels_icon_font(self):
+        for key, by_state in state_words.STATES.items():
+            for st, (word, icon) in by_state.items():
+                self.assertIsNotNone(layout.mdi_codepoint(icon), f"{key} {st}: {icon}")
+                self.assertTrue(word and word[0].isupper(), f"{key} {st}: sentence case")
