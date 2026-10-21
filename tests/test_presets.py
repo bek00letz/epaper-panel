@@ -89,6 +89,11 @@ class TestCatalogue(unittest.TestCase):
         series = run_js("console.log(JSON.stringify(P.SERIES.map(([s]) => s)))")
         self.assertEqual(sorted({racing.series_slug(s)[0] for s in series}), sorted(series), "each series names its own sensor")
 
+    def test_the_inspector_offers_the_same_leagues_and_series(self):
+        src = (APP_JS / "inspector.js").read_text()
+        self.assertIn('F.sel("league", "League", LEAGUES, "soccer/eng.1")', src)
+        self.assertIn('F.sel("series", "Series", SERIES, "f1")', src)
+
     def test_a_league_or_series_shows_by_its_own_sensor(self):
         for pid in ("match", "race_weekend"):
             for look in self.by_id[pid]["looks"]:

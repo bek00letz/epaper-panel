@@ -7,6 +7,7 @@ import { field, input, number, select, seg, textarea, toggle, toggleRow, section
 import { TYPES, BREAKABLE, isWidget, hasText, elName, normalizeLineParity, GROUP_STYLES, GROUP_PAD } from "./elements.js";
 import { OPS, parseShowIf, compileShowIf, evaluate, describe, syncWidgetShowIf, syncDynamicGridShowIf } from "./conditions.js";
 import { explodeWidget, getWidgetSensorId, suggestIconForEntity } from "./legacy.js";
+import { LEAGUES, SERIES } from "./presets.js";
 
 const SHOWS = [["state", "Its value"], ["unit", "Its unit, following the value"], ["attribute", "One of its details"], ["last_changed", "When it last changed"], ["last_updated", "When it last updated"],
   ["days_until", "Days until it"], ["date_formatted", "Its date"], ["calendar_title", "The event's name"]];
@@ -286,12 +287,12 @@ const TYPE_FIELDS = {
   calendar_agenda: [F.entity("entity", "Calendar", ["calendar"]), F.text("title", "Title", "Coming up"), F.sel("max_events", "Events", [["2", "2, extra large"], ["3", "3, large"], ["4", "4"], ["5", "5"], ["6", "6"]], "4"), F.on("show_sub", "Times and places", true), BORDER_ON],
   weather_forecast: [F.entity("entity", "Weather", ["weather"]), F.sel("layout_mode", "Layout", [["auto", "Fit the box"], ["split", "Now and forecast side by side"], ["stacked", "Now above the forecast"], ["hero_only", "Now only, very large"], ["forecast_only", "Forecast only"]], "auto"),
     F.sel("forecast_days", "Days", [["3", "3"], ["4", "4"], ["5", "5"]], "4"), F.on("show_details", "Humidity and wind", true), BORDER_ON],
-  sports_racing: [F.sel("series", "Series", [["f1", "Formula 1"], ["fe", "Formula E"], ["nascar", "NASCAR"], ["indycar", "IndyCar"]], "f1"), F.entity("entity", "Sensor, if you have one"),
+  sports_racing: [F.sel("series", "Series", SERIES, "f1"), F.entity("entity", "Sensor, if you have one"),
     F.sel("max_drivers", "Leaderboard", [["6", "Top 6, extra large"], ["8", "Top 8, large"], ["10", "Top 10"]], "10"),
     { kind: "window", label: "Only show around sessions" }, F.sel("window_mode", "Around", [["session", "Each session"], ["weekend", "The whole weekend"]], "session"),
     F.num("pre_buffer_hours", "Hours before", "2", 0, 24, 0.5), F.num("post_buffer_hours", "Hours after", "2", 0, 24, 0.5),
     F.on("show_teams", "Team names", true), F.text("timezone", "Time zone", "Home Assistant's"), BORDER_ON, { kind: "sensorid" }],
-  sports_match: [F.sel("league", "League", [["soccer/eng.1", "Premier League"], ["soccer/uefa.champions", "Champions League"], ["soccer/esp.1", "La Liga"], ["soccer/ger.1", "Bundesliga"], ["soccer/ita.1", "Serie A"], ["basketball/nba", "NBA"], ["football/nfl", "NFL"], ["baseball/mlb", "MLB"], ["hockey/nhl", "NHL"]], "soccer/eng.1"),
+  sports_match: [F.sel("league", "League", LEAGUES, "soccer/eng.1"),
     F.text("team", "Team", "Any team"), F.entity("entity", "Team Tracker sensor"), { kind: "window", label: "Only show on match days" },
     F.num("pre_buffer_hours", "Hours before", "2", 0, 24, 0.5), F.num("post_buffer_hours", "Hours after", "2", 0, 24, 0.5),
     F.text("timezone", "Time zone", "Home Assistant's"), F.on("show_stats", "Team stats", true), F.on("show_scorers", "Scorers", true), BORDER_ON, { kind: "sensorid" }],

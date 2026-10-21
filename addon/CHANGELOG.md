@@ -97,6 +97,10 @@
   unwatched to show. The connection is saved under Settings › Data sources
   like one you add there, and the next Jellyfin page offers it.
 
+- **Fixed:** a Match's League menu offered nine leagues, though the add-on
+  also follows MLS, the WNBA and college football. It offers all twelve now,
+  the same list as New page.
+
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) for the quiet-hours fix below.
