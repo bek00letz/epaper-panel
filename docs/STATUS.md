@@ -22,19 +22,17 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 ## In flight
 
+0.15.0 is everything together (user, 21 Oct), assembled on `release-next`
+(worktree `~/Documents/HA/epaper-worktrees/release-next`): the held 0.14.1
+(device wording, zoom, the sleep-screen fix, the Wi-Fi network name; a
+firmware change), alerts that end on a condition and to-do lists with three
+row styles (merged in), plus:
+
 | Work | Where | State |
 |---|---|---|
-| Alerts that release on a condition, and to-do list pages from Home Assistant (session "alerts-todo") | branch `alerts-todo` (6 commits on `release-next`), worktree `~/Documents/HA/epaper-worktrees/alerts-todo` | Done 21 Oct: 7 commits, 415 tests pass, no firmware change. Three to-do row styles, By urgency the default (user's call). Not tried in the real Home Assistant or seen by eye |
-| Editor: screen menu (Rename, Remove, Add new device) and zoom (−/+, Fit to 200%, pinch, ⌘+/⌘−/⌘0) (session "editor-polish", asked by the user directly) | branch `editor-zoom`, worktree `~/Documents/HA/epaper-worktrees/editor-zoom` | Done 21 Oct, 370 tests pass, not seen by eye; waiting for a release |
-
-Merged into local main, not pushed, for the next release: a sleeping panel
-is woken once when its sleep screen's words change (21 Oct). The editor-zoom
-work and the "device everywhere" wording ship with it (user, 21 Oct).
-0.14.1 is put together in `release-next` (worktree
-`~/Documents/HA/epaper-worktrees/release-next`): 377 tests pass and the
-5.79" compiles. It now also shows which Wi-Fi network the panel is on
-(Connection, Settings › Device), a firmware change: one panel reinstall.
-Held by the user ("not yet", 21 Oct).
+| Racing fix and the new presets' widgets: Sunrise and sunset, Solar this month, Grid now, Energy cost, Now playing, On TV this week (session "widgets-015") | branch `widgets-015` from `release-next` | Started 21 Oct |
+| The New page sheet: shelves, groups, renames, one preset per thing, sensible sensor first, example thumbnails, setup in place, Guest Wi-Fi text (session "presets-015") | branch `presets-015` from `release-next` | Started 21 Oct |
+| Screen menu and zoom, "device" everywhere (editor-polish) | `editor-zoom`, already in `release-next` | Its worktree can go once 0.15.0 ships |
 
 Worker notes are in the coordinator's notes folder
 (`break-it-0.12.0.md`, `timers-addon.md`, `firmware-013.md`,
@@ -42,12 +40,7 @@ Worker notes are in the coordinator's notes folder
 
 ## Backlog, most important first
 
-1. **Three bugs found by the presets mockup (21 Oct).** NASCAR and IndyCar
-   show Formula 1 data (`sources/racing.py` fetches only F1 and Formula E);
-   the Guest Wi-Fi preset's text runs under its QR code (no wrap,
-   `web/app/legacy.js`); New page thumbnails show "--" for every preset that
-   needs a sensor (they should draw example values, never your data).
-2. **Sleeping on the real 5.79" (since 0.13).** Always on first (nothing should change), then
+1. **Sleeping on the real 5.79" (since 0.13).** Always on first (nothing should change), then
    sleeping: sleep current through the USB meter (an upper bound), the
    change after a wake without a flash, a full refresh every 8th change,
    buttons waking it, a power cut. Steps in `firmware-013.md`. Way back if it
@@ -58,25 +51,21 @@ Worker notes are in the coordinator's notes folder
    12+ hours, battery still at 100%. Sub-second drops of Home Assistant's
    connection at 00:00:20 and 06:00:22, as quiet hours started and ended;
    harmless, watch whether they grow.
-3. **The editor's new parts by eye**, in Safari and inside Home Assistant:
+2. **The editor's new parts by eye**, in Safari and inside Home Assistant:
    the screen bar, Add a screen with power first, rename in place, and Fit
    in Safari (reasoned from screenshots, not reproduced).
-4. **The 5.79" away from home:** fetching over HTTPS through Home
+3. **The 5.79" away from home:** fetching over HTTPS through Home
    Assistant's address and a Cloudflare tunnel works (20 Oct, once the
    integration's entry existed). Still untried: a second Wi-Fi network, and
    "Through your own address".
-5. **Setup from the browser** (next month, large, firmware): a design pass
+4. **Setup from the browser** (next month, large, firmware): a design pass
    with the user first on how the panel keeps its Home Assistant actions and
    entities without a per-panel key (ROADMAP, open question).
-6. **The rest of next month** (ROADMAP): the screen's words in Home
+5. **The rest of next month** (ROADMAP): the screen's words in Home
    Assistant's language (which languages first is open), share a page, to-do
    lists, a "how it went" report, TRMNL-compatible screens.
 
-**Noted for the roadmap (21 Oct, from the roadmap session, not yet decided):**
-the New page sheet on shelves (agreed) with new groups, renames and presets
-(mockup: claude.ai/artifact/STc9a9gWKX7fgX511pmdE6); JellyHA, now on the
-user's Home Assistant, could drive an Episode card and Now playing with no
-setup, while the add-on's own Jellyfin source stays for New to watch.
+The New page presets plan is in ROADMAP.md and in flight for 0.15.0.
 
 **Waiting on hardware:** a TRMNL (pairing, pictures, HTTPS, battery); a
 second CrowPanel side by side; a 4.2" or 2.9" CrowPanel (they build, untried;
