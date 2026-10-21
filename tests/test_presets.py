@@ -315,6 +315,14 @@ class TestTheSheet(unittest.TestCase):
         self.assertIn('if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;', self.js)
         self.assertIn('if (e.key === "Escape" && step) { e.preventDefault(); e.stopImmediatePropagation(); leave(); } }, true);', self.js)
 
+    def test_title_shelves_and_footer_start_on_one_line(self):
+        self.assertIn(".npsheet .sheet-head { padding-left: var(--gutter); }", CSS)
+        self.assertIn(".npsheet .sheet-foot { padding-inline: var(--gutter); }", CSS)
+
+    def test_close_stays_at_the_edge_in_a_step_on_a_phone(self):
+        self.assertIn(".npsheet.stepping .sheet-head h2 { flex: 1; max-width: none; }", CSS)
+        self.assertIn('node.classList.add("stepping")', self.js)
+
     def test_the_shelves_never_widen_the_sheet(self):
         self.assertIn(".shelfbody > * { min-width: 0; }", CSS)
         self.assertNotRegex(CSS, r"(^|\})\s*\.newpage \.(row|shelf|pbtn)", "the strip's New page button owns .newpage")

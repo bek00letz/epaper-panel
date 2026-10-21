@@ -456,6 +456,9 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
 @property --fr { syntax: "<length>"; inherits: false; initial-value: 0px; }
 .npsheet { --card: 204px; --thumb-h: min(196px, var(--card) / var(--aspect, 2.9)); --gutter: 20px; --fade: 72px; --arrow-bg: rgba(255, 255, 255, 0.92); --shadow-arrow: 0 2px 8px rgba(0, 0, 0, 0.16), 0 0 0 0.5px rgba(0, 0, 0, 0.08); }
 :root[data-theme="dark"] .npsheet { --arrow-bg: rgba(58, 58, 60, 0.92); --shadow-arrow: 0 2px 10px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.12); }
+/* Title, shelves and footer start on one line: the shelves' gutter. */
+.npsheet .sheet-head { padding-left: var(--gutter); }
+.npsheet .sheet-foot { padding-inline: var(--gutter); }
 .npsheet .sheet-head h2 { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sheetsearch { margin: 0; width: min(240px, 46%); flex: none; }
 .sheetsearch input { min-height: var(--ctl); }
@@ -532,6 +535,7 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
   .npsheet.tallcards { --card: 112px; }
   .sheetsearch { width: auto; flex: 1; }
   .npsheet .sheet-head h2 { flex: none; max-width: 40%; }
+  .npsheet.stepping .sheet-head h2 { flex: 1; max-width: none; }    /* no search beside it in a step */
   .opt .otag { display: none; }
 }
 

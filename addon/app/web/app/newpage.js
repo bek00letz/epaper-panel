@@ -145,7 +145,7 @@ export function openPresets(app) {
       });
       stepBox.replaceChildren(step.node);
       shelves.hidden = results.hidden = true; stepBox.hidden = false;
-      back.hidden = false; search.hidden = true; blank.hidden = true;
+      back.hidden = false; search.hidden = true; blank.hidden = true; node.classList.add("stepping");
       title.textContent = p.title;
       body.scrollTop = 0;
       step.focus();
@@ -155,7 +155,7 @@ export function openPresets(app) {
       step.dispose(); step = null;
       stepBox.hidden = true; stepBox.replaceChildren();
       shelves.hidden = !!query.trim(); results.hidden = !query.trim();
-      back.hidden = true; search.hidden = false; blank.hidden = false;
+      back.hidden = true; search.hidden = false; blank.hidden = false; node.classList.remove("stepping");
       title.textContent = "New page";
       (shelves.hidden ? results : shelves).classList.add("fade");
       setTimeout(() => q.focus({ preventScroll: true }));
