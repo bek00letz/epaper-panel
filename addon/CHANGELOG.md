@@ -1,6 +1,16 @@
 # Changelog
 
-## Unreleased
+## 0.15.0
+**Firmware change:** install the panel again (Settings › Install or update,
+then Send to ESPHome and Install in ESPHome) to see which Wi-Fi network it's
+on. Everything else works without reinstalling.
+
+In short: a new New page with presets on shelves, and new ones (Sunrise and
+sunset, energy, Now playing, On TV this week, your own weather station, a
+world clock, Countdown and Bin day without a calendar, to-do lists); alerts
+that end when something happens; "device" everywhere; zoom; 12- or 24-hour
+time; a clock that shows the date on a device that sleeps; and many fixes.
+The details:
 
 - **Connection says which Wi-Fi network the panel is on**, as in "Connected
   to Office, Wi-Fi −37 dBm" (Settings › Device). **Firmware change:** install
