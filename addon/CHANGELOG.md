@@ -228,6 +228,9 @@
   the lower one takes just that turn out). A countdown that has passed
   shows them all the time. Undo works as everywhere.
 
+- **Fixed:** with the page strip down the side, New page shrank to a sliver
+  and, with this release's sliding strip, the pages ran under the canvas.
+
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) for the quiet-hours fix below.

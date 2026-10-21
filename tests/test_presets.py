@@ -603,7 +603,7 @@ class TestTheSheet(unittest.TestCase):
         self.assertIn(".slider.vertical > .slides {", CSS, "down the side it fades top and bottom")
         self.assertIn(".slider.still > .slides { transition: none; }", CSS, "a strip drawn again doesn't fade in each time")
         self.assertIn('n.closest(".slider")?.sync();', (APP_JS / "main.js").read_text())
-        self.assertIn('#app[data-strip="side"] .strip > .slider { flex: 1 1 0; min-height: 0; flex-direction: column; }', CSS, "down the side, the column scrolls")
+        self.assertIn('#app[data-strip="side"] .strip > .slider { flex: 1 1 0; min-height: 0; flex-direction: column;', CSS, "down the side, the column scrolls")
 
     def test_phones_swipe(self):
         row = next(b for s, b in re.findall(r"([^{}]+)\{([^{}]*)\}", CSS) if s.strip() == ".row")
@@ -632,6 +632,14 @@ class TestTheSheet(unittest.TestCase):
             for call in calls(src, ".replaceChildren("):
                 for arg in top_level(call):
                     self.assertFalse(re.search(r":\s*null\s*$", arg.strip()), f"{name}: {arg.strip()[:80]}")
+
+    def test_the_sheets_styles_stay_the_sheets(self):
+        """.npsheet is New page's sheet; .newpage is the strip's New page button and the pickers' row.
+        A rename once reached both, and New page down the side shrank to 5 px."""
+        self.assertIn('#app[data-strip="side"] .stathead, #app[data-strip="side"] .newpage { flex: none; min-height: 40px; }', CSS)
+        self.assertIn(".opt.newpage {", CSS)
+        self.assertNotIn(".opt.npsheet", CSS)
+        self.assertNotRegex(CSS, r'data-strip="side"\] \.npsheet')
 
     def test_the_shelves_never_widen_the_sheet(self):
         self.assertIn(".shelfbody > * { min-width: 0; }", CSS)

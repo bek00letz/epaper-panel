@@ -683,7 +683,7 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
   #toast { bottom: max(calc(88px + env(safe-area-inset-bottom)), calc(var(--sb-room, 0px) + 8px)); }
 }
 .unitsbox { display: flex; flex-direction: column; gap: 8px; }
-.opt.npsheet { border-top: 0.5px solid var(--sep); border-radius: 0 0 var(--r-ctl) var(--r-ctl); margin-top: 4px; color: var(--accent); }
+.opt.newpage { border-top: 0.5px solid var(--sep); border-radius: 0 0 var(--r-ctl) var(--r-ctl); margin-top: 4px; color: var(--accent); }
 .opt .o2.plain { font-family: var(--font); }
 
 /* ---------- where the page strip sits (Settings › Editor) ---------- */
@@ -699,8 +699,10 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
   #app[data-strip="side"] .canvaswrap { grid-column: 2; grid-row: 2; }
   #app[data-strip="side"] .strip { flex-direction: column; gap: 10px; min-height: 0; }
   #app[data-strip="side"] .stripfront { width: 100%; padding: 0; margin: 0; height: auto; }
-  #app[data-strip="side"] .stathead, #app[data-strip="side"] .npsheet { flex: none; min-height: 40px; }
-  #app[data-strip="side"] .strip > .slider { flex: 1 1 0; min-height: 0; flex-direction: column; }   /* the column scrolls, not the window */
+  #app[data-strip="side"] .stathead, #app[data-strip="side"] .newpage { flex: none; min-height: 40px; }
+  /* The column's width and height, not its content's: it scrolls, and nothing spills onto the canvas. */
+  #app[data-strip="side"] .strip > .slider { flex: 1 1 0; min-height: 0; flex-direction: column; align-self: stretch; width: 100%; min-width: 0; }
+  #app[data-strip="side"] .tilebox { width: 100%; min-width: 0; }
   #app[data-strip="side"] .tiles { flex: 1 1 0; min-height: 0; flex-direction: column; align-items: stretch; overflow-x: hidden; overflow-y: auto; padding: 2px 3px 16px; margin: 0 -3px; }
   #app[data-strip="side"] .tile { width: 100%; }
   #app[data-strip="side"] .groupsep { width: auto; height: 0.5px; align-self: stretch; margin: 4px 0 0; }
@@ -730,6 +732,7 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
 .tile.passed .tsub { color: var(--orange); font-weight: 600; }
 .note.passed { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: color-mix(in srgb, var(--orange) 10%, transparent); border: 1.5px solid var(--orange); border-radius: var(--r-card); padding: 10px 12px; }
 .note.passed > span { flex: 1; min-width: 12em; }
+.note.passed > .ic { color: var(--orange); }
 /* A tile's box: the tile, and its page's buttons over its picture (beside it, not inside). */
 .tilebox { position: relative; flex: none; display: flex; }
 #app[data-strip="side"] .tilebox { width: 100%; }
