@@ -80,7 +80,9 @@ function addFromPreset(app, p, ent) {
   if (p.show_if) page.show_if = p.show_if;
   if (p.showIf) page.show_if = p.showIf(ent);
   if (page.tier === "when") syncDynamicGridShowIf(page);
-  app.addPage(p.id, page);
+  // A page per list: named after it ("Chores", "Work"), not "To do 2".
+  const named = p.namedByEntity && ent ? slug(app.entMap.get(ent)?.name || ent.split(".")[1]) : "";
+  app.addPage(named || p.id, page);
 }
 
 export function savePresetSheet(app) {

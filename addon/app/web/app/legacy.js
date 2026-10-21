@@ -533,6 +533,7 @@ export const PRESETS = [
     title: "To-do list",
     desc: "A to-do list from Home Assistant, what's due first. Only shows while there's something to do.",
     asks: "todo",
+    namedByEntity: true,
     tier: "when",
     showIf: (ent) => todoShowIf(ent),
     makeElements: (ent) => [

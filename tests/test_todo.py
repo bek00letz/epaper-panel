@@ -134,14 +134,19 @@ class TestPreset(unittest.TestCase):
         got = self.run_js("""
 const p = PRESETS.find((x) => x.id === "to_do");
 const show_if = p.showIf("todo.chores");
-console.log(JSON.stringify({ asks: p.asks, tier: p.tier, show_if, parsed: C.parseShowIf(show_if),
+console.log(JSON.stringify({ asks: p.asks, named: p.namedByEntity, tier: p.tier, show_if, parsed: C.parseShowIf(show_if),
   compiled: C.compileShowIf({ ent: "todo.chores", op: "gt", val: "0" }), els: p.makeElements("todo.chores"), skip: p.showIf("") }));""")
         self.assertEqual((got["asks"], got["tier"]), ("todo", "when"))
         self.assertEqual(got["show_if"], got["compiled"], "written as the simple form writes it")
         self.assertEqual(got["parsed"], {"mode": "simple", "ent": "todo.chores", "op": "gt", "val": "0"})
         self.assertEqual(conditions.guarded(got["show_if"]), got["show_if"])
         self.assertEqual(got["els"][0]["type"], "todo_list")
+        self.assertTrue(got["named"], "a page per list, named after it")
         self.assertEqual(got["skip"], "")
+
+    def test_new_page_names_it_after_the_list(self):
+        src = (support.APP / "web" / "app" / "sheets.js").read_text()
+        self.assertIn('p.namedByEntity && ent ? slug(app.entMap.get(ent)?.name', src)
 
     def test_the_condition_follows_the_list_but_never_replaces_your_own(self):
         got = self.run_js("""

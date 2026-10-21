@@ -22,7 +22,9 @@
   Home Assistant (the shopping list, Local To-do, Google Tasks, Todoist):
   what's still to do, anything with a due date first, Overdue and Today
   marked, then "and 4 more" when they don't all fit. It shows only while
-  the list has something on it. Also under Insert › Widgets.
+  the list has something on it. Each list is its own page, named after
+  the list, so a work list and a chores list rotate, repeat or sit out like
+  any other pages. Also under Insert › Widgets.
 - **Alerts can end when something happens**, not only after a time. Under
   Ends, choose When something happens and pick what ends it: "Watch battery
   is below 20" until "Watch is charging" stays up until you put it on the

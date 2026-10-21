@@ -258,7 +258,10 @@ shopping list, Local To-do, Google Tasks, Todoist. What's still to do, with
 anything that has a due date first (Overdue and Today stand out), then the
 rest in the list's own order. As many as fit at a readable size, then "and 4
 more". It shows only while the list has something on it; turn that off with
-**Only show when there's something to do**. The panel only shows the list;
+**Only show when there's something to do**. Each list is a page of its own,
+named after the list: a work list and a chores list rotate like any two
+pages, and to keep one up, take the other out of the rotation or hold the
+page on the panel. The panel only shows the list;
 tick things off in Home Assistant or the list's own app.
 
 ### The rotation
