@@ -76,7 +76,9 @@ class Widget:
     box: dict = field(default_factory=lambda: dict(FILL))
     defaults: dict = field(default_factory=dict)
     fields: list = field(default_factory=list)
-    items: tuple[int, str] | None = None        # (most, kind): a list value is up to `most` items of its page
+    # (most, kind): a list value is up to `most` items of its page; `most` None: all of them, as many
+    # as the panel holds (frames.fit_counts shares its room out, most important first).
+    items: tuple[int | None, str] | None = None
     window: bool = False                        # its page can show only around its events (a sensor of ours)
     breakable: bool = False                     # the editor can break it into plain elements
 
@@ -300,7 +302,8 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
                    {"kind": "sensorid"}]),
     Widget("sports_match", "Scores", "ball", _match,
            lambda el, now: examples.match(el.get("league") or el.get("entity") or "soccer/eng.1"),
-           live=(sports.fetch_sports_match,), items=(6, "sports"), window=True, breakable=True,
+           # Every game of the day (the user's call, 21 Oct); the way back is items=(6, "sports").
+           live=(sports.fetch_sports_match,), items=(None, "sports"), window=True, breakable=True,
            defaults={"league": "soccer/eng.1", "team": "", "entity": "", "show_border": True},
            fields=[sel("league", "League", "leagues", "soccer/eng.1"), text("team", "Team", "Any team"),
                    entity("entity", "Team Tracker sensor"),

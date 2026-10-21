@@ -554,6 +554,20 @@ class TestSportWords(unittest.TestCase):
         self.assertEqual(self._event("hockey/nhl")["league"], "GAME")
 
 
+class TestEveryGame(unittest.TestCase):
+    def test_a_scores_page_has_every_game_of_the_day(self):
+        # Not six: the panel's room is the only limit, shared out by frames.fit_counts.
+        games = [{"id": str(i), "home_team": f"H{i}", "away_team": f"A{i}"} for i in range(15)]
+        page = {"elements": [{"type": "sports_match", "league": "basketball/nba"}]}
+        n, kind, keys, items, _ = subitems.inspect_category_subitems(page, {0: games})
+        self.assertEqual((n, kind, len(set(keys)), len(items)), (15, "sports", 15, 15))
+
+    def test_planes_still_stop_at_five(self):
+        planes = [{"id": f"p{i}", "callsign": f"P{i}"} for i in range(9)]
+        n, kind, *_ = subitems.inspect_category_subitems({"elements": [{"type": "flight_tracker"}]}, {0: planes})
+        self.assertEqual((n, kind), (5, "flight"))
+
+
 class TestRaceColumns(unittest.TestCase):
     def test_a_wide_driver_code_never_runs_into_the_team(self):
         import examples

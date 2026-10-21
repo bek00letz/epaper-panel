@@ -23,9 +23,9 @@ try:
 except (ImportError, ValueError):
     from render import binding, stripmeta
 
-# Widgets whose list value is several items of their page: {type: (most, kind)}. Filled from
-# their descriptors (widgets.py), the one place a widget is described.
-WIDGET_ITEMS: dict[str, tuple[int, str]] = {}
+# Widgets whose list value is several items of their page: {type: (most, kind)}, most None for
+# all of them. Filled from their descriptors (widgets.py), the one place a widget is described.
+WIDGET_ITEMS: dict[str, tuple[int | None, str]] = {}
 
 # A feed's attributes that speak for all of its items at once. A page that
 # shows only these is one screen, not one per item.
@@ -98,7 +98,7 @@ def inspect_category_subitems(
         most, kind = WIDGET_ITEMS[el["type"]]
         got = page_vals.get(el_idx)
         if isinstance(got, list) and len(got) > 1:
-            sub_count = max(sub_count, min(len(got), most))
+            sub_count = max(sub_count, len(got) if most is None else min(len(got), most))
             sub_type = kind
             items = got[:sub_count]
 

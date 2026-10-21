@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+- **A Scores page shows every game of the day,** not just six: your teams
+  first, then live, upcoming and finished. On a busy day an always-on panel
+  can run out of room; it then keeps the most important games.
+
 ## 0.18.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) so its clock lines up with the
