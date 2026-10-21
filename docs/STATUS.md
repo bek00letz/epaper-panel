@@ -24,7 +24,9 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 ## In flight
 
-Nothing.
+| Work | Where | State |
+|---|---|---|
+| "Follows" for any icon in the inspector: pick an entity, an icon per state, from Home Assistant's own icons and the entity's states (session "icon-follows") | branch `icon-follows` from main | Started 21 Oct; designs with the user first |
 
 Worker notes are in the notes folders (`break-it-0.12.0.md`,
 `timers-addon.md`, `firmware-013.md`, `fixes-0131.md`, `editor-polish.md`,
