@@ -258,7 +258,7 @@ class TestAWake(TrmnlBase):
         status, body = await self.wake(self.key)
         self.assertEqual(status, 200)
         self.assertEqual(body["status"], 0, "202 polls every 5 s and 500 wipes its Wi-Fi: only 0")
-        self.assertEqual(body["refresh_rate"], 15 * 60, "always sent: a missing one is stored as 0")
+        self.assertTrue(support.lands_aligned(body["refresh_rate"], 15 * 60), "always sent: a missing one is stored as 0")
         self.assertFalse(body["update_firmware"])
         self.assertFalse(body["reset_firmware"])
         self.assertTrue(body["image_url"])
@@ -344,7 +344,7 @@ class TestAWake(TrmnlBase):
         self.assertEqual(r.status, 200)
         timers = (await r.json())["device"]["timing"]
         self.assertEqual((timers["update_minutes"], timers["can_stay_on"]), (60, False))
-        self.assertEqual((await self.wake(self.key))[1]["refresh_rate"], 3600)
+        self.assertTrue(support.lands_aligned((await self.wake(self.key))[1]["refresh_rate"], 3600))
         for never in (7, 1, 2):
             r = await self.ed.patch(f"/api/devices/{self.dev['id']}", json={"update_minutes": never})
             self.assertEqual(r.status, 400, f"{never} minutes: it always sleeps, from 5 minutes")
@@ -433,7 +433,7 @@ class TestQuietHoursAndAlerts(TrmnlBase):
         _, asleep = await self.wake(self.key)
         _, glance = await self.wake(self.key, source="button")
         self.assertNotEqual(glance["filename"], asleep["filename"])
-        self.assertEqual(glance["refresh_rate"], paging.GLANCE_SECONDS)
+        self.assertTrue(support.lands_aligned(glance["refresh_rate"], paging.GLANCE_SECONDS))
         _, back = await self.wake(self.key)
         self.assertEqual(back["filename"], asleep["filename"], "the next timer wake is the sleep page again")
 
@@ -457,7 +457,7 @@ class TestQuietHoursAndAlerts(TrmnlBase):
         await cycle()
         _, alert = await self.wake(self.key)
         self.assertNotEqual(alert["filename"], asleep["filename"])
-        self.assertEqual(alert["refresh_rate"], 15 * 60)
+        self.assertTrue(support.lands_aligned(alert["refresh_rate"], 15 * 60))
         devices.update(self.dev["id"], quiet_hours={**devices.get(self.dev["id"])["quiet_hours"], "allow_alerts": False})
         await cycle()
         _, held = await self.wake(self.key)

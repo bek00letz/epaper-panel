@@ -15,7 +15,7 @@ from sources.geo import get_home_timezone
 import feeds
 import widgets
 import live_data
-from render import binding, clock, epf, layout, sleep, stripmeta, subitems, theme as T
+from render import binding, clock, epf, icons, layout, sleep, stripmeta, subitems, theme as T
 import airports
 import companion
 import config
@@ -1099,6 +1099,8 @@ async def panel_font(request):
     return web.FileResponse(f, headers={"Cache-Control": "max-age=86400"})
 
 
+# The old font path: the editor drew icons with these three before it drew outlines (api_icons).
+# Kept, unused by the editor, as the way back with render/icons.FROM_FONT.
 async def api_mdi_font(request):
     f = Path(__file__).parent / "fonts" / "mdi.ttf"
     if not f.exists():
@@ -1124,6 +1126,43 @@ async def api_mdi_all(request):
     if not f.exists():
         raise web.HTTPNotFound()
     return web.FileResponse(f, headers={"Cache-Control": "public, max-age=86400"})
+
+
+async def api_icons(request):
+    """Every icon the panel can draw, by set, for the picker: {"sets": [{"prefix", "name", "count",
+    "version", "from"}], "names": {prefix: [name, ...]}}. Names only; the outlines come in pages
+    (api_icon_outlines). The same list `layout.can_draw_icon` answers from, so the picker never
+    offers an icon the panel can't draw."""
+    sets, names = [], {}
+    for s in icons.sets():
+        got = [n for n in icons.names(s["prefix"]) if layout.can_draw_icon(f"{s['prefix']}:{n}")]
+        if got:
+            sets.append({**s, "count": len(got)})
+            names[s["prefix"]] = got
+    tag = _quoted(f"{len(sets)}-" + "-".join(f"{s['prefix']}.{s['version']}.{s['count']}.{s['from']}" for s in sets))
+    if request.headers.get("If-None-Match") == tag:
+        return web.Response(status=304, headers={"ETag": tag})
+    return web.json_response({"sets": sets, "names": names}, headers={"ETag": tag, "Cache-Control": "no-cache"})
+
+
+async def api_icon_outlines(request):
+    """The outlines of some icons, to draw them in the editor: {"names": ["mdi:cat", ...]} (at most
+    600) -> {"icons": {name: record}}. A record is a path on the 24 grid, or {d, e, s, v}
+    (render/vector); one the panel can't draw is left out."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+    wanted = body.get("names") if isinstance(body, dict) else None
+    if not isinstance(wanted, list) or len(wanted) > 600:
+        return web.json_response({"error": "Ask for up to 600 icons by name."}, status=400)
+    out = {}
+    for n in wanted:
+        if isinstance(n, str) and layout.can_draw_icon(n) and not n.startswith(icons.BUILT_IN + ":"):
+            rec = icons.get(n)
+            if rec is not None:
+                out[n] = rec
+    return web.json_response({"icons": out})
 
 
 async def api_displays(request):
@@ -1204,6 +1243,8 @@ def make_apps():
         web.get("/api/panel-setup", api_panel_setup_get),
         web.post("/api/panel-setup", api_panel_setup_post),
         web.post("/api/panel-setup/esphome", api_panel_setup_esphome),
+        web.get("/api/icons", api_icons),
+        web.post("/api/icons/outlines", api_icon_outlines),
         web.get("/api/mdi/font", api_mdi_font),
         web.get("/api/mdi/list", api_mdi_list),
         web.get("/api/mdi/all", api_mdi_all),

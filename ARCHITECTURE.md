@@ -50,6 +50,7 @@ Where things live in `addon/app/`:
 | `devices.py` | The screens the add-on drives, the design each shows, the shared library; keys; the move in from one panel |
 | `kinds/` | Kinds of device (`crowpanel.py`, `trmnl.py`): their sizes, device-port and editor routes, how they're woken, and what they fetch; which kinds are on; the one key check (`device_for`) and the wrong-key slowdown |
 | `paging.py` | Screens that sleep between updates (a TRMNL; a CrowPanel updating every 2 minutes or more): pictures drawn ahead, the cursor, the sleep time, the awake time |
+| `cadence.py` | When things happen on the clock: the render cycle just after each minute starts, and when each device asks (the always-on hint, a sleep's wake) |
 | `timing.py` | Every screen's two timers, Update every and Rotate every: the choices, what a screen set before 0.13 means, and what the editor shows |
 | `render/arrange.py` | One design on several sizes: element IDs, automatic placement, each size's arrangement |
 | `reach.py` / `companion.py` / `companion/epaper_panel/` | Reaching home: how screens away from home get in, and the Home Assistant integration that passes them on |
@@ -74,7 +75,8 @@ The add-on runs two HTTP listeners in one event loop:
   start requiring it once the panel has first used it (`frame_token.py`), so
   moving a panel over never blanks it.
 
-Every 60 seconds, and right away on a save or push, `frames.refresh_frames()`:
+Just after each minute starts (`cadence.py`), and right away on a save or
+push, `frames.refresh_frames()`:
 
 - Runs the data sources and widgets and records their values (see
   [The add-on's own values](#the-add-ons-own-values)).
@@ -86,6 +88,19 @@ Every 60 seconds, and right away on a save or push, `frames.refresh_frames()`:
   (`render/epf.py`), fitted to what that panel holds. For a screen that
   sleeps, it's every picture it can fetch at its next wakes
   ([Screens that sleep](#screens-that-sleep)).
+
+**The clock is lined up** (`cadence.py`). The cycle starts at hh:mm:00.5 by
+the add-on's clock (a `refresh_seconds` under a minute adds renders within
+it; longer, it renders on whole minutes, every so many from midnight in Home
+Assistant's time zone). The first after a start runs at once. A render that
+runs past the next one's start is followed by another at once, with a log
+line: never a skipped minute. Every device asks a moment after the render has
+usually finished (`fetch_second`: the slowest of the last few renders plus a
+margin, at most 20 s into the minute): an always-on CrowPanel is told when on
+every answer (`X-EPF-Next`), and a screen that sleeps has its sleep cut to wake
+then. So a clock on a page is right within a few seconds; counted from when
+each happened to start, it could be two minutes behind. The devices need no
+clock of their own: every hint is "this long from now".
 
 **A request never draws.** The cycle draws everything a device can fetch
 before the next cycle; the device port's routes only hand over what's ready.
@@ -322,6 +337,45 @@ their own caches still stop them hitting a service more often than it allows.
 The editor's preview (and its aircraft list) wait for fresh data, because
 there a person asked.
 
+## Icons
+
+Every icon is drawn from its outline (SVG path data), crisp at any size and
+cut to 1 bit with the rest of the page (`render/vector.py`). What the panel
+can draw is one list, by name (`render/icons.py`): `layout.can_draw_icon`,
+the editor's picker (`GET /api/icons`, outlines in pages from
+`POST /api/icons/outlines`, `app/glyphs.js`) and the states an icon offers
+all read it, so nothing offers an icon that draws as nothing.
+
+- **Material Design Icons ship with the add-on** (`icons/mdi.json.gz`, the
+  version Home Assistant served when it was built), so a first start, a Home
+  Assistant restart or Home Assistant being unreachable still draws them all.
+- **Home Assistant's own set is copied whole when it differs**
+  (`iconsets.copy_home_assistant`): its frontend serves Material Design Icons
+  as plain files on the add-on's network (`/static/mdi/iconMetadata.json`
+  names the version and its chunks). Checked at start and every five minutes,
+  but only fetched when Home Assistant's version changed and its icon version
+  isn't the shipped one; every chunk, every outline checked, or nothing.
+  Kept in `/data/icons/` and used from the next start before anything draws.
+- **Custom sets are copied whole when their files change**
+  (`iconsets.copy_custom`), from the mapped configuration folder: Custom
+  Icons' SVG folder (`local:`) and Iconify sets, the ones switched on in its
+  settings (asked of Home Assistant: `custom_icons/activesets`; the last
+  answer, else Custom Icons' own defaults, while it can't say); and script sets HACS installs (custom-brand-icons' `phu:` and
+  those written like it). A custom SVG becomes outlines only: shapes,
+  groups, transforms, fill and stroke; scripts, links, pictures and text are
+  never kept, and nothing of the file is shown as it is.
+- A render never waits on any of this: the copy runs in the background and
+  swaps a whole set in when it's ready (`icons.install`).
+- One icon can't cost more than about twice the largest real one
+  (`vector.MAX_*`: characters, commands, shapes, the area they cover,
+  points): beyond that it's refused when copied and draws as nothing, so a
+  crafted file can't slow a render. A zip member is read no further than the
+  size it states, which is checked first.
+- Sizes are what the old icon font gave: an icon fills its box's width by its
+  whole square, and its height by its ink (`layout._fit_outline`). The font
+  (`fonts/mdi.ttf`) stays, switched off, as the way back
+  (`icons.FROM_FONT`).
+
 ## Sleeping
 
 The frame file always starts with a sleep page (`render/sleep.py`, flagged
@@ -363,7 +417,9 @@ Assistant. Each CrowPanel device has its own link. It never guesses names:
   doesn't fetch on its own until it's woken.
 - **Update every is the one source of truth** for how often a panel
   fetches. Always on, the panel fetches on its own timer, its "Refresh
-  interval" number in Home Assistant; the add-on keeps that at Update every
+  interval" number in Home Assistant, aimed by each answer's `X-EPF-Next` at
+  a moment after the add-on's next render (`cadence.py`; firmware without it
+  keeps the plain interval); the add-on keeps that at Update every
   (`crowpanel.keep_its_timer`, checked every ten minutes in the background),
   because the panel keeps the number it had through an upgrade and even a
   reinstall. Sleeping, its own timer doesn't run and it can't be woken early,
@@ -399,7 +455,10 @@ only its protocol (how a wake asks, how the answer is said).
   count starts again. Alerts show while they last; conditions and linger apply as
   everywhere.
 - **The sleep time** (`sleep_seconds`): Update every (2 minutes to a day;
-  `timing.py`), cut short to wake just after quiet hours start. During quiet hours: the sleep
+  `timing.py`), cut short to wake just after quiet hours start, and then
+  to wake a moment after a minute's render (`cadence.align_sleep`: never
+  later than asked). A TRMNL counts its `refresh_rate` from when it falls
+  asleep, after drawing, so it lands a few seconds later still. During quiet hours: the sleep
   screen until they end, plus a minute. A press shows a page for two minutes.
   Presence has no end, so it checks again at its interval.
 - **Quiet hours** come from the cycle, presence included. Their schedule is
@@ -592,7 +651,10 @@ adding a screen; always on is the default) makes a CrowPanel a
   carries `X-EPF-Sleep: <seconds>; awake=<seconds>`: how long until it checks
   again, counted from this answer, and how long to stay awake before
   sleeping. Always on, there's no such header, and the panel stays connected
-  as it always has. Older firmware ignores headers it doesn't know.
+  as it always has; instead every answer (200, 304 and 503) carries
+  `X-EPF-Next: <milliseconds>`, when its own timer should fetch next, counted
+  from when the answer's headers arrived. Older firmware ignores headers it
+  doesn't know.
 - Why a header and not a field in the frame file: a frame file is drawn once
   per cycle and served to every download, while the sleep time is worked out
   per download (the clock, quiet hours, a stay-awake request), and a 304 has

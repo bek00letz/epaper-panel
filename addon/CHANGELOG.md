@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.18.0
+**Firmware change:** install the panel again (Settings › Install or update,
+then Send to ESPHome and Install in ESPHome) so its clock lines up with the
+minute. Until then it keeps working as before.
+
+In short: the clock on the panel is right within seconds (the add-on draws
+just after each minute starts and the panel fetches right after); icons come
+from your own Home Assistant, including your custom icon sets; condition
+suggestions come from the add-on's one list of states.
+The details:
+- **Icons come from your Home Assistant.** The add-on still ships the whole
+  Material Design set, so icons always draw, but when Home Assistant has a
+  different version it copies Home Assistant's set across in one go and
+  uses it, so a new icon Home Assistant shows can be on your pages too.
+  Custom icon sets are copied the same way and appear in the icon picker:
+  your own SVGs from Custom Icons (`local:`), its Iconify sets, and sets
+  like Custom Brand Icons (`phu:`). The picker searches all of them, with a
+  chip per set to narrow it down. Icons are now drawn from their outlines,
+  so they're crisp at any size; they keep the size they had.
+- **A page's "While" and an alert's "Until" suggest the values a sensor
+  really has**: Home Assistant's own for its kind, named as Home Assistant
+  names them ("Away" for not_home), then the choices it lists and the states
+  it had in the last 10 days, so a sensor like a cat's location offers
+  "Indoor Cat" and "Outdoor Cat". Before, only a dozen kinds had any.
+Firmware change: reinstall the panel's firmware to get the second half.
+
+- **The add-on draws just after each minute starts.** It used to draw every
+  minute counted from when it started, so a clock on a page could be most of
+  a minute old before a panel even asked for it. A render that runs long is
+  followed by another straight away, never a skipped minute, and the log
+  says so.
+- **An always-on panel fetches just after the add-on draws** (firmware).
+  Its first fetch after a start is still straight away; from then on it
+  fetches a couple of seconds into each minute, so the time it shows is
+  right within a few seconds, not up to two minutes behind. A button,
+  Send, alerts and quiet hours still fetch at once; the next timed fetch
+  lines up again. Until its firmware is reinstalled, a panel keeps
+  fetching every minute from when it started, as before.
+- **Devices that sleep between updates wake just after a minute starts**,
+  a CrowPanel and a TRMNL alike, so what they show was drawn that minute.
+  A wake is never later than Update every asks; the first one after a
+  start or a press may come up to a minute sooner, to line up.
+
 ## 0.17.0
 Add-on only; no firmware change, so nothing to reinstall on the panel.
 

@@ -201,6 +201,51 @@ class TestOwnValuesInAnyTemplate(unittest.TestCase):
         self.assertEqual(conditions.local("{{ states('sensor.epaper_watch') | int(0) < 5 }}", own), "False")
 
 
+@unittest.skipUnless(shutil.which("node"), "no node to run the editor's conditions")
+class TestValueSuggestions(unittest.TestCase):
+    """A condition's value chips come from the add-on (the catalog, then the entity's own states),
+    never from a table in the editor."""
+
+    def choices(self, entity, device_class, offered):
+        from render import states
+        catalog_js = support.APP / "web" / "app" / "catalog.js"
+        return run_js(f"""
+import {{ setCatalog }} from {json.dumps(str(catalog_js))};
+setCatalog({{ states: {json.dumps(states.catalog())} }});
+console.log(JSON.stringify(C.valueChoices({json.dumps(entity)}, {json.dumps(device_class)}, {json.dumps(offered)})));""")
+
+    def test_the_kind_first_in_home_assistants_words(self):
+        got = self.choices("binary_sensor.front_door", "door", None)
+        self.assertEqual(got, [{"state": "on", "word": "Open"}, {"state": "off", "word": "Closed"}])
+        got = self.choices("person.alex", "", None)
+        self.assertEqual([c["state"] for c in got], ["home", "not_home"])
+        self.assertEqual(got[1]["word"], "Away")
+
+    def test_then_the_states_it_has_whatever_their_case(self):
+        offered = [{"state": "home", "word": "Home"}, {"state": "Work", "word": "Work"}, {"state": "HOME"},
+                   {"state": "unavailable"}, {"state": "Gym"}]
+        got = self.choices("person.alex", "", offered)
+        self.assertEqual([c["state"] for c in got], ["home", "not_home", "Work", "Gym"], "the kind's first, so chips only add at the end")
+
+    def test_a_kind_the_catalog_doesnt_know_has_only_its_own(self):
+        self.assertEqual(self.choices("sensor.pawpaw_location", "", None), [])
+        got = self.choices("sensor.pawpaw_location", "", [{"state": "Indoor Cat", "word": "Indoor Cat"}, {"state": "Outdoor Cat"}])
+        self.assertEqual([c["state"] for c in got], ["Indoor Cat", "Outdoor Cat"])
+
+    def test_no_table_of_states_is_left_in_the_editor(self):
+        import re
+        web = support.APP / "web"
+        table = re.compile(r'\b(binary_sensor|switch|light|input_boolean|fan|timer|person|device_tracker|lock|cover|media_player|'
+                           r'alarm_control_panel|climate|vacuum)"?\s*:\s*\[\s*"'
+                           r'(on|off|home|not_home|locked|unlocked|open|closed|playing|paused|idle|active|disarmed|armed_\w+)"')
+        for f in [*sorted((web / "app").glob("*.js")), web / "index.html"]:
+            text = f.read_text()
+            self.assertNotIn("KNOWN_STATES", text, f.name)
+            self.assertIsNone(table.search(text), f"{f.name} keeps a list of states by domain")
+        inspector = (web / "app" / "inspector.js").read_text()
+        self.assertIn("valueChoices(", inspector, "the condition's chips read the add-on's states")
+
+
 class TestSentToHomeAssistantWrittenIn(unittest.IsolatedAsyncioTestCase):
     async def test_resolve_templates_sends_the_values(self):
         import ha

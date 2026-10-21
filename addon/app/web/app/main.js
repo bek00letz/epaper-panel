@@ -16,6 +16,7 @@ import { geometry, setDisplays, applyCatalog, makeElement, makeEntityElement, el
 import { syncDynamicGridShowIf, syncWidgetShowIf } from "./conditions.js";
 import { CATEGORY_TERMS } from "./legacy.js";
 import { unitsRows } from "./units.js";
+import { Glyphs } from "./glyphs.js";
 import { renderScreenBar } from "./screenbar.js";
 
 const ZOOM_STEPS = [0.75, 1, 1.25, 1.5, 2];
@@ -23,9 +24,14 @@ const ZOOM_MIN = 0.5, ZOOM_MAX = 3;                  // a pinch can go a little 
 
 const CLIP_KEY = "clipboard";
 
+// What the icon picker opens on, before anything is typed.
+const POPULAR_ICONS = ["paw", "cat", "dog", "radiator", "bed", "lightning-bolt", "power", "lightbulb", "home", "door", "thermometer", "fan", "solar-power", "battery-charging",
+  "clock-outline", "fire", "water", "television", "wifi", "shield-check", "account", "bell", "calendar", "weather-partly-cloudy"];
+
 class App {
   constructor() {
     this.doc = new Doc();
+    this.glyphs = new Glyphs((path) => api(path).then((r) => r.body), (path, body) => api(path, { method: "POST", body }).then((r) => r.body));
     this.prefs = prefs;
     this.ents = []; this.entMap = new Map();
     this.status = null; this.device = null;
@@ -56,7 +62,7 @@ class App {
   }
 
   async boot() {
-    this.loadMdi();
+    this.loadIcons();
     this.renderToolbar();
     try {
       await this.loadScreens(prefs.get("device"));
@@ -236,37 +242,14 @@ class App {
     prefs.set("recent_entities", JSON.stringify([id, ...recent.filter((x) => x !== id)].slice(0, 8)));
   }
 
-  /* Material Design icons, the same font the panel draws with. */
-  async loadMdi() {
-    this.mdi = null; this.mdiWaiters = [];
-    try { this.mdi = (await api("api/mdi/all")).body || {}; } catch (_) { this.mdi = {}; }
-    this.mdiWaiters.forEach((f) => f()); this.mdiWaiters = [];
+  /* Icons, drawn from the outlines the panel draws (glyphs.js): every set the add-on has. */
+  async loadIcons() {
+    this.glyphs.onLoad = () => this.refresh();
+    await this.glyphs.load();
     this.refresh();
   }
-  mdiReady() { return !!this.mdi; }
-  whenMdi(f) { if (this.mdi) return; this.mdiWaiters.push(f); }
-  mdiGlyph(name) {
-    if (!this.mdi || !name) return "";
-    const cp = this.mdi[String(name).replace(/^mdi:/, "").trim().toLowerCase()];
-    return cp !== undefined ? String.fromCodePoint(cp) : "";
-  }
-  searchIcons(q) {
-    if (!this.mdi) return [];
-    q = String(q || "").trim().toLowerCase().replace(/^mdi:/, "");
-    const keys = Object.keys(this.mdi), out = [], seen = new Set();
-    const push = (k) => { if (!seen.has(k) && this.mdi[k] !== undefined) { seen.add(k); out.push([k, String.fromCodePoint(this.mdi[k])]); } };
-    if (!q) {
-      ["paw", "cat", "dog", "radiator", "bed", "lightning-bolt", "power", "lightbulb", "home", "door", "thermometer", "fan", "solar-power", "battery-charging",
-        "clock-outline", "fire", "water", "television", "wifi", "shield-check", "account", "bell", "calendar", "weather-partly-cloudy"].forEach(push);
-      for (const k of keys) { if (out.length >= 96) break; push(k); }
-      return out;
-    }
-    const terms = CATEGORY_TERMS[q] || q.split(/\s+/);
-    terms.forEach(push);
-    for (const t of terms) for (const k of keys) { if (out.length >= 250) break; if (k.startsWith(t) || k.includes("-" + t)) push(k); }
-    for (const t of terms) for (const k of keys) { if (out.length >= 250) break; if (k.includes(t)) push(k); }
-    return out;
-  }
+  iconNode(name, cls) { return this.glyphs.node(name, cls); }
+  searchIcons(q, only = "") { return this.glyphs.search(q, { only, terms: CATEGORY_TERMS, popular: POPULAR_ICONS }); }
 
   /* ---------- drawing ---------- */
   /* The canvas's size comes from the add-on with the screens (elements.js

@@ -37,6 +37,8 @@ from . import countdown
 from . import todo
 from . import units
 from . import worldclock
+from . import icons
+from . import vector
 from .binding import template_for
 from .qr import encode_qr_matrix
 
@@ -114,7 +116,7 @@ CUSTOM_ICONS = {
 
 
 def _fit_glyph(ch, box_w, box_h, start=200):
-    """Largest font size at which the glyph's ink fits the box."""
+    """Largest font size at which the glyph's ink fits the box (the old font path, icons.FROM_FONT)."""
     lo, hi, best = 8, max(8, min(T.H, int(start))), 8
     while lo <= hi:
         mid = (lo + hi) // 2
@@ -125,6 +127,27 @@ def _fit_glyph(ch, box_w, box_h, start=200):
         else:
             hi = mid - 1
     return best
+
+
+# Where the old icon font's baseline sat in its square: it measured an icon from the top of its ink
+# down to the lower of its ink and this line, and across by the whole square (_fit_glyph).
+_FONT_BASELINE = 0.875
+
+
+def _fit_outline(record, box_w, box_h, most=200):
+    """Largest size at which an icon fits the box, measured as the old font measured it: its whole
+    square across, its ink top to bottom (down to the font's baseline at least). So an icon is the
+    size it always was in a box drawn before icons came from outlines."""
+    ink = vector.ink_box(record)
+    if not ink:
+        return 8
+    vx, vy, vw, vh = vector.parts(record)[2]
+    unit = max(vw, vh)
+    off = (unit - vh) / 2                                   # a wide view box sits in the middle
+    top = (ink[1] - vy + off) / unit
+    bottom = max((ink[3] - vy + off) / unit, _FONT_BASELINE)
+    tall = max(1e-6, bottom - top)
+    return max(8, min(most, int(box_w), int(box_h / tall)))
 
 
 def _anchor_x(align, x, w):
@@ -213,6 +236,22 @@ def _render_mdi_1bit_crop(ch: str, size: int):
     return inv.crop(ibbox)
 
 
+def _render_outline_crop(name: str, size: int):
+    """An icon's outline at `size`, cut to 1 bit, tight crop ('L', 255=ink, 0=bg), or None. Cached
+    by the outline itself (vector.cut), so a set copied in later is drawn from at once."""
+    rec = icons.get(name)
+    return vector.cut(rec, size, crop=True) if rec is not None else None
+
+
+def _glyph_crop(name: str, size: int):
+    """The tight 1-bit crop of a Material Design or custom-set icon at `size`, from outlines (or
+    the old font while icons.FROM_FONT is on)."""
+    if icons.FROM_FONT:
+        cp = mdi_codepoint(name)
+        return _render_mdi_1bit_crop(chr(cp), size) if cp is not None and icons.split(name)[0] == "mdi" else None
+    return _render_outline_crop(str(name), size)
+
+
 def _mask_symmetry_error(mask, target_parity: int) -> float:
     iw, ih = mask.size
     parity_pen = 0.0 if (iw % 2) == target_parity else 1.0
@@ -248,23 +287,27 @@ def _draw_icon(img, d, el, _text, display=None):
         if art:
             art(d, x, y, h)
         return
-    cp = mdi_codepoint(name)
-    if cp is None:
+    if not can_draw_icon(name):
         return
-    ch = chr(cp)
     pad = 10 if has_bg else 0
     max_iw, max_ih = max(8, w - pad * 2), max(8, h - pad * 2)
     if el.get("size"):
         size = max(8, min(360, int(el["size"])))
-        mask = _render_mdi_1bit_crop(ch, size)
+        mask = _glyph_crop(name, size)
     else:
-        base_size = _fit_glyph(ch, max_iw, max_ih)
-        mask = _render_mdi_1bit_crop(ch, base_size)
+        if icons.FROM_FONT:
+            base_size = _fit_glyph(chr(mdi_codepoint(name)), max_iw, max_ih)
+        else:
+            base_size = _fit_outline(icons.get(name), max_iw, max_ih)
+        mask = _glyph_crop(name, base_size)
+        while mask is not None and base_size > 8 and (mask.size[0] > max_iw or mask.size[1] > max_ih):
+            base_size -= 1                       # rounding at the edge: one size down until it fits
+            mask = _glyph_crop(name, base_size)
         best_score = _mask_symmetry_error(mask, w % 2) if mask is not None else 999.0
         if best_score > 0.0:
             for delta in (-1, 1, -2, 2, -3, 3):
                 cand_sz = max(8, min(360, base_size + delta))
-                cand_mask = _render_mdi_1bit_crop(ch, cand_sz)
+                cand_mask = _glyph_crop(name, cand_sz)
                 if cand_mask is not None and cand_mask.size[0] <= max_iw and cand_mask.size[1] <= max_ih:
                     sc = _mask_symmetry_error(cand_mask, w % 2) + abs(delta) * 0.01
                     if sc < best_score:
@@ -564,12 +607,15 @@ def _fit_text(text, max_w, f):
 
 
 def can_draw_icon(name) -> bool:
-    """Whether the panel draws this icon: one of its own (custom:) or one in its icon font. An icon
-    Home Assistant knows and the font doesn't (a newer one) draws as nothing, so it's never offered."""
+    """Whether the panel draws this icon: one of its own (custom:), or one in a set it has
+    (render/icons: Material Design, copied from Home Assistant or shipped, and custom sets). An icon
+    no set has draws as nothing, so it's never offered."""
     name = str(name or "")
-    if name.startswith("custom:"):
-        return name.removeprefix("custom:") in CUSTOM_ICONS
-    return mdi_codepoint(name) is not None
+    if name.startswith(icons.BUILT_IN + ":"):
+        return name.removeprefix(icons.BUILT_IN + ":") in CUSTOM_ICONS
+    if icons.FROM_FONT:
+        return icons.split(name)[0] == "mdi" and mdi_codepoint(name) is not None
+    return icons.get(name) is not None
 
 
 def _draw_icon_glyph(d, name, cx, cy, sz):
@@ -579,10 +625,16 @@ def _draw_icon_glyph(d, name, cx, cy, sz):
         if art:
             art(d, cx, cy - sz // 2, sz)
         return
-    cp = mdi_codepoint(name)
-    if cp is not None:
-        f = _mdi_font(sz)
-        d.text((cx, cy), chr(cp), font=f, fill=T.BLACK, anchor="mm")
+    if icons.FROM_FONT:
+        cp = mdi_codepoint(name)
+        if cp is not None:
+            f = _mdi_font(sz)
+            d.text((cx, cy), chr(cp), font=f, fill=T.BLACK, anchor="mm")
+        return
+    rec = icons.get(name)
+    if rec is not None:
+        sz = max(1, int(sz))
+        d.bitmap((int(round(cx - sz / 2)), int(round(cy - sz / 2))), vector.cut(rec, sz), fill=T.BLACK)
 
 
 ICON_LOOKS = ("plain", "invert", "pill")      # an icon's Style: Plain, Inverted, Outlined

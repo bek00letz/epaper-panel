@@ -23,10 +23,12 @@ import time
 import aiohttp
 from aiohttp import web
 
+import cadence
 import mqtt_bridge
 import companion
 import config
 import devices
+import iconsets
 import kinds
 import reach
 import runtime
@@ -35,6 +37,7 @@ from entities import retired_sensors_in_use
 from frames import refresh_frames
 from layouts_store import load_layouts
 from panel_ops import panel_link_loop, push_panel_update
+from sources.geo import get_home_timezone
 from web import make_apps
 
 
@@ -56,6 +59,7 @@ async def render_loop():
     if runtime.PUBLISHER is not None:
         await runtime.PUBLISHER.wait_ready(20)
     while True:
+        started = time.time()
         try:
             await refresh_frames(runtime.SESSION)
             for dev, spec in devices.all_views():
@@ -91,9 +95,14 @@ async def render_loop():
             print(f"render loop error: {health.describe(exc)}", flush=True)
             for dev in devices.all_devices():
                 runtime.device(dev["id"]).frames.error = health.describe(exc)
-        # Render again on the cadence, or as soon as outside data arrives for
-        # the first time (a newly added widget, or just after a start).
-        if await runtime.LIVE.wait_for_news(REFRESH):
+        # Render again just after the next minute starts (cadence.py), so the time on a
+        # page is right when the devices ask a moment later; or as soon as outside data
+        # arrives for the first time (a newly added widget, or just after a start).
+        wait, late = cadence.after_render(started, time.time(), REFRESH,
+                                          cadence.zone(await get_home_timezone(runtime.SESSION, default="")))
+        if late:
+            print(late, flush=True)
+        if await runtime.LIVE.wait_for_news(wait):
             await asyncio.sleep(1)                        # let a burst of arrivals land together
 
 
@@ -129,6 +138,7 @@ def start_entity_publisher():
 
 async def main():
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    iconsets.load_copies()                  # icon sets copied before; the shipped set otherwise
     print(f"devices: {', '.join(d['name'] for d in devices.all_devices())}", flush=True)
     runners = []
     async with aiohttp.ClientSession(trace_configs=[health.trace_config()]) as session:
@@ -141,6 +151,9 @@ async def main():
         background = [asyncio.create_task(panel_link_loop()), asyncio.create_task(runtime.LIVE.run())]
         if HA_TOKEN:
             background.append(asyncio.create_task(companion.keep_set_up(runtime.HASS)))
+        # Home Assistant's icon set and custom ones, copied whole when they change; custom sets are
+        # read from the configuration folder, so they're copied without a token too.
+        background.append(asyncio.create_task(iconsets.keep_in_step(session, runtime.HASS if HA_TOKEN else None)))
         if runtime.PUBLISHER is not None:
             background.append(asyncio.create_task(runtime.PUBLISHER.run()))
         try:
