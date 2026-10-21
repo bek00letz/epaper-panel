@@ -1850,28 +1850,7 @@ def _draw_sports_racing(img, d, el, raw_val, display=None):
 
     data = _parse_val_json(raw_val)
     if not isinstance(data, dict):
-        data = {
-            "series": "F1",
-            "event_name": "Italian Grand Prix",
-            "circuit": "Autodromo Nazionale Monza",
-            "session": "Race",
-            "status": "IN",
-            "lap": 42,
-            "total_laps": 53,
-            "leader": "VER",
-            "standings": [
-                {"pos": 1, "driver": "VER", "team": "Red Bull", "gap": "LEADER", "tyre": "M"},
-                {"pos": 2, "driver": "NOR", "team": "McLaren", "gap": "+2.1s", "tyre": "H"},
-                {"pos": 3, "driver": "PIA", "team": "McLaren", "gap": "+4.8s", "tyre": "H"},
-                {"pos": 4, "driver": "LEC", "team": "Ferrari", "gap": "+7.3s", "tyre": "H"},
-                {"pos": 5, "driver": "SAI", "team": "Ferrari", "gap": "+11.0s", "tyre": "M"},
-                {"pos": 6, "driver": "HAM", "team": "Mercedes", "gap": "+14.2s", "tyre": "M"},
-                {"pos": 7, "driver": "RUS", "team": "Mercedes", "gap": "+18.9s", "tyre": "H"},
-                {"pos": 8, "driver": "ALO", "team": "Aston Martin", "gap": "+25.1s", "tyre": "M"},
-                {"pos": 9, "driver": "TSU", "team": "RB", "gap": "+32.0s", "tyre": "H"},
-                {"pos": 10, "driver": "HUL", "team": "Haas", "gap": "+38.4s", "tyre": "H"}
-            ]
-        }
+        return                        # nothing yet (or ESPN is down): never a made-up race
 
     series = str(data.get("series") or "F1").upper()
     default_name = data.get("series_name") or series
@@ -1986,20 +1965,7 @@ def _draw_sports_match(img, d, el, raw_val, display=None):
     elif isinstance(raw_parsed, dict):
         data = raw_parsed
     else:
-        data = {
-            "league": "PREMIER LEAGUE",
-            "venue": "Emirates Stadium",
-            "clock": "74' · 2ND HALF",
-            "status": "IN",
-            "home_team": "ARSENAL",
-            "home_score": 2,
-            "home_stats": "14 Shots · 58% Poss",
-            "away_team": "CHELSEA",
-            "away_score": 1,
-            "away_stats": "6 Shots · 42% Poss",
-            "events_home": "Saka (22'), Havertz (58')",
-            "events_away": "Palmer (41' pen)"
-        }
+        return                        # nothing yet, or no matches: never a made-up match
 
     league = str(data.get("league") or "MATCH").upper()
     venue = str(data.get("venue") or "").upper()

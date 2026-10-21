@@ -89,7 +89,9 @@
   as many days and details as fit, and leaves out what doesn't.
 - **Fixed:** while Home Assistant was restarting, the Weather page showed
   made-up weather (8.5° and rain). It now stays empty until the real
-  weather is back, like every other value.
+  weather is back, like every other value. Race weekend and Match did the
+  same with a made-up race and match, before their results arrived or
+  when there were none; they now stay empty too.
 - **Fixed:** a Race weekend page set to NASCAR or IndyCar showed Formula 1's
   race, drivers and status. Each series now reads its own results, and its
   page names it ("NASCAR · …"). Whether the page shows still followed the

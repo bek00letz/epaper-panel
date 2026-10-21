@@ -442,3 +442,11 @@ class TestWeatherAtEverySize(Sizes, unittest.TestCase):
 
     def test_no_weather_from_home_assistant_draws_none_rather_than_made_up_weather(self):
         self.assertEqual(ink(render({**self.element, "show_border": False}, "")), 0)
+
+
+class TestNoMadeUpScores(unittest.TestCase):
+    def test_racing_and_matches_with_nothing_yet_draw_nothing_but_their_border(self):
+        for el in ({"type": "sports_racing", "series": "nascar"}, {"type": "sports_match", "league": "soccer/eng.1"}):
+            el = {**el, "x": 24, "y": 14, "w": 744, "h": 208, "show_border": False}
+            self.assertEqual(ink(render(el, None)), 0, el["type"])
+            self.assertEqual(ink(render(el, [])), 0, el["type"])
