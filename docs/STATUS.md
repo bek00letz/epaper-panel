@@ -26,7 +26,9 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 ## In flight
 
-Nothing.
+| Work | Where | State |
+|---|---|---|
+| Say when Scores won't all fit an always-on CrowPanel: a line while setting up Scores, "showing 14 of 23 games" when trimming happens; no global counter (session "scores-fit") | branch `scores-fit` from main | Started 21 Oct |
 
 Worker notes are in the notes folders (`break-it-0.12.0.md`,
 `timers-addon.md`, `firmware-013.md`, `fixes-0131.md`, `editor-polish.md`,
@@ -81,9 +83,6 @@ Next one when a good amount of work has piled up since v0.15.0.
    lists, a "how it went" report, TRMNL-compatible screens.
 
 The New page presets plan shipped in 0.15.0.
-8. **A visible limit on how many pages fit a device** (the user, 21 Oct: an
-   NBA season brings 30+ game pages). Today extras are shared out silently
-   apart from sensor.epaper_panel_pages; the editor should say what's left out.
 9. **The add-on's icon set is older than Home Assistant's**: `mdi:cat-outline`
    (Home Assistant's icon for "Outdoor Cat") isn't in it, so such icons are
    left out. Fix: bundle the same Material Design Icons version Home
