@@ -8,6 +8,13 @@ Firmware change: reinstall the panel's firmware to get the second half.
   a minute old before a panel even asked for it. A render that runs long is
   followed by another straight away, never a skipped minute, and the log
   says so.
+- **An always-on panel fetches just after the add-on draws** (firmware).
+  Its first fetch after a start is still straight away; from then on it
+  fetches a couple of seconds into each minute, so the time it shows is
+  right within a few seconds, not up to two minutes behind. A button,
+  Send, alerts and quiet hours still fetch at once; the next timed fetch
+  lines up again. Until its firmware is reinstalled, a panel keeps
+  fetching every minute from when it started, as before.
 
 ## 0.17.0
 Add-on only; no firmware change, so nothing to reinstall on the panel.

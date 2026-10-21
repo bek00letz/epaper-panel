@@ -8,6 +8,7 @@
 //
 // Low Power Mode (PowerPolicy in epf_core.h): the first download after a start
 // says why the panel is awake, and every answer may say how long to sleep.
+// Always on, every answer may say when the next timed download starts (X-EPF-Next).
 
 #include "epf_core.h"
 
@@ -21,6 +22,7 @@
 #include "freertos/task.h"
 #include "soc/soc_caps.h"
 #include "esphome/components/display/display_buffer.h"
+#include "esphome/core/hal.h"
 
 #include <sys/time.h>
 
@@ -68,7 +70,8 @@ constexpr size_t BUFFER_CAPACITY_SMALL = 1048576;
 
 // The answer's headers the panel reads.
 struct AnswerHeaders {
-  std::string etag, sleep;
+  std::string etag, sleep, next;
+  uint32_t next_at_ms{0};                 // when X-EPF-Next arrived: it counts from then, not from the body's end
 };
 
 inline esp_err_t epf_http_event_(esp_http_client_event_t *evt) {
@@ -76,6 +79,10 @@ inline esp_err_t epf_http_event_(esp_http_client_event_t *evt) {
   auto *h = static_cast<AnswerHeaders *>(evt->user_data);
   if (strcasecmp(evt->header_key, "ETag") == 0) h->etag = evt->header_value;
   else if (strcasecmp(evt->header_key, "X-EPF-Sleep") == 0) h->sleep = evt->header_value;
+  else if (strcasecmp(evt->header_key, "X-EPF-Next") == 0) {
+    h->next = evt->header_value;
+    h->next_at_ms = esphome::millis();
+  }
   return ESP_OK;
 }
 
@@ -120,6 +127,9 @@ class EpfClient {
   void set_etag(const std::string &etag) { current_etag_ = etag; }
   void forget_etag() { current_etag_.clear(); }
   const std::string &sleep_header() const { return last_sleep_; }
+  // Its X-EPF-Next ("" when none), and when that arrived (millis()).
+  const std::string &next_header() const { return last_next_; }
+  uint32_t next_at_ms() const { return last_next_at_ms_; }
 
   // Call from the main loop. Returns true once per finished download, with how it went.
   bool poll(FetchResult &result) {
@@ -127,6 +137,8 @@ class EpfClient {
     result = task_result_;
     last_status_ = status_;                 // copies: the next download writes the originals
     last_sleep_ = answer_.sleep;
+    last_next_ = answer_.next;
+    last_next_at_ms_ = answer_.next_at_ms;
     if (result == FetchResult::OK) {
       std::swap(front_buf_, back_buf_);
       stream_ = std::move(pending_);
@@ -251,7 +263,8 @@ class EpfClient {
   uint8_t *back_buf_{nullptr};
   size_t capacity_{0};
   int native_w_{0}, native_h_{0};
-  std::string url_, send_etag_, current_etag_, wake_query_, last_sleep_;
+  std::string url_, send_etag_, current_etag_, wake_query_, last_sleep_, last_next_;
+  uint32_t last_next_at_ms_{0};
   AnswerHeaders answer_;                  // written by the download task
   int status_{0}, last_status_{0};
   Stream stream_, pending_;
@@ -322,6 +335,16 @@ inline void power_note_download(uint32_t now_ms, FetchResult result) {
   PowerPolicy::instance().on_answer(c.status(), has, order, now_ms);
   if (power_display_pin_() >= 0)
     choose_waveform(PanelController::instance().waveform(), PowerPolicy::instance(), g_remembered);
+}
+
+// After every finished download: when the add-on says the next timed one should start
+// (X-EPF-Next, a moment after its render each minute). Without it, the interval decides.
+inline void note_next_fetch() {
+  auto &c = EpfClient::instance();
+  if (c.next_header().empty()) return;
+  uint32_t ms;
+  if (parse_next_fetch(c.next_header().c_str(), ms)) PanelController::instance().aim_fetch(ms, c.next_at_ms());
+  else ESP_LOGW(TAG, "Ignored an X-EPF-Next it can't read: %s", c.next_header().c_str());
 }
 
 // Whether a redraw may go ahead. After a deep sleep the screen still shows its last

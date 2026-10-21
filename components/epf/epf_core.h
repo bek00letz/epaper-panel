@@ -466,6 +466,21 @@ class PanelController {
     if (fetch_owed_) return fetch_idle_sec_ >= (owed_retry_sec_ < interval_sec ? owed_retry_sec_ : interval_sec);
     return !resting() && fetch_idle_sec_ >= interval_sec;
   }
+  // The add-on's answer said when the next timed download should start (X-EPF-Next):
+  // `in_ms` after the answer arrived at `answered_ms` (millis()), a moment after its
+  // next render, so a clock on the page is right within seconds. It holds until the
+  // next download starts (reset_fetch_idle); without it, the interval counts from the
+  // last download, as before. A failed download is still retried with the backoff.
+  void aim_fetch(uint32_t in_ms, uint32_t answered_ms) {
+    aim_ms_ = in_ms;
+    aim_from_ms_ = answered_ms;
+    aimed_ = true;
+  }
+  bool fetch_aimed() const { return aimed_; }
+  bool fetch_due(int interval_sec, uint32_t now_ms) const {
+    if (fetch_owed_ || !aimed_) return fetch_due(interval_sec);
+    return !resting() && now_ms - aim_from_ms_ >= aim_ms_;   // differences survive millis()' wrap
+  }
 
   // Called by the redraw script just before the display updates: whether this
   // one should be a full refresh. Consumes what caused the redraw.
@@ -754,7 +769,7 @@ class PanelController {
   bool quiet_hours_active() const { return quiet_; }
   int user_cool_sec() const { return user_cool_sec_; }
   int fetch_idle_sec() const { return fetch_idle_sec_; }
-  void reset_fetch_idle() { fetch_idle_sec_ = 0; }
+  void reset_fetch_idle() { fetch_idle_sec_ = 0; aimed_ = false; }   // a download starts
   void retry_fetch_in(int seconds, int interval) { fetch_idle_sec_ = interval - seconds; }
   bool pending_refetch() const { return pending_refetch_; }
   void set_pending_refetch(bool v) { pending_refetch_ = v; }
@@ -869,6 +884,8 @@ class PanelController {
   uint32_t wake_sub_id_{0}, sleep_sub_id_{0};
   uint32_t pinned_cat_id_{0}, pinned_sub_id_{0}, cur_cat_id_{0}, cur_sub_id_{0};
   int rotate_sec_{30}, idle_sec_{0}, user_cool_sec_{999}, fetch_idle_sec_{0};
+  bool aimed_{false};
+  uint32_t aim_ms_{0}, aim_from_ms_{0};
   int quiet_grace_sec_{999};              // since the last input of any kind (quiet hours' way back to sleep)
   bool pending_redraw_{false}, pending_refetch_{false};
   bool redraw_forced_{false}, redraw_by_person_{false}, redraw_automatic_{false};
@@ -1087,10 +1104,32 @@ inline void choose_waveform(WaveformPolicy &w, const PowerPolicy &p, Remembered 
   w.sleep_between(between ? &mem.changes : nullptr, mem.interval_sec);
 }
 
-// The panel's own download timer. Off while the add-on's answers decide when it
-// wakes (Low Power Mode): those downloads would only keep it awake longer.
-inline bool own_timer_fetch_due(const PanelController &panel, const PowerPolicy &power, int interval_sec) {
-  return !power.low_power() && panel.fetch_due(interval_sec);
+// X-EPF-Next: "<milliseconds>", from this answer until the next timed download. False for
+// anything else, which is then ignored. Kept between 2 s (never a download loop, whatever an
+// answer says) and an hour.
+constexpr uint32_t MIN_NEXT_FETCH_MS = 2000;
+constexpr uint32_t MAX_NEXT_FETCH_MS = 3600u * 1000u;
+inline bool parse_next_fetch(const char *v, uint32_t &ms) {
+  if (!v) return false;
+  while (*v == ' ' || *v == '\t') v++;
+  if (*v < '0' || *v > '9') return false;
+  uint64_t acc = 0;
+  while (*v >= '0' && *v <= '9') {
+    acc = acc * 10 + (uint64_t) (*v++ - '0');
+    if (acc > 0xFFFFFFFFull) return false;
+  }
+  while (*v == ' ' || *v == '\t') v++;
+  if (*v != '\0') return false;
+  ms = acc < MIN_NEXT_FETCH_MS ? MIN_NEXT_FETCH_MS : (acc > MAX_NEXT_FETCH_MS ? MAX_NEXT_FETCH_MS : (uint32_t) acc);
+  return true;
+}
+
+// The panel's own download timer: when the add-on's last answer said (X-EPF-Next), else
+// every interval. Off while the add-on's answers decide when it wakes (Low Power Mode):
+// those downloads would only keep it awake longer.
+inline bool own_timer_fetch_due(const PanelController &panel, const PowerPolicy &power, int interval_sec,
+                                uint32_t now_ms) {
+  return !power.low_power() && panel.fetch_due(interval_sec, now_ms);
 }
 
 }  // namespace epf
