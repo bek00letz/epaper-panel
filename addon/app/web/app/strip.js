@@ -187,17 +187,19 @@ function tile(app, n, { again, out, slot, pend }) {
     t.setAttribute("aria-label", `${pageTitle(n)}. ${said}`);
   });
   requestAnimationFrame(() => thumbnail(app, n, img));
-  // The tile and, beside it, its page's button over the right third of its picture (the user's
-  // design, 21 Oct): "…" opens the page's menu (Duplicate, Delete and the rest, the same menu as a
-  // right-click); a countdown that has passed shows Delete itself. It shows on hover or focus and on
-  // a hold on a touch screen, and stays on a passed countdown. Its hit area is at least 44 pt at
-  // every strip size. Beside the tile, not inside: the tile is a button, and a button can't hold others.
+  // The tile and, beside it, its page's two buttons over its picture (the user's design, 21 Oct):
+  // Duplicate, and Delete, which offers Delete page or Take out of rotation (that choice is the guard
+  // against a slip, never an "are you sure"). Over the last third, Duplicate above Delete, or across
+  // the bottom half, half each: Settings › Editor, for each strip size (app.tileButtons). They show
+  // on hover or focus and on a hold on a touch screen, and stay on a passed countdown. Each is 44 pt
+  // to touch at every size. Beside the tile, not inside: a button can't hold other buttons.
+  // The right-click menu keeps the fuller list (Show again and the rest).
   const g = app.geometry();
-  const more = h("button", { class: "tileact more", "aria-label": `More for ${pageTitle(n)}`, title: "More", "aria-haspopup": "menu", tabindex: "-1",
-    onclick: (ev) => { ev.stopPropagation(); box.classList.remove("held"); app.openPageMenu(ev, n, more); } }, icon("more", "sm"));
-  const del = h("button", { class: "tileact del", "aria-label": `Delete ${pageTitle(n)}`, title: "Delete", tabindex: "-1",
-    onclick: (ev) => { ev.stopPropagation(); app.deletePage(n); } }, icon("trash", "sm"));
-  const acts = h("span", { class: "tileacts", style: { aspectRatio: `${g.W} / ${3 * g.H}` } }, more, del);
+  const dup = h("button", { class: "tileact dup", "aria-label": `Duplicate ${pageTitle(n)}`, title: "Duplicate", tabindex: "-1",
+    onclick: (ev) => { ev.stopPropagation(); box.classList.remove("held"); app.duplicatePage(n); } }, icon("dup", "sm"));
+  const del = h("button", { class: "tileact del", "aria-label": `Delete ${pageTitle(n)}…`, title: "Delete", "aria-haspopup": "menu", tabindex: "-1",
+    onclick: (ev) => { ev.stopPropagation(); box.classList.remove("held"); app.openDeleteMenu(n, del, slot); } }, icon("trash", "sm"));
+  const acts = h("span", { class: "tileacts", style: { aspectRatio: `${g.W} / ${g.H}` } }, dup, del);
   const box = h("span", { class: "tilebox" }, t, acts);
   holdToReveal(t, box);
   t.box = box;

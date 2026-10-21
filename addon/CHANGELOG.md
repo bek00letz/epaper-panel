@@ -1,11 +1,16 @@
 # Changelog
 
 ## Unreleased
-- **Larger page strip sizes.** Small is now what Standard was, Standard is
-  what Large was, and Large is new and bigger still (Settings › Editor ›
-  Page strip size). If you'd picked Small or Standard, you get the new
-  Small, which looks like Standard did; if you'd picked Large, the new
-  Standard, which looks the same.
+- **Duplicate and Delete on every page in the strip.** Hover a page (or
+  hold it on a touch screen) and its last third shows two buttons:
+  Duplicate, and Delete, which asks which you mean, Delete page or Take out
+  of rotation, each with an Undo. They replace the "…" menu; right-click a
+  page for the full list, Show again included. If you'd rather have them
+  side by side across the bottom half of the picture, choose that in
+  Settings › Editor; it's kept for each strip size.
+- **Larger page strip sizes**, so those buttons fit: Small, Standard and
+  Large are now 188, 248 and 320 px wide (they were 104, 132 and 184). A
+  size you'd picked before becomes the new Small.
 - **"Not sent yet" no longer shows for pages you didn't change.** The
   add-on and the editor write a page's details in a different order, and
   after a reload that alone counted as a change.

@@ -147,12 +147,11 @@ class TestKeptAndWaiting(unittest.TestCase):
         # A page's buttons over the right third of its picture, beside the tile in its box; showing
         # all the time on a passed countdown (the user's design, 21 Oct).
         self.assertIn('box.classList.toggle("passed", c?.state === "passed");', strip)
-        self.assertIn('h("button", { class: "tileact del", "aria-label": `Delete ${pageTitle(n)}`', strip)
+        self.assertIn('h("button", { class: "tileact del", "aria-label": `Delete ${pageTitle(n)}…`', strip)
         self.assertIn("slots.forEach((t) => list.append(t.box));", strip)
         self.assertIn("reorderable(list, slots,", strip, "dragging still moves the tiles themselves")
         self.assertIn(".tilebox.held .tileacts, .tilebox.passed .tileacts { opacity: 1;", css)
-        self.assertIn(".tileacts { position: absolute; top: 0; right: 0; width: calc(100% / 3);", css)
-        self.assertIn(".tilebox.passed .tileact.del { display: grid; }", css)
+        self.assertIn(".tilebox.held .tileact, .tilebox.passed .tileact { pointer-events: auto; }", css)
         self.assertIn('[180, "6 months before"]', (APP_JS / "countdown.js").read_text())
 
 

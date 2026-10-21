@@ -907,31 +907,61 @@ class TestTheSheet(unittest.TestCase):
         # The user's call, 21 Oct: Small is the old Standard, Standard the old Large, Large is new.
         sheets = (APP_JS / "sheets.js").read_text()
         self.assertIn('grow("Page strip size", "How large its pages are", select([["small", "Small"], ["standard", "Standard"], ["large", "Large"]], app.stripSize(), (v) => { app.prefs.set("page_strip_size", v);', sheets)
-        self.assertIn("#app { --tile-w: 184px; --side-w: 236px; }", CSS)
-        self.assertIn('#app[data-stripsize="small"] { --tile-w: 132px; --side-w: 184px; }', CSS)
-        self.assertIn('#app[data-stripsize="large"] { --tile-w: 248px; --side-w: 300px; }', CSS)
+        self.assertIn("#app { --tile-w: 248px; --side-w: 300px; }", CSS)
+        self.assertIn('#app[data-stripsize="small"] { --tile-w: 188px; --side-w: 240px; }', CSS)
+        self.assertIn('#app[data-stripsize="large"] { --tile-w: 320px; --side-w: 372px; }', CSS)
         self.assertIn(".tile { flex: none; width: var(--tile-w);", CSS)
-        self.assertIn(".stripfront { flex: none; width: var(--tile-w);", CSS)
+        self.assertIn(".stripfront { flex: none; width: min(var(--tile-w), 188px);", CSS)
         self.assertIn("this.el.app.dataset.stripsize = this.stripSize();", (APP_JS / "main.js").read_text())
 
     def test_a_size_chosen_before_keeps_its_look(self):
         main = (APP_JS / "main.js").read_text()
         body = main[main.index("  stripSize() {"):]
-        self.assertIn('v = old === "large" ? "standard" : old ? "small" : "standard";', body, "Small and Standard → Small, Large → Standard")
+        self.assertIn('v = old ? "small" : "standard";', body, "every old size is nearest the new Small")
         self.assertIn('if (old) prefs.set("page_strip_size", v);', body)
         self.assertNotIn('prefs.set("strip_size"', main + (APP_JS / "sheets.js").read_text(), "the old choice stays for an older editor")
 
-    def test_a_pages_button_on_its_picture(self):
-        """The user's choice (21 Oct): one "…" over the right third of the picture for the page's menu,
-        Delete itself on a passed countdown; its hit area 44 pt at every strip size (AGENTS.md)."""
+    def test_the_small_size_holds_two_buttons_in_the_last_third(self):
+        """The user's call, 21 Oct: the sizes grew so the last third of the widest picture holds two."""
+        widest = max(T.DISPLAYS.values(), key=lambda d: d["w"] / d["h"])
+        small = int(re.search(r'#app\[data-stripsize="small"\] \{ --tile-w: (\d+)px', CSS).group(1))
+        self.assertGreaterEqual(small / (widest["w"] / widest["h"]) / 2, 32, "each button at least 32 px tall")
+        self.assertGreaterEqual(small / 3, 44, "and a third at least 44 wide")
+
+    def test_duplicate_and_delete_on_its_picture(self):
+        """Two buttons over the picture (the user's design, 21 Oct): Duplicate, and Delete, which
+        offers Delete page or Take out of rotation. Over the last third, or across the bottom half
+        (a setting for each strip size). 44 pt to touch at every size."""
         strip = (APP_JS / "strip.js").read_text()
-        self.assertIn('style: { aspectRatio: `${g.W} / ${3 * g.H}` }', strip, "the right third of the picture, not the name under it")
-        self.assertIn("app.openPageMenu(ev, n, more)", strip, "the same menu as a right-click")
-        self.assertIn("timer = setTimeout(() => {", strip.split("function holdToReveal", 1)[1], "a hold shows it on a touch screen")
+        self.assertIn('style: { aspectRatio: `${g.W} / ${g.H}` } }, dup, del);', strip, "over the picture, not the name under it")
+        self.assertIn("app.duplicatePage(n)", strip)
+        self.assertIn("app.openDeleteMenu(n, del, slot)", strip)
+        self.assertNotIn("openPageMenu(ev, n, more)", strip, "no menu button: the right-click keeps the fuller list")
+        self.assertIn("timer = setTimeout(() => {", strip.split("function holdToReveal", 1)[1], "a hold shows them on a touch screen")
         self.assertIn('if (!drag) { if (it.dataset.held) delete it.dataset.held; else onOpen(idx); return; }', strip, "and the hold doesn't open the page")
-        self.assertIn(".tileact::before { content: \"\"; position: absolute; top: 50%; right: 0; width: max(100%, 44px); height: max(100%, 44px);", CSS)
-        self.assertIn(".tilebox.passed .tileact.del { display: grid; }", CSS)
-        self.assertIn("@media (hover: hover) { .tilebox:hover .tileacts, .tilebox:focus-within .tileacts { opacity: 1;", CSS)
+        self.assertIn('.tileact::before { content: ""; position: absolute; right: 0; width: max(100%, 44px); height: max(100%, 44px); }', CSS)
+        self.assertIn(".tileact.dup::before { bottom: 0; }", CSS, "Duplicate's tap area reaches up")
+        self.assertIn(".tileact.del::before { top: 0; }", CSS, "Delete's down, so they never overlap")
+        self.assertIn('#app[data-tilebuttons="half"] .tileacts { grid-template-columns: 1fr 1fr;', CSS)
+        self.assertIn("pointer-events: none;", re.search(r"\.tileacts \{([^}]*)\}", CSS).group(1), "the picture under them still opens the page")
+        self.assertIn("@media (hover: hover) {\n  .tilebox:hover .tileacts, .tilebox:focus-within .tileacts { opacity: 1;", CSS)
+
+    def test_delete_is_a_choice_not_a_question(self):
+        main = (APP_JS / "main.js").read_text()
+        menu = main[main.index("  openDeleteMenu(n, anchor, slot) {"):main.index("  takeOut(n, slot) {")]
+        self.assertIn('"Take out of rotation"', menu)
+        self.assertIn('{ label: "Delete page", icon: "trash", danger: true, run: () => this.deletePage(n) }', menu)
+        take = main[main.index("  takeOut(n, slot) {"):main.index("  tileButtons(")]
+        self.assertIn('{ label: "Undo", run: () => doc.undo() }', take)
+        self.assertIn("r[slot] === n ? slot : r.lastIndexOf(n)", take, "the place in the rotation that tile is")
+
+    def test_where_the_buttons_sit_is_kept_for_each_size(self):
+        main = (APP_JS / "main.js").read_text()
+        self.assertIn('return prefs.get("tile_buttons_" + size) === "half" ? "half" : "third";', main)
+        self.assertIn("this.el.app.dataset.tilebuttons = this.tileButtons();", main)
+        sheets = (APP_JS / "sheets.js").read_text()
+        self.assertIn('app.prefs.set("tile_buttons_" + app.stripSize(), v)', sheets)
+        self.assertIn("buttons.value = app.tileButtons();", sheets, "changing the size shows that size's choice")
 
     def test_one_slider_for_the_shelves_and_the_page_strip(self):
         self.assertIn("const wrap = slider(row, { name });", self.js)

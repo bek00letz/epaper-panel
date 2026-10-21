@@ -83,17 +83,18 @@ class App {
     const pos = prefs.get("strip_pos", "top");
     this.el.app.dataset.strip = ["top", "bottom", "side"].includes(pos) ? pos : "top";
     this.el.app.dataset.stripsize = this.stripSize();
+    this.el.app.dataset.tilebuttons = this.tileButtons();
     this.renderStrip();
   }
-  /* The page strip's size. Before 0.16 Small was smaller (the user's call, 21 Oct: Small is the old
-     Standard, Standard the old Large, and Large is new), so a choice saved then, under
-     "strip_size", becomes the nearest new one: Small or Standard → Small, Large → Standard. The
-     old one is left as it was, so an older editor still finds it. */
+  /* The page strip's size. Before 0.16 every size was smaller (the user's call, 21 Oct: large enough
+     for a tile's two buttons on its last third), so a choice saved then, under "strip_size", becomes
+     the new Small, the nearest to any of them. The old one is left as it was, so an older editor
+     still finds it. */
   stripSize() {
     let v = prefs.get("page_strip_size");
     if (!v) {
       const old = prefs.get("strip_size");
-      v = old === "large" ? "standard" : old ? "small" : "standard";
+      v = old ? "small" : "standard";
       if (old) prefs.set("page_strip_size", v);
     }
     return ["small", "standard", "large"].includes(v) ? v : "standard";
@@ -774,10 +775,31 @@ class App {
       { label: "Open", run: () => doc.openPage(n) },
       { label: "Duplicate", icon: "dup", run: () => this.duplicatePage(n) },
       p.tier !== "alert" ? { label: times ? "Show again" : "Add to rotation", run: () => { doc.spec.rotation.push(n); doc.commit(); } } : null,
-      p.tier !== "alert" && times ? { label: times > 1 ? "Show once less" : "Take out of rotation", run: () => { doc.spec.rotation.splice(doc.spec.rotation.lastIndexOf(n), 1); doc.commit(); } } : null,
+      p.tier !== "alert" && times ? { label: times > 1 ? "Show once less" : "Take out of rotation", run: () => this.takeOut(n) } : null,
       "sep",
       { label: "Delete", icon: "trash", danger: true, run: () => this.deletePage(n) },
     ], { ...(anchor ? { align: "right" } : { at: { x: e.clientX, y: e.clientY } }), label: pageTitle(n) });
+  }
+  /* A tile's Delete: delete the page, or only take it out of the rotation (this place in it, for a
+     page shown twice). Choosing is the guard against a slip, not a question; both have an Undo. */
+  openDeleteMenu(n, anchor, slot) {
+    const p = this.doc.spec.pages[n], times = this.doc.spec.rotation.filter((x) => x === n).length;
+    menu(anchor, [
+      p.tier !== "alert" && times ? { label: times > 1 ? "Show once less" : "Take out of rotation", icon: "minus", run: () => this.takeOut(n, slot) } : null,
+      { label: "Delete page", icon: "trash", danger: true, run: () => this.deletePage(n) },
+    ], { align: "right", label: `Delete ${pageTitle(n)}` });
+  }
+  takeOut(n, slot) {
+    const doc = this.doc, r = doc.spec.rotation;
+    const i = Number.isInteger(slot) && r[slot] === n ? slot : r.lastIndexOf(n);
+    if (i < 0) return;
+    r.splice(i, 1); doc.commit();
+    toast(r.includes(n) ? `${pageTitle(n)} shows once less.` : `Took ${pageTitle(n)} out of the rotation. It's under Not in rotation.`, { label: "Undo", run: () => doc.undo() });
+  }
+  /* Where a tile's Duplicate and Delete sit, for each strip size: over the last third (the default),
+     or across the bottom half (the user's call, 21 Oct). */
+  tileButtons(size = this.stripSize()) {
+    return prefs.get("tile_buttons_" + size) === "half" ? "half" : "third";
   }
   openStatus(anchor) { openStatus(this, anchor); }
   openPresets() { openPresets(this); }

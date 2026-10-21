@@ -415,7 +415,19 @@ up to v0.12.0). `app/legacy.js` keeps the pieces of it this one still uses.
   Equal means equal as data (`same`): the order keys were written in is
   never a change.
 - **No confirmation dialogs.** Deleting shows an undo toast instead. There is
-  a 60-deep undo stack; use it rather than asking "are you sure?".
+  a 60-deep undo stack; use it rather than asking "are you sure?". A choice
+  is not a confirmation: a tile's Delete opens a small menu, Take out of
+  rotation or Delete page (the user's design, 21 Oct), because they are
+  different actions and picking one is what guards against a slip. Both
+  have an Undo.
+- **A page's tile has two buttons on its picture**, Duplicate and Delete
+  (`strip.js`), over its last third, Duplicate above Delete, or across the
+  bottom half if Settings › Editor says so, kept for each strip size. The
+  strip's sizes are made for them: the last third of the widest picture
+  (the 5.79", 2.9 : 1) at Small holds two buttons of at least 32 px, and
+  each tap area reaches 44 pt, out past the picture where it must
+  (Duplicate's upwards, Delete's downwards). Don't shrink a size below
+  that. The right-click menu keeps the fuller list.
 - **One floating system** (`app/ui.js`): popover, menu, sheet, toast. No
   `prompt()`, `alert()` or `confirm()`; names are edited in place.
 - **Hit targets are 44 pt.** Controls are 32 px with a padded hit area under a
