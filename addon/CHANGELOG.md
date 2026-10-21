@@ -119,6 +119,9 @@
   (`crowpanel-epaper.yaml`), so a panel first set up in ESPHome ended up
   with two files for one device. It now uses ESPHome's dashes; a file the
   add-on already wrote keeps its name, so nobody gets a second one.
+- **An icon can follow its sensor.** An icon tied to an entity changes
+  with its state (a door open or closed, a lock locked or unlocked), and
+  keeps its own icon for any other state.
 - **Fixed:** a Race weekend page set to NASCAR or IndyCar showed Formula 1's
   race, drivers and status. Each series now reads its own results, and its
   page names it ("NASCAR · …"). Whether the page shows still followed the

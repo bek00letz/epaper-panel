@@ -300,6 +300,21 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
 subitems.WIDGET_ITEMS.update({t: w.items for t, w in WIDGETS.items() if w.items})
 
 
+# A plain sensor whose value changes all the time (power, wind...), as Home Assistant describes it.
+FAST_CLASSES = {"power", "apparent_power", "reactive_power", "current", "voltage", "power_factor", "frequency",
+                "wind_speed", "speed", "irradiance", "data_rate", "sound_pressure"}
+
+
+def sensor_changes_every(attributes: dict) -> int | None:
+    """Seconds: how often a plain sensor's value changes, for the editor's "faster than this device" note:
+    a measurement that's always moving (state_class measurement, a power-like device class) changes every
+    minute; anything else, None (only as often as Home Assistant says it does)."""
+    a = attributes or {}
+    if a.get("state_class") == "measurement" and a.get("device_class") in FAST_CLASSES:
+        return 60
+    return None
+
+
 def get(widget_type) -> Widget | None:
     return WIDGETS.get(str(widget_type or ""))
 

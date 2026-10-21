@@ -763,3 +763,41 @@ class TestNoGuessedWeather(unittest.IsolatedAsyncioTestCase):
              unittest.mock.patch.dict(runtime.ENTITY_CACHE, {"items": []}):
             self.assertEqual(await ha_services.default_weather(None), "weather.home")
         self.assertNotIn(0, layout.collect_templates({"elements": [{"type": "weather_forecast"}]}))
+
+
+# ---------------------------------------------------------------- presets-015's asks: fit, a sensor's pace, state icons
+
+class TestFitForADevice(EditorClient):
+    async def test_a_page_made_on_the_579_placed_for_the_29(self):
+        el = {"type": "text", "value": "Hi", "x": 24, "y": 14, "w": 744, "h": 208}
+        r = await self.ed.post("/api/fit", json={"elements": [el], "from_canvas": "792x272", "display": "crowpanel_290"})
+        got = (await r.json())["elements"][0]
+        target = arrange.canvas_key(*T.canvas_dims(0, "crowpanel_290"))
+        self.assertEqual({k: got[k] for k in ("x", "y", "w", "h")}, arrange.auto_box(el, "792x272", target))
+        self.assertEqual(got["value"], "Hi")
+        r = await self.ed.post("/api/fit", json={"elements": [el], "from_canvas": "big"})
+        self.assertEqual(r.status, 400)
+
+    async def test_preview_and_example_take_from_canvas(self):
+        page = {"elements": [{"type": "sun_times", "x": 24, "y": 14, "w": 744, "h": 208}]}
+        for route in ("/api/preview", "/api/example"):
+            r = await self.ed.post(route, json={"page": page, "from_canvas": "792x272", "display": "crowpanel_290"})
+            self.assertEqual(r.status, 200, route)
+            self.assertEqual(Image.open(io.BytesIO(await r.read())).size, T.canvas_dims(0, "crowpanel_290"))
+
+    async def test_a_power_sensor_changes_every_minute(self):
+        rows = {r["entity_id"]: r for r in await (await self.ed.get("/api/entities")).json()}
+        self.assertEqual(rows["sensor.solar_pv_power"]["changes_every"], 60)
+        self.assertIsNone(rows["sensor.indoor_temperature"]["changes_every"])
+
+
+class TestIconsFollowTheirState(unittest.TestCase):
+    EL = {"type": "icon", "entity": "binary_sensor.front_door", "icon": "mdi:door-closed",
+          "state_icons": {"on": "mdi:door-open", "off": "mdi:door-closed"}, "x": 300, "y": 40, "w": 160, "h": 160}
+
+    def test_the_state_picks_the_icon_and_its_own_is_the_fallback(self):
+        self.assertIn(0, layout.collect_templates({"elements": [self.EL]}))
+        open_, closed, unknown = (render(self.EL, v) for v in ("on", "off", "jammed"))
+        self.assertNotEqual(open_.tobytes(), closed.tobytes())
+        self.assertEqual(unknown.tobytes(), closed.tobytes(), "no match: its own icon")
+        self.assertEqual(render(self.EL, None).tobytes(), closed.tobytes(), "not known yet: its own icon")
