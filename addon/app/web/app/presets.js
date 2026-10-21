@@ -44,10 +44,11 @@ export const SERIES = [["f1", "Formula 1"], ["fe", "Formula E"], ["nascar", "NAS
 /* What one sporting event is called, by sport (the user's call: a Premier
    League match is never a game). The sport is the league's first part
    ("soccer/eng.1"); ESPN's "football" is American football. Racing is a race.
-   Anything not listed is neutral. */
+   A sport not listed reads as a match. The panel's words are render/sport.py,
+   keyed the same way; a test keeps the two the same. */
 export const SPORT_WORDS = { soccer: "match", rugby: "match", tennis: "match", cricket: "match",
   basketball: "game", football: "game", baseball: "game", hockey: "game", racing: "race" };
-export const sportWord = (league) => SPORT_WORDS[String(league || "soccer/eng.1").split("/")[0]] || "event";
+export const sportWord = (league) => SPORT_WORDS[String(league || "soccer/eng.1").trim().toLowerCase().split("/")[0]] || "match";
 
 const calendarMonth = (ent, box) => ({ type: "calendar_month", ...box, show_header: true, show_weekdays: true, first_weekday: 0, highlight_today: true, show_border: true, entity: ent || "" });
 const watchLook = (id, name, make) => ({ id, name, tier: "when", showIf: watchShowIf, make });

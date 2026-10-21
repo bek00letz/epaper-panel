@@ -140,6 +140,15 @@ class TestCatalogue(unittest.TestCase):
         self.assertNotRegex(desc, r"(?i)\b(match|game)|kick-off|whistle", "the preset itself stays neutral")
         self.assertEqual(run_js('console.log(JSON.stringify(P.search("match score")[0].id))'), "match")
 
+    def test_the_editor_and_the_panel_use_the_same_words(self):
+        try:
+            from render import sport                 # widgets-015's, once both are merged
+        except ImportError:
+            self.skipTest("the panel's words arrive with widgets-015")
+        keys = list(sport.SPORTS) + ["unknown"]
+        got = run_js(f"console.log(JSON.stringify({json.dumps(keys)}.map((k) => P.sportWord(k + '/x'))))")
+        self.assertEqual(got, [sport.words(k + "/x").event for k in keys])
+
     def test_every_league_and_series_the_add_on_fetches(self):
         leagues = run_js("console.log(JSON.stringify(P.LEAGUES.map(([l]) => l)))")
         self.assertEqual(set(leagues), {k for k in sports.LEAGUE_SLUGS if "/" in k})
