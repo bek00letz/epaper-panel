@@ -13,11 +13,11 @@ turns showing them, and a page appears only when it has something to say.
 
 ## What it's good for
 
-- **The game you're missing at work.** A live score with the clock and the
+- **The score you're missing at work.** A live score with the clock and the
   scorers, for the Premier League, Champions League, La Liga, Bundesliga,
-  Serie A, NBA, NFL, MLB or NHL: every match, your team, or a few of them
-  ("Arsenal, Lakers"). The page turns up before kick-off and leaves after the
-  final whistle on its own.
+  Serie A, MLS, NBA, WNBA, NFL, college football, MLB or NHL: every match or
+  game, your team, or a few of them ("Arsenal, Lakers"). The page turns up
+  shortly before it starts and leaves just after it ends, on its own.
 - **Race weekends.** Formula 1, Formula E, NASCAR and IndyCar: the top ten
   with gaps and tyres while a session runs, and the countdown to the next one
   the rest of the week.
@@ -165,8 +165,11 @@ panel shows them; drag to reorder. Select anything to change it on the right;
 select nothing and the right side shows the page: when it appears, how often,
 what it's called.
 
-- **New page** starts from a preset and asks which of your sensors it
-  should show, or starts blank.
+- **New page** starts from a preset, on shelves by what it's for (Your day,
+  Home, Energy, Outside, Sports, Watch and listen), or starts blank. A
+  preset asks for its look and which of your sensors it shows, with the
+  likely ones first, and sets up anything else it needs right there, like
+  the Jellyfin connection for New to watch.
 - **Insert** finds element types and your sensors in one search. Drag a
   sensor straight onto the canvas.
 - **Copy, paste, and paste and match** move things between pages in the same
@@ -180,7 +183,7 @@ what it's called.
   panel is up to date, what's rotating, which pages are hidden right now and
   why, and lets you put it to sleep or clear ghosting.
 
-![The New page sheet with presets for months, weather, planes, Formula 1, scores, devices and more](docs/new-page.png)
+![The New page sheet with presets for months, weather, planes, race weekends, scores, devices and more](docs/new-page.png)
 
 It follows your system's light or dark mode, works with the keyboard (press
 **?** for every shortcut), and works on a phone in the Home Assistant app.
@@ -228,8 +231,8 @@ the firmware it has.
 ### 3. Your first page
 
 1. Choose **New page** at the front of the page strip.
-2. Pick a preset, say **Match score** or **Solar today**, and your sensor if
-   it asks for one.
+2. Pick a preset, say **Scores** or **Solar today**, then its league or your
+   sensor if it asks for one.
 3. Choose **Add page**, then **Send to panel**.
 
 ## Doing more
@@ -239,7 +242,7 @@ the firmware it has.
 Select the page, then click an empty part of the canvas. Under **Shows**,
 choose **Only when** and pick a sensor and its state, like a timer that's
 `active`. The sports, racing and flights widgets set this up for you with
-one switch ("Only show on match days"). **As an alert** takes over the panel
+one switch ("Only show on match days", or game days, or around sessions). **As an alert** takes over the panel
 the moment the condition turns true and hands it back after the minutes you
 set. Or, under **Ends**, choose **When something happens** and an **Until**:
 "Watch battery is below 20" until "Watch battery state is charging" holds
@@ -327,8 +330,10 @@ panel.
 
 Jellyfin's details come separately, so a page can show just the part it
 wants: the episode's name, which episode (S02E04), how many are new, when it
-arrived, a film's year and length, and the next few titles. **New page** has
-three Jellyfin presets: **New to watch**, **Episode card** and **Up next**.
+arrived, a film's year and length, and the next few titles. **New page ›
+New to watch** shows them in three styles (Newest, Episode card, Up next),
+and connects Jellyfin itself the first time: the server's address (filled in
+from JellyHA if you have it), an API key, and whose unwatched to show.
 
 ### When something stops answering
 
@@ -344,7 +349,7 @@ Meanwhile its entities stay in Home Assistant instead of disappearing.
   the order.
 - Long text can **wrap onto more lines**.
 - Widgets have a **Text size** slider, and **Break apart** turns weather,
-  flights, agenda, racing and match widgets into pieces you can move.
+  flights, agenda, racing and scores widgets into pieces you can move.
 - Nothing asks "are you sure?": everything has **Undo**.
 
 ## On the panel

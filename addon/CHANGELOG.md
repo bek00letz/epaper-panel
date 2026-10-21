@@ -109,6 +109,82 @@
   right series before; only what it showed was wrong. A wide driver code
   (HAM) no longer runs into its team's name.
 
+- **New page, on shelves.** One shelf per group (Your day, Home, Energy,
+  Outside, Sports, Watch and listen), each sliding sideways, with how many
+  it holds beside its name. Arrows show at the edges as you point at a
+  shelf, only where there's more, and the edge fades while there is; on a
+  phone you swipe. Your own presets get a shelf of their own, first. Search
+  finds a preset by any word, its old name too. "+ Blank page" sits in the
+  footer. The arrow keys move along a shelf, and Esc goes back a step.
+- **One preset per thing a page shows.** Its look is picked next: Planes
+  overhead (Nearest plane, Radar or Both, now under Outside with the
+  weather), Calendar (Month and agenda, or Month), New to watch (three
+  styles), To-do list (By urgency, Inverted when due, Outlined), Scores (any
+  league the add-on follows) and Race weekend (Formula 1, Formula E, NASCAR,
+  IndyCar). It remembers the look you picked last.
+- **Clearer names.** "Door or pet" is now Status, "On now" is Dynamic status,
+  "Formula 1" is Race weekend and "Match score" is Scores, since an NBA or
+  MLB game isn't a match. Where a single event is named, each sport keeps
+  its own word: a match in football, a game in the NBA, a race in racing. Pages you already have don't change. A new
+  Scores or Race weekend page is named after its league or series.
+
+- **Guest Wi-Fi asks for your network.** Its next step asks for the
+  network's name, password and security, and the code guests scan joins
+  that network; the page shows the name and keeps the password in the
+  code. Before, it came with a made-up network, and its words ran under
+  the code.
+- **Fixed:** a preset added on any device other than the 5.79" came out
+  drawn for the 5.79", running off the canvas. It's now placed the way the
+  add-on places a page on another size, and rearranged when the device
+  stands upright. Every preset's words now fit their boxes at every size:
+  New to watch's line at the top right and Battery and solar's heading no
+  longer run over.
+
+- **The likely sensor first.** A preset lists the sensors it's for first:
+  temperature sensors for Room temperature, energy sensors for Solar today,
+  and the one your Energy dashboard uses is picked for you and says so.
+  Status takes any sensor's state now (a door, a person, a lock), door and
+  window sensors first.
+
+- **New to watch connects Jellyfin itself.** The first time, its next step
+  asks for the server's address (filled in from JellyHA if you have it) and
+  an API key, says where Jellyfin keeps it, connects, and asks whose
+  unwatched to show. The connection is saved under Settings › Data sources
+  like one you add there, and the next Jellyfin page offers it.
+
+- **Fixed:** the scores widget's League menu offered nine leagues, though the add-on
+  also follows MLS, the WNBA and college football. It offers all twelve now,
+  the same list as New page.
+
+- **Sunrise and sunset in New page**, under Outside, in two styles: Next
+  one first (it turns round at sunrise and at sunset) or Both alike. It
+  uses Home Assistant's sun, so there's nothing to set up. It's under
+  Insert › Widgets too.
+
+- **Solar this month, Grid now and Energy cost in New page**, under Energy.
+  They read your Energy dashboard themselves, so there's nothing to pick:
+  the next step says which of its sensors they use. When the dashboard
+  hasn't got what they need, Solar this month and Grid now take a sensor
+  of yours instead, right there, and Energy cost says where to add prices.
+  Solar today opens with the dashboard's solar sensor picked. All three are
+  under Insert › Widgets too.
+
+- **Now playing and On TV this week in New page**, under Watch and listen
+  beside New to watch. Now playing follows every media player, or the ones
+  you tick, and shows only while one plays; On TV this week lists calendars
+  of shows (Sonarr's, Trakt's) first. Both are under Insert › Widgets too.
+- **Weather's "now" from your own station** can be set in the inspector:
+  another weather entity, and sensors for temperature, humidity, wind,
+  rain, pressure and sunlight, each optional.
+- Search in New page puts presets whose name you typed first.
+
+- **Fixed:** in New page, every preset that shows a sensor had "--" in its
+  picture. They're drawn with example values now, never your own data, and
+  the next step says "Example values" until you pick yours.
+
+- **Fixed:** New page showed the word "null" above the shelves when you had
+  no presets of your own, and in an energy preset's step.
+
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) for the quiet-hours fix below.

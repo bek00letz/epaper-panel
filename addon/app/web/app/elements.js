@@ -35,7 +35,13 @@ export const TYPES = {
   todo_list: { name: "To-do list", icon: "todo" },
   flight_tracker: { name: "Flights", icon: "plane" },
   sports_racing: { name: "Racing", icon: "flag" },
-  sports_match: { name: "Match", icon: "ball" },
+  sports_match: { name: "Scores", icon: "ball" },
+  sun_times: { name: "Sunrise and sunset", icon: "sun" },
+  energy_total: { name: "Energy total", icon: "chart" },
+  grid_now: { name: "Grid now", icon: "plug" },
+  energy_cost: { name: "Energy cost", icon: "value" },
+  now_playing: { name: "Now playing", icon: "play" },
+  tv_week: { name: "On TV this week", icon: "calendar" },
   group: { name: "Group", icon: "layers" },
 };
 export const GROUP_STYLES = [["outline", "Outline"], ["pill", "Pill"], ["invert", "Inverted"]];
@@ -54,9 +60,9 @@ export function groupBox(group, els) {
 export const INSERT_GROUPS = [
   ["Basics", ["text", "number", "icon", "box", "line"]],
   ["Charts", ["bar", "curve", "bar_chart"]],
-  ["Widgets", ["weather_forecast", "calendar_month", "calendar_agenda", "todo_list", "dynamic_grid", "flight_tracker", "sports_racing", "sports_match", "qr"]],
+  ["Widgets", ["weather_forecast", "sun_times", "energy_total", "grid_now", "energy_cost", "now_playing", "tv_week", "calendar_month", "calendar_agenda", "todo_list", "dynamic_grid", "flight_tracker", "sports_racing", "sports_match", "qr"]],
 ];
-export const WIDGETS = ["dynamic_grid", "calendar_month", "calendar_agenda", "todo_list", "weather_forecast", "flight_tracker", "sports_racing", "sports_match"];
+export const WIDGETS = ["dynamic_grid", "calendar_month", "calendar_agenda", "todo_list", "weather_forecast", "flight_tracker", "sports_racing", "sports_match", "sun_times", "energy_total", "grid_now", "energy_cost", "now_playing", "tv_week"];
 export const BREAKABLE = ["weather_forecast", "flight_tracker", "calendar_agenda", "sports_match", "sports_racing"];
 export const isWidget = (el) => WIDGETS.includes(el.type);
 export const hasText = (el) => el.type === "text" || el.type === "number";
@@ -82,6 +88,13 @@ export function makeElement(t, g) {
   if (t === "flight_tracker") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20, radius: 35, style: "card", show_border: true });
   if (t === "sports_racing") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20, series: "f1", entity: "", show_border: true });
   if (t === "sports_match") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20, league: "soccer/eng.1", team: "", entity: "", show_border: true });
+  // The widgets that size everything from their own box (render/hero.py): the content area.
+  if (t === "sun_times") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20, style: "next" });
+  if (t === "energy_total") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20, source: "solar", entity: "", period: "month" });
+  if (t === "grid_now") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20, entity: "", invert: false });
+  if (t === "energy_cost") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20 });
+  if (t === "now_playing") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20, entity: "" });
+  if (t === "tv_week") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20, entity: "", days: 7 });
   base.x = Math.max(0, Math.min(g.W - base.w, base.x));
   base.y = Math.max(0, Math.min(g.H - base.h, base.y));
   return base;

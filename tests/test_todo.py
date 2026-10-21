@@ -183,14 +183,14 @@ class TestDrawing(unittest.TestCase):
 class TestPreset(unittest.TestCase):
     def run_js(self, body):
         app = support.APP / "web" / "app"
-        script = (f"import {{ PRESETS }} from {json.dumps(str(app / 'legacy.js'))};"
+        script = (f"import {{ LOOKS as PRESETS }} from {json.dumps(str(app / 'presets.js'))};"
                   f"import * as C from {json.dumps(str(app / 'conditions.js'))};\n{body}")
         out = subprocess.run(["node", "--input-type=module", "-e", script], capture_output=True, text=True, check=True)
         return json.loads(out.stdout)
 
     def test_shows_while_the_list_has_something_to_do(self):
         got = self.run_js("""
-const p = PRESETS.find((x) => x.id === "to_do");
+const p = PRESETS.find((x) => x.id === "to_do_urgency");
 const show_if = p.showIf("todo.chores");
 console.log(JSON.stringify({ asks: p.asks, named: p.namedByEntity, tier: p.tier, show_if, parsed: C.parseShowIf(show_if),
   compiled: C.compileShowIf({ ent: "todo.chores", op: "gt", val: "0" }), els: p.makeElements("todo.chores"), skip: p.showIf("") }));""")
@@ -220,8 +220,9 @@ import("%s").then((L) => {
                       % todo.DEFAULT_STYLE, src)
 
     def test_new_page_names_it_after_the_list(self):
-        src = (support.APP / "web" / "app" / "sheets.js").read_text()
-        self.assertIn('p.namedByEntity && ent ? slug(app.entMap.get(ent)?.name', src)
+        src = (support.APP / "web" / "app" / "presets.js").read_text()
+        self.assertIn('if (p.namedByEntity && ent) return entName || ent.split(".")[1];', src)
+        self.assertIn('app.addPage(slug(pageName(p, look, ent, entName)) || p.id, page);', (support.APP / "web" / "app" / "newpage.js").read_text())
 
     def test_the_condition_follows_the_list_but_never_replaces_your_own(self):
         got = self.run_js("""

@@ -199,6 +199,13 @@ than a frame does.
   different: the add-on never changes it on its own, but a name the person
   gives it in the editor reaches Home Assistant at its next install, as for
   any screen (the user's call, 21 Oct). Home Assistant keeps the entity IDs.
+- **A preset sets up what it needs, in place** (the user's call, 21 Oct:
+  framework, not patch). A preset that needs a data source, or anything
+  else before it can show something (Guest Wi-Fi's network), asks for it in
+  its own next step in New page (`app/setup.js`, `SETUPS`), never by sending
+  the person to Settings first. What it sets up is saved where Settings
+  shows it (a data source through `PUT /api/sources`, the one store), so a
+  second page reuses it and there is no second path.
 - **Elements have IDs, unique in the design, and the editor gives them**
   (`doc.ensureIds`). Arrangements for other sizes are filed by them. Never
   make an element's identity depend on its position or its page.
@@ -351,6 +358,17 @@ up to v0.12.0). `app/legacy.js` keeps the pieces of it this one still uses.
   sits in a dark frame that reads as the device. Do not add colour or weight
   that competes with it. The canvas shows only the add-on's own render
   (`/api/preview`); everything else on it is an outline.
+- **New page is shelves of presets, one per thing a page shows**
+  (`app/newpage.js`; the presets are data in `app/presets.js`). One shelf
+  per group, your own first; a preset's looks, leagues or series are picked
+  in its next step, never separate cards. Presets are drawn on the 5.79"
+  and placed on other devices the way `arrange.auto_box` places a design
+  (`fitToCanvas`, pinned against it). Thumbnails there use the add-on's
+  example values (`/api/preview` with `example`), never the person's own
+  data, and never "--". What a preset shows is listed sensible first
+  (`rankSensors`: the Energy dashboard's sensor picked and said so, then
+  the right device class and unit). `tests/test_presets.py` draws every
+  look at every offered size and fails on words wider than their box.
 - **The inspector is ordered by how often things are touched**: what it shows,
   how it looks, arrange, then "More". Rare settings go under More, not away.
 - **Picking: smallest thing under the pointer first.** Clicking again without

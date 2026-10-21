@@ -6,7 +6,8 @@ import { h, icon, api, clone, pageTitle, slug, modKey, prefs, withDevice, span, 
 import { sheet, popover, field, input, number, select, seg, toggle, toggleRow, section, linkButton, toast, closeAll } from "./ui.js";
 import { DISPLAYS, isWidget } from "./elements.js";
 import { describe, parseShowIf, syncDynamicGridShowIf } from "./conditions.js";
-import { PRESETS, PRESET_ICONS, reflowPageElements } from "./legacy.js";
+import { reflowPageElements } from "./legacy.js";
+import { LOOKS as PRESETS } from "./presets.js";
 import { thumbnail, statusSummary } from "./strip.js";
 
 const thumbImg = (app, key, page) => {
@@ -22,7 +23,9 @@ const fits = (p, e) => (p.asks === "jellyfin" ? e.feed === "jellyfin" : e.entity
 const candidates = (app, p) => app.ents.filter((e) => fits(p, e));
 const guess = (app, p) => (p.asks === "jellyfin" ? (candidates(app, p)[0] || {}).entity_id || "" : "");
 
-export function openPresets(app) {
+// The 0.10 New page sheet: one grid of every look. Not used since 0.15's
+// shelves (newpage.js); kept as the way back until they've proven themselves.
+export function openPresetsGrid(app) {
   const close = sheet("New page", (node, close) => {
     const body = h("div", { class: "sheet-body" });
     const grid = h("div", { class: "presetgrid" });
