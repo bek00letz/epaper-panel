@@ -129,6 +129,10 @@
   setting, and a city already on tomorrow says "+1". On a device that
   sleeps between updates, each city shows how many hours it is ahead or
   behind ("−7 h", "Same time"), which never goes stale.
+  It's New page › Clock › Time zones: find each city by its name ("Here"
+  is Home Assistant's own), rename it if you like, and drag the rows (or
+  Alt with ↑ and ↓) to put them in order. The inspector edits the same
+  list, and the page redraws as you add, remove or move a city.
 - **Fixed:** a Race weekend page set to NASCAR or IndyCar showed Formula 1's
   race, drivers and status. Each series now reads its own results, and its
   page names it ("NASCAR · …"). Whether the page shows still followed the

@@ -359,6 +359,58 @@ class TestSetsUpWhatItNeeds(unittest.TestCase):
         self.assertIn('"aria-label": "Whose unwatched"', self.js)
 
 
+@unittest.skipUnless(shutil.which("node"), "no node to read the editor's presets")
+class TestWorldClock(unittest.TestCase):
+    """Clock's Time zones look: up to four cities, each found by its city and named as you like,
+    in the order you drag them to. The cities are the add-on's (GET /api/timezones), and so is
+    the layout (render/worldclock.py): the editor only edits the element's `zones`."""
+
+    def test_a_look_of_clock_that_sets_up_its_cities(self):
+        got = run_js("""const p = P.presetById("clock"), look = p.looks.find((l) => l.id === "world_clock");
+          const mine = [{ tz: "Europe/Lisbon", label: "Mum" }, { tz: "", label: "" }];
+          console.log(JSON.stringify({ looks: p.looks.map((l) => l.name), needs: look.needs,
+            made: P.pageFor(p, look, null, { zones: mine }).elements, alone: P.pageFor(p, look, null, {}).elements[0].zones }))""")
+        self.assertEqual(got["looks"], ["Clock", "Time zones"])
+        self.assertEqual(got["needs"], "zones")
+        self.assertEqual(len(got["made"]), 1)
+        self.assertEqual(got["made"][0]["type"], "world_clock")
+        self.assertEqual(got["made"][0]["zones"], [{"tz": "Europe/Lisbon", "label": "Mum"}, {"tz": "", "label": ""}])
+        self.assertEqual(got["alone"], [{"tz": "", "label": ""}], "with nothing picked, Home Assistant's own time")
+
+    def test_its_step_is_the_cities(self):
+        js = (APP_JS / "setup.js").read_text()
+        self.assertIn("zones: zonesSetup };", js)
+        self.assertIn("zonesEditor(el, changed, { live: true })", js)
+        self.assertIn('const extra = () => ({ zones: el.zones.map((z) => ({ tz: z.tz || "", label: String(z.label || "").trim() })) });', js)
+
+    def test_the_inspector_edits_what_the_descriptor_asks(self):
+        """One source: the widget's descriptor says it has a "zones" field, at most 4; the inspector
+        draws that kind with the same editor, and every change is a commit, so the canvas redraws."""
+        f = next(f for f in catalog_json()["widgets"]["world_clock"]["fields"] if f["key"] == "zones")
+        self.assertEqual((f["kind"], f["most"]), ("zones", 4))
+        self.assertIn('else if (f.kind === "zones") s.append(field(f.label || "Cities", zonesEditor(el, () => app.doc.commit(), { most: f.most || 4 }), { wide: true }));',
+                      (APP_JS / "inspector.js").read_text())
+
+    def test_the_cities_editor(self):
+        js = (APP_JS / "zones.js").read_text()
+        self.assertIn('api("api/timezones")', js, "the add-on's time zones, never a copy")
+        self.assertIn('e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")', js, "reorder by keyboard, not only by drag")
+        self.assertIn("dragToReorder(grip, k);", js)
+        self.assertIn('h("span", { class: "o1", text: "Here" })', js, "Home Assistant's own zone, first")
+        self.assertIn("el.zones.length < most && picking !== \"new\"", js, "Add a city up to the most")
+        self.assertIn("text: `Up to ${most} cities.`", js)
+        self.assertIn("placeholder: nameOf(z)", js, "an empty name reads as its city")
+        self.assertIn("No city by that name. Try the nearest big city in the same time zone.", js)
+        self.assertNotIn("innerHTML", js)
+
+    def test_hit_targets(self):
+        """Its buttons are the editor's own (.btn.icon: --ctl, 44 px on touch)."""
+        js = (APP_JS / "zones.js").read_text()
+        self.assertIn('h("button", { class: "btn icon zgrip"', js)
+        self.assertIn('h("button", { class: "btn icon", "aria-label": `Remove ${nameOf(z)}`', js)
+
+
+
 class TestEveryFieldKindHasAnEditor(unittest.TestCase):
     """The inspector draws a widget's settings from its descriptor's fields, by kind: one path."""
 
