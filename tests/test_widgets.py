@@ -825,9 +825,7 @@ class TestWorldClock(Sizes, unittest.TestCase):
         self.assertEqual([x[:2] for x in w], [("Bucharest", "16:00"), ("New York", "09:00"), ("Mumbai", "19:30"), ("Sydney", "01:00")])
         self.assertEqual(w[3][2], "+1")
         self.assertEqual(s[1][1], "10:00", "New York in summer time")
-        late = worldclock.slots({"zones": [{"tz": "America/Los_Angeles", "label": "LA"}]}, "Europe/Bucharest",
-                                datetime(2026, 1, 15, 23, 30, tzinfo=dt_timezone.utc))
-
+        # 23:30 UTC: Los Angeles is still the 15th, Bucharest already the 16th.
         self.assertEqual(worldclock.slots({"zones": [{"tz": "America/Los_Angeles"}]}, "Europe/Bucharest",
                                           datetime(2026, 1, 15, 23, 30, tzinfo=dt_timezone.utc))[0][2], "−1")
 
