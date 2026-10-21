@@ -25,7 +25,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Work | Where | State |
 |---|---|---|
-| The editor shows what's not sent yet (changed pages outlined, a list from the pill, per-page undo); strip sizes moved up (Small = old Standard, Standard = old Large, a larger Large); two buttons on each page card, Duplicate and Delete (Delete offers "Delete page" or "Take out of rotation") (session "unsent-changes") | branch `unsent-changes` from main | Started 21 Oct; designs with the user first |
+| The editor shows what's not sent yet (changed pages outlined, a list from the pill, per-page undo); strip sizes moved up (Small = old Standard, Standard = old Large, a larger Large); two buttons on each page card, Duplicate and Delete (Delete offers "Delete page" or "Take out of rotation") (session "unsent-changes") | branch `unsent-changes` from main | Done 21 Oct: 7 commits, 684 tests pass, no firmware change; not seen by eye or on a phone |
 | A "changed in the last N minutes" condition, for Only when and alerts (e.g. show PawPaw's location for 30 min after it changes) (session "changed-condition") | branch `changed-condition` from main | Started 21 Oct; designs with the user first |
 
 Local main also carries the add-on description fix (sizes it offers), for the
