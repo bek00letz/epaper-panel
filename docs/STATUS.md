@@ -30,7 +30,7 @@ row styles (merged in), plus:
 
 | Work | Where | State |
 |---|---|---|
-| Racing fix and the new presets' widgets: Sunrise and sunset, Solar this month, Grid now, Energy cost, Now playing, On TV this week, and Weather from your own station (session "widgets-015") | branch `widgets-015` from `release-next` | Done 21 Oct: 9 commits, 466 tests pass, no firmware change; every widget rendered at every size. Weather station's inspector fields are presets-015's. Not tried: the energy and statistics websocket calls against the real Home Assistant |
+| Racing fix and the new presets' widgets: Sunrise and sunset, Solar this month, Grid now, Energy cost, Now playing, On TV this week, and Weather from your own station (session "widgets-015") | branch `widgets-015` from `release-next` | Done 21 Oct: 14 commits, 478 tests pass, no firmware change; every widget rendered at every size; also the APIs presets-015 asked for and the per-sport words (render/sport.py). Weather station's inspector fields are presets-015's. Not tried: the energy and statistics websocket calls against the real Home Assistant |
 | The New page sheet: shelves, groups, renames, one preset per thing, sensible sensor first, example thumbnails, setup in place, Guest Wi-Fi text (session "presets-015") | branch `presets-015` from `release-next` | Started 21 Oct |
 | Screen menu and zoom, "device" everywhere (editor-polish) | `editor-zoom`, already in `release-next` | Its worktree can go once 0.15.0 ships |
 
