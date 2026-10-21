@@ -8,7 +8,7 @@ import { h, icon, api, clone, slug, prefs } from "./util.js";
 import { sheet, toast } from "./ui.js";
 import { syncDynamicGridShowIf } from "./conditions.js";
 import { reflowPageElements } from "./legacy.js";
-import { PRESETS as ALL_PRESETS, GROUPS, forDevice, sleepsBetweenUpdates, staleNote, presetChangesEvery, lookOf, pageFor, examplePage, pageName, search, rankSensors, fitToCanvas } from "./presets.js";
+import { PRESETS as ALL_PRESETS, GROUPS, sleepsBetweenUpdates, staleNote, presetChangesEvery, lookOf, pageFor, examplePage, pageName, search, rankSensors, fitToCanvas } from "./presets.js";
 import { thumbnail } from "./strip.js";
 import { slider } from "./slider.js";
 import { setupStep } from "./setup.js";
@@ -32,8 +32,8 @@ function thumb(app, key, page, { example = false, fit = true, cls = "" } = {}) {
 
 export function openPresets(app) {
   const g = app.geometry();
-  // What this device can show well: a Date, not a Clock, on one that sleeps between updates.
-  const PRESETS = ALL_PRESETS.map((p) => forDevice(p, sleepsBetweenUpdates(app.screen)));
+  // Every preset on every device; one that draws differently on a device that sleeps says so on its card.
+  const PRESETS = ALL_PRESETS, sleeps = sleepsBetweenUpdates(app.screen);
   const tall = g.W / g.H < 1;
   let query = "", step = null;
 
@@ -60,8 +60,9 @@ export function openPresets(app) {
     function card(p) {
       // Noted, never hidden: on a device that sleeps, what changes faster than it updates says how old it can be.
       const stale = staleNote(presetChangesEvery(p), app.screen, { short: true });
-      const look = lookOf(p, 0), sub = stale || count(p) || (p.was ? `Was “${p.was}”` : "");
-      return h("button", { class: "pbtn", "aria-label": `${p.title}${count(p) ? `, ${count(p)}` : ""}. ${p.desc}${stale ? " " + staleNote(presetChangesEvery(p), app.screen) : ""}`, onclick: () => pick(p) },
+      const asleep = sleeps && p.onSleeping ? p.onSleeping : "";
+      const look = lookOf(p, 0), sub = asleep || stale || count(p) || (p.was ? `Was “${p.was}”` : "");
+      return h("button", { class: "pbtn", "aria-label": `${p.title}${count(p) ? `, ${count(p)}` : ""}. ${p.desc}${stale ? " " + staleNote(presetChangesEvery(p), app.screen) : ""}${asleep ? ` ${asleep}.` : ""}`, onclick: () => pick(p) },
         thumb(app, `preset:${look.id}:example`, examplePage(p, look), { example: true }),
         h("span", { class: "pt", text: p.title }), h("span", { class: "sub", text: sub || " ", "aria-hidden": "true" }));
     }

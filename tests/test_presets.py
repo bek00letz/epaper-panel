@@ -448,11 +448,15 @@ class TestDateOnASleepingDevice(unittest.TestCase):
     """The user's call (21 Oct): on a device that sleeps between updates a clock would stop at its
     last update and flash at every wake, so Clock is a large Date there."""
 
-    def test_clock_is_a_date_where_the_device_sleeps(self):
-        got = run_js("""const c = P.presetById("clock");
-          console.log(JSON.stringify([P.forDevice(c, true).title, P.forDevice(c, true).looks.map((l) => l.id), P.forDevice(c, false).title,
-            P.PRESETS.filter((p) => p.id !== "clock").every((p) => P.forDevice(p, true) === p)]))""")
-        self.assertEqual(got, ["Date", ["date"], "Clock", True])
+    def test_clock_everywhere_saying_so_where_it_sleeps(self):
+        """Framework review #10, the user's call: New page offers Clock on every device; on one that
+        sleeps its card says so and the renderer draws the date (render/clocktime.py)."""
+        got = run_js("""console.log(JSON.stringify([P.presetById("clock").onSleeping, P.presetById("date").looks[0].make()[0].value]))""")
+        self.assertEqual(got, ["Shows the date here", "{{ now().strftime('%A') }}"])
+        js = (APP_JS / "newpage.js").read_text()
+        self.assertIn("const PRESETS = ALL_PRESETS, sleeps = sleepsBetweenUpdates(app.screen);", js)
+        self.assertIn('const asleep = sleeps && p.onSleeping ? p.onSleeping : "";', js)
+        self.assertNotIn("forDevice(", js, "the design is never made differently for one device")
 
     def test_sleeping_is_read_from_the_timers_not_the_kind(self):
         got = run_js("""console.log(JSON.stringify([{ timing: { always_on: false } }, { timing: { always_on: true } }, { kind: "trmnl", timing: { always_on: false } },
@@ -494,7 +498,7 @@ class TestDateOnASleepingDevice(unittest.TestCase):
         self.assertEqual(pages, ["a", "b"])
 
     def test_new_page_offers_the_date_on_a_sleeping_device(self):
-        self.assertIn("const PRESETS = ALL_PRESETS.map((p) => forDevice(p, sleepsBetweenUpdates(app.screen)));", (APP_JS / "newpage.js").read_text())
+        self.assertIn('id: "date", group: "day", title: "Date"', (APP_JS / "presets.js").read_text())
         # Switching a device to sleep changes no page: the renderer draws the date (test_clocktime).
 
 
@@ -602,6 +606,34 @@ class TestBatteryAndSolarAsksForEachPart(unittest.TestCase):
 
     def test_asked_in_place(self):
         self.assertIn("parts: partsSetup", (APP_JS / "setup.js").read_text())
+
+
+class TestAGaugeNeverMakesUpAValue(unittest.TestCase):
+    """The user saw "House power 68%" for a gauge with no sensor: the renderer drew a made-up 68,
+    and a gauge with no unit added its own "%"."""
+    BAR = {"type": "bar", "title": "HOUSE POWER", "min_val": 0, "max_val": 5000, "show_label": True, "x": 34, "y": 152, "w": 324, "h": 64}
+
+    def drawn(self, el, vals):
+        from unittest import mock
+        from PIL import ImageDraw
+        said, real = [], ImageDraw.ImageDraw.text
+        def spy(self_, xy, text, *a, **kw):
+            said.append(text)
+            return real(self_, xy, text, *a, **kw)
+        with mock.patch.object(ImageDraw.ImageDraw, "text", spy):
+            layout.render_page({"elements": [el]}, vals)
+        return said
+
+    def test_no_sensor_no_number(self):
+        said = self.drawn({**self.BAR, "entity": "", "suffix": ""}, {})
+        self.assertIn("HOUSE POWER", said)
+        self.assertFalse([t for t in said if "68" in t or "%" in t], said)
+
+    def test_its_own_unit_and_decimals(self):
+        said = self.drawn({**self.BAR, "entity": "sensor.house", "suffix": " kW", "decimals": 1, "max_val": 5}, {0: "1.84"})
+        self.assertIn("1.8 kW", said)
+        said = self.drawn({**self.BAR, "entity": "sensor.house", "suffix": ""}, {0: "640"})
+        self.assertIn("640", said, "no unit stays no unit, not %")
 
 
 class TestTheSheet(unittest.TestCase):

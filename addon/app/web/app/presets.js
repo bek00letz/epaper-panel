@@ -60,12 +60,17 @@ export const PRESETS = [
   /* ---------- your day ---------- */
   {
     id: "clock", group: "day", title: "Clock", desc: "The time, very large, and today's date.", kw: "time date",
-    asks: "",
+    asks: "", onSleeping: "Shows the date here",
     looks: [{ id: "clock", name: "Clock", make: () => [
       { type: "text", value: "{{ now().strftime('%H:%M') }}", size: 110, bold: true, x: 40, y: 20, w: 450, h: 140, align: "left" },
       { type: "text", value: "{{ now().strftime('%A, %-d %B') }}", size: 36, bold: false, x: 44, y: 168, w: 500, h: 46, align: "left" },
       { type: "icon", icon: "mdi:clock-outline", x: 620, y: 40, w: 120, h: 120 },
     ] }],
+  },
+  {
+    // For anyone who wants only the day and date, on any device (framework review #10).
+    id: "date", group: "day", title: "Date", desc: "Today's weekday, large, and the date.", kw: "day weekday today",
+    asks: "", looks: [{ id: "date", name: "Date", make: () => DATE_LOOK.make() }],
   },
   {
     id: "calendar", group: "day", title: "Calendar", kw: "agenda month events",
@@ -340,6 +345,10 @@ export const DATE_LOOK = { id: "date", name: "Date", make: () => [
   { type: "text", value: "{{ now().strftime('%-d %B %Y') }}", size: 40, bold: false, x: 44, y: 152, w: 560, h: 52, align: "left" },
   { type: "icon", icon: "mdi:calendar-today", x: 620, y: 40, w: 120, h: 120 },
 ] };
+/* The 0.15 draft's Clock-becomes-Date at creation, kept off as the way back:
+   it changed a design shared with an always-on device (framework review #10).
+   New page now offers Clock everywhere, says "Shows the date here" on a device
+   that sleeps, and the renderer does the rest (render/clocktime.py). */
 export function forDevice(p, sleeps) {
   if (p.id !== "clock" || !sleeps) return p;
   return { ...p, title: "Date", kw: `${p.kw} clock day weekday`, looks: [DATE_LOOK],
@@ -441,7 +450,8 @@ export function withUnits(elements, unitOf = () => "") {
   return elements.map((el) => {
     if (el.unit !== "entity" && el.max_val !== "power") return el;
     const e = { ...el }, u = e.entity ? String(unitOf(e.entity) || "") : "";
-    if (e.unit === "entity") { delete e.unit; if (u) e.suffix = u === "%" ? "%" : ` ${u}`; else delete e.suffix; }
+    // No unit is an empty suffix, not a missing one: a gauge with none would add its own "%".
+    if (e.unit === "entity") { delete e.unit; e.suffix = !u ? "" : u === "%" ? "%" : ` ${u}`; }
     if (e.max_val === "power") { e.max_val = POWER_MAX[u] ?? 5000; if (u === "kW" || u === "MW") e.decimals = 1; }
     return e;
   });

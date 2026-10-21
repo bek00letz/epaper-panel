@@ -239,6 +239,17 @@
   house power and the solar power, the Energy dashboard's own picked first.
   Before, two of its three gauges started empty.
 
+- **Clock is offered on every device**, and on one that sleeps between
+  updates its card says "Shows the date here": the device draws the date in
+  place of the time by itself, so pages shared with an always-on device keep
+  their clock there. **Date** is a preset of its own for anyone who wants
+  only the day and date.
+
+- **Fixed:** a gauge with no sensor showed a made-up "68%", and a gauge whose
+  sensor has no unit added "%" of its own. With no value it now shows an
+  empty gauge and no number; it shows its sensor's unit, or none, and its
+  decimals ("1.8 kW").
+
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) for the quiet-hours fix below.
