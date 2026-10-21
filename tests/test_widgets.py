@@ -262,6 +262,7 @@ class TestEnergyForTheEditor(EditorClient):
 # ---------------------------------------------------------------- watch and listen
 
 from render import media, subitems  # noqa: E402
+from sources import racing  # noqa: E402
 from sources import home  # noqa: E402
 
 PLAYING = [{"entity": "media_player.tv", "key": "media_player.tv", "player": "Living room TV", "title": "Trojan's Horse",
@@ -326,7 +327,7 @@ class TestTvWeek(Sizes, unittest.TestCase):
 
 # ---------------------------------------------------------------- weather from your own station
 
-from sources import station  # noqa: E402
+from sources import ha_services, station  # noqa: E402
 
 
 class TestStation(unittest.TestCase):
@@ -427,7 +428,7 @@ class TestStationInTheRenderCycle(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(kw, {"now_entity": "weather.idumbr13"})
             return {"temperature": 23, "condition": "partlycloudy"}
         with unittest.mock.patch.object(station, "fetch_station", reader), \
-             unittest.mock.patch.object(frames, "fetch_weather_forecast", unittest.mock.AsyncMock(return_value=None)):
+             unittest.mock.patch.object(ha_services, "fetch_weather_forecast", unittest.mock.AsyncMock(return_value=None)):
             await frames.enrich_page_values(None, {"elements": [el]}, vals)
         self.assertEqual((vals[0]["temperature"], vals[0]["condition"], vals[0]["unit"]), (23, "partlycloudy", "°C"))
 
@@ -704,3 +705,60 @@ class TestEveryLeagueHasItsExample(unittest.TestCase):
         self.assertEqual(set(examples._TEAMS), offered, "every offered league has its own teams, and only those")
         for path in offered:
             self.assertNotIn(examples.match(path)["home_team"], ("HOME", "AWAY"), path)
+
+
+# ---------------------------------------------------------------- one descriptor per widget, one catalog
+
+import widgets  # noqa: E402
+
+
+class TestWidgetDescriptors(unittest.TestCase):
+    def test_every_widget_the_panel_draws_from_a_value_is_described(self):
+        drawn = set(layout.WIDGETS) | {"weather_forecast", "calendar_month", "calendar_agenda", "todo_list",
+                                       "flight_tracker", "sports_racing", "sports_match", "dynamic_grid"}
+        self.assertEqual(set(widgets.WIDGETS), drawn)
+        for t, w in widgets.WIDGETS.items():
+            self.assertIn(t, layout.DRAWERS, t)
+            d = w.describe()
+            self.assertTrue(d["name"] and d["icon"] and isinstance(d["box"], dict) and isinstance(d["fields"], list), t)
+
+    def test_how_often_it_changes_comes_from_its_fetchers(self):
+        self.assertEqual(widgets.get("now_playing").changes_every(), 10)
+        self.assertEqual(widgets.get("grid_now").changes_every(), 15)
+        self.assertEqual(widgets.get("sports_racing").changes_every(), racing.fetch_racing_data.interval)
+        self.assertEqual(widgets.get("weather_forecast").changes_every(), 60)       # your station's, the faster
+        self.assertIsNone(widgets.get("dynamic_grid").changes_every())               # as Home Assistant's states do
+
+    def test_every_widget_with_a_fetch_has_an_example(self):
+        for t, w in widgets.WIDGETS.items():
+            self.assertEqual(w.fetch is None, w.example is None, t)
+
+    def test_items_of_a_page_come_from_the_descriptors(self):
+        self.assertEqual(subitems.WIDGET_ITEMS, {t: w.items for t, w in widgets.WIDGETS.items() if w.items})
+
+
+class TestCatalog(EditorClient):
+    async def test_the_editor_reads_the_servers_tables(self):
+        got = await (await self.ed.get("/api/catalog")).json()
+        self.assertEqual([lg["path"] for lg in got["leagues"]], [lg.path for lg in sports.LEAGUES])
+        nfl = next(lg for lg in got["leagues"] if lg["slug"] == "nfl")
+        self.assertEqual((nfl["sensor"], nfl["words"]["event"]), ("sensor.epaper_sports_nfl", "game"))
+        nascar = next(s for s in got["series"] if s["slug"] == "nascar")
+        self.assertIn("nascar_cup", nascar["aliases"])
+        self.assertEqual({s["slug"] for s in got["series"]}, set(racing.SERIES), "every series is offered")
+        self.assertEqual(got["sport_words"]["soccer"]["event"], "match")
+        self.assertEqual(got["states"]["binary_sensor.motion"]["on"]["word"], "Detected")
+        self.assertEqual(set(got["widgets"]), set(widgets.WIDGETS))
+        self.assertEqual(got["widgets"]["now_playing"]["changes_every"], 10)
+        self.assertIn(got["time_format"], ("12h", "24h"))
+
+
+class TestNoGuessedWeather(unittest.IsolatedAsyncioTestCase):
+    async def test_a_weather_widget_without_one_shows_the_first_home_assistant_has(self):
+        async def states(session, path, **kw):
+            return [{"entity_id": "sensor.x"}, {"entity_id": "weather.zz_station"}, {"entity_id": "weather.home"}]
+        import runtime
+        with unittest.mock.patch.object(ha_services, "HA_TOKEN", "t"), unittest.mock.patch.object(ha_services, "ha_json", states), \
+             unittest.mock.patch.dict(runtime.ENTITY_CACHE, {"items": []}):
+            self.assertEqual(await ha_services.default_weather(None), "weather.home")
+        self.assertNotIn(0, layout.collect_templates({"elements": [{"type": "weather_forecast"}]}))

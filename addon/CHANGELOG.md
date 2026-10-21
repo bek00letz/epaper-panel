@@ -121,6 +121,8 @@
   or water meter) can show how much it went up today, from Home
   Assistant's long-term statistics, in the sensor's own unit, instead of
   "18,532 kWh produced today".
+- **A Weather widget with no weather chosen shows the first one Home
+  Assistant has**, instead of assuming it's called "Forecast Home".
 - **Fixed:** a Race weekend page set to NASCAR or IndyCar showed Formula 1's
   race, drivers and status. Each series now reads its own results, and its
   page names it ("NASCAR · …"). Whether the page shows still followed the

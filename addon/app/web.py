@@ -432,6 +432,31 @@ async def _drawn(request, body: dict, page: dict, vals: dict, series: dict, toda
                         headers={"X-Metrics": json.dumps(metrics)})
 
 
+async def api_catalog(request):
+    """Everything the editor needs to know that the server keeps (framework review #5): the leagues and
+    racing series offered, each sport's words, state words by device, each widget's descriptor (name,
+    box, fields, how often its value changes) and the time format. One request at the editor's start;
+    the editor keeps no copies of these tables."""
+    import timeformat
+    import widgets
+    from render import sport, states
+    from sources import racing, sports
+    from sources.geo import get_home_locale
+
+    def said(w):
+        return {"event": w.event, "start": w.start, "day": w.day}
+    return web.json_response({
+        "leagues": [{"path": lg.path, "slug": lg.slug, "name": lg.name, "aliases": list(lg.aliases),
+                     "sensor": lg.sensor, "words": said(sport.words(lg.path))} for lg in sports.LEAGUES],
+        "series": [{"slug": s.slug, "code": s.code, "title": s.title, "aliases": list(s.aliases),
+                    "sensor": f"sensor.epaper_racing_{s.slug}"} for s in racing.SERIES.values()],
+        "sport_words": {**{k: said(v) for k, v in sport.SPORTS.items()}, "other": said(sport.OTHER)},
+        "states": states.catalog(),
+        "widgets": widgets.catalog(),
+        "time_format": timeformat.describe(*await get_home_locale(runtime.SESSION))["resolved"],
+    })
+
+
 async def api_shows_time(request):
     """Which elements of a page show the time of day, however they're written (render/clocktime.py):
     {"time": [index...]}. The editor asks here instead of matching strings of its own."""
@@ -1058,6 +1083,7 @@ def make_apps():
         web.get("/api/aircraft", api_aircraft),
         web.get("/api/airport", api_airport),
         web.get("/api/energy", api_energy),
+        web.get("/api/catalog", api_catalog),
         web.post("/api/shows-time", api_shows_time),
         web.get("/api/settings/time", api_time_get),
         web.put("/api/settings/time", api_time_put),

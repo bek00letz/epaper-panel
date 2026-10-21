@@ -2240,8 +2240,9 @@ def collect_templates(page):
                     "{% if not loop.last %},{% endif %}{% endfor %}]"
                 )
                 out[i] = tpl
-        elif el.get("type") == "weather_forecast":
-            ent = str(el.get("entity") or "weather.forecast_home").strip()
+        elif el.get("type") == "weather_forecast" and str(el.get("entity") or "").strip():
+            # No entity: the render cycle picks the first Home Assistant has (widgets.py); never a guessed ID.
+            ent = str(el.get("entity") or "").strip()
             ent_q = f"'{binding._quote(ent)}'"
             tpl = (
                 "{"

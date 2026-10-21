@@ -103,7 +103,7 @@ class TestFetching(unittest.IsolatedAsyncioTestCase):
         data = {"entity": "todo.chores", "name": "Chores", "items": [item("Bins out")]}
         page = {"elements": [{"type": "todo_list", "entity": "todo.chores"}, {"type": "todo_list", "entity": "nope"}]}
         vals = {}
-        with mock.patch.object(frames, "fetch_todo_items", mock.AsyncMock(return_value=data)) as fetch, \
+        with mock.patch.object(ha_services, "fetch_todo_items", mock.AsyncMock(return_value=data)) as fetch, \
              mock.patch.object(frames, "get_home_timezone", mock.AsyncMock(return_value="Europe/Bucharest")):
             await frames.enrich_page_values(None, page, vals)
         fetch.assert_awaited_once_with(None, "todo.chores")

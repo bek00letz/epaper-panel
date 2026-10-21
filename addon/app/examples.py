@@ -166,25 +166,9 @@ def page_values(page: dict, now: datetime | None = None) -> tuple[dict, dict]:
             continue
         if t in ("curve", "bar_chart"):
             series[i] = curve
-        elif t == "todo_list":
-            got = fixture_todo(str(el.get("entity") or "todo.chores")) or fixture_todo("todo.chores")
-            vals[i] = {**got, "tz": tz} if got else None
-        elif t == "flight_tracker":
-            vals[i] = AIRCRAFT
-        elif t == "sports_match":
-            vals[i] = match(el.get("league") or el.get("entity") or "soccer/eng.1")
-        elif t == "sports_racing":
-            vals[i] = race(el.get("series") or "f1")
-        elif t == "sun_times":
-            vals[i] = {**sun(now), "tz": tz}
-        elif t == "energy_total":
-            vals[i] = total(str(el.get("period") or "month"), now)
-        elif t == "grid_now":
-            vals[i] = grid(now)
-        elif t == "energy_cost":
-            vals[i] = dict(COST)
-        elif t == "now_playing":
-            vals[i] = list(PLAYING)
-        elif t == "tv_week":
-            vals[i] = {"events": episodes(now), "tz": tz}
+            continue
+        import widgets                              # widgets.py describes each widget with its example
+        w = widgets.get(t)
+        if w and w.example:
+            vals[i] = w.example(el, now)
     return vals, series
