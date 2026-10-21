@@ -472,6 +472,14 @@ export const PRESET_ICONS = {
   sports_match: `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m4.93 4.93 4.24 4.24M14.83 9.17l4.24-4.24M14.83 14.83l4.24 4.24M9.17 14.83l-4.24 4.24"/></svg>`
 };
 
+// A to-do list page shows while its list has something to do: the list's own
+// state is how many items are open. Written as the simple form writes it
+// (conditions.compileShowIf), so it reads back as "is above 0".
+export function todoShowIf(ent) {
+  ent = String(ent || "").trim().replace(/'/g, "");
+  return ent ? `{{ has_value('${ent}') and states('${ent}') | float(0) > 0 }}` : "";
+}
+
 // The sensor a Jellyfin source makes; "watch" is the name it's seeded with.
 const watchEnt = (ent) => ent || "sensor.epaper_watch";
 
@@ -518,6 +526,17 @@ export const PRESETS = [
         show_border: true,
         entity: ent || ""
       }
+    ]
+  },
+  {
+    id: "to_do",
+    title: "To-do list",
+    desc: "A to-do list from Home Assistant, what's due first. Only shows while there's something to do.",
+    asks: "todo",
+    tier: "when",
+    showIf: (ent) => todoShowIf(ent),
+    makeElements: (ent) => [
+      { type: "todo_list", x: 40, y: 14, w: 712, h: 220, entity: ent || "" }
     ]
   },
   {

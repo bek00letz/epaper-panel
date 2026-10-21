@@ -18,6 +18,11 @@
 - **The device menu can remove a device too.** Under the device's name: your
   devices, then Rename and Remove, then Add new device. Removing shows an
   Undo, as in Settings.
+- **To-do lists as a page.** New page › To-do list shows any to-do list in
+  Home Assistant (the shopping list, Local To-do, Google Tasks, Todoist):
+  what's still to do, anything with a due date first, Overdue and Today
+  marked, then "and 4 more" when they don't all fit. It shows only while
+  the list has something on it. Also under Insert › Widgets.
 - **Alerts can end when something happens**, not only after a time. Under
   Ends, choose When something happens and pick what ends it: "Watch battery
   is below 20" until "Watch is charging" stays up until you put it on the

@@ -17,7 +17,15 @@
     "sensor.epaper_watch_count":     {"state": "2", "unit": null, "friendly_name": "Next to watch count"},
     "timer.dryer_cycle":             {"state": "idle", "unit": null, "friendly_name": "Dryer Timer", "remaining": "0:42:00", "duration": "1:00:00"},
     "person.partner":                {"state": "home", "unit": null, "friendly_name": "Partner", "in_zones": ["zone.home"]},
-    "sensor.partner_distance":       {"state": "450", "unit": "m", "friendly_name": "Partner Distance"}
+    "sensor.partner_distance":       {"state": "450", "unit": "m", "friendly_name": "Partner Distance"},
+    "todo.shopping_list":            {"state": "7", "friendly_name": "Shopping list"},
+    "todo.chores":                   {"state": "4", "friendly_name": "Chores"}
+  },
+  "todo": {
+    "todo.shopping_list": [{"summary": "Oat milk"}, {"summary": "Coffee beans"}, {"summary": "Sourdough"}, {"summary": "Lemons"},
+                           {"summary": "Cat food"}, {"summary": "Dish soap"}, {"summary": "Tomatoes"}],
+    "todo.chores": [{"summary": "Bins out", "due_in_days": 0}, {"summary": "Water the plants", "due_in_days": -1},
+                    {"summary": "Change the bed", "due_in_days": 2}, {"summary": "Descale the kettle"}]
   },
   "pv_curve_w": [1.8, 1.8, 1.0, 2.0, 2.1, 2.1, 1.1, 13.1, 219.1, 817.7, 806.7, 738.4,
                  1038.7, 1398.7, 2905.8, 1710.6, 563.4, 342.0, 70.1],

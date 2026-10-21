@@ -32,6 +32,7 @@ export const TYPES = {
   dynamic_grid: { name: "Devices", icon: "grid" },
   calendar_month: { name: "Month", icon: "calendar" },
   calendar_agenda: { name: "Agenda", icon: "list" },
+  todo_list: { name: "To-do list", icon: "todo" },
   flight_tracker: { name: "Flights", icon: "plane" },
   sports_racing: { name: "Racing", icon: "flag" },
   sports_match: { name: "Match", icon: "ball" },
@@ -53,9 +54,9 @@ export function groupBox(group, els) {
 export const INSERT_GROUPS = [
   ["Basics", ["text", "number", "icon", "box", "line"]],
   ["Charts", ["bar", "curve", "bar_chart"]],
-  ["Widgets", ["weather_forecast", "calendar_month", "calendar_agenda", "dynamic_grid", "flight_tracker", "sports_racing", "sports_match", "qr"]],
+  ["Widgets", ["weather_forecast", "calendar_month", "calendar_agenda", "todo_list", "dynamic_grid", "flight_tracker", "sports_racing", "sports_match", "qr"]],
 ];
-export const WIDGETS = ["dynamic_grid", "calendar_month", "calendar_agenda", "weather_forecast", "flight_tracker", "sports_racing", "sports_match"];
+export const WIDGETS = ["dynamic_grid", "calendar_month", "calendar_agenda", "todo_list", "weather_forecast", "flight_tracker", "sports_racing", "sports_match"];
 export const BREAKABLE = ["weather_forecast", "flight_tracker", "calendar_agenda", "sports_match", "sports_racing"];
 export const isWidget = (el) => WIDGETS.includes(el.type);
 export const hasText = (el) => el.type === "text" || el.type === "number";
@@ -76,6 +77,7 @@ export function makeElement(t, g) {
   if (t === "dynamic_grid") Object.assign(base, { y: 16, w: maxW, h: g.safeH - 24, header_icon: "mdi:lightning-bolt", header_title: "On now", filter_state: "on", layout_mode: "grid", show_labels: "both", icon_size: "auto", secondary_mode: "runtime", items: [{ entity: "", name: "Spot 1", icon: "mdi:radiator" }, { entity: "", name: "Spot 2", icon: "mdi:radiator" }] });
   if (t === "calendar_month") Object.assign(base, { x: 20, y: 14, w: Math.min(360, maxW), h: Math.min(230, g.safeH - 20), show_header: true, show_weekdays: true, first_weekday: 0, highlight_today: true, show_border: true, entity: "" });
   if (t === "calendar_agenda") Object.assign(base, { x: m, y: 14, w: Math.min(380, maxW), h: Math.min(230, g.safeH - 20), title: "Coming up", max_events: 4, show_border: true, entity: "" });
+  if (t === "todo_list") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20, entity: "" });
   if (t === "weather_forecast") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20, entity: "weather.forecast_home", show_border: true });
   if (t === "flight_tracker") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20, radius: 35, style: "card", show_border: true });
   if (t === "sports_racing") Object.assign(base, { y: 14, w: maxW, h: g.safeH - 20, series: "f1", entity: "", show_border: true });

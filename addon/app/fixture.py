@@ -22,6 +22,24 @@ def load_fixture():
     return _fixture_cache
 
 
+def fixture_todo(entity_id: str) -> dict | None:
+    """A to-do list as fetch_todo_items gives it, offline. Due dates are
+    counted from today (`due_in_days`), so the sample never goes stale."""
+    fx = load_fixture()
+    items = (fx.get("todo") or {}).get(entity_id)
+    if items is None:
+        return None
+    today = datetime.now().date()
+    out = []
+    for k, raw in enumerate(items):
+        due = raw.get("due") or ""
+        if raw.get("due_in_days") is not None:
+            due = (today + timedelta(days=int(raw["due_in_days"]))).isoformat()
+        out.append({"uid": f"{entity_id}-{k}", "summary": raw.get("summary", ""), "status": "needs_action", "due": due})
+    name = ((fx.get("states") or {}).get(entity_id) or {}).get("friendly_name") or entity_id
+    return {"entity": entity_id, "name": name, "items": out}
+
+
 def eval_fixture_template(tpl: str) -> str:
     """Evaluate common HA templates against fixture.json when running offline."""
     states = dict(load_fixture().get("states", {}))

@@ -1,4 +1,4 @@
-"""Weather forecasts and calendar events, through Home Assistant's actions."""
+"""Weather forecasts, calendar events and to-do lists, through Home Assistant's actions."""
 
 import health
 import json
@@ -6,7 +6,8 @@ import time
 import urllib.parse
 
 import runtime
-from config import HA_TOKEN
+from config import HA_TOKEN, valid_entity_id
+from fixture import fixture_todo
 from ha import ha_json
 
 
@@ -132,3 +133,37 @@ async def fetch_calendar_events(session, entity_id, days=31, fallback=None):
     except Exception as exc:
         print(f"fetch_calendar_events error for {raw_eid}: {health.describe(exc)}", flush=True)
         return fallback
+
+
+def todo_list_id(entity_id) -> str:
+    """A to-do list's entity ID, or "" if it isn't one."""
+    eid = str(entity_id or "").strip()
+    return eid if eid.startswith("todo.") and valid_entity_id(eid) else ""
+
+
+@runtime.live(60)
+async def fetch_todo_items(session, entity_id, fallback=None):
+    """A to-do list's open items, in the list's own order, and its name:
+    {"entity", "name", "items": [{"uid", "summary", "due"}...]}.
+
+    Through Home Assistant's `todo.get_items`, so it works for every kind of
+    list (Shopping list, Local To-do, Google Tasks, Todoist...). A failure
+    raises, so the last list it had stays on the page.
+    """
+    eid = todo_list_id(entity_id)
+    if not eid:
+        return fallback
+    if not HA_TOKEN:
+        return fixture_todo(eid)
+    st = await ha_json(session, f"/states/{urllib.parse.quote(eid, safe='.')}")
+    resp = await ha_json(session, "/services/todo/get_items?return_response=1",
+                         method="POST", json={"entity_id": eid, "status": ["needs_action"]})
+    payload = (resp.get("service_response") or resp.get("response") or resp) if isinstance(resp, dict) else {}
+    found = payload.get(eid) if isinstance(payload, dict) else None
+    if not isinstance(found, dict) or not isinstance(found.get("items"), list):
+        raise ValueError(f"{eid} gave no items")
+    items = [{"uid": str(i.get("uid") or ""), "summary": str(i.get("summary") or "").strip(),
+              "status": i.get("status") or "needs_action", "due": i.get("due") or ""}
+             for i in found["items"] if isinstance(i, dict)]
+    name = ((st or {}).get("attributes") or {}).get("friendly_name") or eid.split(".", 1)[1].replace("_", " ").capitalize()
+    return {"entity": eid, "name": str(name), "items": items}

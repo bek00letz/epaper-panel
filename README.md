@@ -251,6 +251,16 @@ A page that appears or disappears reaches the panel at its next update, so a
 panel that sleeps between updates isn't woken for it. On an always-on panel,
 alerts, quiet hours and **Send to panel** reach it at once.
 
+### To-do lists
+
+**New page › To-do list** shows any to-do list in Home Assistant: the
+shopping list, Local To-do, Google Tasks, Todoist. What's still to do, with
+anything that has a due date first (Overdue and Today stand out), then the
+rest in the list's own order. As many as fit at a readable size, then "and 4
+more". It shows only while the list has something on it; turn that off with
+**Only show when there's something to do**. The panel only shows the list;
+tick things off in Home Assistant or the list's own app.
+
 ### The rotation
 
 The page strip is the rotation. Drag a page to move it, **Show again** puts

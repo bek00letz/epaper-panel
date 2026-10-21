@@ -2,7 +2,7 @@
 // the same Home Assistant template 0.9 wrote, and reads it back. Anything the
 // form can't express stays a custom template, untouched.
 
-import { getWidgetSensorId } from "./legacy.js";
+import { getWidgetSensorId, todoShowIf } from "./legacy.js";
 
 const NO_VALUE = ["unavailable", "unknown"];
 
@@ -73,6 +73,15 @@ export function describe(showIf, entMap) {
 const BUILTIN_MARKERS = ["sensor.epaper_sports_", "sensor.sports_", "sensor.epaper_racing_", "sensor.f1_status", "sensor.formula_e_status", "sensor.epaper_flights_overhead", "sensor.overhead_aircraft_count"];
 export function syncWidgetShowIf(page, widgetEl) {
   if (!page || page.tier !== "when") return;
+  const list = widgetEl?.type === "todo_list" ? widgetEl : !widgetEl && (page.elements || []).find((x) => x.type === "todo_list");
+  if (list) {
+    // Ours to rewrite only while it's still a to-do list's own condition.
+    const cur = parseShowIf(page.show_if);
+    if (page.show_if && !(cur.mode === "simple" && /^(todo\.|sensor\.epaper_todo_)/.test(cur.ent))) return;
+    const c = todoShowIf(list.entity);
+    if (c) page.show_if = c; else delete page.show_if;
+    return;
+  }
   widgetEl = widgetEl || (page.elements || []).find((x) => ["sports_match", "sports_racing", "flight_tracker"].includes(x.type));
   if (!widgetEl) return;
   const cur = String(page.show_if || "").trim();

@@ -126,6 +126,7 @@ function element(app, head, body, el, i) {
     r.addEventListener("input", () => { pct.textContent = Math.round(r.value * 100) + "%"; });
     r.addEventListener("change", () => set("font_scale", Number(r.value) === 1 ? "" : Number(r.value)));
     body.append(section("Text size", h("div", { class: "rangerow" }, h("span", { class: "rmin", "aria-hidden": "true", text: "A" }), r, h("span", { class: "rmax", "aria-hidden": "true", text: "A" }), pct),
+      legibility(app, i, el),                       // for a widget whose renderer reports its size (a to-do list)
       BREAKABLE.includes(el.type) ? h("div", { class: "btnrow" }, h("button", { class: "btn tinted", onclick: () => {
         const parts = explodeWidget(el);
         if (!parts.length) return;
@@ -276,6 +277,8 @@ const TYPE_FIELDS = {
   curve: [F.entity("entity", "Sensor"), F.num("hours", "Hours", "24", 1, 168)],
   bar_chart: [F.entity("entity", "Sensor"), F.text("title", "Title", "Last 24 hours"), F.num("hours", "Hours", "24", 1, 168), F.num("bars", "Bars", "12", 2, 48), F.on("show_labels", "Lowest and highest", true), F.on("show_border", "Border", false)],
   calendar_month: [F.entity("entity", "Calendar", ["calendar"]), F.sel("first_weekday", "Week starts", [["0", "Monday"], ["6", "Sunday"]], "0"), F.on("show_header", "Month name", true), F.on("show_weekdays", "Weekday names", true), F.on("highlight_today", "Mark today", true), BORDER_ON],
+  todo_list: [F.entity("entity", "List", ["todo"]), F.text("title", "Title", "The list's name"),
+    { kind: "window", label: "Only show when there's something to do" }],
   calendar_agenda: [F.entity("entity", "Calendar", ["calendar"]), F.text("title", "Title", "Coming up"), F.sel("max_events", "Events", [["2", "2, extra large"], ["3", "3, large"], ["4", "4"], ["5", "5"], ["6", "6"]], "4"), F.on("show_sub", "Times and places", true), BORDER_ON],
   weather_forecast: [F.entity("entity", "Weather", ["weather"]), F.sel("layout_mode", "Layout", [["auto", "Fit the box"], ["split", "Now and forecast side by side"], ["stacked", "Now above the forecast"], ["hero_only", "Now only, very large"], ["forecast_only", "Forecast only"]], "auto"),
     F.sel("forecast_days", "Days", [["3", "3"], ["4", "4"], ["5", "5"]], "4"), F.on("show_details", "Humidity and wind", true), BORDER_ON],
@@ -300,7 +303,11 @@ function typeSections(app, el, set, i) {
   const s = section(TYPES[el.type]?.name || "Settings");
   for (const f of fields) {
     if (f.when && !f.when(el)) continue;
-    if (f.kind === "entity") s.append(field(f.label, entityButton(app, el[f.key], (id) => set(f.key, id), { domains: f.domains, allowNone: true })));
+    if (f.kind === "entity") s.append(field(f.label, entityButton(app, el[f.key], (id) => {
+      // A to-do list's page shows by its list: follow it, in the same undo step.
+      if (el.type === "todo_list" && app.doc.page().tier === "when") { el[f.key] = id; syncWidgetShowIf(app.doc.page(), el); }
+      set(f.key, id);
+    }, { domains: f.domains, allowNone: true })));
     else if (f.kind === "text") s.append(field(f.label, input(el[f.key], (v) => set(f.key, v), { placeholder: f.ph || "" })));
     else if (f.kind === "num") s.append(field(f.label, number(el[f.key], (v) => set(f.key, v), { placeholder: f.ph || "", min: f.min, max: f.max, step: f.step })));
     else if (f.kind === "sel") s.append(field(f.label, select(f.options, el[f.key] ?? f.def, (v) => {

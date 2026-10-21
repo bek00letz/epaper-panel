@@ -27,6 +27,7 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from . import theme as T
 from . import binding
+from . import todo
 from . import units
 from .binding import template_for
 from .qr import encode_qr_matrix
@@ -1045,6 +1046,84 @@ def _draw_calendar_month(img, d, el, raw_val, display=None):
                     d.ellipse([(cx - 2, cy + cell_f_sz // 2 + 2), (cx + 2, cy + cell_f_sz // 2 + 5)], fill=T.BLACK)
 
 
+# A to-do list (render/todo.py says what it shows). Sizes are the 5.79"'s and
+# scale with the element's text size; hierarchy is size and weight, no grey.
+TODO_ITEM_PX = 28
+TODO_HEAD_PX = 22
+
+
+def _shorten(s, f, max_w):
+    return T._ellipsize(s, f, max_w) or T._ellipsize(s, f, max_w, min_chars=1) or ""
+
+
+def _draw_todo_list(img, d, el, raw_val, metrics=None, distance_m=3.0, display=None):
+    x, y, w, h = _clamp_box(el, 712, 220, display=display)
+    fscale = _font_scale(el)
+    show = el.get("show") if el.get("show") in todo.SHOWS else "open"
+    data = raw_val if isinstance(raw_val, dict) else None
+    now = todo.now_in((data or {}).get("tz"))
+
+    item_px = _s(TODO_ITEM_PX, fscale, 12, 96)
+    head_px = _s(TODO_HEAD_PX, fscale, 11, 64)
+    if metrics is not None:
+        mm, verdict = legibility(item_px, distance_m=distance_m, display=display)
+        metrics.append({"size": item_px, "mm": mm, "verdict": verdict, "lines": 1, "overflow": False})
+
+    head_f, item_f = T.font(head_px, bold=True), T.font(item_px, bold=False)
+    head_mid = y + head_px // 2 + 2
+    title = str(el.get("title") or (data or {}).get("name") or "").strip()
+    if not str(el.get("entity") or "").strip():
+        d.text((x + w // 2, y + h // 2), "Choose a to-do list", font=T.font(item_px, bold=True), fill=T.BLACK, anchor="mm")
+        return
+    if data is None:                                   # not fetched yet: the name, nothing else
+        d.text((x, head_mid), _shorten(title, head_f, w), font=head_f, fill=T.BLACK, anchor="lm")
+        return
+
+    items = todo.items_for(data.get("items"), show, now)
+    count = todo.count_label(len(items), show) if items else ""   # empty says so below
+    count_w = T.text_width(count, head_f) if count else 0
+    if count:
+        d.text((x + w, head_mid), count, font=head_f, fill=T.BLACK, anchor="rm")
+    if title:
+        d.text((x, head_mid), _shorten(title, head_f, max(1, w - count_w - 16)), font=head_f, fill=T.BLACK, anchor="lm")
+
+    top = y + head_px + max(8, item_px // 3)
+    if not items:
+        d.text((x + w // 2, (top + y + h) // 2), todo.empty_text(show), font=T.font(item_px, bold=True), fill=T.BLACK, anchor="mm")
+        return
+
+    row_h, n_shown, more = todo.fit(len(items), y + h - top, item_px)
+    shown = items[:n_shown]
+
+    box = round(item_px * 0.72)                        # the empty square before each item
+    stroke = max(4, round(box / 6))                    # thinner disappears on e-ink
+    label_px = max(10, round(item_px * 0.8))
+    label_f = T.font(label_px, bold=True)
+    for k, item in enumerate(shown):
+        mid = top + k * row_h + row_h // 2
+        d.rounded_rectangle([(x, mid - box // 2), (x + box, mid + box // 2)], radius=max(2, box // 5),
+                            outline=T.BLACK, width=stroke)
+        tx = x + box + max(10, item_px // 2)
+        right = x + w
+        label, urgent = todo.due_label(item, now)
+        if label:
+            lw = T.text_width(label, label_f)
+            if urgent:                                 # overdue or today: inverted
+                ph, pad = label_px + 8, 8
+                d.rounded_rectangle([(right - lw - pad * 2, mid - ph // 2), (right, mid + ph // 2)],
+                                    radius=ph // 2, fill=T.BLACK)
+                d.text((right - pad, mid), label, font=label_f, fill=T.WHITE, anchor="rm")
+                right -= lw + pad * 2 + 12
+            else:
+                d.text((right, mid), label, font=label_f, fill=T.BLACK, anchor="rm")
+                right -= lw + 12
+        d.text((tx, mid), _shorten(str(item.get("summary") or ""), item_f, max(1, right - tx)),
+               font=item_f, fill=T.BLACK, anchor="lm")
+    if more:
+        mid = top + len(shown) * row_h + row_h // 2
+        d.text((x + box + max(10, item_px // 2), mid), f"and {more} more", font=item_f, fill=T.BLACK, anchor="lm")
+
+
 def _draw_calendar_agenda(img, d, el, raw_val, display=None):
     x, y, w, h = _clamp_box(el, 375, 250, display=display)
     fscale = _font_scale(el)
@@ -1988,6 +2067,7 @@ DRAWERS = {
     "dynamic_grid": _draw_dynamic_grid,
     "calendar_month": _draw_calendar_month,
     "calendar_agenda": _draw_calendar_agenda,
+    "todo_list": _draw_todo_list,
     "weather_forecast": _draw_weather_forecast,
     "flight_tracker": _draw_flight_tracker,
     "sports_racing": _draw_sports_racing,
@@ -2089,6 +2169,11 @@ def render_page(page, vals, *, clock="", label="", footer=None, page_no=None, it
         try:
             if el["type"] in ("curve", "bar_chart"):
                 drawer(img, d, el, "", (series or {}).get(i), display=display)
+            elif el["type"] == "todo_list":
+                got = []
+                drawer(img, d, el, vals.get(i), got, distance_m=distance_m, display=display)
+                if metrics is not None and got:
+                    metrics.append({"i": i, **got[0]})
             elif el["type"] in ("text", "number"):
                 got = []
                 drawer(img, d, el, element_text(el, vals, i), got, distance_m=distance_m, display=display)

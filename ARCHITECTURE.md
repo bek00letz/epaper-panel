@@ -55,7 +55,7 @@ Where things live in `addon/app/`:
 | `reach.py` / `companion.py` / `companion/epaper_panel/` | Reaching home: how screens away from home get in, and the Home Assistant integration that passes them on |
 | `frames.py` | Per design: which pages are live, their values, alerts. Per device: quiet hours, then its kind renders it |
 | `entities.py` / `mqtt_bridge.py` | The add-on's own values, and mirroring them into Home Assistant |
-| `sources/` | Outside data (flights, sports, racing, weather, calendars), always through `live_data.py` |
+| `sources/` | Outside data (flights, sports, racing, weather, calendars, to-do lists), always through `live_data.py` |
 | `panel_link.py` / `panel_ops.py` | Finding a panel and asking it to refresh or step |
 | `panel_setup.py` / `firmware_gen.py` / `firmware/panel.yaml` | Panel setup, and the one source of the firmware YAML |
 | `web.py` | The device port (shared routes; each kind adds its own) and the Ingress-only editor API |
@@ -308,14 +308,14 @@ render) live in one record inside the add-on, `runtime.PUBLISHED`.
 
 ## Outside data
 
-`live_data.py`. Flights, sports, racing, weather and calendars are fetched in
+`live_data.py`. Flights, sports, racing, weather, calendars and to-do lists are fetched in
 the background; a render only reads what's already there and never waits on
 an outside service. The first read of something new returns at once, using the
 caller's fallback, and schedules the fetch. When it lands, the render loop
 wakes, so a new widget fills in within seconds. A failed fetch keeps the last
 good value, unless it has a `stale_after` age (an aircraft list older than five
 minutes is dropped). Your data sources (`feeds/`) go through the same store,
-each on its own interval. The seven fetchers in `sources/` are decorated `@runtime.live(seconds)`;
+each on its own interval. The eight fetchers in `sources/` are decorated `@runtime.live(seconds)`;
 their own caches still stop them hitting a service more often than it allows.
 The editor's preview (and its aircraft list) wait for fresh data, because
 there a person asked.
@@ -749,6 +749,14 @@ yet", and `hold_minutes` as its limit (`frames.check_alerts`,
 back when the Until is undone while the start still holds. A held alert is
 in memory only: a restart forgets it, and a start that's still true fires
 again.
+
+**To-do lists through Home Assistant's `todo.get_items`**, not each
+service's own API, so every kind of list works (Shopping list, Local To-do,
+Google Tasks, Todoist, CalDAV) with no keys. Home Assistant hands the items
+over in the list's stored order, not by due date, so `render/todo.py`
+orders them (due first, then the list's order) and gives the due labels.
+A list that doesn't fit
+ends with "and 4 more" instead of paging: one calm screen.
 
 **The panel owns which page is shown; the server owns what the pages are.**
 (For an always-on CrowPanel. A TRMNL can't page on its own, and a sleeping
