@@ -5,7 +5,7 @@ import json
 import unittest
 from unittest import mock
 
-import support  # noqa: F401  (puts the add-on on the path)
+import support
 import conditions
 import frames
 import runtime
@@ -206,3 +206,131 @@ class TestAlerts(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------- the editor
+import subprocess  # noqa: E402
+
+CONDITIONS_JS = support.APP / "web" / "app" / "conditions.js"
+INSPECTOR_JS = (support.APP / "web" / "app" / "inspector.js").read_text()
+
+
+def run_js(body):
+    script = f"import * as C from {json.dumps(str(CONDITIONS_JS))};\n{body}"
+    out = subprocess.run(["node", "--input-type=module", "-e", script], capture_output=True, text=True, check=True)
+    return json.loads(out.stdout)
+
+
+class TestTheEditorsForm(unittest.TestCase):
+    def test_writes_what_the_add_on_reads(self):
+        got = run_js("""console.log(JSON.stringify([
+          C.compileShowIf({ent: 'sensor.pawpaw_location', op: 'changed', val: '', minutes: 30}),
+          C.compileShowIf({ent: 'sensor.pawpaw_location', op: 'changed', val: 'Outdoor Cat', minutes: 30}),
+          C.compileShowIf({ent: 'sensor.pawpaw_location', op: 'changed', val: ''}),
+          C.compileShowIf({ent: 'sensor.pawpaw_location', op: 'changed', val: '', minutes: 99999}),
+        ]))""")
+        self.assertEqual(got[:3], [ANY, OUT, ANY])
+        self.assertEqual(conditions.changed(got[3]).minutes, 1440)
+
+    def test_reads_it_back(self):
+        got = run_js(f"console.log(JSON.stringify([C.parseShowIf({json.dumps(ANY)}), C.parseShowIf({json.dumps(OUT)})]))")
+        self.assertEqual(got[0], {"mode": "simple", "ent": CAT, "op": "changed", "val": "", "minutes": 30})
+        self.assertEqual(got[1]["val"], "Outdoor Cat")
+
+    def test_every_other_comparison_is_as_it_was(self):
+        got = run_js("""const out = [];
+          for (const [op, val] of [['eq','on'],['ne','on'],['gt','5'],['lt','5'],['ge','5'],['le','5']]) {
+            const s = C.compileShowIf({ent: 'sensor.x', op, val}); out.push([s, C.parseShowIf(s)]); }
+          console.log(JSON.stringify(out))""")
+        self.assertEqual([s for s, _ in got], [
+            "{{ is_state('sensor.x','on') }}", "{{ has_value('sensor.x') and not is_state('sensor.x','on') }}",
+            "{{ has_value('sensor.x') and states('sensor.x') | float(0) > 5 }}", "{{ has_value('sensor.x') and states('sensor.x') | float(0) < 5 }}",
+            "{{ has_value('sensor.x') and states('sensor.x') | float(0) >= 5 }}", "{{ has_value('sensor.x') and states('sensor.x') | float(0) <= 5 }}"])
+        self.assertTrue(all("minutes" not in p and p["mode"] == "simple" for _, p in got))
+        for s, _ in got:
+            self.assertIsNone(conditions.changed(s), s)
+
+    def test_only_the_add_on_can_say_if_it_holds(self):
+        got = run_js(f"console.log(JSON.stringify(C.evaluate(C.parseShowIf({json.dumps(OUT)}), new Map([['{CAT}', {{state: 'Outdoor Cat'}}]]))))")
+        self.assertIsNone(got, "Home Assistant's last_changed alone would count a restart")
+
+    def line(self, expr, got, **opts):
+        return run_js(f"console.log(JSON.stringify(C.changedLine(C.parseShowIf({json.dumps(expr)}), {json.dumps(got)}, {json.dumps(opts)})))")
+
+    def test_the_status_line(self):
+        out = {"state": "Outdoor Cat", "at": NOW - 18 * 60, "to": "Outdoor Cat", "history": True, "now": NOW}
+        self.assertEqual(self.line(OUT, out), {"holds": True, "note": "",
+                         "text": "Changed to Outdoor Cat 18 min ago, so it shows for 12 more minutes."})
+        self.assertEqual(self.line(OUT, {**out, "at": NOW - 29 * 60 - 30})["text"],
+                         "Changed to Outdoor Cat 29 min ago, so it shows for 1 more minute.")
+        self.assertEqual(self.line(OUT, {**out, "at": None})["text"], "Hidden now: no change to Outdoor Cat in the last 30 minutes.")
+        self.assertEqual(self.line(ANY, {**out, "at": None})["text"], "Hidden now: no change in the last 30 minutes.")
+        indoor = {**out, "state": "Indoor Cat", "to": "Indoor Cat", "at": NOW - 300}
+        self.assertEqual(self.line(OUT, indoor)["text"], "Hidden now: it changed to Indoor Cat 5 min ago.")
+        self.assertFalse(self.line(ANY, {**out, "state": "unavailable"})["holds"])
+
+    def test_as_an_alert(self):
+        out = {"state": "Outdoor Cat", "at": NOW - 4 * 60, "to": "Outdoor Cat", "history": True, "now": NOW}
+        self.assertEqual(self.line(ANY, out, minutes=10, alert="time")["text"],
+                         "Changed to Outdoor Cat 4 min ago, so it shows for 6 more minutes.")
+        self.assertEqual(self.line(ANY, out, minutes=120, alert="until")["text"],
+                         "Changed to Outdoor Cat 4 min ago, so it's showing until something happens.")
+        self.assertEqual(self.line(OUT, {**out, "at": None}, minutes=10, alert="time")["text"], "Waiting for a change to Outdoor Cat.")
+
+    def test_says_when_there_is_no_history(self):
+        got = self.line(ANY, {"state": "Outdoor Cat", "at": NOW - 60, "to": "Outdoor Cat", "history": False, "now": NOW})
+        self.assertIn("restarts count as changes", got["note"])
+
+    def test_in_words(self):
+        got = run_js(f"console.log(JSON.stringify(C.describe({json.dumps(OUT)}, new Map([['{CAT}', {{name: 'Pawpaw Location'}}]]))))")
+        self.assertEqual(got["text"], "Shows for 30 minutes after Pawpaw Location changes to Outdoor Cat")
+
+
+class TestTheInspector(unittest.TestCase):
+    """Wiring, pinned in the source (the editor has no test runner)."""
+
+    def test_offered_for_when_it_shows_not_for_until(self):
+        self.assertIn('select(c === SHOW ? OPS : OPS.filter(([k]) => k !== "changed")', INSPECTOR_JS)
+        self.assertIn('(c !== SHOW && parsed.op === "changed")', INSPECTOR_JS, "a hand-written one stays as written")
+
+    def test_a_page_says_how_long_an_alert_uses_its_hold(self):
+        self.assertIn('field("Shows for"', INSPECTOR_JS)
+        self.assertIn('const minutes = alert ? (p.hold_minutes || HOLD[alert])', INSPECTOR_JS)
+
+    def test_the_status_line_comes_from_the_add_on(self):
+        self.assertIn('api("api/changed?entity="', INSPECTOR_JS)
+        self.assertIn("changedLine(parsed, got, { minutes, alert })", INSPECTOR_JS)
+
+
+class TestTheEndpoint(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        from aiohttp.test_utils import TestClient, TestServer
+        import web
+        support.fresh_data_dir()
+        _, editor = web.make_apps()
+        self.ed = TestClient(TestServer(editor))
+        await self.ed.start_server()
+
+    async def asyncTearDown(self):
+        await self.ed.close()
+        support.use_test_data_dir()
+
+    async def test_answers_with_the_add_ons_clock(self):
+        seen = {"state": "Outdoor Cat", "at": NOW, "to": "Outdoor Cat", "history": True}
+        fetch = mock.AsyncMock(return_value=seen)
+        with mock.patch.object(changes, "fetch_change", fetch):
+            r = await self.ed.get(f"/api/changed?entity={CAT}&minutes=45")
+            body = await r.json()
+        self.assertEqual(r.status, 200)
+        self.assertEqual({k: body[k] for k in seen}, seen)
+        self.assertIn("now", body)
+        self.assertEqual(fetch.await_args.args[1:], (CAT, 45))
+
+    async def test_refuses_what_isnt_an_entity(self):
+        r = await self.ed.get("/api/changed?entity=../states")
+        self.assertEqual(r.status, 400)
+
+    async def test_says_when_home_assistant_didnt_answer(self):
+        with mock.patch.object(changes, "fetch_change", mock.AsyncMock(return_value=None)):
+            r = await self.ed.get(f"/api/changed?entity={CAT}")
+        self.assertEqual(r.status, 502)

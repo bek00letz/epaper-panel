@@ -764,3 +764,11 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
 .zgrip { cursor: grab; touch-action: none; color: var(--fg-2); }
 .zrow.lifted { position: relative; z-index: 2; background: var(--surface); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18); border-radius: var(--r-ctl); transition: none; }
 .zpick .optlist { max-height: 260px; overflow-y: auto; overscroll-behavior: contain; }
+
+/* A "changed" condition's status line (inspector.changedRows): its space is kept
+   while the add-on answers, "checking" only shows if that takes a while. */
+.note.pending { visibility: hidden; }
+.note.waiting { background: var(--fill); color: var(--fg-2); }
+.note.waiting .led { background: var(--fg-3); }
+.note.fresh { animation: fadein var(--t) var(--spring); }
+.cmprow .cmpword { color: var(--fg-2); font-size: 13px; flex: 0 0 auto; }

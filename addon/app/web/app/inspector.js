@@ -5,11 +5,11 @@
 import { h, icon, api, clone, pageTitle, slug, modKey, turning } from "./util.js";
 import { field, input, number, select, seg, textarea, toggle, toggleRow, section, linkButton, toast } from "./ui.js";
 import { TYPES, breakable, isWidget, hasText, elName, normalizeLineParity, GROUP_STYLES, GROUP_PAD } from "./elements.js";
-import { OPS, parseShowIf, compileShowIf, evaluate, describe, syncWidgetShowIf, syncDynamicGridShowIf } from "./conditions.js";
+import { OPS, CHANGED_MINUTES, parseShowIf, compileShowIf, evaluate, describe, changedLine, syncWidgetShowIf, syncDynamicGridShowIf } from "./conditions.js";
 import { explodeWidget, getWidgetSensorId, suggestIconForEntity } from "./legacy.js";
 import { dateEditor, binsEditor } from "./countdown.js";
 import { zonesEditor } from "./zones.js";
-import { staleNote, changesEvery, pageChangesEvery } from "./presets.js";
+import { staleNote, changesEvery, pageChangesEvery, sleepsBetweenUpdates } from "./presets.js";
 import { widget, leagueOptions, seriesOptions, sportWord } from "./catalog.js";
 
 const SHOWS = [["state", "Its value"], ["unit", "Its unit, following the value"], ["attribute", "One of its details"], ["last_changed", "When it last changed"], ["last_updated", "When it last updated"],
@@ -590,6 +590,53 @@ function page(app, head, body) {
   body.append(h("p", { class: "empty-note", text: doc.els().length ? "Select something on the canvas to change it." : "This page is empty. Insert a sensor, text or an icon." }));
 }
 
+// A "changed" condition: how long a page stays after each change (an alert
+// holds for its own Holds for instead), and the status line, which only the
+// add-on can give: it reads the sensor's history, so a Home Assistant restart
+// isn't a change (api/changed, sources/changes.py). Answers are kept a while,
+// so redrawing the inspector doesn't make the line blink.
+const changedAsked = new Map();
+function askChanged(ent, minutes) {
+  const key = ent + "|" + minutes, had = changedAsked.get(key);
+  if (had && Date.now() - had.at < 15000) return had;
+  const entry = { at: Date.now(), got: had?.got, offset: had?.offset ?? 0, done: null };
+  entry.done = api("api/changed?entity=" + encodeURIComponent(ent) + "&minutes=" + minutes)
+    .then((r) => { entry.got = r.body; entry.offset = r.body.now * 1000 - Date.now(); return entry; }, () => { entry.got = entry.got ?? null; return entry; });
+  changedAsked.set(key, entry);
+  return entry;
+}
+function changedRows(app, p, parsed, upd) {
+  const rows = [], alert = p.tier === "alert" ? (p.ends === "until" ? "until" : "time") : "";
+  const minutes = alert ? (p.hold_minutes || HOLD[alert]) : (parsed.minutes || CHANGED_MINUTES);
+  if (!alert) {
+    rows.push(field("Shows for", number(minutes, (v) => upd({ minutes: Math.max(1, Math.min(1440, Math.round(Number(v)) || CHANGED_MINUTES)) }), { min: "1", max: "1440", step: "1" }),
+      { note: "Minutes after each change. Then it leaves the rotation by itself." }));
+    // A device that sleeps longer than the page stays may never wake while it's there.
+    const every = app.screen?.timing?.update_minutes;
+    if (sleepsBetweenUpdates(app.screen) && every > minutes)
+      rows.push(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: `${app.screen?.name || "This device"} updates every ${every} minutes, so it can miss a change that shows for ${minutes}.` })));
+  }
+  // Held back (its space kept) until there's an answer, so it doesn't flash "checking"; kept current while it's in sight.
+  const line = h("div", { class: "note pending", role: "note", "aria-live": "polite" }, h("span", { class: "led" }), h("span", { text: "Checking when it last changed…" }));
+  const extra = h("p", { class: "note info", hidden: true }, icon("info", "sm"), h("span"));
+  const fill = (entry) => {
+    if (entry.got === undefined) return;
+    const got = entry.got && { ...entry.got, now: (Date.now() + entry.offset) / 1000 };
+    const said = changedLine(parsed, got, { minutes, alert });
+    const was = line.classList.contains("pending") || line.classList.contains("waiting");
+    line.className = "note " + (said ? (said.holds ? "good" : "warn") : "bad") + (was ? " fresh" : "");
+    line.lastChild.textContent = said ? said.text : "Home Assistant didn't say when it last changed. It tries again in a moment.";
+    extra.hidden = !said?.note;
+    extra.lastChild.textContent = said?.note || "";
+  };
+  const ask = () => { const e = askChanged(parsed.ent, minutes); fill(e); e.done.then(fill); };
+  ask();
+  setTimeout(() => line.classList.replace("pending", "waiting"), 600);
+  const tick = setInterval(() => (line.isConnected ? ask() : clearInterval(tick)), 30000);
+  rows.push(line, extra);
+  return rows;
+}
+
 // How an alert ends: after a time (hold_minutes), or when its Until comes
 // true, with hold_minutes as the most it holds (conditions.py, frames.check_alerts).
 const HOLD = { time: 10, until: 120 };
@@ -618,10 +665,11 @@ function conditionRows(app, p, c = SHOW) {
   const doc = app.doc;
   const parsed = parseShowIf(p[c.key]);
   const wrap = h("div", { class: "cond" });
-  if (parsed.mode === "raw" || app[c.raw]) {
+  // An Until can't be "changed" in the simple form (see opSel); one written by hand stays as written.
+  if (parsed.mode === "raw" || app[c.raw] || (c !== SHOW && parsed.op === "changed")) {
     wrap.append(field(c === SHOW ? "Condition" : "Until", textarea(p[c.key], (v) => { if (v.trim()) p[c.key] = v.trim(); else delete p[c.key]; doc.commit(); }), { wide: true, note: c.rawNote }));
     const back = parseShowIf(p[c.key]);
-    if (back.mode === "simple") wrap.append(linkButton("Use the simple form", () => { app[c.raw] = false; app.refresh(); }));
+    if (back.mode === "simple" && (c === SHOW || back.op !== "changed")) wrap.append(linkButton("Use the simple form", () => { app[c.raw] = false; app.refresh(); }));
     return wrap;
   }
   const upd = (patch) => { const next = { ...parsed, ...patch }; const v = compileShowIf(next); if (v) p[c.key] = v; else delete p[c.key]; doc.commit(); };
@@ -633,12 +681,17 @@ function conditionRows(app, p, c = SHOW) {
   wrap.append(c === SHOW ? pickBtn : field(c.label, pickBtn));
   if (parsed.ent) {
     const dom = parsed.ent.split(".")[0], known = KNOWN_STATES[dom];
-    const opSel = select(OPS, parsed.op, (v) => upd({ op: v }), { "aria-label": c.label + " comparison" });
-    const valIn = input(parsed.val, (v) => upd({ val: v }), { "aria-label": c.label + " value", placeholder: "Value" });
-    wrap.append(h("div", { class: "inline cmprow" }, opSel, valIn));
-    if (known && (parsed.op === "eq" || parsed.op === "ne")) wrap.append(h("div", { class: "chips" }, ...known.map((s) => h("button", { class: "chipbtn", "aria-pressed": String(parsed.val === s), onclick: () => upd({ val: s }) }, s.replace(/_/g, " ")))));
-    const holds = evaluate(parsed, app.entMap);
-    if (holds !== null) {
+    const changed = parsed.op === "changed";
+    // "Changed" answers when something happens; an Until has nothing to count its minutes from.
+    const opSel = select(c === SHOW ? OPS : OPS.filter(([k]) => k !== "changed"), parsed.op, (v) => upd({ op: v }), { "aria-label": c.label + " comparison" });
+    const valIn = changed
+      ? input(parsed.val, (v) => upd({ val: v }), { "aria-label": "Changed to", placeholder: "Any value" })
+      : input(parsed.val, (v) => upd({ val: v }), { "aria-label": c.label + " value", placeholder: "Value" });
+    wrap.append(h("div", { class: "inline cmprow" }, opSel, changed ? h("span", { class: "cmpword", text: "to" }) : null, valIn));
+    if (known && (parsed.op === "eq" || parsed.op === "ne" || changed)) wrap.append(h("div", { class: "chips" }, ...known.map((s) => h("button", { class: "chipbtn", "aria-pressed": String(parsed.val === s), onclick: () => upd({ val: parsed.val === s && changed ? "" : s }) }, s.replace(/_/g, " ")))));
+    const holds = changed ? null : evaluate(parsed, app.entMap);
+    if (changed) wrap.append(...changedRows(app, p, parsed, upd));
+    else if (holds !== null) {
       const d = describe(p[c.key], app.entMap);
       wrap.append(h("div", { class: "note " + (holds ? "good" : "warn"), role: "note" }, h("span", { class: "led" }), h("span", { text: holds ? c.now[0] : `${c.now[1]}: ${d.why}` })));
     }

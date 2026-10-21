@@ -547,6 +547,26 @@ async def api_energy(request):
     return web.json_response(got)
 
 
+async def api_changed(request):
+    """When a sensor last really changed, for a "changed" condition's status line:
+    {"state", "at", "to", "history", "now"} (sources.changes; epoch seconds, "now"
+    the add-on's, so the editor counts minutes on the same clock as the panel)."""
+    from sources import changes
+    eid = (request.query.get("entity") or "").strip()
+    if not valid_entity_id(eid):
+        return web.json_response({"error": "That isn't an entity ID."}, status=400)
+    minutes = max(1, min(1440, as_int(request.query.get("minutes"), 30)))
+    try:
+        with live_data.waiting_for_fresh():
+            got = await changes.fetch_change(runtime.SESSION, eid, minutes)
+    except Exception as exc:
+        got = None
+        print(f"changed {eid}: {health.describe(exc)}", flush=True)
+    if got is None:
+        return web.json_response({"error": "Home Assistant didn't say when it last changed."}, status=502)
+    return web.json_response({**got, "now": time.time()})
+
+
 async def api_airport(request):
     """A three-letter airport code, as a place for the flight widget."""
     code = (request.query.get("code") or "").strip()
@@ -1127,6 +1147,7 @@ def make_apps():
         web.get("/api/attributes", api_attributes),
         web.get("/api/aircraft", api_aircraft),
         web.get("/api/airport", api_airport),
+        web.get("/api/changed", api_changed),
         web.get("/api/energy", api_energy),
         web.get("/api/catalog", api_catalog),
         web.get("/api/timezones", api_timezones),
