@@ -24,7 +24,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Work | Where | State |
 |---|---|---|
-| Alerts that release on a condition, and to-do list pages from Home Assistant (session "alerts-todo") | branch `alerts-todo` (6 commits on `release-next`), worktree `~/Documents/HA/epaper-worktrees/alerts-todo` | Done 21 Oct, 412 tests pass, no firmware change; not tried in the real Home Assistant or seen by eye |
+| Alerts that release on a condition, and to-do list pages from Home Assistant (session "alerts-todo") | branch `alerts-todo` (6 commits on `release-next`), worktree `~/Documents/HA/epaper-worktrees/alerts-todo` | 412 tests pass, no firmware change; now adding three to-do styles (By urgency, Inverted when due, Outlined; user's call, 21 Oct) |
 | Editor: screen menu (Rename, Remove, Add new device) and zoom (−/+, Fit to 200%, pinch, ⌘+/⌘−/⌘0) (session "editor-polish", asked by the user directly) | branch `editor-zoom`, worktree `~/Documents/HA/epaper-worktrees/editor-zoom` | Done 21 Oct, 370 tests pass, not seen by eye; waiting for a release |
 
 Merged into local main, not pushed, for the next release: a sleeping panel
@@ -71,6 +71,12 @@ Worker notes are in the coordinator's notes folder
 6. **The rest of next month** (ROADMAP): the screen's words in Home
    Assistant's language (which languages first is open), share a page, to-do
    lists, a "how it went" report, TRMNL-compatible screens.
+
+**Noted for the roadmap (21 Oct, from the roadmap session, not yet decided):**
+the New page sheet on shelves (agreed) with new groups, renames and presets
+(mockup: claude.ai/artifact/STc9a9gWKX7fgX511pmdE6); JellyHA, now on the
+user's Home Assistant, could drive an Episode card and Now playing with no
+setup, while the add-on's own Jellyfin source stays for New to watch.
 
 **Waiting on hardware:** a TRMNL (pairing, pictures, HTTPS, battery); a
 second CrowPanel side by side; a 4.2" or 2.9" CrowPanel (they build, untried;
