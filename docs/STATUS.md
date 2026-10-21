@@ -29,7 +29,9 @@ firmware change), alerts that end on a condition and to-do lists with three
 row styles (merged in).
 The user approved tagging and pushing it once both workers are done and the
 full suite and the firmware compile pass, with no break-it pass first; they
-get a hands-on checklist after (21 Oct). Still being built:
+get a hands-on checklist after (21 Oct). Still being built (including a world
+clock look for Clock, up to 4 time zones filling the page; user's request,
+21 Oct, both workers after the review fixes):
 
 | Work | Where | State |
 |---|---|---|
