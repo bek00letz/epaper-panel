@@ -9,6 +9,7 @@ from unittest import mock
 
 import support
 import conditions
+import entities
 import frames
 from render import layout, theme as T, todo
 from sources import ha_services
@@ -97,6 +98,41 @@ class TestFetching(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(vals, {0: {**data, "tz": "Europe/Bucharest"}})
 
 
+class TestDueCount(unittest.IsolatedAsyncioTestCase):
+    """The add-on's count of what's due today or overdue, per list on a page."""
+
+    async def test_one_count_per_list_on_a_page(self):
+        spec = {"pages": {
+            "a:chores": {"elements": [{"type": "todo_list", "entity": "todo.chores", "show": "due"}]},
+            "b:chores_again": {"elements": [{"type": "todo_list", "entity": "todo.chores"}]},
+            "a:shop": {"elements": [{"type": "todo_list", "entity": "todo.shopping"}, {"type": "text", "entity": "todo.x"}]},
+            "a:bad": {"elements": [{"type": "todo_list", "entity": "sensor.not_a_list"}]}}}
+        lists = {"todo.chores": {"name": "Chores", "items": [item("Bins out", "2026-10-21"), item("Old", "2026-10-02"),
+                                                             item("Later", "2026-10-30"), item("Bread")]},
+                 "todo.shopping": None}                    # not fetched yet
+
+        async def fetch(session, eid):
+            return lists[eid]
+
+        published = mock.AsyncMock()
+        with mock.patch.object(entities, "fetch_todo_items", fetch), \
+             mock.patch.object(entities, "publish_entity", published), \
+             mock.patch.object(todo, "now_in", return_value=NOW):
+            wanted = await entities.publish_todo_due(None, spec, "Europe/Bucharest")
+        self.assertEqual(wanted, {"sensor.epaper_todo_chores_due", "sensor.epaper_todo_shopping_due"},
+                         "a list not fetched yet keeps its entity")
+        published.assert_awaited_once()
+        _, sensor_id, state, attrs = published.await_args.args
+        self.assertEqual((sensor_id, state), ("sensor.epaper_todo_chores_due", 2))
+        self.assertEqual(attrs["items"], ["Old", "Bins out"])
+        self.assertEqual(attrs["friendly_name"], "E-Paper · Chores due")
+
+    def test_a_page_or_alert_can_show_by_it_without_a_broker(self):
+        expr = "{{ has_value('sensor.epaper_todo_chores_due') and states('sensor.epaper_todo_chores_due') | float(0) > 0 }}"
+        self.assertEqual(conditions.local(expr, {"sensor.epaper_todo_chores_due": {"state": 2}}), "True")
+        self.assertEqual(conditions.local(expr, {"sensor.epaper_todo_chores_due": {"state": 0}}), "False")
+
+
 class TestDrawing(unittest.TestCase):
     BOX = {"type": "todo_list", "entity": "todo.chores", "x": 40, "y": 14, "w": 712, "h": 220}
 
@@ -143,6 +179,18 @@ console.log(JSON.stringify({ asks: p.asks, named: p.namedByEntity, tier: p.tier,
         self.assertEqual(got["els"][0]["type"], "todo_list")
         self.assertTrue(got["named"], "a page per list, named after it")
         self.assertEqual(got["skip"], "")
+
+    def test_due_shows_by_the_add_ons_count(self):
+        got = self.run_js("""
+import("%s").then((L) => {
+  const el = { type: "todo_list", entity: "todo.chores", show: "due" };
+  const page = { tier: "when", show_if: "{{ has_value('todo.chores') and states('todo.chores') | float(0) > 0 }}", elements: [el] };
+  C.syncWidgetShowIf(page, el);
+  console.log(JSON.stringify([page.show_if, L.getWidgetSensorId(el), L.todoDueSensor("sensor.x")]));
+});""" % (support.APP / "web" / "app" / "legacy.js"))
+        sensor = todo.due_sensor("todo.chores")
+        self.assertEqual(got, ["{{ has_value('%s') and states('%s') | float(0) > 0 }}" % (sensor, sensor), sensor, ""],
+                         "the editor names the sensor the add-on publishes")
 
     def test_new_page_names_it_after_the_list(self):
         src = (support.APP / "web" / "app" / "sheets.js").read_text()

@@ -277,8 +277,10 @@ const TYPE_FIELDS = {
   curve: [F.entity("entity", "Sensor"), F.num("hours", "Hours", "24", 1, 168)],
   bar_chart: [F.entity("entity", "Sensor"), F.text("title", "Title", "Last 24 hours"), F.num("hours", "Hours", "24", 1, 168), F.num("bars", "Bars", "12", 2, 48), F.on("show_labels", "Lowest and highest", true), F.on("show_border", "Border", false)],
   calendar_month: [F.entity("entity", "Calendar", ["calendar"]), F.sel("first_weekday", "Week starts", [["0", "Monday"], ["6", "Sunday"]], "0"), F.on("show_header", "Month name", true), F.on("show_weekdays", "Weekday names", true), F.on("highlight_today", "Mark today", true), BORDER_ON],
-  todo_list: [F.entity("entity", "List", ["todo"]), F.text("title", "Title", "The list's name"),
-    { kind: "window", label: "Only show when there's something to do" }],
+  todo_list: [F.entity("entity", "List", ["todo"]), F.sel("show", "Shows", [["open", "Everything to do"], ["due", "Due today or overdue"]], "open"),
+    F.text("title", "Title", "The list's name"),
+    { kind: "window", label: (el) => (el.show === "due" ? "Only show when something's due" : "Only show when there's something to do") },
+    { kind: "sensorid" }],
   calendar_agenda: [F.entity("entity", "Calendar", ["calendar"]), F.text("title", "Title", "Coming up"), F.sel("max_events", "Events", [["2", "2, extra large"], ["3", "3, large"], ["4", "4"], ["5", "5"], ["6", "6"]], "4"), F.on("show_sub", "Times and places", true), BORDER_ON],
   weather_forecast: [F.entity("entity", "Weather", ["weather"]), F.sel("layout_mode", "Layout", [["auto", "Fit the box"], ["split", "Now and forecast side by side"], ["stacked", "Now above the forecast"], ["hero_only", "Now only, very large"], ["forecast_only", "Forecast only"]], "auto"),
     F.sel("forecast_days", "Days", [["3", "3"], ["4", "4"], ["5", "5"]], "4"), F.on("show_details", "Humidity and wind", true), BORDER_ON],
@@ -311,12 +313,14 @@ function typeSections(app, el, set, i) {
     else if (f.kind === "text") s.append(field(f.label, input(el[f.key], (v) => set(f.key, v), { placeholder: f.ph || "" })));
     else if (f.kind === "num") s.append(field(f.label, number(el[f.key], (v) => set(f.key, v), { placeholder: f.ph || "", min: f.min, max: f.max, step: f.step })));
     else if (f.kind === "sel") s.append(field(f.label, select(f.options, el[f.key] ?? f.def, (v) => {
+      // What a to-do list shows is what its page shows by: follow it, in the same undo step.
+      if (el.type === "todo_list" && app.doc.page().tier === "when") { el[f.key] = v; syncWidgetShowIf(app.doc.page(), el); }
       const num = /^(first_weekday|max_events|forecast_days|max_drivers)$/.test(f.key);
       set(f.key, num ? Number(v) : v);
       if ((f.key === "league" || f.key === "series") && app.doc.page().tier === "when") { syncWidgetShowIf(app.doc.page(), el); app.doc.commit(); }
     })));
     else if (f.kind === "toggle") s.append(toggleRow(f.label, f.def ? el[f.key] !== false : !!el[f.key], (v) => set(f.key, f.def ? (v ? "" : false) : (v ? true : ""))));
-    else if (f.kind === "window") s.append(toggleRow(f.label, app.doc.page().tier === "when", (v) => {
+    else if (f.kind === "window") s.append(toggleRow(typeof f.label === "function" ? f.label(el) : f.label, app.doc.page().tier === "when", (v) => {
       const p = app.doc.page();
       el.auto_window = v;
       if (v) { p.tier = "when"; syncWidgetShowIf(p, el); if (!app.doc.spec.rotation.includes(app.doc.cur)) app.doc.spec.rotation.push(app.doc.cur); }
@@ -324,7 +328,9 @@ function typeSections(app, el, set, i) {
       app.doc.commit();
     }, "Sets when the whole page shows"));
     else if (f.kind === "sensorid") s.append(h("details", { class: "more" }, h("summary", {}, icon("chev", "sm"), "Its sensor"),
-      h("p", { class: "fnote" }, "The add-on publishes this widget's state as ", h("code", { class: "sel", text: getWidgetSensorId(el) }), ", for your own automations.")));
+      el.type === "todo_list"
+        ? h("p", { class: "fnote" }, "The add-on counts what's due today or overdue as ", h("code", { class: "sel", text: getWidgetSensorId(el) || "sensor.epaper_todo_…_due" }), ". An alert can show by it, or your own automations.")
+        : h("p", { class: "fnote" }, "The add-on publishes this widget's state as ", h("code", { class: "sel", text: getWidgetSensorId(el) }), ", for your own automations.")));
     else if (f.kind === "place") s.append(...placeRows(app, el, set));
   }
   return [s];

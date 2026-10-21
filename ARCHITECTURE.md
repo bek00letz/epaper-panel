@@ -756,8 +756,10 @@ again.
 service's own API, so every kind of list works (Shopping list, Local To-do,
 Google Tasks, Todoist, CalDAV) with no keys. Home Assistant hands the items
 over in the list's stored order, not by due date, so `render/todo.py`
-orders them (due first, then the list's order) and gives the due labels.
-A list that doesn't fit
+orders them (due first, then the list's order) and gives the due labels,
+for the page and for the add-on's count of what's due today or overdue
+(`sensor.epaper_todo_<list>_due`, `entities.publish_todo_due`, one per list
+on a page) alike. A list that doesn't fit
 ends with "and 4 more" instead of paging: one calm screen.
 
 **The panel owns which page is shown; the server owns what the pages are.**

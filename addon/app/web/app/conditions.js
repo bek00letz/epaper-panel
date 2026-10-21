@@ -78,7 +78,7 @@ export function syncWidgetShowIf(page, widgetEl) {
     // Ours to rewrite only while it's still a to-do list's own condition.
     const cur = parseShowIf(page.show_if);
     if (page.show_if && !(cur.mode === "simple" && /^(todo\.|sensor\.epaper_todo_)/.test(cur.ent))) return;
-    const c = todoShowIf(list.entity);
+    const c = todoShowIf(list.entity, list.show);
     if (c) page.show_if = c; else delete page.show_if;
     return;
   }

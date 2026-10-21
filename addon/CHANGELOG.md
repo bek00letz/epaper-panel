@@ -25,6 +25,10 @@
   the list has something on it. Each list is its own page, named after
   the list, so a work list and a chores list rotate, repeat or sit out like
   any other pages. Also under Insert › Widgets.
+- **Only what's due today.** A to-do list page can show only what's due
+  today or overdue, and then shows only while something is. The add-on
+  counts those items for each list on a page, so an alert can use the count
+  too ("Bins out" in the morning), with or without an MQTT broker.
 - **Alerts can end when something happens**, not only after a time. Under
   Ends, choose When something happens and pick what ends it: "Watch battery
   is below 20" until "Watch is charging" stays up until you put it on the

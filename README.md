@@ -264,6 +264,13 @@ pages, and to keep one up, take the other out of the rotation or hold the
 page on the panel. The panel only shows the list;
 tick things off in Home Assistant or the list's own app.
 
+For a list with due dates (Google Tasks, Todoist, Local To-do), **Shows ›
+Due today or overdue** lists only those, and the page shows only while
+something is due. The add-on counts them as `sensor.epaper_todo_<list>_due`
+(under **Its sensor**), so an alert can use it too: make the page **As an
+alert** while that count is above 0, and "Bins out" takes over the panel in
+the morning.
+
 ### The rotation
 
 The page strip is the rotation. Drag a page to move it, **Show again** puts

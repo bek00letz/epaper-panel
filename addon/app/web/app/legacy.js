@@ -344,6 +344,7 @@ export function getWidgetSensorId(el) {
   if (el.type === "flight_tracker") {
     return "sensor.epaper_flights_overhead";
   }
+  if (el.type === "todo_list") return todoDueSensor(el.entity);
   return "";
 }
 
@@ -473,11 +474,17 @@ export const PRESET_ICONS = {
 };
 
 // A to-do list page shows while its list has something to do: the list's own
-// state is how many items are open. Written as the simple form writes it
-// (conditions.compileShowIf), so it reads back as "is above 0".
-export function todoShowIf(ent) {
+// state is how many items are open; for "Due today or overdue", the add-on's
+// count of those (render/todo.due_sensor). Written as the simple form writes
+// it (conditions.compileShowIf), so it reads back as "is above 0".
+export function todoDueSensor(ent) {
+  const list = String(ent || "").trim();
+  return list.startsWith("todo.") ? `sensor.epaper_todo_${list.slice(5)}_due` : "";
+}
+export function todoShowIf(ent, show = "open") {
   ent = String(ent || "").trim().replace(/'/g, "");
-  return ent ? `{{ has_value('${ent}') and states('${ent}') | float(0) > 0 }}` : "";
+  const by = show === "due" ? todoDueSensor(ent) : ent;
+  return by ? `{{ has_value('${by}') and states('${by}') | float(0) > 0 }}` : "";
 }
 
 // The sensor a Jellyfin source makes; "watch" is the name it's seeded with.

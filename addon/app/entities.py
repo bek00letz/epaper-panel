@@ -13,7 +13,9 @@ from config import HA_BASE, HA_TOKEN, PUBLISH_VIA_STATES_API, RETIRED_SENSORS, v
 from ha import call_ha_service, ha_json
 from layouts_store import load_layouts, load_sources
 from sources.flights import fetch_overhead_aircraft, place_of
+from render import todo
 from sources.geo import get_home_timezone
+from sources.ha_services import fetch_todo_items, todo_list_id
 from sources.racing import compute_racing_active_window, fetch_racing_data, series_slug
 from sources.sports import compute_sports_active_window, league_slug
 
@@ -152,6 +154,31 @@ async def publish_sources(session):
                 runtime.FEED_ITEMS[entity_id] = attrs["items"]
             await publish_entity(session, entity_id, state, attrs)
     return set().union(*(feeds.source_entities(s) for s in srcs)) if srcs else set()
+
+
+async def publish_todo_due(session, spec: dict, home_tz) -> set[str]:
+    """For each to-do list on a page, how many of its items are due today or
+    overdue (sensor.epaper_todo_<list>_due), for a page's "only when" or an
+    alert. The list's own state already counts what's open."""
+    lists = {todo_list_id(el.get("entity")) for p in (spec.get("pages") or {}).values()
+             for el in p.get("elements", []) if el.get("type") == "todo_list"} - {""}
+    wanted = set()
+    for eid in sorted(lists):
+        sensor_id = todo.due_sensor(eid)
+        wanted.add(sensor_id)
+        try:
+            data = await fetch_todo_items(session, eid)
+            if not data:
+                continue                                  # not fetched yet
+            due = todo.items_for(data.get("items"), "due", todo.now_in(home_tz))
+            await publish_entity(session, sensor_id, len(due), {
+                "friendly_name": f"E-Paper · {data.get('name') or eid} due",
+                "icon": "mdi:clipboard-text-clock-outline",
+                "items": [i["summary"] for i in due],
+            })
+        except Exception as exc:
+            print(f"publish to-do due sensor failed: {health.describe(exc)}", flush=True)
+    return wanted
 
 
 async def publish_computed(session):
@@ -324,6 +351,9 @@ async def publish_computed(session):
             )
     except Exception as exc:
         print(f"publish racing window sensor failed: {health.describe(exc)}", flush=True)
+
+    # 4. To-do lists on pages: how many items are due today or overdue.
+    wanted |= await publish_todo_due(session, cur_spec, home_tz)
 
     wanted |= retired_sensors_in_use(cur_spec)
     wanted |= publish_health()
