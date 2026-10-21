@@ -83,22 +83,39 @@ def eval_fixture_template(tpl: str) -> str:
     else:
         expr = s
 
+    # The simple form's no-value guard: `has_value('entity') and <condition>`
+    m = re.match(r"^has_value\(\s*'([^']+)'\s*\)\s+and\s+(.+)$", expr)
+    if m:
+        cur = (states.get(m.group(1)) or {}).get("state")
+        if cur is None or str(cur) in ("unavailable", "unknown"):
+            return "False"
+        expr = m.group(2).strip()
+
+    # Handle `not is_state('entity', 'val')`
+    m = re.match(r"^not\s+is_state\(\s*'([^']+)'\s*,\s*'([^']+)'\s*\)$", expr)
+    if m:
+        cur = (states.get(m.group(1)) or {}).get("state", "")
+        return "True" if str(cur) != m.group(2) else "False"
+
+    # Handle `states('entity') | float(0) < 20` and the like
+    m = re.match(r"^states\(\s*'([^']+)'\s*\)\s*\|\s*(int|float)\([^)]*\)\s*(>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)$", expr)
+    if m:
+        try:
+            val = float((states.get(m.group(1)) or {}).get("state", 0))
+        except (TypeError, ValueError):
+            val = 0.0
+        if m.group(2) == "int":
+            val = float(int(val))
+        b = float(m.group(4))
+        held = {">": val > b, "<": val < b, ">=": val >= b, "<=": val <= b}[m.group(3)]
+        return "True" if held else "False"
+
     # Handle `is_state('entity', 'val')`
     m = re.match(r"^is_state\(\s*'([^']+)'\s*,\s*'([^']+)'\s*\)$", expr)
     if m:
         eid, target = m.group(1), m.group(2)
         cur = (states.get(eid) or {}).get("state", "")
         return "True" if str(cur) == target else "False"
-
-    # Handle `states('entity') | int(0) > 0`
-    m = re.match(r"^states\(\s*'([^']+)'\s*\)\s*\|\s*int\(\d*\)\s*>\s*(\d+)$", expr)
-    if m:
-        eid, thresh = m.group(1), int(m.group(2))
-        try:
-            val = int(float((states.get(eid) or {}).get("state", 0)))
-        except (TypeError, ValueError):
-            val = 0
-        return "True" if val > thresh else "False"
 
     # Handle zone check on `in_zones`
     if "in_zones" in expr:

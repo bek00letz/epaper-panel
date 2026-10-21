@@ -9,6 +9,7 @@ from datetime import datetime, timedelta, timezone
 from email.utils import formatdate
 
 from render import binding, epf, layout, sleep, stripmeta, subitems, theme as T
+import conditions
 import devices
 import health
 import kinds
@@ -313,7 +314,7 @@ async def eligible_pages(session, spec, linger):
         if w_gate is not None:
             widget_gates[n] = w_gate
         elif p.get("show_if"):
-            template_gates[n] = p["show_if"]
+            template_gates[n] = conditions.guarded(p["show_if"])
 
     passed = await resolve_templates(session, template_gates) if template_gates else {}
     widget_results: dict[str, bool] = {}
@@ -337,7 +338,7 @@ async def eligible_pages(session, spec, linger):
             if not widget_results[name]:
                 continue
         elif name in template_gates:
-            if str(passed.get(name, "")).strip().lower() not in ("true", "on", "yes", "1"):
+            if not conditions.is_true(passed.get(name, "")):
                 continue
         live.append(name)
     return live or [n for n in rotation if n in defs and defs[n].get("tier") != "alert"][:1]
@@ -359,9 +360,8 @@ async def check_alerts(session, spec, state: dict):
         state["name"], state["until"] = None, 0.0
         return None
 
-    states = await resolve_templates(session, {n: p["show_if"] for n, p in alerts.items()})
-    truthy = {n for n, v in states.items()
-              if str(v).strip().lower() in ("true", "on", "yes", "1")}
+    states = await resolve_templates(session, {n: conditions.guarded(p["show_if"]) for n, p in alerts.items()})
+    truthy = {n for n, v in states.items() if conditions.is_true(v)}
 
     # release an expired or no-longer-true alert
     if state["name"] and (now > state["until"] or state["name"] not in truthy):

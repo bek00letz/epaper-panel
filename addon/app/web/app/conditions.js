@@ -4,19 +4,29 @@
 
 import { getWidgetSensorId } from "./legacy.js";
 
+const NO_VALUE = ["unavailable", "unknown"];
+
 export const OPS = [["eq", "is"], ["ne", "isn't"], ["gt", "is above"], ["lt", "is below"], ["ge", "is at least"], ["le", "is at most"]];
 
 export function parseShowIf(expr) {
   const s = String(expr || "").trim();
   if (!s) return { mode: "simple", ent: "", op: "eq", val: "" };
   const inner = s.startsWith("{{") && s.endsWith("}}") ? s.slice(2, -2).trim() : s;
+  // The no-value guard compileShowIf adds, on the same sensor; conditions saved
+  // before it read the same.
+  const g = inner.match(/^has_value\(\s*'([^']+)'\s*\)\s+and\s+(.*)$/);
+  const p = parseSimple(g ? g[2] : inner);
+  return p && (!g || p.ent === g[1]) ? p : { mode: "raw", raw: s };
+}
+
+function parseSimple(inner) {
   let m = inner.match(/^is_state\(\s*'([^']+)'\s*,\s*'([^']*)'\s*\)$/);
   if (m) return { mode: "simple", ent: m[1], op: "eq", val: m[2] };
   m = inner.match(/^not\s+is_state\(\s*'([^']+)'\s*,\s*'([^']*)'\s*\)$/);
   if (m) return { mode: "simple", ent: m[1], op: "ne", val: m[2] };
   m = inner.match(/^states\(\s*'([^']+)'\s*\)\s*\|\s*(?:int|float)\([^)]*\)\s*(>=|<=|>|<)\s*(-?\d+(?:\.\d+)?)$/);
   if (m) return { mode: "simple", ent: m[1], op: { ">": "gt", "<": "lt", ">=": "ge", "<=": "le" }[m[2]], val: m[3] };
-  return { mode: "raw", raw: s };
+  return null;
 }
 
 export function compileShowIf({ ent, op, val }) {
@@ -24,10 +34,12 @@ export function compileShowIf({ ent, op, val }) {
   val = String(val ?? "").trim().replace(/'/g, "");
   if (!ent) return "";
   if (op === "eq") return `{{ is_state('${ent}','${val}') }}`;
-  if (op === "ne") return `{{ not is_state('${ent}','${val}') }}`;
+  // A sensor with no value (unavailable, unknown) never meets "isn't" or a
+  // number: float(0) would read it as 0, so "below 20" came true at every restart.
+  if (op === "ne") return `{{ has_value('${ent}') and not is_state('${ent}','${val}') }}`;
   const sym = { gt: ">", lt: "<", ge: ">=", le: "<=" }[op] || ">";
   const n = Number(val);
-  return `{{ states('${ent}') | float(0) ${sym} ${isNaN(n) ? 0 : n} }}`;
+  return `{{ has_value('${ent}') and states('${ent}') | float(0) ${sym} ${isNaN(n) ? 0 : n} }}`;
 }
 
 /* Does a simple condition hold with these states? null when it can't tell. */
@@ -37,6 +49,7 @@ export function evaluate(parsed, entMap) {
   if (!e) return null;
   const s = String(e.state), v = parsed.val;
   if (parsed.op === "eq") return s === v;
+  if (NO_VALUE.includes(s)) return false;
   if (parsed.op === "ne") return s !== v;
   const a = Number(s), b = Number(v);
   if (isNaN(a)) return false;

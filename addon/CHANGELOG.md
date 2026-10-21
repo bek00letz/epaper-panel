@@ -18,6 +18,11 @@
 - **The device menu can remove a device too.** Under the device's name: your
   devices, then Rename and Remove, then Add new device. Removing shows an
   Undo, as in Settings.
+- **Fixed:** "Watch battery is below 20" came true for a moment every time
+  Home Assistant restarted, because a sensor with no value yet counted as 0.
+  A sensor that's unavailable or unknown now never meets "is below", "is
+  above" or "isn't", so it can't fire an alert or show a page by accident.
+  Conditions you already have are fixed too, without saving them again.
 - **Fixed:** a panel asleep for quiet hours kept saying "back at 06:00" when
   the schedule ended but nobody was home, because nothing woke it to show
   "back when someone's home". It's now woken once when the sleep screen's
