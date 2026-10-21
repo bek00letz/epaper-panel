@@ -299,6 +299,16 @@ async def _evaluate_widget_gate(session, widget: dict, home_tz: str) -> bool:
     return True
 
 
+async def resolve_conditions(session, conds: dict) -> dict:
+    """Conditions' values: those on the add-on's own values answered here
+    (conditions.local), the rest by Home Assistant in one request."""
+    out = {k: v for k, c in conds.items() if (v := conditions.local(c, runtime.PUBLISHED)) is not None}
+    rest = {k: c for k, c in conds.items() if k not in out}
+    if rest:
+        out.update(await resolve_templates(session, rest))
+    return out
+
+
 async def eligible_pages(session, spec, linger):
     """Pages whose tier and show_if (or built-in widget active window) say they belong in the rotation now.
 
@@ -321,7 +331,7 @@ async def eligible_pages(session, spec, linger):
         elif p.get("show_if"):
             template_gates[n] = conditions.guarded(p["show_if"])
 
-    passed = await resolve_templates(session, template_gates) if template_gates else {}
+    passed = await resolve_conditions(session, template_gates) if template_gates else {}
     widget_results: dict[str, bool] = {}
     for n, w_el in widget_gates.items():
         try:
@@ -375,7 +385,7 @@ async def check_alerts(session, spec, state: dict):
     asks = {n: conditions.guarded(p["show_if"]) for n, p in alerts.items()}
     ends = {n: until for n, p in alerts.items() if (until := conditions.ending(p))}
     asks.update({f"{n}:until": conditions.guarded(until) for n, until in ends.items()})
-    states = await resolve_templates(session, asks)
+    states = await resolve_conditions(session, asks)
     truthy = {n for n in alerts if conditions.is_true(states.get(n, ""))
               and not (n in ends and conditions.is_true(states.get(f"{n}:until", "")))}
 

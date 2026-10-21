@@ -77,6 +77,45 @@ class TestWhatHomeAssistantIsAsked(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sent[1]["when"], guarded)
 
 
+class TestTheAddonsOwnValues(unittest.IsolatedAsyncioTestCase):
+    """Conditions on the add-on's own values are answered from its record, as
+    pages read those values, so they work without an MQTT broker."""
+    REG = {"sensor.epaper_watch_count": {"state": "2"}, "sensor.epaper_todo_chores_due": {"state": 0},
+           "sensor.epaper_quiet_hours": {"state": "unavailable"}}
+
+    def test_answers_the_simple_form(self):
+        cases = {
+            "{{ states('sensor.epaper_watch_count') | int(0) > 0 }}": "True",
+            "{{ has_value('sensor.epaper_todo_chores_due') and states('sensor.epaper_todo_chores_due') | float(0) > 0 }}": "False",
+            "{{ is_state('sensor.epaper_watch_count','2') }}": "True",
+            "{{ has_value('sensor.epaper_quiet_hours') and not is_state('sensor.epaper_quiet_hours','on') }}": "False",
+            "{{ states('sensor.epaper_quiet_hours') | float(0) < 5 }}": "False",
+        }
+        for expr, want in cases.items():
+            self.assertEqual(conditions.local(expr, self.REG), want, expr)
+
+    def test_leaves_everything_else_to_home_assistant(self):
+        for expr in ("{{ states('sensor.watch_battery') | float(0) < 20 }}",
+                     "{{ has_value('sensor.x') and states('sensor.epaper_watch_count') | int(0) > 0 }}",
+                     "{{ states('sensor.epaper_watch_count') | int(0) > 0 and now().hour > 7 }}", ""):
+            self.assertIsNone(conditions.local(expr, self.REG), expr)
+
+    async def test_only_the_rest_is_sent(self):
+        sent = {}
+
+        async def resolve(session, templates):
+            sent.update(templates)
+            return {k: "True" for k in templates}
+
+        conds = {"watch": "{{ states('sensor.epaper_watch_count') | int(0) > 0 }}",
+                 "low": "{{ has_value('sensor.b') and states('sensor.b') | float(0) < 20 }}"}
+        with mock.patch.object(frames, "resolve_templates", resolve), \
+             mock.patch.dict(runtime.PUBLISHED, {"sensor.epaper_watch_count": {"state": "0"}}):
+            got = await frames.resolve_conditions(None, conds)
+        self.assertEqual(sent, {"low": conds["low"]})
+        self.assertEqual(got, {"watch": "False", "low": "True"})
+
+
 @unittest.skipUnless(shutil.which("node"), "no node to run the editor's conditions")
 class TestSimpleForm(unittest.TestCase):
     def test_compiles_with_the_guard_and_reads_back(self):

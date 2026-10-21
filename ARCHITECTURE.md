@@ -285,8 +285,10 @@ render) live in one record inside the add-on, `runtime.PUBLISHED`.
 
 - **Pages read that record directly** (`binding.local_value`) for `state` and
   `attribute` bindings. They don't round-trip through Home Assistant, so they
-  work without a broker and never race the publish. Raw Jinja that names a
-  `sensor.epaper_*` entity still goes through Home Assistant.
+  work without a broker and never race the publish. So do the simple
+  form's conditions on them (`conditions.local`, `frames.resolve_conditions`):
+  "New to watch is above 0" is answered from the record. Raw Jinja that names
+  a `sensor.epaper_*` entity still goes through Home Assistant.
 - **Home Assistant gets them over MQTT discovery only** (`mqtt_bridge.py`). The
   Supervisor hands over the broker login (`services: mqtt:want`). Each value
   is a sensor with a `unique_id` under an "E-Paper Studio" device, has

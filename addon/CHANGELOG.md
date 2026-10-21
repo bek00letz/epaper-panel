@@ -30,6 +30,11 @@
   if you take it off too soon. At most sets how long it can hold if that
   never happens (2 hours to start with). Alerts that end after a time work
   as before.
+- **Fixed:** a page or alert that shows by one of the add-on's own values
+  (New to watch, for one) never showed without an MQTT broker, because Home
+  Assistant was asked about a value it only learns through the broker. The
+  add-on now answers those conditions itself, as it already did for what
+  the pages show.
 - **Fixed:** "Watch battery is below 20" came true for a moment every time
   Home Assistant restarted, because a sensor with no value yet counted as 0.
   A sensor that's unavailable or unknown now never meets "is below", "is

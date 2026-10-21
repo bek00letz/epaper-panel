@@ -37,6 +37,50 @@ def guarded(expr: str) -> str:
     return "{{ has_value('%s') and %s }}" % (ent, m.group(1))
 
 
+# A simple-form condition, guarded or not: the sensor and what it asks.
+_SIMPLE = re.compile(
+    r"^\{\{\s*(?:has_value\(\s*'(?P<g>[^']+)'\s*\)\s+and\s+)?(?:"
+    r"(?P<neg>not\s+)?is_state\(\s*'(?P<se>[^']+)'\s*,\s*'(?P<sv>[^']*)'\s*\)"
+    r"|states\(\s*'(?P<ne>[^']+)'\s*\)\s*\|\s*(?P<f>int|float)\([^)]*\)\s*(?P<op>>=|<=|>|<)\s*(?P<nv>-?\d+(?:\.\d+)?)"
+    r")\s*\}\}$")
+NO_VALUE = (None, "unavailable", "unknown")
+
+
+def local(expr: str, registry: dict):
+    """Answer a simple-form condition on one of the add-on's own values
+    (runtime.PUBLISHED) without Home Assistant, as pages read those values
+    (binding.local_value): "True", "False", or None when it isn't one.
+
+    Asked of Home Assistant, it only works while an MQTT broker carries the
+    value there; without one, a "New to watch" or "due today" page never showed.
+    """
+    m = _SIMPLE.match(str(expr or "").strip())
+    if not m:
+        return None
+    ent = m.group("se") or m.group("ne")
+    if (m.group("g") and m.group("g") != ent) or ent not in registry:
+        return None
+    state = (registry.get(ent) or {}).get("state")
+    state = None if state is None else str(state)
+    if m.group("se"):
+        if m.group("neg"):
+            held = state not in NO_VALUE and state != m.group("sv")
+        else:
+            held = state == m.group("sv")
+        return "True" if held else "False"
+    if state in NO_VALUE:
+        return "False"
+    try:
+        a = float(state)
+    except ValueError:
+        a = 0.0
+    if m.group("f") == "int":
+        a = float(int(a))
+    b = float(m.group("nv"))
+    held = {">": a > b, "<": a < b, ">=": a >= b, "<=": a <= b}[m.group("op")]
+    return "True" if held else "False"
+
+
 def is_true(value) -> bool:
     return str(value).strip().lower() in TRUE
 
