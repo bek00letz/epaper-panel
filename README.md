@@ -20,7 +20,8 @@ turns showing them, and a page appears only when it has something to say.
   shortly before it starts and leaves just after it ends, on its own.
 - **Race weekends.** Formula 1, Formula E, NASCAR and IndyCar: the top ten
   with gaps and tyres while a session runs, and the countdown to the next one
-  the rest of the week.
+  the rest of the week. Between seasons, when the next one starts, as soon as
+  the series publishes it.
 - **What's flying over.** When a plane comes near, a page shows its flight,
   airline, route, height and speed, or a radar of everything around you.
   Around your home, an airport you type in, or places you save.

@@ -16,6 +16,12 @@
   season, the add-on's problem sensor says so. Dates read "Fri 23 Oct", like
   the rest of the panel.
 - **Fixed:** during a live Formula E session the badge said "runtime.LIVE".
+- **New:** the race page between seasons shows the next season and its
+  first race ("Jeddah E-Prix", "Season starts Fri 18 Dec") with an Off
+  season badge, or "Season over" while no calendar has the next season yet.
+  Outside race weekends the page still stays out of the rotation. The card
+  before a race now fits on every device size, and names the race when no
+  calendar says where it is.
 
 ## 0.18.0
 **Firmware change:** install the panel again (Settings › Install or update,
