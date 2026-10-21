@@ -24,7 +24,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Work | Where | State |
 |---|---|---|
-| Alerts that release on a condition, and to-do list pages from Home Assistant (session "alerts-todo") | branch `alerts-todo` from `release-next`, worktree `~/Documents/HA/epaper-worktrees/alerts-todo` | Started 21 Oct; designs with the user first |
+| Alerts that release on a condition, and to-do list pages from Home Assistant (session "alerts-todo") | branch `alerts-todo` (6 commits on `release-next`), worktree `~/Documents/HA/epaper-worktrees/alerts-todo` | Done 21 Oct, 412 tests pass, no firmware change; not tried in the real Home Assistant or seen by eye |
 | Editor: screen menu (Rename, Remove, Add new device) and zoom (−/+, Fit to 200%, pinch, ⌘+/⌘−/⌘0) (session "editor-polish", asked by the user directly) | branch `editor-zoom`, worktree `~/Documents/HA/epaper-worktrees/editor-zoom` | Done 21 Oct, 370 tests pass, not seen by eye; waiting for a release |
 
 Merged into local main, not pushed, for the next release: a sleeping panel
