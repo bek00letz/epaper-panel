@@ -122,6 +122,13 @@
 - **An icon can follow its sensor.** An icon tied to an entity changes
   with its state (a door open or closed, a lock locked or unlocked), and
   keeps its own icon for any other state.
+- **World clock**: up to four cities, each with its name (yours to change)
+  and its time, all the same size and arranged to fill the space: side by
+  side on the wide 5.79", stacked or two by two where that reads larger.
+  Times follow each place's daylight saving and your 12- or 24-hour
+  setting, and a city already on tomorrow says "+1". On a device that
+  sleeps between updates, each city shows how many hours it is ahead or
+  behind ("−7 h", "Same time"), which never goes stale.
 - **Fixed:** a Race weekend page set to NASCAR or IndyCar showed Formula 1's
   race, drivers and status. Each series now reads its own results, and its
   page names it ("NASCAR · …"). Whether the page shows still followed the

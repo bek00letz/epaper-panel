@@ -36,6 +36,7 @@ from . import clocktime
 from . import countdown
 from . import todo
 from . import units
+from . import worldclock
 from .binding import template_for
 from .qr import encode_qr_matrix
 
@@ -2075,6 +2076,7 @@ WIDGETS = {
     "energy_cost": energy.draw_cost,
     "now_playing": media.draw_now_playing,
     "tv_week": media.draw_tv_week,
+    "world_clock": worldclock.draw,
 }
 DRAWERS.update({t: _widget(fn) for t, fn in WIDGETS.items()})
 
@@ -2207,6 +2209,8 @@ def render_page(page, vals, *, clock="", label="", footer=None, page_no=None, it
                     metrics.append(entry)
             elif el["type"] in WIDGETS:
                 drawer(img, d, el, vals.get(i), display=display)
+                if i in swapped and metrics is not None:
+                    metrics.append({"i": i, "date_for_time": True})   # a sleeping device: the editor says what it shows
                 if el["type"] == "countdown" and metrics is not None:
                     # What its page does now (showing, waiting, passed), for the editor to say.
                     data = vals.get(i) if isinstance(vals.get(i), dict) else {}

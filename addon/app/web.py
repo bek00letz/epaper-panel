@@ -11,6 +11,7 @@ from pathlib import Path
 from aiohttp import web
 
 import examples
+from sources.geo import get_home_timezone
 import feeds
 import widgets
 import live_data
@@ -492,6 +493,13 @@ async def api_catalog(request):
         "widgets": widgets.catalog(),
         "time_format": timeformat.describe(*await get_home_locale(runtime.SESSION))["resolved"],
     })
+
+
+async def api_timezones(request):
+    """The cities a world clock can show: {"home": Home Assistant's zone, "zones": [{"tz", "city", "region",
+    "offset"}]}, from the time zone database (render/worldclock.catalog)."""
+    from render import worldclock
+    return web.json_response({"home": await get_home_timezone(runtime.SESSION), "zones": worldclock.catalog()})
 
 
 async def api_shows_time(request):
@@ -1121,6 +1129,7 @@ def make_apps():
         web.get("/api/airport", api_airport),
         web.get("/api/energy", api_energy),
         web.get("/api/catalog", api_catalog),
+        web.get("/api/timezones", api_timezones),
         web.post("/api/shows-time", api_shows_time),
         web.get("/api/settings/time", api_time_get),
         web.put("/api/settings/time", api_time_put),

@@ -70,6 +70,7 @@ class Widget:
     fetch: Callable[[Any, dict, Ctx], Awaitable[Any]] | None
     example: Callable[[dict, datetime], Any] | None
     readers: tuple = ()                         # its live_data readers: how often its value changes
+    every: int | None = None                    # or, with nothing fetched, how often it changes anyway (a clock)
     box: dict = field(default_factory=lambda: dict(FILL))
     defaults: dict = field(default_factory=dict)
     fields: list = field(default_factory=list)
@@ -80,7 +81,7 @@ class Widget:
     def changes_every(self) -> int | None:
         """Seconds: how often its value can change, from its fetchers' own intervals; None when it
         changes only as Home Assistant's states do (a template)."""
-        got = [r.interval for r in self.readers if getattr(r, "interval", None)]
+        got = [r.interval for r in self.readers if getattr(r, "interval", None)] + ([self.every] if self.every else [])
         return int(min(got)) if got else None
 
     def describe(self) -> dict:
@@ -132,6 +133,10 @@ async def _sun(session, el, ctx):
 
 async def _countdown(session, el, ctx):
     return {"tz": ctx.home_tz}                  # it counts from the element itself (render/countdown.py)
+
+
+async def _world_clock(session, el, ctx):
+    return {"tz": ctx.home_tz}                  # its cities' times are drawn from the clock (render/worldclock.py)
 
 
 async def _energy_total(session, el, ctx):
@@ -214,6 +219,10 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
     Widget("countdown", "Countdown", "calendar", _countdown, lambda el, now: {"tz": None},
            defaults={"to": "date", "name": "", "at": "", "yearly": False, "show_before": 0},
            fields=[sel("to", "Counts down to", [["date", "A date"], ["bins", "Bin day"]], "date"), {"kind": "countdown"}]),
+    # Up to four cities, alike, fitted to the box; "" is Home Assistant's own zone. A sleeping device shows hours apart.
+    Widget("world_clock", "World clock", "clock", _world_clock, lambda el, now: {"tz": None}, every=60,
+           defaults={"zones": [{"tz": "", "label": ""}]},
+           fields=[{"kind": "zones", "key": "zones", "most": 4, "label": "Cities"}]),
     Widget("energy_total", "Energy total", "chart", _energy_total,
            lambda el, now: examples.total(str(el.get("period") or "month"), now),
            readers=(energy.fetch_total,), defaults={"source": "solar", "entity": "", "period": "month"},

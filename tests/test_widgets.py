@@ -801,3 +801,68 @@ class TestIconsFollowTheirState(unittest.TestCase):
         self.assertNotEqual(open_.tobytes(), closed.tobytes())
         self.assertEqual(unknown.tobytes(), closed.tobytes(), "no match: its own icon")
         self.assertEqual(render(self.EL, None).tobytes(), closed.tobytes(), "not known yet: its own icon")
+
+
+# ---------------------------------------------------------------- world clock
+
+from datetime import timezone as dt_timezone  # noqa: E402
+
+from render import clocktime, worldclock  # noqa: E402
+
+CITIES = [{"tz": "", "label": ""}, {"tz": "America/New_York", "label": "New York"},
+          {"tz": "Asia/Kolkata", "label": "Mumbai"}, {"tz": "Australia/Sydney", "label": "Sydney"}]
+
+
+class TestWorldClock(Sizes, unittest.TestCase):
+    element = {"type": "world_clock", "zones": CITIES[:3], "x": 24, "y": 14, "w": 744, "h": 208}
+    value = {"tz": "Europe/Bucharest"}
+
+    def test_times_from_the_database_with_daylight_saving_and_a_day_mark(self):
+        el = {"zones": CITIES}
+        winter = datetime(2026, 1, 15, 14, 0, tzinfo=dt_timezone.utc)
+        summer = datetime(2026, 7, 15, 14, 0, tzinfo=dt_timezone.utc)
+        w, s = worldclock.slots(el, "Europe/Bucharest", winter), worldclock.slots(el, "Europe/Bucharest", summer)
+        self.assertEqual([x[:2] for x in w], [("Bucharest", "16:00"), ("New York", "09:00"), ("Mumbai", "19:30"), ("Sydney", "01:00")])
+        self.assertEqual(w[3][2], "+1")
+        self.assertEqual(s[1][1], "10:00", "New York in summer time")
+        late = worldclock.slots({"zones": [{"tz": "America/Los_Angeles", "label": "LA"}]}, "Europe/Bucharest",
+                                datetime(2026, 1, 15, 23, 30, tzinfo=dt_timezone.utc))
+
+        self.assertEqual(worldclock.slots({"zones": [{"tz": "America/Los_Angeles"}]}, "Europe/Bucharest",
+                                          datetime(2026, 1, 15, 23, 30, tzinfo=dt_timezone.utc))[0][2], "−1")
+
+    def test_asleep_each_city_says_how_far_it_is(self):
+        el = {"zones": CITIES, "asleep": True}
+        got = worldclock.slots(el, "Europe/Bucharest", datetime(2026, 1, 15, 20, 0, tzinfo=dt_timezone.utc))
+        self.assertEqual([x[1] for x in got], ["Same time", "−7 h", "+3:30 h", "+9 h"])
+        self.assertEqual(got[3][2], "Fri", "Sydney is on another day")
+
+    def test_a_sleeping_device_marks_it_and_leaves_a_date_beside_it_alone(self):
+        page = {"elements": [{"type": "world_clock", "zones": CITIES[:2]},
+                             {"type": "text", "value": "{{ now().strftime('%A, %-d %B') }}"}]}
+        got, vals, times = clocktime.date_for_time(page, {1: "Thursday, 15 January"}, datetime(2026, 1, 15, 12, 0))
+        self.assertEqual(times, {0})
+        self.assertTrue(got["elements"][0]["asleep"])
+        self.assertEqual(vals[1], "Thursday, 15 January")
+        self.assertNotIn("asleep", page["elements"][0], "the design keeps its clock")
+
+    def test_cities_fill_the_box_however_many(self):
+        for n in (1, 2, 3, 4):
+            el = {**self.element, "zones": CITIES[:n]}
+            self.assertGreater(ink(render(el, self.value)), 500 * n)
+        rows, cols, _, _ = worldclock.layout(2, 744, 208, worldclock.slots({"zones": CITIES[:2]}, "UTC", datetime.now(dt_timezone.utc)))
+        self.assertEqual((rows, cols), (1, 2), "side by side on the wide 5.79\"")
+        rows, cols, _, _ = worldclock.layout(2, 260, 420, worldclock.slots({"zones": CITIES[:2]}, "UTC", datetime.now(dt_timezone.utc)))
+        self.assertEqual((rows, cols), (2, 1), "stacked when upright")
+
+    def test_an_unknown_zone_is_left_out_and_none_says_what_to_do(self):
+        self.assertEqual(len(worldclock.zones({"zones": [{"tz": "Mars/Olympus"}, {"tz": "Asia/Tokyo"}]}, "UTC")), 1)
+        self.assertGreater(ink(render({**self.element, "zones": []}, self.value)), 200)
+
+    def test_the_editor_gets_every_city_and_the_descriptor(self):
+        cities = {z["tz"]: z for z in worldclock.catalog(datetime(2026, 1, 15, tzinfo=dt_timezone.utc))}
+        self.assertEqual(cities["America/New_York"]["city"], "New York")
+        self.assertEqual(cities["Asia/Kolkata"]["offset"], "+05:30")
+        self.assertNotIn("US/Eastern", cities)
+        self.assertEqual(widgets.get("world_clock").changes_every(), 60)
+        self.assertTrue(clocktime.shows_time({"type": "world_clock"}))
