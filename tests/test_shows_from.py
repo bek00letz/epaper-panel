@@ -104,3 +104,30 @@ class TestTheRoute(EditorClient):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+UI = support.APP / "web" / "app" / "ui.js"
+CSS = (support.APP / "web" / "editor.css").read_text()
+
+
+class TestNothingCutOff(unittest.TestCase):
+    """A segmented control beside its label goes under it when its choices don't fit there
+    (the user's call, 21 Oct): "Template" read "emplat" in the 320 px inspector."""
+
+    def fits(self, widths, room):
+        script = (f"globalThis.navigator ??= {{ platform: '' }}; const U = await import({json.dumps(UI.as_uri())});"
+                  f"console.log(JSON.stringify(U.segFits({json.dumps(widths)}, {room})));")
+        return json.loads(subprocess.run(["node", "--input-type=module", "-e", script], capture_output=True, text=True, check=True).stdout)
+
+    def test_the_widest_choice_decides_beside_the_label(self):
+        # Text, Sensor, Time, Template at 12.5 px semibold, beside a 92 px label in the inspector.
+        self.assertFalse(self.fits([28, 42, 30, 50], 141))
+        self.assertTrue(self.fits([28, 42, 30, 50], 258))
+        self.assertTrue(self.fits([30, 45], 141), "Bold | Regular stays beside")
+
+    def test_every_segmented_control_is_measured(self):
+        src = UI.read_text()
+        self.assertIn("fitting?.observe(c)", src[src.index("export function seg("):])
+        self.assertIn('f.classList.toggle("stack"', src)
+        self.assertRegex(CSS, r"\.field\.wide, \.field\.stack \{ grid-template-columns: 1fr; \}")
+        self.assertIn(".field.stack .segc button { flex: 1 1 auto; }", CSS, "under its label, each choice as wide as its words")

@@ -18,6 +18,9 @@
   switch to Text or Time but not to Sensor. Now Sensor picks the sensor
   the template reads when there's one (or asks which), and Template starts
   from what it showed, its detail, format and replaced words included.
+- **No choice is cut off in a segmented control.** "Template" read "emplat"
+  in the inspector; From, Style and "As" now move under their label when
+  their choices don't fit beside it, and back when there's room.
 - **No error in the browser's console as the editor opens.** The page
   strip asked what isn't sent yet before the pages had loaded.
 - **An icon that follows a sensor matches its state whatever the case.**

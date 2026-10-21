@@ -310,7 +310,7 @@ kbd { font: 12px var(--font); background: var(--surface); border-radius: 5px; pa
 .isec > .slab, .slab { font-size: 12px; font-weight: 600; color: var(--fg-2); margin: 0; }
 .field { display: grid; grid-template-columns: 92px minmax(0, 1fr); align-items: center; gap: 4px 8px; }
 .field > label, .field > .lab { color: var(--fg-2); font-size: 12.5px; }
-.field.wide { grid-template-columns: 1fr; }
+.field.wide, .field.stack { grid-template-columns: 1fr; }
 .field .fnote { grid-column: 1 / -1; }
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .pair .field { grid-template-columns: 1fr; gap: 2px; }
@@ -337,6 +337,7 @@ select.inp { appearance: none; -webkit-appearance: none; padding-right: 28px; cu
 .segc button { flex: 1; min-height: calc(var(--ctl) - 4px); border: 0; border-radius: var(--r-inner); background: none; cursor: pointer; font-size: 12.5px; font-weight: 500; min-width: 0;
   display: inline-flex; align-items: center; justify-content: center; gap: 4px; padding: 0 6px; transition: background-color var(--t) var(--spring), box-shadow var(--t-fast); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .segc button[aria-checked="true"] { background: var(--raised); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.14), 0 0 0 0.5px rgba(0, 0, 0, 0.04); font-weight: 600; }
+.field.stack .segc button { flex: 1 1 auto; }
 .segc.small { flex: none; }
 .segc.small button { flex: none; min-height: 24px; font-size: 12px; padding: 0 10px; overflow: visible; }
 @media (pointer: coarse) { .segc.small button { min-height: 36px; } }

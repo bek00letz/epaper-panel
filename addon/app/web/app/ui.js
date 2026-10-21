@@ -157,7 +157,41 @@ export function select(options, value, onChange, attrs = {}) {
   s.addEventListener("change", () => onChange(s.value));
   return s;
 }
+/* A segmented control beside its label (a .field) goes under it, full width, when its choices
+   don't fit there; never cut off (the user's call, 21 Oct). Measured live, so it moves back when
+   there's room. `segFits` is the rule, apart for the tests. */
+export function segFits(widths, room) {
+  // Beside its label the choices share the width equally, so the widest decides; under it, each
+  // takes what its words need (.field.stack). Padding 6 each side, gap 2, frame 2.
+  const need = widths.length * (Math.max(0, ...widths) + 12) + 2 * (widths.length - 1) + 4;
+  return need <= room;
+}
+let measurer = null;
+function textWidth(text, font) {
+  measurer ||= document.createElement("canvas").getContext("2d");
+  measurer.font = font;
+  return Math.ceil(measurer.measureText(text).width);
+}
+const fitting = typeof ResizeObserver === "function" ? new ResizeObserver((entries) => {
+  for (const { target: c } of entries) {
+    const f = c.parentElement;
+    if (!f || !f.classList.contains("field")) continue;
+    const lab = f.firstElementChild, b = c.querySelector("button");
+    if (!b || lab === c) continue;
+    const cs = getComputedStyle(b), font = `600 ${cs.fontSize} ${cs.fontFamily}`;     // the chosen one is bolder
+    const widths = [...c.children].map((x) => (x.querySelector(".ic") ? 16 : 0) + (x.textContent ? textWidth(x.textContent, font) + (x.querySelector(".ic") ? 4 : 0) : 0));
+    // The label's column as it is beside the control (stacked, the label spans the row).
+    if (!f.classList.contains("stack")) c.labCol = lab.getBoundingClientRect().width + (parseFloat(getComputedStyle(f).columnGap) || 8);
+    f.classList.toggle("stack", !f.classList.contains("wide") && !segFits(widths, f.clientWidth - (c.labCol ?? 100)));
+  }
+}) : null;
+
 export function seg(options, value, onPick, label) {
+  const c = segControl(options, value, onPick, label);
+  fitting?.observe(c);
+  return c;
+}
+function segControl(options, value, onPick, label) {
   return h("div", { class: "segc", role: "radiogroup", "aria-label": label },
     ...options.map(([v, l, ic]) => h("button", { role: "radio", "aria-checked": String(String(value) === String(v)), "aria-label": ic ? l : null, title: ic ? l : null,
       onclick: () => onPick(v),
