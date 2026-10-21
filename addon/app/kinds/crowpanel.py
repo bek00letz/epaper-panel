@@ -14,7 +14,9 @@ and says how long to sleep. The firmware is the same either way. On each
 download the add-on decides: sleeping, the answer carries
 `X-EPF-Sleep: <seconds>; awake=<seconds>` (how long until it next checks,
 counted from this answer, and how long to stay awake first); always on, no
-such header, and the panel stays connected. A header, not a field in the frame
+such header, and the panel stays connected, told by `X-EPF-Next: <ms>` when
+its own timer should fetch next: a moment after the next minute's render
+(cadence.py), so a clock it shows is right within seconds. A header, not a field in the frame
 file, because a frame file is drawn once per cycle for every download while
 the sleep time is worked out per download, and a 304 has no body. Older
 firmware ignores headers it doesn't know.
@@ -35,6 +37,7 @@ from email.utils import formatdate
 from aiohttp import web
 from PIL import Image
 
+import cadence
 import devices
 import frames
 import health
@@ -488,6 +491,13 @@ def sleep_header(got: paging.Wake) -> dict:
     return {"X-EPF-Sleep": f"{int(got.sleep)}; awake={int(got.awake)}"}
 
 
+def next_header() -> dict:
+    """What tells an always-on panel when to fetch next: the milliseconds until a moment after
+    the next minute's render (cadence.py), so the time it shows is never a minute behind.
+    Older firmware ignores it and keeps its own interval."""
+    return {"X-EPF-Next": str(cadence.until_next_fetch_ms())}
+
+
 async def frames_epf(request):
     dev = device_for(request, CrowPanel.id)
     try:
@@ -504,7 +514,7 @@ async def frames_epf(request):
         paging.note_awake(dev, request.query.get("awake_ms"))
     f = runtime.device(dev["id"]).frames
     sleeps = KIND.sleeps(dev)
-    asleep = {}
+    asleep = {} if sleeps else next_header()
     body, etag = f.epf_strip, f.epf_strip_etag
     if sleeps:
         if wake == "timer":

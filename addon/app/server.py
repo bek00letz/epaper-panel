@@ -23,6 +23,7 @@ import time
 import aiohttp
 from aiohttp import web
 
+import cadence
 import mqtt_bridge
 import companion
 import config
@@ -36,6 +37,7 @@ from entities import retired_sensors_in_use
 from frames import refresh_frames
 from layouts_store import load_layouts
 from panel_ops import panel_link_loop, push_panel_update
+from sources.geo import get_home_timezone
 from web import make_apps
 
 
@@ -57,6 +59,7 @@ async def render_loop():
     if runtime.PUBLISHER is not None:
         await runtime.PUBLISHER.wait_ready(20)
     while True:
+        started = time.time()
         try:
             await refresh_frames(runtime.SESSION)
             for dev, spec in devices.all_views():
@@ -92,9 +95,14 @@ async def render_loop():
             print(f"render loop error: {health.describe(exc)}", flush=True)
             for dev in devices.all_devices():
                 runtime.device(dev["id"]).frames.error = health.describe(exc)
-        # Render again on the cadence, or as soon as outside data arrives for
-        # the first time (a newly added widget, or just after a start).
-        if await runtime.LIVE.wait_for_news(REFRESH):
+        # Render again just after the next minute starts (cadence.py), so the time on a
+        # page is right when the devices ask a moment later; or as soon as outside data
+        # arrives for the first time (a newly added widget, or just after a start).
+        wait, late = cadence.after_render(started, time.time(), REFRESH,
+                                          cadence.zone(await get_home_timezone(runtime.SESSION, default="")))
+        if late:
+            print(late, flush=True)
+        if await runtime.LIVE.wait_for_news(wait):
             await asyncio.sleep(1)                        # let a burst of arrivals land together
 
 

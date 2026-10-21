@@ -563,9 +563,9 @@ static void test_power() {
   CHECK(panel.fetch_due(300), "a download is due");
   p.begin(Wake::BOOT, mem, 0);
   p.on_answer(200, false, o, 0);
-  CHECK(epf::own_timer_fetch_due(panel, p, 300), "connected: its own timer downloads");
+  CHECK(epf::own_timer_fetch_due(panel, p, 300, 0), "connected: its own timer downloads");
   p.on_answer(200, true, press, 0);
-  CHECK(!epf::own_timer_fetch_due(panel, p, 300), "Low Power Mode: its own timer is off");
+  CHECK(!epf::own_timer_fetch_due(panel, p, 300, 0), "Low Power Mode: its own timer is off");
   panel.note_fetch(true);
 
   // The picture kept through deep sleep (TRMNL's way), and which refresh policy applies.
@@ -613,6 +613,88 @@ static void test_power() {
             std::string(epf::wake_name(Wake::BOOT)) == "boot", "what it tells the add-on");
 }
 
+// Always on: the add-on's answer says when the next timed download starts (X-EPF-Next), a
+// moment after its render each minute, so the clock on the page is right within seconds.
+static void test_aligned_fetches() {
+  auto &panel = epf::PanelController::instance();
+  auto &p = epf::PowerPolicy::instance();
+  using epf::Wake;
+  static epf::Remembered mem{};                       // the policy keeps a pointer to it
+  epf::SleepOrder none;
+  p.begin(Wake::BOOT, mem, 0);
+  p.on_answer(200, false, none, 0);
+  if (panel.sleeping()) panel.dispatch(epf::NavAction::WAKE);
+  panel.on_stream_loaded(sleep_stream(false));
+  panel.note_fetch(true);
+  CHECK(!panel.resting(), "awake, outside quiet hours");
+
+  uint32_t ms = 0;
+  CHECK(epf::parse_next_fetch("44000", ms) && ms == 44000, "milliseconds");
+  CHECK(epf::parse_next_fetch(" 60500 ", ms) && ms == 60500, "spaces allowed");
+  CHECK(epf::parse_next_fetch("0", ms) && ms == epf::MIN_NEXT_FETCH_MS, "never a download loop");
+  CHECK(epf::parse_next_fetch("99999999999", ms) == false, "too large to be a number it takes");
+  CHECK(epf::parse_next_fetch("86400000", ms) && ms == epf::MAX_NEXT_FETCH_MS, "an hour at most");
+  CHECK(!epf::parse_next_fetch("", ms) && !epf::parse_next_fetch("soon", ms) && !epf::parse_next_fetch("5 s", ms) &&
+            !epf::parse_next_fetch("-5", ms) && !epf::parse_next_fetch(nullptr, ms), "anything else is ignored");
+
+  // It booted and fetched at once (10:00:19); the answer says 44 s: 10:01:03, after the render.
+  const uint32_t boot = 4000000000u;                  // near millis()' wrap: differences still hold
+  panel.reset_fetch_idle();
+  panel.aim_fetch(44000, boot);
+  panel.tick_seconds(40);
+  CHECK(!epf::own_timer_fetch_due(panel, p, 60, boot + 43999), "not before the time it was given");
+  panel.tick_seconds(5);
+  CHECK(!epf::own_timer_fetch_due(panel, p, 60, boot + 43999),
+        "its interval counting from the last download (45 s here) no longer decides... ");
+  panel.tick_seconds(20);
+  CHECK(!epf::own_timer_fetch_due(panel, p, 60, boot + 43999), "...even past a whole interval");
+  CHECK(epf::own_timer_fetch_due(panel, p, 60, boot + 44000), "at the time it was given");
+  panel.reset_fetch_idle();                            // the download starts
+  CHECK(!panel.fetch_aimed(), "a download starting uses the hint up");
+
+  // The next answer comes back a second later, aimed a minute on: every fetch lands just after a render.
+  panel.aim_fetch(59000, boot + 45000);
+  CHECK(!epf::own_timer_fetch_due(panel, p, 60, boot + 103999) && epf::own_timer_fetch_due(panel, p, 60, boot + 104000),
+        "a minute after the last, to the millisecond");
+
+  // A press, Send or an alert fetches at once, unaligned; that answer's hint realigns.
+  panel.reset_fetch_idle();
+  CHECK(!epf::own_timer_fetch_due(panel, p, 60, boot + 110000), "a fetch out of turn starts the count again");
+  panel.aim_fetch(13000, boot + 111000);
+  CHECK(epf::own_timer_fetch_due(panel, p, 60, boot + 124000), "realigned: the next minute's render, not a minute on");
+
+  // An add-on that doesn't send it: every interval from the last download, as before.
+  panel.reset_fetch_idle();
+  panel.tick_seconds(55);
+  CHECK(!epf::own_timer_fetch_due(panel, p, 60, 0), "no hint: the interval...");
+  panel.tick_seconds(5);
+  CHECK(epf::own_timer_fetch_due(panel, p, 60, 0), "...counted from the last download");
+
+  // A failed download is retried with its backoff, whatever the last hint said.
+  panel.reset_fetch_idle();
+  panel.aim_fetch(3600000, boot);
+  panel.note_fetch(false);
+  panel.tick_seconds(30);
+  CHECK(epf::own_timer_fetch_due(panel, p, 60, boot + 30000), "owed: retried after 30 s");
+  panel.note_fetch(true);
+
+  // Resting (asleep, quiet hours): no timed downloads, hint or not.
+  panel.reset_fetch_idle();
+  panel.aim_fetch(5000, boot);
+  panel.dispatch(epf::NavAction::SLEEP);
+  CHECK(!epf::own_timer_fetch_due(panel, p, 60, boot + 600000), "asleep: it waits for the add-on or a press");
+  panel.dispatch(epf::NavAction::WAKE);
+  CHECK(epf::own_timer_fetch_due(panel, p, 60, boot + 600000), "awake again: the time it was given has passed");
+
+  // Low Power Mode: the add-on's sleep order decides, never the hint.
+  epf::SleepOrder order;
+  order.sleep_sec = 900;
+  p.on_answer(200, true, order, 0);
+  CHECK(!epf::own_timer_fetch_due(panel, p, 60, boot + 600000), "sleeping between updates: its own timer is off");
+  p.on_answer(200, false, none, 0);
+  panel.reset_fetch_idle();
+}
+
 int main(int argc, char **argv) {
   if (argc < 2) {
     std::printf("usage: core_test <fixture-dir>\n");
@@ -628,6 +710,7 @@ int main(int argc, char **argv) {
   test_sleep();
   test_remote_alerts_and_fetches();
   test_power();
+  test_aligned_fetches();
   if (failures) {
     std::printf("%d check(s) failed\n", failures);
     return 1;

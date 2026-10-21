@@ -15,6 +15,24 @@
   names them ("Away" for not_home), then the choices it lists and the states
   it had in the last 10 days, so a sensor like a cat's location offers
   "Indoor Cat" and "Outdoor Cat". Before, only a dozen kinds had any.
+Firmware change: reinstall the panel's firmware to get the second half.
+
+- **The add-on draws just after each minute starts.** It used to draw every
+  minute counted from when it started, so a clock on a page could be most of
+  a minute old before a panel even asked for it. A render that runs long is
+  followed by another straight away, never a skipped minute, and the log
+  says so.
+- **An always-on panel fetches just after the add-on draws** (firmware).
+  Its first fetch after a start is still straight away; from then on it
+  fetches a couple of seconds into each minute, so the time it shows is
+  right within a few seconds, not up to two minutes behind. A button,
+  Send, alerts and quiet hours still fetch at once; the next timed fetch
+  lines up again. Until its firmware is reinstalled, a panel keeps
+  fetching every minute from when it started, as before.
+- **Devices that sleep between updates wake just after a minute starts**,
+  a CrowPanel and a TRMNL alike, so what they show was drawn that minute.
+  A wake is never later than Update every asks; the first one after a
+  start or a press may come up to a minute sooner, to line up.
 
 ## 0.17.0
 Add-on only; no firmware change, so nothing to reinstall on the panel.
