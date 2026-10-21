@@ -696,3 +696,11 @@ class TestStateWords(unittest.TestCase):
             for st, (word, icon) in by_state.items():
                 self.assertIsNotNone(layout.mdi_codepoint(icon), f"{key} {st}: {icon}")
                 self.assertTrue(word and word[0].isupper(), f"{key} {st}: sentence case")
+
+
+class TestEveryLeagueHasItsExample(unittest.TestCase):
+    def test_both_ways(self):
+        offered = {lg.path for lg in sports.LEAGUES}
+        self.assertEqual(set(examples._TEAMS), offered, "every offered league has its own teams, and only those")
+        for path in offered:
+            self.assertNotIn(examples.match(path)["home_team"], ("HOME", "AWAY"), path)

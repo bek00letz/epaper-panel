@@ -20,14 +20,17 @@ from render import layout
 
 # ---------------------------------------------------------------- sports
 
+# Every league the add-on offers (sources/sports.LEAGUES) has its own; a test holds both ways.
 _TEAMS = {
     "soccer/eng.1": ("ARSENAL", "CHELSEA", "PREMIER LEAGUE", "Emirates Stadium"),
     "soccer/esp.1": ("BARCELONA", "REAL MADRID", "LALIGA", "Spotify Camp Nou"),
     "soccer/ita.1": ("INTER", "MILAN", "SERIE A", "San Siro"),
     "soccer/ger.1": ("BAYERN", "DORTMUND", "BUNDESLIGA", "Allianz Arena"),
-    "soccer/fra.1": ("PSG", "MARSEILLE", "LIGUE 1", "Parc des Princes"),
     "soccer/uefa.champions": ("REAL MADRID", "BAYERN", "CHAMPIONS LEAGUE", "Santiago Bernabéu"),
+    "soccer/usa.1": ("LA GALAXY", "LAFC", "MLS", "Dignity Health Sports Park"),
     "basketball/nba": ("LAKERS", "CELTICS", "NBA", "Crypto.com Arena"),
+    "basketball/wnba": ("LIBERTY", "ACES", "WNBA", "Barclays Center"),
+    "football/college-football": ("MICHIGAN", "OHIO STATE", "COLLEGE FOOTBALL", "Michigan Stadium"),
     "football/nfl": ("CHIEFS", "EAGLES", "NFL", "Arrowhead Stadium"),
     "baseball/mlb": ("YANKEES", "DODGERS", "MLB", "Yankee Stadium"),
     "hockey/nhl": ("RANGERS", "BRUINS", "NHL", "Madison Square Garden"),

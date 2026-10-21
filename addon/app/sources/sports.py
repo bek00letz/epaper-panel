@@ -3,6 +3,7 @@
 import health
 import json
 import time
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import aiohttp
@@ -15,50 +16,38 @@ from sources.geo import get_home_timezone
 _sports_match_cache = {}
 
 
-LEAGUE_MAP = {
-    "premier_league": "soccer/eng.1",
-    "epl": "soccer/eng.1",
-    "champions_league": "soccer/uefa.champions",
-    "ucl": "soccer/uefa.champions",
-    "la_liga": "soccer/esp.1",
-    "bundesliga": "soccer/ger.1",
-    "serie_a": "soccer/ita.1",
-    "mls": "soccer/usa.1",
-    "nba": "basketball/nba",
-    "wnba": "basketball/wnba",
-    "nfl": "football/nfl",
-    "college_football": "football/college-football",
-    "mlb": "baseball/mlb",
-    "nhl": "hockey/nhl"
-}
+@dataclass(frozen=True)
+class League:
+    """One league the add-on offers: every place that needs to know a league asks here (and the editor,
+    through /api/catalog)."""
+    path: str                   # ESPN's: "soccer/eng.1"
+    slug: str                   # names its sensor, sensor.epaper_sports_<slug>
+    name: str                   # "Premier League"
+    aliases: tuple = ()         # what a page may say for it
 
-LEAGUE_SLUGS = {
-    "soccer/eng.1": "premier_league",
-    "premier_league": "premier_league",
-    "epl": "premier_league",
-    "soccer/uefa.champions": "champions_league",
-    "champions_league": "champions_league",
-    "ucl": "champions_league",
-    "soccer/esp.1": "la_liga",
-    "la_liga": "la_liga",
-    "soccer/ger.1": "bundesliga",
-    "bundesliga": "bundesliga",
-    "soccer/ita.1": "serie_a",
-    "serie_a": "serie_a",
-    "soccer/usa.1": "mls",
-    "mls": "mls",
-    "basketball/nba": "nba",
-    "nba": "nba",
-    "basketball/wnba": "wnba",
-    "wnba": "wnba",
-    "football/nfl": "nfl",
-    "nfl": "nfl",
-    "football/college-football": "college_football",
-    "baseball/mlb": "mlb",
-    "mlb": "mlb",
-    "hockey/nhl": "nhl",
-    "nhl": "nhl"
-}
+    @property
+    def sensor(self) -> str:
+        return f"sensor.epaper_sports_{self.slug}"
+
+
+# In the order the editor offers them.
+LEAGUES = (
+    League("soccer/eng.1", "premier_league", "Premier League", ("premier_league", "epl")),
+    League("soccer/uefa.champions", "champions_league", "Champions League", ("champions_league", "ucl")),
+    League("soccer/esp.1", "la_liga", "La Liga", ("la_liga",)),
+    League("soccer/ger.1", "bundesliga", "Bundesliga", ("bundesliga",)),
+    League("soccer/ita.1", "serie_a", "Serie A", ("serie_a",)),
+    League("soccer/usa.1", "mls", "MLS", ("mls",)),
+    League("basketball/nba", "nba", "NBA", ("nba",)),
+    League("basketball/wnba", "wnba", "WNBA", ("wnba",)),
+    League("football/nfl", "nfl", "NFL", ("nfl",)),
+    League("football/college-football", "college_football", "College football", ("college_football",)),
+    League("baseball/mlb", "mlb", "MLB", ("mlb",)),
+    League("hockey/nhl", "nhl", "NHL", ("nhl",)),
+)
+# What a page may say, to the ESPN path; and a path or alias to the slug that names its sensor.
+LEAGUE_MAP = {a: lg.path for lg in LEAGUES for a in lg.aliases}
+LEAGUE_SLUGS = {**{lg.path: lg.slug for lg in LEAGUES}, **{a: lg.slug for lg in LEAGUES for a in lg.aliases}}
 
 
 def _parse_espn_event(ev, league_title="", tz_name=None, league="soccer"):
