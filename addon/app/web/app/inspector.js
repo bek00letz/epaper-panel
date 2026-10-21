@@ -296,6 +296,8 @@ const TYPE_FIELDS = {
     F.text("team", "Team", "Any team"), F.entity("entity", "Team Tracker sensor"), { kind: "window", label: "Only show on match days" },
     F.num("pre_buffer_hours", "Hours before", "2", 0, 24, 0.5), F.num("post_buffer_hours", "Hours after", "2", 0, 24, 0.5),
     F.text("timezone", "Time zone", "Home Assistant's"), F.on("show_stats", "Team stats", true), F.on("show_scorers", "Scorers", true), BORDER_ON, { kind: "sensorid" }],
+  // render/sun.STYLES; "next" turns round at sunrise and at sunset.
+  sun_times: [F.sel("style", "Style", [["next", "Next one first"], ["both", "Both alike"]], "next")],
   flight_tracker: [F.sel("style", "Style", [["card", "Details"], ["split", "Radar and details"], ["radar", "Radar"]], "card"), { kind: "place" },
     F.num("radius", "Radius, km", "35", 5, 250), { kind: "window", label: "Only show while a plane is near" }, F.on("show_sub_metrics", "Second units", true), BORDER_ON, { kind: "sensorid" }],
 };

@@ -74,14 +74,17 @@ export function setupStep(app, p, { thumb, add, foot, initialLook = 0, rememberL
   if (p.looks.length > 1) {
     const chips = p.choose === "League" || p.choose === "Series";
     const group = h("div", { class: chips ? "chips" : "styles", role: "radiogroup", "aria-label": p.choose || "Style" });
-    const choose = (i) => { li = i; rememberLook && rememberLook(i); drawLooks(); drawPreview(); };
+    // A look that changes on its own says how, under the choice.
+    const note = h("p", { class: "fnote", "aria-live": "polite" });
+    const drawNote = () => { note.textContent = look().note || ""; note.hidden = !look().note; };
+    const choose = (i) => { li = i; rememberLook && rememberLook(i); drawLooks(); drawNote(); drawPreview(); };
     const drawLooks = () => group.replaceChildren(...p.looks.map((l, i) => chips
       ? h("button", { class: "chipbtn", role: "radio", "aria-checked": String(i === li), tabindex: i === li ? "0" : "-1", onclick: () => choose(i), text: l.name })
       : h("button", { class: "pbtn", role: "radio", "aria-checked": String(i === li), tabindex: i === li ? "0" : "-1", "aria-label": l.name, onclick: () => choose(i) },
         thumb(app, `preset:${l.id}:example`, examplePage(p, l), { example: true }), h("span", { class: "pt", text: l.name }))));
     radioKeys(group, choose);
-    drawLooks();
-    node.append(h("div", { class: "stepsec" }, h("h3", { class: "slab", text: p.choose || "Style" }), group));
+    drawLooks(); drawNote();
+    node.append(h("div", { class: "stepsec" }, h("h3", { class: "slab", text: p.choose || "Style" }), group, note));
   }
 
   /* What it shows: the right kind of entity first, sensibly picked. */

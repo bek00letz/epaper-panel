@@ -101,6 +101,11 @@
   also follows MLS, the WNBA and college football. It offers all twelve now,
   the same list as New page.
 
+- **Sunrise and sunset in New page**, under Outside, in two styles: Next
+  one first (it turns round at sunrise and at sunset) or Both alike. It
+  uses Home Assistant's sun, so there's nothing to set up. It's under
+  Insert › Widgets too.
+
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) for the quiet-hours fix below.

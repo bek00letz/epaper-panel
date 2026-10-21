@@ -62,8 +62,21 @@ class TestCatalogue(unittest.TestCase):
         self.assertEqual(len(titles), len(set(titles)), "no thing offered twice")
 
     def test_planes_are_outside_with_the_weather(self):
-        self.assertEqual(self.by_id["planes"]["group"], "outside")
-        self.assertEqual(self.by_id["weather_forecast"]["group"], "outside")
+        outside = [p["title"] for p in self.cat["presets"] if p["group"] == "outside"]
+        self.assertEqual(outside, ["Weather", "Sunrise and sunset", "Planes overhead"])
+
+    def test_sunrise_and_sunset_in_its_two_styles(self):
+        p = self.by_id["sun_times"]
+        self.assertEqual([l["name"] for l in p["looks"]], ["Next one first", "Both alike"])
+        styles = [l["page"]["elements"][0]["style"] for l in p["looks"]]
+        try:
+            from render import sun                  # widgets-015's renderer, once both are merged
+        except ImportError:
+            sun = None
+        self.assertEqual(styles, list(sun.STYLES) if sun else ["next", "both"])
+        self.assertEqual(p["asks"], "", "nothing to set up: Home Assistant's own sun")
+        src = (APP_JS / "inspector.js").read_text()
+        self.assertIn('sun_times: [F.sel("style", "Style", [["next", "Next one first"], ["both", "Both alike"]], "next")],', src)
 
     def test_the_to_do_list_in_its_three_styles_by_urgency_first(self):
         p = self.by_id["to_do"]

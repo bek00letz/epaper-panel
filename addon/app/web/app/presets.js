@@ -167,6 +167,16 @@ export const PRESETS = [
     looks: [{ id: "weather_forecast", name: "Weather", make: (ent) => [boxed({ type: "weather_forecast", entity: ent || "" })] }],
   },
   {
+    id: "sun_times", group: "outside", title: "Sunrise and sunset", kw: "sun dawn dusk daylight sunrise sunset",
+    desc: "Today's sunrise and sunset, from Home Assistant's sun. Works in every home, with nothing to set up.",
+    asks: "", choose: "Style",
+    looks: [
+      { id: "sun_next", name: "Next one first", note: "After sunrise it turns round: the sunset large, tomorrow's sunrise beside it.",
+        make: () => [{ type: "sun_times", style: "next", x: 24, y: 14, w: 744, h: 208 }] },
+      { id: "sun_both", name: "Both alike", make: () => [{ type: "sun_times", style: "both", x: 24, y: 14, w: 744, h: 208 }] },
+    ],
+  },
+  {
     id: "planes", group: "outside", title: "Planes overhead", kw: "flights aircraft radar airport plane",
     desc: "When a plane comes near: its flight, airline, route, height and speed, or a radar of everything around. Only shows while one is near.",
     asks: "", choose: "Style",
