@@ -320,3 +320,27 @@ class TestJellyHAAddress(unittest.IsolatedAsyncioTestCase):
             async with TestClient(TestServer(editor)) as ed:
                 r = await ed.get("/api/sources/jellyfin/suggest")
                 self.assertEqual(await r.json(), {"address": "https://jelly.example.org"})
+
+
+class TestASecondJellyfinSource(unittest.IsolatedAsyncioTestCase):
+    """New to watch makes watch_2 for a second server: its page steps through its own items, never watch's."""
+
+    async def test_a_second_source_pages_through_its_own(self):
+        ent = "sensor.epaper_watch_2"
+        mine = [{"title": "Harbour Town", "detail": "2 new episodes", "what_is_new": "2 new episodes"},
+                {"title": "Paper Moon", "detail": "Film", "what_is_new": "New film"}]
+        others = [{"title": "Northern Lights", "detail": "S02E04"}, {"title": "Something else", "detail": "Film"}]
+        page = {"elements": [{"type": "text", "entity": ent, "show": "state", "x": 10, "y": 10, "w": 700, "h": 80},
+                             {"type": "text", "entity": ent, "show": "attribute", "attribute": "what_is_new",
+                              "x": 10, "y": 100, "w": 700, "h": 60}]}
+        cache = {"sensor.epaper_watch": others, ent: mine}
+        vals = {0: "Harbour Town", 1: "2 new episodes"}
+        n, kind, keys, items, feed = subitems.inspect_category_subitems(page, vals, cache)
+        self.assertEqual((n, kind, feed), (2, "feed", ent))
+        self.assertEqual([i["title"] for i in items], ["Harbour Town", "Paper Moon"])
+        plan = {"name": "watch_2", "vals": vals, "sub_type": kind, "feed_items": items, "feed_entity": feed, "series": None}
+        footer = frames.T.footer_plan(clock="12:00")
+        one, two = [await frames.draw_category(plan, n, 0, footer=footer, page_def=page, orient=0,
+                                               display="crowpanel_579", only=k) for k in (0, 1)]
+        self.assertNotEqual(one, two, "each item draws its own title")
+        self.assertEqual(subitems.item_value(page["elements"][1], ent, mine[1]), "New film")
