@@ -11,7 +11,8 @@ import subprocess
 import unittest
 
 import support
-from render import todo
+import fixture
+from render import arrange, layout, theme as T, todo
 from sources import racing, sports
 
 WEB = support.APP / "web"
@@ -114,6 +115,83 @@ class TestCatalogue(unittest.TestCase):
                 for el in look["page"]["elements"]:
                     if el.get("entity") and not el["entity"].startswith("sensor.epaper_"):
                         self.fail(f"{look['id']} guesses {el['entity']}")
+
+
+@unittest.skipUnless(shutil.which("node"), "no node to read the editor's presets")
+class TestGuestWifi(unittest.TestCase):
+    def test_the_code_and_the_page_carry_your_network(self):
+        els = run_js('console.log(JSON.stringify(P.guestWifi({ ssid: "Guests", password: "pass word", auth: "WPA" })))')
+        qr = next(e for e in els if e["type"] == "qr")
+        self.assertEqual((qr["wifi_ssid"], qr["wifi_password"], qr["wifi_auth"]), ("Guests", "pass word", "WPA"))
+        self.assertIn("Guests", [e.get("value") for e in els])
+        self.assertNotIn("pass word", [e.get("value") for e in els], "the password stays in the code")
+
+    def test_it_asks_for_the_network(self):
+        p = run_js('console.log(JSON.stringify(P.presetById("guest_wifi").needs))')
+        self.assertEqual(p, "wifi")
+        src = (APP_JS / "setup.js").read_text()
+        self.assertIn('addBtn.disabled = (asksEntity && !ent) || (p.needs === "wifi" && !wifi.ssid.trim());', src)
+
+    def test_the_words_stay_left_of_the_code(self):
+        els = run_js('console.log(JSON.stringify(P.guestWifi({ ssid: "A network name of thirty-two ch" })))')
+        qr = next(e for e in els if e["type"] == "qr")
+        for e in els:
+            if e["type"] == "text":
+                self.assertLessEqual(e["x"] + e["w"], qr["x"] - 16, e.get("value"))
+
+
+def example_values(page):
+    """A page's values as the offline fixture answers them: the example values."""
+    vals = {}
+    for i, tpl in layout.collect_templates(page).items():
+        vals[i] = fixture.eval_fixture_template(tpl)
+    return vals
+
+
+@unittest.skipUnless(shutil.which("node"), "no node to read the editor's presets")
+class TestEverythingFits(unittest.TestCase):
+    """Every look's words fit their boxes, on the 5.79" and placed on every other size offered."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.cat = run_js(CATALOGUE)
+
+    def check(self, page, display, orientation=0):
+        metrics = []
+        layout.render_page(page, example_values(page), metrics=metrics, display=display, orientation=orientation)
+        return [m for m in metrics if m.get("overflow")]
+
+    def test_on_every_offered_size(self):
+        base = arrange.canvas_key(T.DISPLAYS["crowpanel_579"]["w"], T.DISPLAYS["crowpanel_579"]["h"])
+        for key, d in T.DISPLAYS.items():
+            if d.get("offered") is False:
+                continue
+            target = arrange.canvas_key(d["w"], d["h"])
+            for p in self.cat["presets"]:
+                for look in p["looks"]:
+                    page = json.loads(json.dumps(look["example"]))
+                    for el in page["elements"]:
+                        el.update(arrange.auto_box(el, base, target))
+                    with self.subTest(look=look["id"], display=key):
+                        self.assertEqual(self.check(page, key), [])
+
+    def test_the_presets_canvas_is_the_5_79(self):
+        c = self.cat["canvas"]
+        self.assertEqual((c["w"], c["h"], c["band"]), (T.DISPLAYS["crowpanel_579"]["w"], T.DISPLAYS["crowpanel_579"]["h"], T.band_height(272)))
+
+    def test_placed_on_another_size_as_the_add_on_places_a_design(self):
+        """The editor's fit (presets.fitToCanvas) is arrange.auto_box, so a new page sits where the add-on would put it."""
+        base = arrange.canvas_key(792, 272)
+        el = {"type": "text", "x": 132, "y": 94, "w": 400, "h": 64, "size": 22}
+        for key, d in T.DISPLAYS.items():
+            if d.get("offered") is False:
+                continue
+            w, h = d["w"], d["h"]
+            g = {"W": w, "H": h, "safeH": h - T.band_height(h), "portrait": False}
+            got = run_js(f"console.log(JSON.stringify(P.fitToCanvas([{json.dumps(el)}], {json.dumps(g)})[0]))")
+            want = {**el, **arrange.auto_box(el, base, arrange.canvas_key(w, h))}
+            with self.subTest(display=key):
+                self.assertEqual(got, want)
 
 
 class TestTheSheet(unittest.TestCase):

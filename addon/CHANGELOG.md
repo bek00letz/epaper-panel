@@ -73,6 +73,18 @@
   and "Formula 1" is Race weekend. Pages you already have don't change. A new
   Match or Race weekend page is named after its league or series.
 
+- **Guest Wi-Fi asks for your network.** Its next step asks for the
+  network's name, password and security, and the code guests scan joins
+  that network; the page shows the name and keeps the password in the
+  code. Before, it came with a made-up network, and its words ran under
+  the code.
+- **Fixed:** a preset added on any device other than the 5.79" came out
+  drawn for the 5.79", running off the canvas. It's now placed the way the
+  add-on places a page on another size, and rearranged when the device
+  stands upright. Every preset's words now fit their boxes at every size:
+  New to watch's line at the top right and Battery and solar's heading no
+  longer run over.
+
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) for the quiet-hours fix below.

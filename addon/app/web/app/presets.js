@@ -132,15 +132,8 @@ export const PRESETS = [
   },
   {
     id: "guest_wifi", group: "home", title: "Guest Wi-Fi", desc: "A code guests scan with their phone camera to join your Wi-Fi.", kw: "qr code network password",
-    asks: "",
-    looks: [{ id: "guest_wifi", name: "Guest Wi-Fi", make: () => [
-      { type: "box", x: 18, y: 14, w: 756, h: 218, fill: "outline", radius: 16, thickness: 3 },
-      { type: "icon", icon: "mdi:wifi", invert: true, radius: 14, x: 42, y: 38, w: 72, h: 72 },
-      { type: "text", value: "GUEST WI-FI", size: 42, bold: true, x: 132, y: 36, w: 400, h: 52, align: "left" },
-      { type: "text", value: "Point your phone camera at the QR code to connect automatically.", size: 22, bold: false, x: 132, y: 94, w: 410, h: 64, align: "left" },
-      { type: "text", value: "NETWORK: MyGuestWiFi", size: 20, bold: true, pill: true, radius: 8, x: 42, y: 172, w: 310, h: 38, align: "center" },
-      { type: "qr", qr_mode: "wifi", wifi_ssid: "MyGuestWiFi", wifi_password: "secretpassword", wifi_auth: "WPA", title: "SCAN TO JOIN", x: 568, y: 24, w: 184, h: 198 },
-    ] }],
+    asks: "", needs: "wifi",
+    looks: [{ id: "guest_wifi", name: "Guest Wi-Fi", make: (_, w = {}) => guestWifi(w) }],
   },
 
   /* ---------- energy ---------- */
@@ -159,7 +152,7 @@ export const PRESETS = [
     asks: "sensor", prefer: { energy: "battery", device_class: ["battery"], units: ["%"] }, example: "sensor.home_battery",
     looks: [{ id: "energy_gauges", name: "Battery and solar", make: (ent) => [
       { type: "box", x: 18, y: 14, w: 356, h: 218, fill: "outline", radius: 14, thickness: 3 },
-      { type: "text", value: "ENERGY & STORAGE", size: 18, bold: true, invert: true, radius: 8, x: 34, y: 28, w: 210, h: 32, align: "center" },
+      { type: "text", value: "ENERGY & STORAGE", size: 18, bold: true, invert: true, radius: 8, x: 34, y: 28, w: 280, h: 32, align: "center" },
       { type: "bar", entity: ent || "", title: "HOME BATTERY", bar_style: "segmented", segments: 10, min_val: 0, max_val: 100, suffix: "%", decimals: 0, show_label: true, x: 34, y: 74, w: 324, h: 66 },
       { type: "bar", entity: "", title: "HOUSE LOAD", bar_style: "solid", min_val: 0, max_val: 5000, suffix: " W", decimals: 0, show_label: true, x: 34, y: 152, w: 324, h: 64 },
       { type: "bar_chart", entity: "", title: "24H GENERATION", hours: 24, bars: 12, show_labels: true, show_border: true, x: 390, y: 14, w: 384, h: 218 },
@@ -210,7 +203,7 @@ export const PRESETS = [
     looks: [
       watchLook("watch", "Newest", (ent) => [
         { type: "text", value: "new to watch", size: 26, bold: false, x: 40, y: 28, w: 300, h: 36, align: "left" },
-        { type: "text", entity: watchEnt(ent), show: "attribute", attribute: "detail", size: 26, bold: false, x: 452, y: 28, w: 300, h: 36, align: "right" },
+        { type: "text", entity: watchEnt(ent), show: "attribute", attribute: "detail", size: 26, bold: false, x: 352, y: 28, w: 400, h: 36, align: "right" },
         { type: "text", entity: watchEnt(ent), x: 40, y: 74, w: 712, h: 150, align: "left" },
       ]),
       watchLook("episode", "Episode card", (ent) => [
@@ -226,6 +219,42 @@ export const PRESETS = [
     ],
   },
 ];
+
+/* Guest Wi-Fi: the network's name and password go into the code (and the
+   name onto the page), so the page is asked for them, not left with a sample.
+   The words sit left of the code, wrapping inside their box at every size. */
+export function guestWifi({ ssid = "", password = "", auth = "WPA" } = {}) {
+  const name = ssid || "Your network";
+  return [
+    { type: "box", x: 18, y: 14, w: 756, h: 218, fill: "outline", radius: 16, thickness: 3 },
+    { type: "icon", icon: "mdi:wifi", invert: true, radius: 14, x: 42, y: 38, w: 72, h: 72 },
+    { type: "text", value: "GUEST WI-FI", size: 42, bold: true, x: 132, y: 36, w: 400, h: 52, align: "left" },
+    { type: "text", value: "Point your phone camera at the code to join.", size: 22, bold: false, wrap: true, x: 132, y: 94, w: 400, h: 64, align: "left" },
+    { type: "text", value: name, size: 22, bold: true, pill: true, radius: 8, x: 42, y: 172, w: 490, h: 38, align: "center" },
+    { type: "qr", qr_mode: "wifi", wifi_ssid: ssid, wifi_password: password, wifi_auth: auth, title: "SCAN TO JOIN", x: 568, y: 24, w: 184, h: 198 },
+  ];
+}
+
+/* Presets are drawn on the 5.79" (792 × 272, a 32 px footer band:
+   theme.band_height(272), pinned by a test). On any other canvas they're
+   placed the way the add-on places a design on another size
+   (arrange.auto_box): scaled to fit the content area and centred. Upright,
+   the page is then rearranged as turning a page upright does. */
+export const CANVAS = { w: 792, h: 272, band: 32 };
+export function fitToCanvas(elements, g, reflow) {
+  if (g.W === CANVAS.w && g.H === CANVAS.h) return elements;
+  const s = Math.min(g.W / CANVAS.w, g.safeH / (CANVAS.h - CANVAS.band));
+  const ox = (g.W - CANVAS.w * s) / 2, oy = (g.safeH - (CANVAS.h - CANVAS.band) * s) / 2;
+  const out = elements.map((el) => {
+    const e = { ...el };
+    for (const k of ["x", "w"]) if (typeof e[k] === "number") e[k] = Math.round(e[k] * s + (k === "x" ? ox : 0));
+    for (const k of ["y", "h"]) if (typeof e[k] === "number") e[k] = Math.round(e[k] * s + (k === "y" ? oy : 0));
+    if (typeof e.size === "number" && e.size) e.size = Math.max(8, Math.round(e.size * s));
+    return e;
+  });
+  if (g.portrait && reflow) reflow({ elements: out }, true, g.d);
+  return out;
+}
 
 export const presetById = (id) => PRESETS.find((p) => p.id === id);
 export const groupName = (id) => (GROUPS.find(([g]) => g === id) || [id, id])[1];
@@ -249,6 +278,7 @@ export function pageFor(p, look, ent, extra) {
 export function examplePage(p, look) {
   const ex = typeof p.example === "function" ? p.example(look) : p.example;
   if (Array.isArray(ex)) return pageFor(p, look, ex[0], ex);
+  if (p.needs === "wifi") return pageFor(p, look, "", { ssid: "Guests", password: "example-only", auth: "WPA" });
   return pageFor(p, look, ex || "");
 }
 

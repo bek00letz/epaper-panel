@@ -7,7 +7,8 @@
 import { h, icon, api, clone, slug, prefs } from "./util.js";
 import { sheet, toast } from "./ui.js";
 import { syncDynamicGridShowIf } from "./conditions.js";
-import { PRESETS, GROUPS, lookOf, pageFor, examplePage, pageName, matches, rankSensors } from "./presets.js";
+import { reflowPageElements } from "./legacy.js";
+import { PRESETS, GROUPS, lookOf, pageFor, examplePage, pageName, matches, rankSensors, fitToCanvas } from "./presets.js";
 import { thumbnail } from "./strip.js";
 import { setupStep } from "./setup.js";
 
@@ -19,10 +20,12 @@ const hasStep = (p) => p.looks.length > 1 || !!p.asks || !!p.needs;
 /* A thumbnail, sized for the device: wide screens fill the card, tall ones
    keep to a shelf's height. `example` draws it with the add-on's example
    values, never the person's own. */
-function thumb(app, key, page, { example = false, cls = "" } = {}) {
+function thumb(app, key, page, { example = false, fit = true, cls = "" } = {}) {
   const g = app.geometry();
   const img = h("img", { class: "thumb", alt: "", "data-thumb": key, draggable: "false" });
-  requestAnimationFrame(() => thumbnail(app, key, img, page, { example }));
+  // Built-in presets are drawn for the 5.79" and fitted to this device; your own are as you saved them.
+  const fitted = fit ? { ...page, elements: fitToCanvas(page.elements || [], g, reflowPageElements) } : page;
+  requestAnimationFrame(() => thumbnail(app, key, img, fitted, { example }));
   return h("span", { class: "thumbwrap " + cls, style: { aspectRatio: `${g.W} / ${g.H}` } }, img);
 }
 
@@ -62,7 +65,7 @@ export function openPresets(app) {
       return h("div", { class: "pcard" },
         h("button", { class: "pbtn", "aria-label": `${name}. ${cp.desc || "One of yours."}`, onclick: () => {
           close(); app.addPage(cp.id || "page", { tier: cp.tier || "rotate", show_if: cp.show_if || undefined, elements: clone(cp.elements || []) });
-        } }, thumb(app, "preset:custom" + k, { elements: cp.elements || [] }), h("span", { class: "pt", text: name }), h("span", { class: "sub", text: cp.desc || " " })),
+        } }, thumb(app, "preset:custom" + k, { elements: cp.elements || [] }, { fit: false }), h("span", { class: "pt", text: name }), h("span", { class: "sub", text: cp.desc || " " })),
         h("button", { class: "btn icon pdel", "aria-label": `Delete the preset ${name}`, onclick: () => {
           app.doc.spec.custom_presets.splice(k, 1); app.doc.commit(); close();
           toast(`Deleted the preset ${name}.`, { label: "Undo", run: () => app.doc.undo() });
@@ -165,6 +168,7 @@ export function openPresets(app) {
 
   function add(p, look, ent, extra) {
     const page = pageFor(p, look, ent, extra);
+    page.elements = fitToCanvas(page.elements, g, reflowPageElements);
     if (page.tier === "when") syncDynamicGridShowIf(page);
     const entName = ent ? app.entMap.get(ent)?.name : "";
     app.addPage(slug(pageName(p, look, ent, entName)) || p.id, page);
