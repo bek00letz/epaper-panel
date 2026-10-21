@@ -225,7 +225,8 @@
   now and Battery and solar are still offered, with one line: "Changes
   faster than this device updates (every 15 min), so it can be up to 15
   min old." The same line shows in the inspector for a page like that.
-  Anything showing watts counts, since power is always "now".
+  A sensor counts when Home Assistant describes it as always moving (power,
+  current, wind and the like), whatever its unit.
 
 - **Countdown and Bin day without a calendar.** New page › Countdown now
   counts down to a date you pick (with a time if you like, and Every year

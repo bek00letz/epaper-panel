@@ -581,6 +581,14 @@ class TestNotedNeverHidden(unittest.TestCase):
             { type: "flight_tracker" }, { type: "weather_forecast" }, { type: "text", value: "Hello" }].map((e) => P.changesEvery(e, ents))))""")
         self.assertEqual(got, [1, None, 1, 1, None, None])
 
+    def test_a_sensor_changes_as_the_entity_list_says(self):
+        """/api/entities says how often each sensor changes (widgets.sensor_changes_every); the editor
+        reads it, and falls back to the unit only for a sensor the list doesn't know."""
+        got = run_js("""const ents = new Map([["sensor.wind", { unit: "km/h", changes_every: 60 }], ["sensor.meter", { unit: "kW", changes_every: null }],
+            ["sensor.slow", { unit: "W", changes_every: 900 }]]);
+          console.log(JSON.stringify(["sensor.wind", "sensor.meter", "sensor.slow", "sensor.gone"].map((entity) => P.changesEvery({ type: "number", entity, suffix: " W" }, ents))))""")
+        self.assertEqual(got, [1, None, 15, 1])
+
     def test_shown_in_the_sheet_and_the_inspector_not_hidden(self):
         js = (APP_JS / "newpage.js").read_text()
         self.assertIn("const stale = staleNote(presetChangesEvery(p), app.screen, { short: true });", js)

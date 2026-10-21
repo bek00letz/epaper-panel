@@ -364,8 +364,10 @@ export function dateInstead(elements) {
 
 /* How fast what a page shows changes, as a rule rather than a list of
    presets: a widget says how often in its descriptor (planes overhead,
-   what's playing, a score, a race, the grid now), and any value in watts
-   (power is always "now") changes every minute.
+   what's playing, a score, a race, the grid now), and a plain sensor as
+   the add-on's entity list says (/api/entities `changes_every`, from Home
+   Assistant's own device class: power, wind...). A value with no sensor the
+   list knows, only its unit, counts as "now" when it's in watts.
    On a device that sleeps longer than that between updates, such a page is
    noted, never hidden (the user's call, 21 Oct: "14 minute old plane data
    isn't tragic"); a clock is the exception, it becomes the Date. In minutes;
@@ -376,8 +378,9 @@ export function changesEvery(el, entMap) {
   const live = widgetChangesEvery(el);                      // a widget's, from its descriptor (the add-on's)
   if (live != null) return live;
   if (["number", "text", "bar", "curve", "bar_chart"].includes(el.type)) {
-    // A plain value: anything in watts is "now" (until /api/entities says how often each sensor changes).
-    const unit = (el.entity && entMap?.get?.(el.entity)?.unit) || el.suffix || "";
+    const ent = el.entity && entMap?.get?.(el.entity);
+    if (ent && "changes_every" in ent) return ent.changes_every ? Math.max(1, Math.round(ent.changes_every / 60)) : null;
+    const unit = ent?.unit || el.suffix || "";
     if (POWER_UNIT.test(unit)) return 1;
   }
   return null;
