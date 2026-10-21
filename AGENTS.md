@@ -237,6 +237,13 @@ than a frame does.
 - **Fonts ship with the project** (`fonts/Lato-*.ttf`, SIL OFL) and are cached
   in memory (`@lru_cache`). Do not depend on system fonts — the HA container
   has a different set from macOS.
+- **Icons are outlines, and one list says what can be drawn**
+  (`render/icons.py`, ARCHITECTURE.md › Icons). Material Design Icons ship
+  with the add-on; Home Assistant's set and custom sets are copied whole into
+  `/data/icons` when they change (`iconsets.py`), never per icon, never on
+  demand, never during a render. Ask `layout.can_draw_icon` before offering
+  an icon; never draw from `fonts/mdi.ttf` (the way back, `icons.FROM_FONT`).
+  A custom SVG is read for its shapes only: never show one as it is.
 
 ## Verifying a change
 
@@ -387,7 +394,9 @@ up to v0.12.0). `app/legacy.js` keeps the pieces of it this one still uses.
 - **The editor keeps no copies of the add-on's tables** (framework review,
   21 Oct): leagues, series, sport words, state words and every widget's
   descriptor (name, icon, box, fields, `changes_every`) come from
-  `GET /api/catalog` at start (`app/catalog.js`). Basic elements (text,
+  `GET /api/catalog` at start (`app/catalog.js`). A condition's value
+  chips are the catalog's words for its kind, then what
+  `/api/entity_states` says it has (`conditions.valueChoices`). Basic elements (text,
   value, icon, card, divider, gauge, charts, QR) stay the editor's; a new
   widget is a descriptor in `widgets.py`, nothing in the editor.
 - **An icon follows a sensor in its own Icon section** (the user's design,
@@ -466,6 +475,8 @@ up to v0.12.0). `app/legacy.js` keeps the pieces of it this one still uses.
   format come from `GET /api/catalog`, built from the tables themselves
   (`sources/sports.LEAGUES`, `sources/racing.SERIES`, `render/sport.py`,
   `render/states.py`, `widgets.py`, `timeformat.py`).
+  Icons too: the picker lists `GET /api/icons` and draws each from its
+  outline (`app/glyphs.js`), never from a font or a list of its own.
 - **Times of day go through `render/clock.py`**: one 12/24-hour setting
   (`timeformat.py`, Home Assistant's country by default) for every device.
 - **Dynamic units live in the renderer** (`render/units.py`), so the canvas and
@@ -520,6 +531,11 @@ When touching display code, `it.image()` at a negative offset is a trap: see
   (`frame_token.py`, the option or a generated one). Its frames switch to
   requiring it the first time the panel uses it, so a reinstall never leaves
   the panel blank. Actions always need a key.
+- **Never read Home Assistant's own storage folder** (`.storage` in its
+  configuration): it holds every integration's credentials. Ask Home
+  Assistant through its API instead (as `iconsets.collections_on` asks
+  Custom Icons which collections are on); `tests/test_icon_sets.py` fails
+  if any code names it.
 - **No built-in location or timezone.** Home Assistant's settings are the
   source; a default would be someone's real home.
 

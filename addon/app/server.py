@@ -27,6 +27,7 @@ import mqtt_bridge
 import companion
 import config
 import devices
+import iconsets
 import kinds
 import reach
 import runtime
@@ -129,6 +130,7 @@ def start_entity_publisher():
 
 async def main():
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    iconsets.load_copies()                  # icon sets copied before; the shipped set otherwise
     print(f"devices: {', '.join(d['name'] for d in devices.all_devices())}", flush=True)
     runners = []
     async with aiohttp.ClientSession(trace_configs=[health.trace_config()]) as session:
@@ -141,6 +143,9 @@ async def main():
         background = [asyncio.create_task(panel_link_loop()), asyncio.create_task(runtime.LIVE.run())]
         if HA_TOKEN:
             background.append(asyncio.create_task(companion.keep_set_up(runtime.HASS)))
+        # Home Assistant's icon set and custom ones, copied whole when they change; custom sets are
+        # read from the configuration folder, so they're copied without a token too.
+        background.append(asyncio.create_task(iconsets.keep_in_step(session, runtime.HASS if HA_TOKEN else None)))
         if runtime.PUBLISHER is not None:
             background.append(asyncio.create_task(runtime.PUBLISHER.run()))
         try:

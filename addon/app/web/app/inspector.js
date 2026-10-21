@@ -5,7 +5,7 @@
 import { h, icon, api, clone, pageTitle, slug, modKey, turning } from "./util.js";
 import { field, input, number, select, seg, textarea, toggle, toggleRow, section, linkButton, toast } from "./ui.js";
 import { TYPES, breakable, isWidget, hasText, elName, normalizeLineParity, GROUP_STYLES, GROUP_PAD } from "./elements.js";
-import { OPS, CHANGED_MINUTES, parseShowIf, compileShowIf, evaluate, describe, changedLine, syncWidgetShowIf, syncDynamicGridShowIf } from "./conditions.js";
+import { OPS, CHANGED_MINUTES, parseShowIf, compileShowIf, valueChoices, evaluate, describe, changedLine, syncWidgetShowIf, syncDynamicGridShowIf } from "./conditions.js";
 import { explodeWidget, getWidgetSensorId, suggestIconForEntity } from "./legacy.js";
 import { dateEditor, binsEditor } from "./countdown.js";
 import { zonesEditor } from "./zones.js";
@@ -19,9 +19,6 @@ const SHOWS = [["state", "Its value"], ["unit", "Its unit, following the value"]
   ["days_until", "Days until it"], ["date_formatted", "Its date"], ["calendar_title", "The event's name"]];
 const FORMATS = [["relative", "2 hours ago"], ["date", "3 Mar"], ["day_date", "Thu, 24 Oct"], ["day_full", "Thursday, 24 Oct"], ["time", "14:05"], ["time_12", "2:05 PM"], ["datetime", "Date and time"]];
 const FONTS = [["lato", "Lato"], ["dejavu", "DejaVu Sans"], ["mono", "Roboto Mono"]];
-const KNOWN_STATES = { binary_sensor: ["on", "off"], switch: ["on", "off"], light: ["on", "off"], input_boolean: ["on", "off"], fan: ["on", "off"],
-  timer: ["active", "idle", "paused"], person: ["home", "not_home"], device_tracker: ["home", "not_home"], lock: ["locked", "unlocked"],
-  cover: ["open", "closed"], media_player: ["playing", "paused", "idle", "off"], alarm_control_panel: ["armed_away", "armed_home", "disarmed", "triggered"] };
 
 export function renderInspector(app) {
   const doc = app.doc;
@@ -57,9 +54,9 @@ function entityButton(app, entityId, onPick, opts = {}) {
 }
 /* An icon to choose. With `look` (follows.js LOOKS), its tile shows it and the picker offers it too. */
 function iconButton(app, value, onPick, label = "Icon", look) {
-  const glyph = app.mdiGlyph(value), said = look ? LOOKS.find(([v]) => v === look.value)?.[1] : "";
+  const drawn = app.glyphs.has(value), said = look ? LOOKS.find(([v]) => v === look.value)?.[1] : "";
   const b = h("button", { class: "iconbtn", "aria-label": `${label}: ${value || "none"}${said && look.value !== "plain" ? `, ${said.toLowerCase()}` : ""}. Change` },
-    h("span", { class: "glyph mdi" + (look ? " look-" + look.value : ""), text: glyph || "?" }), h("span", { class: "e1", text: value ? String(value).replace(/^mdi:/, "") : "Choose an icon" }), icon("chev", "sm"));
+    h("span", { class: "glyph mdi" + (look ? " look-" + look.value : "") }, drawn ? app.iconNode(value) : "?"), h("span", { class: "e1", text: value ? String(value).replace(/^mdi:/, "") : "Choose an icon" }), icon("chev", "sm"));
   b.addEventListener("click", () => app.openIconPicker(value, onPick, look));
   return b;
 }
@@ -226,6 +223,23 @@ function iconRows(app, el, set) {
   return out;
 }
 
+/* A condition's values as chips: the catalog's for its kind at once, then the states Home Assistant
+   says it has (api/entity_states), added at the end when it answers (conditions.valueChoices). */
+function valueChips(app, parsed, changed, upd) {
+  const box = h("div", { class: "chips", role: "group", "aria-label": "Values it has" });
+  const asked = askStates(parsed.ent);
+  const fill = () => {
+    const got = valueChoices(parsed.ent, app.entMap.get(parsed.ent)?.device_class, asked.got);
+    box.replaceChildren(...got.map(({ state: s, word }) => h("button", { class: "chipbtn", "aria-pressed": String(parsed.val === s),
+      title: word.trim().toLowerCase() === s.toLowerCase() ? word : `${word} (${s})`,
+      onclick: () => upd({ val: parsed.val === s && changed ? "" : s }) }, word)));
+    box.hidden = !got.length;
+  };
+  fill();
+  if (asked.got === undefined) asked.done.then(() => { if (box.isConnected) fill(); });
+  return box;
+}
+
 /* The states not added yet, as chips with their icons; "Other state" for one never seen. Held back
    (its space kept) while Home Assistant answers, so nothing flashes on a quick answer. */
 function addStates(app, el, asked, word) {
@@ -247,7 +261,7 @@ function addStates(app, el, asked, word) {
     const got = asked?.got;
     if (got === undefined) return;
     const chips = suggestions(el, got).map((o) => h("button", { class: "chipbtn add", "aria-label": `Add ${o.word}`, onclick: () => { addState(el, o.state, o.icon); doc.commit(); } },
-      h("span", { class: "glyph mdi", "aria-hidden": "true", text: app.mdiGlyph(o.icon) }), o.word));
+      h("span", { class: "glyph mdi", "aria-hidden": "true" }, app.iconNode(o.icon)), o.word));
     const more = h("button", { class: "chipbtn add", onclick: () => { const inp = typed(); more.replaceWith(inp); inp.focus(); } }, icon("plus", "xs"), "Other state");
     const said = got === null ? `${asked.error || "Home Assistant didn't say what states it has."} Type one it has instead.`
       : !got.length && !Object.keys(el.state_icons).length ? "Home Assistant doesn't list states for it. Type one it has." : "";
@@ -767,13 +781,12 @@ function conditionRows(app, p, c = SHOW) {
   }
   const upd = (patch) => { const next = { ...parsed, ...patch }; const v = compileShowIf(next); if (v) p[c.key] = v; else delete p[c.key]; doc.commit(); };
   const pickBtn = entityButton(app, parsed.ent, (id) => {
-    const dom = id.split(".")[0], st = app.entMap.get(id)?.state;
-    upd({ ent: id, op: "eq", val: (KNOWN_STATES[dom] || [])[0] || st || "" });
+    const e = app.entMap.get(id);
+    upd({ ent: id, op: "eq", val: valueChoices(id, e?.device_class)[0]?.state || e?.state || "" });
   }, { label: c.label });
   // "Shows" heads the page's own condition; an Until needs its word in sight.
   wrap.append(c === SHOW ? pickBtn : field(c.label, pickBtn));
   if (parsed.ent) {
-    const dom = parsed.ent.split(".")[0], known = KNOWN_STATES[dom];
     const changed = parsed.op === "changed";
     // "Changed" answers when something happens; an Until has nothing to count its minutes from.
     const opSel = select(c === SHOW ? OPS : OPS.filter(([k]) => k !== "changed"), parsed.op, (v) => upd({ op: v }), { "aria-label": c.label + " comparison" });
@@ -781,7 +794,7 @@ function conditionRows(app, p, c = SHOW) {
       ? input(parsed.val, (v) => upd({ val: v }), { "aria-label": "Changed to", placeholder: "Any value" })
       : input(parsed.val, (v) => upd({ val: v }), { "aria-label": c.label + " value", placeholder: "Value" });
     wrap.append(h("div", { class: "inline cmprow" }, opSel, changed ? h("span", { class: "cmpword", text: "to" }) : null, valIn));
-    if (known && (parsed.op === "eq" || parsed.op === "ne" || changed)) wrap.append(h("div", { class: "chips" }, ...known.map((s) => h("button", { class: "chipbtn", "aria-pressed": String(parsed.val === s), onclick: () => upd({ val: parsed.val === s && changed ? "" : s }) }, s.replace(/_/g, " ")))));
+    if (parsed.op === "eq" || parsed.op === "ne" || changed) wrap.append(valueChips(app, parsed, changed, upd));
     const holds = changed ? null : evaluate(parsed, app.entMap);
     if (changed) wrap.append(...changedRows(app, p, parsed, upd));
     else if (holds !== null) {
