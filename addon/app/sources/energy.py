@@ -220,7 +220,8 @@ async def fetch_total(session, source="solar", entity="", period="month"):
         ids = stats_for(await dashboard(session), source)
     if not ids:
         return {"total": None, "bars": [], "unit": "kWh", "missing": source}
-    rows = await statistics(ids, period, now, units={"energy": "kWh"})
+    # Energy in kWh; a sensor of yours stays in its own unit, so what the page writes after it is right.
+    rows = await statistics(ids, period, now, units=None if source == "entity" else {"energy": "kWh"})
     health.ok(SERVICE)
     bars = buckets(rows, period, now)
     return {"total": round(sum(b for b in bars if b), 2), "bars": bars, "unit": "kWh"}

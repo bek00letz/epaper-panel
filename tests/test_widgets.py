@@ -638,3 +638,38 @@ class TestTimeForTheEditor(EditorClient):
             {"type": "text", "value": "{{ states('sensor.time') }}"}, {"type": "text", "value": "Hello"}, {"type": "text", "show": "now"}]}})
         self.assertEqual(await r.json(), {"time": [0, 2]})
         clock.use(False)
+
+
+# ---------------------------------------------------------------- a running total's change today
+
+class TestChangeToday(unittest.IsolatedAsyncioTestCase):
+    EL = {"type": "number", "entity": "sensor.inverter_lifetime", "show": "change_today", "decimals": 1, "suffix": " kWh"}
+
+    async def test_a_lifetime_meter_shows_today_not_its_lifetime(self):
+        self.assertEqual(binding.template_for(self.EL), "")             # never states(): that's 18,532 kWh
+        asked = []
+
+        async def total(session, source, entity, period):
+            asked.append((source, entity, period))
+            return {"total": 12.4, "bars": [], "unit": "kWh"}
+        vals = {}
+        with unittest.mock.patch.object(energy, "fetch_total", total):
+            await frames.enrich_page_values(None, {"elements": [self.EL]}, vals)
+        self.assertEqual(asked, [("entity", "sensor.inverter_lifetime", "day")])
+        self.assertEqual(layout.element_text(self.EL, vals, 0), "12.4 kWh")
+
+    async def test_in_the_sensors_own_unit(self):
+        import runtime
+        hass = FakeHass(rows={"sensor.meter": []})
+        with unittest.mock.patch.object(energy, "HA_TOKEN", "t"), unittest.mock.patch.object(runtime, "HASS", hass), \
+             unittest.mock.patch.object(energy, "get_home_timezone", unittest.mock.AsyncMock(return_value="UTC")):
+            await energy.fetch_total.direct(None, "entity", "sensor.meter", "day")
+        asked = [p for p in hass.asked if p["type"] == "recorder/statistics_during_period"][0]
+        self.assertNotIn("units", asked)
+
+
+class TestStateClassForPresets(EditorClient):
+    async def test_rows_say_whether_its_a_running_total(self):
+        rows = {r["entity_id"]: r for r in await (await self.ed.get("/api/entities")).json()}
+        self.assertEqual(rows["sensor.solar_today_production"]["state_class"], "total_increasing")
+        self.assertEqual(rows["sensor.indoor_temperature"]["state_class"], "")

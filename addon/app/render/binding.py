@@ -71,6 +71,8 @@ def template_for(el):
         return ""
 
     show = el.get("show") or "state"
+    if show == "change_today":
+        return ""                                    # from long-term statistics, by the render cycle (frames)
     if show == "attribute":
         core = f"state_attr('{_quote(ent)}', '{_quote(el.get('attribute', ''))}')"
     elif show in ("last_changed", "last_updated"):

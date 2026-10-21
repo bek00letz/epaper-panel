@@ -158,6 +158,9 @@ def page_values(page: dict, now: datetime | None = None) -> tuple[dict, dict]:
         if not isinstance(el, dict):
             continue
         t = el.get("type")
+        if el.get("show") == "change_today":                      # a running total's day: the fixture's value
+            vals[i] = eval_fixture_template("{{ states('%s') }}" % el.get("entity", ""), own=False)
+            continue
         if t in ("curve", "bar_chart"):
             series[i] = curve
         elif t == "todo_list":

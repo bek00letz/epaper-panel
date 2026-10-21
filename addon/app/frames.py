@@ -109,6 +109,12 @@ async def enrich_page_values(session, page, vals):
     home_tz = await get_home_timezone(session)
     for i, el in enumerate(page.get("elements", [])):
         t = el.get("type")
+        if el.get("show") == "change_today" and str(el.get("entity") or "").strip() and not str(el.get("value") or "").strip():
+            # A running total (a lifetime meter, say) as how much it went up today, from statistics.
+            got = await energy.fetch_total(session, "entity", str(el["entity"]).strip(), "day")
+            if got is not None and got.get("total") is not None:
+                vals[i] = got["total"]
+            continue
         if t == "weather_forecast":
             wdata = await fetch_weather_forecast(session, el.get("entity", "weather.forecast_home"), fallback=vals.get(i))
             if wdata:

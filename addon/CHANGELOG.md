@@ -116,6 +116,11 @@
   the date instead of the time it went to sleep with, now also for clocks
   written as `as_timestamp(now()) | timestamp_custom(...)`, the Time & Date
   sensor, or `now().hour`.
+- **A meter that only counts up shows today's share.** A value on a
+  sensor that's a running total (an inverter's lifetime production, a gas
+  or water meter) can show how much it went up today, from Home
+  Assistant's long-term statistics, in the sensor's own unit, instead of
+  "18,532 kWh produced today".
 - **Fixed:** a Race weekend page set to NASCAR or IndyCar showed Formula 1's
   race, drivers and status. Each series now reads its own results, and its
   page names it ("NASCAR · …"). Whether the page shows still followed the
