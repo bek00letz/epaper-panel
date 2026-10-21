@@ -13,6 +13,20 @@ export function timezones() {
 }
 const cityOf = (tz) => String(tz || "").split("/").pop().replace(/_/g, " ");
 
+/* The cities a search finds, best first: a city that starts with it (Tokyo for "tok"), then one with
+   a word that does (Ho Chi Minh for "chi"), then any city, region or zone that holds it (Vostok). */
+export function findCities(zones, query, most = 60) {
+  const s = String(query || "").trim().toLowerCase();
+  if (!s) return zones.slice(0, most);
+  const rank = (z) => {
+    const c = String(z.city || "").toLowerCase();
+    if (c.startsWith(s)) return 0;
+    if (c.split(/[\s-]+/).some((w) => w.startsWith(s))) return 1;
+    return `${c} ${z.region} ${z.tz}`.toLowerCase().includes(s) ? 2 : -1;
+  };
+  return zones.map((z, i) => [rank(z), i, z]).filter(([r]) => r >= 0).sort((a, b) => a[0] - b[0] || a[1] - b[1]).map(([, , z]) => z).slice(0, most);
+}
+
 /* `el.zones`: [{ tz, label }]; tz "" is Home Assistant's own zone, label "" its city. */
 export function zonesEditor(el, changed, { most = 4, live = false } = {}) {
   if (!Array.isArray(el.zones) || !el.zones.length) el.zones = [{ tz: "", label: "" }];
@@ -31,9 +45,9 @@ export function zonesEditor(el, changed, { most = 4, live = false } = {}) {
   function picker(onPick) {
     const q = h("input", { type: "search", placeholder: "Search for a city", "aria-label": "Search for a city", autocomplete: "off", spellcheck: "false" });
     const list = h("div", { class: "optlist", role: "listbox", "aria-label": "Cities" });
-    const draw = () => {
+    const drawList = () => {
       const s = q.value.trim().toLowerCase();
-      const found = tz.zones.filter((z) => !s || `${z.city} ${z.region} ${z.tz}`.toLowerCase().includes(s)).slice(0, 60);
+      const found = findCities(tz.zones, s);
       list.replaceChildren(...[
         !s ? h("button", { class: "opt", role: "option", onclick: () => onPick("") }, h("span", { class: "otext" },
           h("span", { class: "o1", text: "Here" }), h("span", { class: "o2 plain", text: `Home Assistant's own${tz.home ? `: ${cityOf(tz.home)}` : ""}` }))) : null,
@@ -43,11 +57,11 @@ export function zonesEditor(el, changed, { most = 4, live = false } = {}) {
       ].filter(Boolean));
       if (!found.length && s) list.append(h("p", { class: "empty-note", text: "No city by that name. Try the nearest big city in the same time zone." }));
     };
-    q.addEventListener("input", draw);
-    q.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.stopPropagation(); picking = null; drawAll(); } });
-    draw();
+    q.addEventListener("input", drawList);
+    q.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); const was = picking; picking = null; draw(); refocus(was); } });
+    drawList();
     setTimeout(() => q.focus());
-    return h("div", { class: "picker zpick" }, h("div", { class: "search" }, icon("search", "sm"), q), list);
+    return h("div", { class: "picker zpick", "data-own-esc": "" }, h("div", { class: "search" }, icon("search", "sm"), q), list);
   }
 
   function row(z, k) {
@@ -59,10 +73,10 @@ export function zonesEditor(el, changed, { most = 4, live = false } = {}) {
     });
     dragToReorder(grip, k);
     const r = h("div", { class: "gr zrow", role: "listitem" }, grip,
-      h("button", { class: "btn tinted zcity", "aria-label": `${nameOf(z)}. Change the city`, onclick: () => { picking = picking === k ? null : k; drawAll(); } }, nameOf(z)),
+      h("button", { class: "btn tinted zcity", "aria-label": `${nameOf(z)}. Change the city`, onclick: () => { picking = picking === k ? null : k; draw(); if (picking == null) refocus(k); } }, nameOf(z)),
       label,
       el.zones.length > 1 ? h("button", { class: "btn icon", "aria-label": `Remove ${nameOf(z)}`, onclick: () => { el.zones.splice(k, 1); picking = null; draw(); save(); } }, icon("close", "sm")) : null);
-    return picking === k ? h("div", {}, r, picker((v) => { z.tz = v; picking = null; drawAll(); save(); })) : r;
+    return picking === k ? h("div", {}, r, picker((v) => { z.tz = v; picking = null; draw(); save(); refocus(k); })) : r;
   }
 
   /* Drag a row by its grip: the rows swap as it passes the middle of the next one. */
@@ -91,12 +105,13 @@ export function zonesEditor(el, changed, { most = 4, live = false } = {}) {
     // replaceChildren() takes nodes only: a null would show as the word "null".
     box.replaceChildren(...[
       h("div", { class: "group zlist", role: "list", "aria-label": "Cities" }, ...el.zones.map(row)),
-      picking === "new" ? picker((v) => { el.zones.push({ tz: v, label: "" }); picking = null; draw(); save(); }) : null,
+      picking === "new" ? picker((v) => { el.zones.push({ tz: v, label: "" }); picking = null; draw(); save(); refocus(el.zones.length - 1); }) : null,
       el.zones.length < most && picking !== "new"
         ? h("div", { class: "btnrow" }, h("button", { class: "btn tinted", onclick: () => { picking = "new"; draw(); } }, icon("plus", "sm"), "Add a city"))
         : el.zones.length >= most ? h("p", { class: "fnote", text: `Up to ${most} cities.` }) : null].filter(Boolean));
   }
-  const drawAll = draw;
+  /* Back to where the search was opened from: a row's city, or Add a city. */
+  const refocus = (was) => (was === "new" ? box.querySelector(".btnrow .btn") : box.querySelectorAll(".zcity")[was])?.focus();
   draw();
   timezones().then((got) => { tz = got; draw(); });
   return box;

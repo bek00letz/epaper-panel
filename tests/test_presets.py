@@ -422,6 +422,35 @@ class TestEveryFieldKindHasAnEditor(unittest.TestCase):
                 self.assertIn(f'f.kind === "{k}"', insp)
 
 
+@unittest.skipUnless(shutil.which("node"), "no node to read the editor")
+class TestCitySearch(unittest.TestCase):
+    """Found by the browser check: "tok" listed Vostok before Tokyo, and Esc in the search left
+    New page's step (and the cities picked) instead of closing the search."""
+
+    def find(self, q):
+        src = (APP_JS / "zones.js").as_uri()
+        zones = [{"city": "Vostok", "region": "Antarctica", "tz": "Antarctica/Vostok"}, {"city": "Tokyo", "region": "Asia", "tz": "Asia/Tokyo"},
+                 {"city": "Ho Chi Minh", "region": "Asia", "tz": "Asia/Ho_Chi_Minh"}, {"city": "Chicago", "region": "America", "tz": "America/Chicago"}]
+        js = f"""globalThis.navigator = {{ platform: "", userAgent: "" }};
+          const Z = await import({json.dumps(src)});
+          console.log(JSON.stringify(Z.findCities({json.dumps(zones)}, {json.dumps(q)}).map((z) => z.city)));"""
+        out = subprocess.run(["node", "--input-type=module", "-e", js], capture_output=True, text=True, check=True).stdout
+        return json.loads(out)
+
+    def test_a_city_that_starts_with_it_first(self):
+        self.assertEqual(self.find("tok"), ["Tokyo", "Vostok"])
+        self.assertEqual(self.find("chi"), ["Chicago", "Ho Chi Minh"])
+        self.assertEqual(self.find("asia"), ["Tokyo", "Ho Chi Minh"])
+        self.assertEqual(self.find("zzz"), [])
+
+    def test_esc_closes_the_search_and_keeps_the_step(self):
+        js = (APP_JS / "zones.js").read_text()
+        self.assertIn('h("div", { class: "picker zpick", "data-own-esc": "" }', js)
+        self.assertIn("const was = picking; picking = null; draw(); refocus(was);", js, "and focus goes back where it was opened")
+        self.assertNotIn("drawAll", js, "the list's own draw() is drawList, so draw() is the whole editor")
+        self.assertIn('if (e.key === "Escape" && step && !e.target.closest?.("[data-own-esc]"))', (APP_JS / "newpage.js").read_text())
+
+
 class TestCitiesEditorCanBeClicked(unittest.TestCase):
     def test_its_class_is_not_the_canvas_guides(self):
         """The canvas's guides are .zones (absolute, no pointer events): the editor named so couldn't be clicked."""

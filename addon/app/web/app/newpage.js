@@ -175,8 +175,11 @@ export function openPresets(app) {
       (shelves.hidden ? results : shelves).classList.add("fade");
       setTimeout(() => q.focus({ preventScroll: true }));
     }
-    // Esc in a preset's step goes back to the shelves; on the shelves it closes.
-    node.addEventListener("keydown", (e) => { if (e.key === "Escape" && step) { e.preventDefault(); e.stopImmediatePropagation(); leave(); } }, true);
+    // Esc in a preset's step goes back to the shelves; on the shelves it closes. A part of a step
+    // that Esc closes first (a city search) says so with data-own-esc, and keeps it.
+    node.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && step && !e.target.closest?.("[data-own-esc]")) { e.preventDefault(); e.stopImmediatePropagation(); leave(); }
+    }, true);
 
     drawShelves();
   }, { cls: "wide tall", focus: "input[type=search]" });
