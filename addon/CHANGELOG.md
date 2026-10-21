@@ -212,10 +212,21 @@
   countdown off the panel until it's near: set a trip six months ahead and
   have it show from a month before (its tile says "Shows from …"). Once a
   one-off date has passed the panel leaves it out, and it stays among your
-  pages, outlined and marked Passed, with Delete on its tile, to give
-  another date or delete.
+  pages, outlined and marked Passed, its Delete showing on its tile, to
+  give another date or delete.
   Nothing needs Home Assistant's calendar, and it's all editable later in
   the inspector. Pages you made from a calendar work as before.
+
+- **The page strip slides like New page's shelves.** Its edges fade while
+  there are more pages to see, with arrows at an edge only towards more as
+  you point at it; down the side it fades top and bottom.
+- **The page strip's size is yours to choose** in Settings › Editor, next to
+  where it sits: Small, Standard (as it was) or Large.
+- **Duplicate and Delete on a page's picture.** Point at a page in the strip,
+  or hold it on a phone, and the right third of its picture turns into two
+  buttons, Duplicate above Delete (on a page that's in the rotation twice,
+  the lower one takes just that turn out). A countdown that has passed
+  shows them all the time. Undo works as everywhere.
 
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,

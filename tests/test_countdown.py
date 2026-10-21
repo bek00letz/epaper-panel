@@ -141,11 +141,15 @@ class TestKeptAndWaiting(unittest.TestCase):
         css = (support.APP / "web" / "editor.css").read_text()
         self.assertIn(".tile.passed .thumbwrap { box-shadow: 0 0 0 2px var(--orange); opacity: 0.55; }", css, "an outline, not just a pill")
         self.assertNotIn("deletePage", (APP_JS / "countdown.js").read_text())
-        # Delete on the passed tile itself, beside it in its box: a button can't sit inside the tile's button.
-        self.assertIn('box.append(h("button", { class: "btn icon tdel", "aria-label": `Delete ${pageTitle(n)}`', strip)
+        # A page's buttons over the right third of its picture, beside the tile in its box; showing
+        # all the time on a passed countdown (the user's design, 21 Oct).
+        self.assertIn('box.classList.toggle("passed", c?.state === "passed");', strip)
+        self.assertIn('act("dup", "Duplicate"', strip)
+        self.assertIn('act("trash", "Delete"', strip)
         self.assertIn("slots.forEach((t) => list.append(t.box));", strip)
         self.assertIn("reorderable(list, slots,", strip, "dragging still moves the tiles themselves")
-        self.assertIn(".tile.lifted + .tdel { opacity: 0; pointer-events: none; }", css)
+        self.assertIn(".tilebox.held .tileacts, .tilebox.passed .tileacts { opacity: 1;", css)
+        self.assertIn(".tileacts { position: absolute; top: 0; right: 0; width: calc(100% / 3);", css)
         self.assertIn('[180, "6 months before"]', (APP_JS / "countdown.js").read_text())
 
 

@@ -242,7 +242,7 @@ kbd { font: 12px var(--font); background: var(--surface); border-radius: 5px; pa
 /* ---------- the page strip ---------- */
 .stripwrap { display: flex; align-items: stretch; gap: 0; padding: 12px max(16px, env(safe-area-inset-right)) 6px max(16px, env(safe-area-inset-left)); min-width: 0; border-bottom: 0.5px solid var(--sep); }
 .strip { display: flex; align-items: flex-start; gap: 12px; min-width: 0; flex: 1; }
-.stripfront { flex: none; width: 132px; display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
+.stripfront { flex: none; width: var(--tile-w); display: flex; flex-direction: column; gap: 6px; margin-top: 2px; }
 .newpage { flex: 1 1 0; min-height: 0; display: flex; align-items: center; justify-content: center; gap: 5px; border: 1.5px dashed var(--fg-3); border-radius: var(--r-card);
   background: none; color: var(--fg-2); font-size: 12.5px; font-weight: 500; cursor: pointer; transition: color var(--t-fast), border-color var(--t-fast), transform var(--t) var(--spring); }
 .newpage:hover { color: var(--accent); border-color: var(--accent); }
@@ -256,8 +256,15 @@ kbd { font: 12px var(--font); background: var(--surface); border-radius: 5px; pa
 .stathead .l2 { display: block; font-size: 11px; color: var(--fg-2); margin-top: 1px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .led { width: 8px; height: 8px; border-radius: 50%; background: var(--green); flex: none; display: inline-block; }
 .led.wait { background: var(--orange); } .led.bad { background: var(--red); }
-.tiles { display: flex; align-items: flex-start; gap: 10px; overflow-x: auto; padding: 2px 4px 6px; position: relative; min-width: 0; flex: 1; scroll-padding: 8px; scrollbar-width: thin; }
-.tile { flex: none; width: 132px; border: 0; background: none; padding: 0; text-align: left; cursor: pointer; border-radius: 9px; position: relative; transition: transform var(--t) var(--spring); }
+.tiles { display: flex; align-items: flex-start; gap: 10px; overflow-x: auto; padding: 2px 4px 6px; position: relative; min-width: 0; flex: 1; scroll-padding: 8px; scrollbar-width: none; }
+.tiles::-webkit-scrollbar { display: none; }
+/* Its size (Settings › Editor): Standard is the size it always was. */
+#app { --tile-w: 132px; --side-w: 184px; }
+#app[data-stripsize="small"] { --tile-w: 104px; --side-w: 152px; }
+#app[data-stripsize="large"] { --tile-w: 184px; --side-w: 236px; }
+.strip > .slider { flex: 1; min-width: 0; display: flex; --fade: 48px; --arrow-y: calc(4px + var(--tile-w) / var(--aspect, 2.9) / 2); }
+.slider.still > .slides { transition: none; }
+.tile { flex: none; width: var(--tile-w); border: 0; background: none; padding: 0; text-align: left; cursor: pointer; border-radius: 9px; position: relative; transition: transform var(--t) var(--spring); }
 .tile:active { transform: scale(0.97); }
 .thumbwrap { display: block; width: 100%; border-radius: 6px; overflow: hidden; background: var(--paper); box-shadow: 0 0 0 0.5px var(--sep), 0 1px 2px rgba(0, 0, 0, 0.08); transition: box-shadow var(--t-fast); }
 .thumb { display: block; width: 100%; height: 100%; object-fit: contain; opacity: 0; transition: opacity 0.25s; image-rendering: auto; }
@@ -454,8 +461,10 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
    slide to and hardens again at the end. */
 @property --fl { syntax: "<length>"; inherits: false; initial-value: 0px; }
 @property --fr { syntax: "<length>"; inherits: false; initial-value: 0px; }
-.npsheet { --card: 204px; --thumb-h: min(196px, var(--card) / var(--aspect, 2.9)); --gutter: 20px; --fade: 72px; --arrow-bg: rgba(255, 255, 255, 0.92); --shadow-arrow: 0 2px 8px rgba(0, 0, 0, 0.16), 0 0 0 0.5px rgba(0, 0, 0, 0.08); }
-:root[data-theme="dark"] .npsheet { --arrow-bg: rgba(58, 58, 60, 0.92); --shadow-arrow: 0 2px 10px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.12); }
+:root { --arrow-bg: rgba(255, 255, 255, 0.92); --shadow-arrow: 0 2px 8px rgba(0, 0, 0, 0.16), 0 0 0 0.5px rgba(0, 0, 0, 0.08); }
+:root[data-theme="dark"] { --arrow-bg: rgba(58, 58, 60, 0.92); --shadow-arrow: 0 2px 10px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.12); }
+.npsheet { --card: 204px; --thumb-h: min(196px, var(--card) / var(--aspect, 2.9)); --gutter: 20px; --arrow-y: calc(3px + var(--thumb-h) / 2); }
+.npsheet .slider { --fade: 72px; }
 /* Title, shelves and footer start on one line: the shelves' gutter. */
 .npsheet .sheet-head { padding-left: var(--gutter); }
 .npsheet .sheet-foot { padding-inline: var(--gutter); }
@@ -470,27 +479,32 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
 .shelf-head { display: flex; align-items: baseline; gap: 5px; padding-inline: var(--gutter); }
 .shelf-head h3 { margin: 0; font: 600 15px var(--font-display); letter-spacing: -0.01em; }
 .shelf-head .count { color: var(--fg-3); font-weight: 500; font-size: 14px; font-variant-numeric: tabular-nums; }
-.rowwrap { position: relative; }
-.row { display: grid; grid-auto-flow: column; grid-auto-columns: var(--card); gap: 12px; overflow-x: auto; overscroll-behavior-x: contain;
-  padding: 3px var(--gutter) 4px; scroll-padding-inline: var(--gutter); scroll-snap-type: x mandatory; scrollbar-width: none;
+/* A row that slides (app/slider.js): New page's shelves and the page strip. */
+.slider { position: relative; min-width: 0; --fade: 72px; }
+.slider > .slides { --fl: 0px; --fr: 0px;
   -webkit-mask-image: linear-gradient(to right, transparent 0, #000 var(--fl), #000 calc(100% - var(--fr)), transparent 100%);
           mask-image: linear-gradient(to right, transparent 0, #000 var(--fl), #000 calc(100% - var(--fr)), transparent 100%);
   transition: --fl var(--t) var(--spring), --fr var(--t) var(--spring); }
+.slider.vertical > .slides {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--fl), #000 calc(100% - var(--fr)), transparent 100%);
+          mask-image: linear-gradient(to bottom, transparent 0, #000 var(--fl), #000 calc(100% - var(--fr)), transparent 100%); }
+.slider.more-l > .slides { --fl: var(--fade); }
+.slider.more-r > .slides { --fr: var(--fade); }
+.row { display: grid; grid-auto-flow: column; grid-auto-columns: var(--card); gap: 12px; overflow-x: auto; overscroll-behavior-x: contain;
+  padding: 3px var(--gutter) 4px; scroll-padding-inline: var(--gutter); scroll-snap-type: x mandatory; scrollbar-width: none; }
 .row::-webkit-scrollbar { display: none; }
 .row > * { scroll-snap-align: start; min-width: 0; }
-.rowwrap.more-l .row { --fl: var(--fade); }
-.rowwrap.more-r .row { --fr: var(--fade); }
 @media (prefers-reduced-motion: no-preference) { .row { scroll-behavior: smooth; } }
-/* The arrow sits on the faded edge, centred on the thumbnails, and only towards more. */
-.arrow { position: absolute; top: calc(3px + var(--thumb-h, 70px) / 2); transform: translateY(-50%) scale(0.92); width: 32px; height: 32px; min-width: 0; padding: 0;
+/* The arrow sits on the faded edge, centred on the pictures (--arrow-y), and only towards more. */
+.arrow { position: absolute; top: var(--arrow-y, 50%); transform: translateY(-50%) scale(0.92); width: 32px; height: 32px; min-width: 0; padding: 0;
   border-radius: 50%; border: 0; background: var(--arrow-bg); box-shadow: var(--shadow-arrow); display: grid; place-items: center; cursor: pointer;
-  opacity: 0; pointer-events: none; z-index: 1; color: var(--fg);
+  opacity: 0; pointer-events: none; z-index: 4; color: var(--fg);
   -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); transition: opacity var(--t-fast), transform var(--t) var(--spring); }
 .arrow::before { content: ""; position: absolute; inset: -6px; }   /* a 44 pt hit area */
 .arrow.l { left: 10px; } .arrow.r { right: 10px; }
 .arrow:active { transform: translateY(-50%) scale(0.86); }
 @media (hover: hover) {
-  .rowwrap.more-l:is(:hover, :focus-within) .arrow.l, .rowwrap.more-r:is(:hover, :focus-within) .arrow.r { opacity: 1; pointer-events: auto; transform: translateY(-50%) scale(1); }
+  .slider:not(.vertical).more-l:is(:hover, :focus-within) > .arrow.l, .slider:not(.vertical).more-r:is(:hover, :focus-within) > .arrow.r { opacity: 1; pointer-events: auto; transform: translateY(-50%) scale(1); }
 }
 @media (hover: none) { .arrow { display: none; } }
 .npsheet .pbtn { gap: 0; }
@@ -531,7 +545,8 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
 @media (max-width: 620px) { .lead { grid-template-columns: minmax(0, 1fr); } }
 .npsheet.tallcards { --card: 132px; }
 @media (max-width: 520px) {
-  .npsheet { --card: 156px; --gutter: 16px; --fade: 48px; }
+  .npsheet { --card: 156px; --gutter: 16px; }
+  .npsheet .slider { --fade: 48px; }
   .npsheet.tallcards { --card: 112px; }
   .sheetsearch { width: auto; flex: 1; }
   .npsheet .sheet-head h2 { flex: none; max-width: 40%; }
@@ -645,8 +660,9 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
   .canvasarea { padding: 12px; place-items: start center; }
   .device { padding: 7px; border-radius: 12px; width: 100%; }
   .layers { position: absolute; inset: auto 8px 8px 8px; width: auto; height: 55%; margin: 0; z-index: 6; box-shadow: var(--shadow-pop); }
-  .stripfront { width: 108px; }
-  .tile { width: 108px; }
+  #app { --tile-w: 108px; }
+  #app[data-stripsize="small"] { --tile-w: 88px; }
+  #app[data-stripsize="large"] { --tile-w: 144px; }
   .inspector { position: fixed; left: 0; right: 0; bottom: 0; height: 72dvh; z-index: 20; border-left: 0; border-radius: var(--r-sheet) var(--r-sheet) 0 0;
     box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.16), 0 0 0 0.5px var(--sep); transform: translateY(calc(100% - 76px - env(safe-area-inset-bottom))); transition: transform var(--t) var(--spring); }
   .inspector.open { transform: none; }
@@ -676,7 +692,7 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
 #app[data-strip="bottom"] .canvaswrap { order: 2; }
 #app[data-strip="bottom"] .screenbar { order: 2; }
 @media (min-width: 901px) {
-  #app[data-strip="side"] .stage { display: grid; grid-template-columns: 184px minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }
+  #app[data-strip="side"] .stage { display: grid; grid-template-columns: var(--side-w) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }
   #app[data-strip="side"] .screenbar { grid-column: 2; grid-row: 3; }
   #app[data-strip="side"] .stripwrap { grid-column: 1; grid-row: 1 / 4; border-bottom: 0; border-right: 0.5px solid var(--sep); padding: 12px 12px 0 max(14px, env(safe-area-inset-left)); min-height: 0; }
   #app[data-strip="side"] .canvasbar { grid-column: 2; grid-row: 1; }
@@ -684,7 +700,8 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
   #app[data-strip="side"] .strip { flex-direction: column; gap: 10px; min-height: 0; }
   #app[data-strip="side"] .stripfront { width: 100%; padding: 0; margin: 0; height: auto; }
   #app[data-strip="side"] .stathead, #app[data-strip="side"] .npsheet { flex: none; min-height: 40px; }
-  #app[data-strip="side"] .tiles { flex-direction: column; align-items: stretch; overflow-x: hidden; overflow-y: auto; padding: 2px 3px 16px; margin: 0 -3px; }
+  #app[data-strip="side"] .strip > .slider { flex: 1 1 0; min-height: 0; flex-direction: column; }   /* the column scrolls, not the window */
+  #app[data-strip="side"] .tiles { flex: 1 1 0; min-height: 0; flex-direction: column; align-items: stretch; overflow-x: hidden; overflow-y: auto; padding: 2px 3px 16px; margin: 0 -3px; }
   #app[data-strip="side"] .tile { width: 100%; }
   #app[data-strip="side"] .groupsep { width: auto; height: 0.5px; align-self: stretch; margin: 4px 0 0; }
   #app[data-strip="side"] .grouplab { writing-mode: horizontal-tb; transform: none; align-self: flex-start; padding: 0 2px; }
@@ -713,12 +730,21 @@ details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
 .tile.passed .tsub { color: var(--orange); font-weight: 600; }
 .note.passed { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; background: color-mix(in srgb, var(--orange) 10%, transparent); border: 1.5px solid var(--orange); border-radius: var(--r-card); padding: 10px 12px; }
 .note.passed > span { flex: 1; min-width: 12em; }
-/* A tile's box: the tile, and a passed countdown's Delete over its corner (beside it, not inside). */
+/* A tile's box: the tile, and its page's buttons over its picture (beside it, not inside). */
 .tilebox { position: relative; flex: none; display: flex; }
 #app[data-strip="side"] .tilebox { width: 100%; }
-.tdel { position: absolute; top: 4px; right: 4px; width: 28px; min-width: 28px; min-height: 28px; border-radius: 50%; background: var(--raised); color: var(--red);
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2); transition: opacity var(--t-fast), transform var(--t) var(--spring); }
-.tdel::before { content: ""; position: absolute; inset: -8px; }            /* a 44 pt hit area */
-.tdel:active { transform: scale(0.9); }
-.tile.lifted + .tdel { opacity: 0; pointer-events: none; }
-@media (pointer: coarse) { .tdel { width: 36px; min-width: 36px; min-height: 36px; } }
+/* A page's buttons over the right third of its picture: Duplicate above Delete. */
+.tileacts { position: absolute; top: 0; right: 0; width: calc(100% / 3); display: flex; flex-direction: column; overflow: hidden;
+  border-radius: 0 6px 6px 0; background: color-mix(in srgb, var(--raised) 94%, transparent); box-shadow: inset 0.5px 0 0 var(--sep);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  opacity: 0; pointer-events: none; transform: translateX(4px); transition: opacity var(--t-fast), transform var(--t) var(--spring); z-index: 2; }
+.tileact { flex: 1 1 0; min-height: 0; border: 0; background: none; color: var(--fg); display: grid; place-items: center; cursor: pointer; padding: 0;
+  transition: background-color var(--t-fast); }
+.tileact + .tileact { box-shadow: inset 0 0.5px 0 var(--sep); }
+.tileact:hover { background: var(--fill); }
+.tileact:active { background: var(--fill-2); }
+.tileact:last-child { color: var(--red); }
+.tileact .ic { width: 15px; height: 15px; }
+@media (hover: hover) { .tilebox:hover .tileacts, .tilebox:focus-within .tileacts { opacity: 1; pointer-events: auto; transform: none; } }
+.tilebox.held .tileacts, .tilebox.passed .tileacts { opacity: 1; pointer-events: auto; transform: none; }
+.tile.lifted ~ .tileacts { opacity: 0; pointer-events: none; }

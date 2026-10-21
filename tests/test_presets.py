@@ -567,17 +567,43 @@ class TestTheSheet(unittest.TestCase):
     def test_arrows_on_hover_only_towards_more(self):
         arrow = next(b for s, b in re.findall(r"([^{}]+)\{([^{}]*)\}", CSS) if s.strip() == ".arrow")
         self.assertIn("opacity: 0", arrow)
-        hover = re.search(r"@media \(hover: hover\) \{\s*([^{}]+)\{([^{}]*)\}", CSS)
-        self.assertIn(".rowwrap.more-l:is(:hover, :focus-within) .arrow.l", hover.group(1))
-        self.assertIn(".rowwrap.more-r:is(:hover, :focus-within) .arrow.r", hover.group(1))
+        hover = re.search(r"@media \(hover: hover\) \{\s*([^{}]+)\{([^{}]*)\}", CSS[CSS.index(".slider"):])
+        self.assertIn(".slider:not(.vertical).more-l:is(:hover, :focus-within) > .arrow.l", hover.group(1))
+        self.assertIn(".slider:not(.vertical).more-r:is(:hover, :focus-within) > .arrow.r", hover.group(1))
         self.assertIn("opacity: 1", hover.group(2))
         self.assertRegex(CSS, r"@media \(hover: none\) \{ \.arrow \{ display: none; \} \}")
 
     def test_the_edge_fades_while_there_is_more_under_the_arrow_too(self):
-        self.assertIn(".rowwrap.more-l .row { --fl: var(--fade); }", CSS)
-        self.assertIn(".rowwrap.more-r .row { --fr: var(--fade); }", CSS)
+        self.assertIn(".slider.more-l > .slides { --fl: var(--fade); }", CSS)
+        self.assertIn(".slider.more-r > .slides { --fr: var(--fade); }", CSS)
         self.assertIn("mask-image: linear-gradient(to right, transparent 0, #000 var(--fl), #000 calc(100% - var(--fr)), transparent 100%)", CSS)
         self.assertIn("transition: --fl var(--t) var(--spring), --fr var(--t) var(--spring);", CSS)
+
+    def test_the_page_strip_has_three_sizes_standard_as_it_was(self):
+        sheets = (APP_JS / "sheets.js").read_text()
+        self.assertIn('grow("Page strip size", "How large its pages are", select([["small", "Small"], ["standard", "Standard"], ["large", "Large"]], app.prefs.get("strip_size", "standard")', sheets)
+        self.assertIn("#app { --tile-w: 132px; --side-w: 184px; }", CSS, "Standard is the size it always was")
+        self.assertIn(".tile { flex: none; width: var(--tile-w);", CSS)
+        self.assertIn(".stripfront { flex: none; width: var(--tile-w);", CSS)
+        self.assertIn('this.el.app.dataset.stripsize = ["small", "standard", "large"].includes(size) ? size : "standard";', (APP_JS / "main.js").read_text())
+
+    def test_a_pages_buttons_on_its_picture(self):
+        strip = (APP_JS / "strip.js").read_text()
+        self.assertIn('style: { aspectRatio: `${g.W} / ${3 * g.H}` }', strip, "the right third of the picture, not the name under it")
+        self.assertIn('again ? act("minus", "Take out this turn"', strip, "a repeat takes only that turn out")
+        self.assertIn("timer = setTimeout(() => {", strip.split("function holdToReveal", 1)[1], "a hold shows them on a touch screen")
+        self.assertIn('if (!drag) { if (it.dataset.held) delete it.dataset.held; else onOpen(idx); return; }', strip, "and the hold doesn't open the page")
+        self.assertIn("@media (hover: hover) { .tilebox:hover .tileacts, .tilebox:focus-within .tileacts { opacity: 1;", CSS)
+        self.assertIn("takeOutTurn(slot) {", (APP_JS / "main.js").read_text())
+
+    def test_one_slider_for_the_shelves_and_the_page_strip(self):
+        self.assertIn("const wrap = slider(row, { name });", self.js)
+        strip = (APP_JS / "strip.js").read_text()
+        self.assertIn('strip.append(slider(list, { name: "the pages", vertical: () => app.stripVertical() }));', strip)
+        self.assertIn(".slider.vertical > .slides {", CSS, "down the side it fades top and bottom")
+        self.assertIn(".slider.still > .slides { transition: none; }", CSS, "a strip drawn again doesn't fade in each time")
+        self.assertIn('n.closest(".slider")?.sync();', (APP_JS / "main.js").read_text())
+        self.assertIn('#app[data-strip="side"] .strip > .slider { flex: 1 1 0; min-height: 0; flex-direction: column; }', CSS, "down the side, the column scrolls")
 
     def test_phones_swipe(self):
         row = next(b for s, b in re.findall(r"([^{}]+)\{([^{}]*)\}", CSS) if s.strip() == ".row")

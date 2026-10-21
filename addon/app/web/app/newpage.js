@@ -10,6 +10,7 @@ import { syncDynamicGridShowIf } from "./conditions.js";
 import { reflowPageElements } from "./legacy.js";
 import { PRESETS as ALL_PRESETS, GROUPS, forDevice, sleepsBetweenUpdates, staleNote, presetChangesEvery, lookOf, pageFor, examplePage, pageName, search, rankSensors, fitToCanvas } from "./presets.js";
 import { thumbnail } from "./strip.js";
+import { slider } from "./slider.js";
 import { setupStep } from "./setup.js";
 
 const UNITS = { Style: ["style", "styles"], League: ["league", "leagues"], Series: ["series", "series"] };
@@ -79,24 +80,7 @@ export function openPresets(app) {
     function shelf(id, name, cards) {
       // Each card sits in a list item, so it stays a button to VoiceOver.
       const row = h("div", { class: "row", role: "list", "aria-label": name }, ...cards.map((c) => (c.classList.contains("pcard") ? (c.setAttribute("role", "listitem"), c) : h("div", { role: "listitem" }, c))));
-      const wrap = h("div", { class: "rowwrap" });
-      const page = (dir) => {
-        const first = row.firstElementChild; if (!first) return;
-        const pad = parseFloat(getComputedStyle(row).paddingLeft) || 0, gap = parseFloat(getComputedStyle(row).columnGap) || 12;
-        const cw = first.getBoundingClientRect().width + gap;
-        row.scrollBy({ left: dir * Math.max(cw, Math.floor((row.clientWidth - 2 * pad + gap) / cw) * cw) });
-      };
-      const left = h("button", { class: "arrow l", tabindex: "-1", "aria-label": `Earlier in ${name}`, onclick: () => page(-1) }, icon("back", "sm"));
-      const right = h("button", { class: "arrow r", tabindex: "-1", "aria-label": `More in ${name}`, onclick: () => page(1) }, icon("chev", "sm"));
-      // The edge fades, and its arrow shows, only towards more.
-      const sync = () => {
-        const max = row.scrollWidth - row.clientWidth;
-        wrap.classList.toggle("more-l", row.scrollLeft > 2);
-        wrap.classList.toggle("more-r", row.scrollLeft < max - 2);
-      };
-      row.addEventListener("scroll", sync, { passive: true });
-      new ResizeObserver(sync).observe(row);
-      setTimeout(sync);                                   // once it is in the sheet
+      const wrap = slider(row, { name });
       // Arrow keys move along the shelf; Tab moves on to the next one.
       row.addEventListener("keydown", (e) => {
         if (e.key !== "ArrowRight" && e.key !== "ArrowLeft") return;
@@ -108,7 +92,6 @@ export function openPresets(app) {
         next.focus({ preventScroll: true });
         next.scrollIntoView({ inline: "nearest", block: "nearest", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
       });
-      wrap.append(left, row, right);
       const hid = "shelf-" + id;
       return h("section", { class: "shelf", "aria-label": `${name}, ${cards.length} ${cards.length === 1 ? "preset" : "presets"}` },
         h("div", { class: "shelf-head" }, h("h3", { id: hid, text: name }), h("span", { class: "count", "aria-hidden": "true", text: `(${cards.length})` })),

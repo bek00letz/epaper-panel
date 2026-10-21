@@ -5,6 +5,7 @@
 
 import { h, icon, api, pageTitle, span, seconds } from "./util.js";
 import { describe, parseShowIf, evaluate } from "./conditions.js";
+import { slider } from "./slider.js";
 
 /* Thumbnails come from the same renderer as everything else, one at a time,
    cached by what the page contains. */
@@ -97,11 +98,13 @@ export function renderStrip(app) {
     list.append(h("span", { class: "groupsep", role: "presentation" }), h("span", { class: "grouplab", text: "Alerts" }));
     alerts.forEach((n) => { const t = tile(app, n, {}); t.addEventListener("click", () => doc.openPage(n)); list.append(t.box); });
   }
-  strip.append(list);
+  // It slides like New page's shelves: edges that fade while there's more, arrows towards more.
+  strip.style.setProperty("--aspect", String(app.geometry().W / app.geometry().H));
+  strip.append(slider(list, { name: "the pages", vertical: () => app.stripVertical() }));
   return strip;
 }
 
-function tile(app, n, { again, out }) {
+function tile(app, n, { again, out, slot }) {
   const doc = app.doc, p = doc.spec.pages[n];
   if (!p) return null;
   const live = (app.status?.pages || []).includes(n);
@@ -128,11 +131,7 @@ function tile(app, n, { again, out }) {
   img.addEventListener("thumbmeta", (e) => {
     const c = (e.detail || []).find((m) => m.countdown)?.countdown;
     t.classList.toggle("passed", c?.state === "passed");
-    // Delete right on a passed tile. It sits beside the tile in its box, over its corner: a tile is a
-    // button, and a button inside a button can't be pressed or read on its own.
-    box.querySelector(".tdel")?.remove();
-    if (c?.state === "passed" && !again) box.append(h("button", { class: "btn icon tdel", "aria-label": `Delete ${pageTitle(n)}`, title: "Delete",
-      onclick: (ev) => { ev.stopPropagation(); app.deletePage(n); } }, icon("trash", "sm")));
+    box.classList.toggle("passed", c?.state === "passed");       // its buttons stay showing
     if (!c || c.state === "showing" || again || out) return;
     const said = c.state === "passed" ? `Passed · ${c.on}` : `Shows from ${c.from}`;
     t.querySelector(".tsub").textContent = said;
@@ -140,10 +139,42 @@ function tile(app, n, { again, out }) {
     t.setAttribute("aria-label", `${pageTitle(n)}. ${said}`);
   });
   requestAnimationFrame(() => thumbnail(app, n, img));
-  // The tile and anything that belongs beside it (a passed countdown's Delete); dragging moves the tile.
-  const box = h("span", { class: "tilebox" }, t);
+  // The tile and, beside it, its page's buttons: over the right third of its picture, Duplicate and
+  // Delete (a repeat of a page takes just that turn out). They show on hover or focus, on a hold on
+  // a touch screen, and all the time on a countdown that has passed. Beside the tile, not inside:
+  // the tile is a button, and a button can't hold others. Dragging moves the tile alone.
+  const g = app.geometry();
+  const act = (ic, label, said, run) => h("button", { class: "tileact", "aria-label": said, title: label, tabindex: "-1",
+    onclick: (ev) => { ev.stopPropagation(); box.classList.remove("held"); run(); } }, icon(ic, "sm"));
+  const acts = h("span", { class: "tileacts", style: { aspectRatio: `${g.W} / ${3 * g.H}` } },
+    act("dup", "Duplicate", `Duplicate ${pageTitle(n)}`, () => app.duplicatePage(n)),
+    again ? act("minus", "Take out this turn", `Take out this turn of ${pageTitle(n)}`, () => app.takeOutTurn(slot))
+      : act("trash", "Delete", `Delete ${pageTitle(n)}`, () => app.deletePage(n)));
+  const box = h("span", { class: "tilebox" }, t, acts);
+  holdToReveal(t, box);
   t.box = box;
   return t;
+}
+
+/* On a touch screen, holding a tile without moving shows its buttons (and a
+   tap anywhere else puts them away); the hold doesn't open the page. */
+function holdToReveal(t, box) {
+  let timer = null, at = null;
+  const stop = () => { clearTimeout(timer); timer = null; };
+  t.addEventListener("pointerdown", (e) => {
+    if (e.pointerType !== "touch") return;
+    at = { x: e.clientX, y: e.clientY };
+    timer = setTimeout(() => {
+      timer = null; t.dataset.held = "1"; box.classList.add("held");
+      navigator.vibrate?.(8);
+      const away = (ev) => { if (!box.contains(ev.target)) { box.classList.remove("held"); document.removeEventListener("pointerdown", away, true); } };
+      document.addEventListener("pointerdown", away, true);
+    }, 480);
+  });
+  t.addEventListener("pointermove", (e) => { if (timer && at && Math.hypot(e.clientX - at.x, e.clientY - at.y) > 10) stop(); });
+  t.addEventListener("pointerup", stop); t.addEventListener("pointercancel", stop);
+  // The click a hold ends with isn't an open.
+  t.addEventListener("click", (e) => { if (t.dataset.held) { e.stopImmediatePropagation(); e.preventDefault(); delete t.dataset.held; } }, true);
 }
 
 /* Drag to reorder with an insertion mark; a plain click opens. Alt+arrows move.
@@ -178,7 +209,7 @@ function reorderable(list, items, onMove, onOpen) {
         it.removeEventListener("pointermove", move); it.removeEventListener("pointerup", up); it.removeEventListener("pointercancel", up);
         if (mark) mark.remove();
         it.style.transform = ""; it.classList.remove("lifted");
-        if (!drag) { onOpen(idx); return; }
+        if (!drag) { if (it.dataset.held) delete it.dataset.held; else onOpen(idx); return; }   // a hold showed its buttons
         if (target !== idx && target !== idx + 1) onMove(idx, target);
       };
       it.addEventListener("pointermove", move); it.addEventListener("pointerup", up); it.addEventListener("pointercancel", up);
