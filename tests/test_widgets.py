@@ -556,3 +556,15 @@ class TestRaceColumns(unittest.TestCase):
         code_end = 24 + 15 + max(32, T.text_width("P10", pos_f) + 6) + T.text_width("WWW", drv_f)
         gap = img.crop((code_end + 1, 60, code_end + 6, 200))       # between the code and the team: paper
         self.assertEqual(gap.histogram()[0], 0)
+
+
+class TestExampleTemplates(unittest.TestCase):
+    def test_the_clock_and_a_calendars_title_and_date(self):
+        from render import binding
+        from fixture import eval_fixture_template as ev
+        self.assertEqual(ev("{{ now().strftime('%H:%M') }}", own=False), datetime.now().strftime("%H:%M"))
+        self.assertTrue(ev("{{ now().strftime('%A, %-d %B') }}", own=False))
+        bins = {"entity": "calendar.bins"}
+        self.assertEqual(ev(binding.template_for({**bins, "show": "calendar_title"}), own=False), "Recycling")
+        self.assertIn(ev(binding.template_for({**bins, "show": "days_until"}), own=False), ("3", "4"))   # by time of day
+        self.assertTrue(ev(binding.template_for({"entity": "calendar.family", "show": "date_formatted"}), own=False))
