@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **Zoom to any size between actual size and Fit.** Fit and Actual size are
+  now one zoom control: − and + around a menu of Fit, 75%, 100%, 125%, 150%
+  and 200%. ⌘+ and ⌘− step, ⌘0 is 100%, and a trackpad pinch zooms smoothly
+  around your fingers. It remembers your size; on a phone it always fits.
+- **They're called devices now.** Everywhere you read about the things you
+  add and manage, the editor says "device" instead of "screen", so it isn't
+  mistaken for a page: Add new device, Settings › Device, the menu, the bar
+  under the canvas, its messages, the README and the add-on's TRMNL option.
+  Nothing else changes: entity names and settings stay as they were.
+- **The device menu can remove a device too.** Under the device's name: your
+  devices, then Rename and Remove, then Add new device. Removing shows an
+  Undo, as in Settings.
 - **Fixed:** a panel asleep for quiet hours kept saying "back at 06:00" when
   the schedule ended but nobody was home, because nothing woke it to show
   "back when someone's home". It's now woken once when the sleep screen's

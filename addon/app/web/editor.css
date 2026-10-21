@@ -167,13 +167,16 @@ kbd { font: 12px var(--font); background: var(--surface); border-radius: 5px; pa
 .canvaswrap { flex: 1; min-height: 0; display: flex; position: relative; }
 /* One track the size of the area, so the frame's 100% is the area's width in every
    browser (with an auto track, Safari sized it to the panel's own 792 px and Fit
-   never grew past actual size). Actual size goes back to a track that grows with
+   never grew past actual size). A chosen zoom goes back to a track that grows with
    the panel, so it scrolls instead of spilling off both sides. */
 .canvasarea { flex: 1; min-width: 0; container-type: size; display: grid; grid-template: minmax(0, 1fr) / minmax(0, 1fr); place-items: center; padding: 16px 24px; position: relative; overflow: hidden; }
-.canvasarea.actual { overflow: auto; place-items: start center; grid-template: auto / auto; }
+.canvasarea.zoomed { overflow: auto; place-items: center; grid-template: auto / auto; }
 .device { width: min(100%, calc((100cqh - 32px) * var(--ar, 2.91) + 24px)); padding: 12px; background: var(--device); border-radius: 18px;
   box-shadow: inset 0 0 0 1px var(--device-edge), 0 10px 30px rgba(0, 0, 0, 0.16), 0 1px 3px rgba(0, 0, 0, 0.1); transition: width var(--t) var(--spring); }
-.canvasarea.actual .device { width: calc(var(--pw, 792px) + 24px); max-width: none; }
+/* The panel's own pixels times the zoom, plus the frame. Instant, so a pinch keeps up. */
+.canvasarea.zoomed .device { width: calc(var(--pw, 792px) * var(--zoom, 1) + 24px); max-width: none; transition: none; }
+.zoomc { display: inline-flex; align-items: center; gap: 2px; }
+.zoomv { min-width: 72px; justify-content: center; gap: 2px; font-variant-numeric: tabular-nums; }
 
 /* The panel: the add-on's own render as the background, outlines on top. */
 .panel { position: relative; width: 100%; aspect-ratio: 792 / 272; background: var(--paper) no-repeat center / 100% 100%; border-radius: 4px; overflow: hidden;

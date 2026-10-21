@@ -141,7 +141,7 @@ every design.
   on, seconds, and the panel turns its pages itself; asleep, a whole number of
   updates (each wake refreshes the page on screen, every Nth moves on), at
   least once a day. Each mode keeps its own, so switching back finds what you
-  had. They're set in Settings › Screen and apply at once, never sent with the
+  had. They're set in Settings › Device and apply at once, never sent with the
   pages; a new screen chooses between two cards, always on picked. A kind
   that can't stay connected (`stays_on` false: a TRMNL) has no always-on
   choice and starts at 5 minutes. Whether a screen sleeps is never assumed
@@ -576,7 +576,7 @@ screen (Update every), never a property of a kind. Three setups make sense:
 
 ### Sleeping between updates
 
-Update every 2 minutes or more (Settings › Screen, or the second card when
+Update every 2 minutes or more (Settings › Device, or the second card when
 adding a screen; always on is the default) makes a CrowPanel a
 [screen that sleeps](#screens-that-sleep).
 

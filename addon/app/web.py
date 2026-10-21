@@ -61,11 +61,11 @@ def _device(request) -> dict:
     try:
         dev = devices.resolve(asked)
     except KeyError:
-        raise web.HTTPNotFound(text="There's no such screen.")
+        raise web.HTTPNotFound(text="There's no such device.")
     if kinds.shown(dev):
         return dev
     if asked:
-        raise web.HTTPNotFound(text="There's no such screen.")         # its kind is switched off
+        raise web.HTTPNotFound(text="There's no such device.")         # its kind is switched off
     return next(iter(kinds.shown_devices()), dev)
 
 
@@ -261,7 +261,7 @@ async def api_panel_device_get(request):
     """The panel's Sleep and ghost-clearing settings, read through Home Assistant."""
     link = _link(_device(request))
     if link is None:
-        return web.json_response({"available": False, "problem": "the add-on can't reach this screen"})
+        return web.json_response({"available": False, "problem": "the add-on can't reach this device"})
     return web.json_response(await link.device_settings())
 
 
@@ -272,7 +272,7 @@ async def api_panel_device_post(request):
         raise web.HTTPBadRequest(text="expected one setting")
     key, value = next(iter(body.items()))
     link = _link(_device(request))
-    ok, err = await link.set_device_setting(key, value) if link else (False, "the add-on can't reach this screen")
+    ok, err = await link.set_device_setting(key, value) if link else (False, "the add-on can't reach this device")
     return web.json_response({"ok": ok, "error": err or None}, status=200 if ok or key in
                              ("sleep", "ghost_after", "ghost_mode", "clear_ghosting") else 400)
 
@@ -437,7 +437,7 @@ async def api_push(request):
     link = _link(dev)
     return web.json_response({"pushed": delivered, "pending": bool(link and link.pending is not None),
                               "error": None if delivered else (link.last_error if link else
-                                                               "the add-on can't reach this screen")})
+                                                               "the add-on can't reach this device")})
 
 
 def _screen(dev: dict, everyone: list[dict]) -> dict:
@@ -488,10 +488,10 @@ def _screens() -> dict:
 def _clean_name(raw, exclude_id=None) -> str:
     name = re.sub(r"\s+", " ", str(raw or "")).strip()[:60]
     if not name:
-        raise web.HTTPBadRequest(text="Give the screen a name.")
+        raise web.HTTPBadRequest(text="Give the device a name.")
     taken = next((d for d in devices.all_devices() if d.get("name", "").casefold() == name.casefold() and d["id"] != exclude_id), None)
     if taken:
-        raise web.HTTPBadRequest(text=f"There's already a screen called {taken['name']}.")
+        raise web.HTTPBadRequest(text=f"There's already a device called {taken['name']}.")
     return name
 
 
@@ -522,11 +522,11 @@ async def api_devices(request):
 
 
 async def api_devices_add(request):
-    """Add a screen: {kind, name, display, orientation, pages: new|copy|same, from, quiet_hours_from}."""
+    """Add a device (Add new device): {kind, name, display, orientation, pages: new|copy|same, from, quiet_hours_from}."""
     body = await _body(request)
     kind = kinds.KINDS.get(str(body.get("kind") or ""))
     if kind is None or not kind.enabled():
-        raise web.HTTPBadRequest(text="That isn't a kind of screen this add-on knows.")
+        raise web.HTTPBadRequest(text="That isn't a kind of device this add-on knows.")
     display = str(body.get("display") or "")
     if display not in kind.displays():
         raise web.HTTPBadRequest(text=f"Pick one of the {kind.name} sizes.")
@@ -557,7 +557,7 @@ async def api_devices_add(request):
         else:
             raise web.HTTPBadRequest(text="pages must be new, copy or same")
     except KeyError:
-        raise web.HTTPBadRequest(text="The screen to copy from isn't there any more.")
+        raise web.HTTPBadRequest(text="The device to copy from isn't there any more.")
     print(f"devices: added {dev['name']} ({kind.name}, {mode})", flush=True)
     await _rerender()
     return web.json_response({"device": _screen(dev, devices.all_devices()), **_screens()})
@@ -599,7 +599,7 @@ async def api_devices_unlink(request):
 async def api_devices_remove(request):
     dev = _device_by_path(request)
     if len(kinds.shown_devices()) < 2:
-        raise web.HTTPConflict(text="This is the only screen, so it can't be removed.")
+        raise web.HTTPConflict(text="This is the only device, so it can't be removed.")
     try:
         devices.remove(dev["id"])
     except ValueError as exc:
@@ -622,9 +622,9 @@ def _device_by_path(request) -> dict:
     try:
         dev = devices.get(request.match_info["id"])
     except KeyError:
-        raise web.HTTPNotFound(text="There's no such screen.")
+        raise web.HTTPNotFound(text="There's no such device.")
     if not kinds.shown(dev):
-        raise web.HTTPNotFound(text="There's no such screen.")
+        raise web.HTTPNotFound(text="There's no such device.")
     return dev
 
 
@@ -637,7 +637,7 @@ async def api_arrange(request):
         raise web.HTTPBadRequest(text="expected {spec, display, orientation}")
     display = str(body.get("display") or "")
     if display not in kinds.of(dev).displays():
-        raise web.HTTPBadRequest(text="That size isn't one this screen comes in.")
+        raise web.HTTPBadRequest(text="That size isn't one this device comes in.")
     try:
         orientation = int(body.get("orientation") or 0)
     except (TypeError, ValueError):

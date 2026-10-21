@@ -23,7 +23,7 @@ sleep (paging.py): every picture it can fetch is drawn ahead in the render
 cycle, and a wake only picks one (a timer wake moves through the rotation, a
 button wake goes to the next page). This file is only the protocol. It can't
 be woken early: alerts show at its next wake. Pairing happens only inside the
-10-minute window "Add a screen" opens in the editor.
+10-minute window "Add new device" opens in the editor.
 
 Off unless the add-on option `trmnl` turns it on (config.TRMNL).
 """
@@ -51,7 +51,7 @@ from entities import publish_entity
 from kinds import WRONG_KEYS, Kind, device_for, register, shown
 from render import sleep, theme as T
 
-PAIR_SECONDS = 600                      # how long "Add a screen" listens for a new TRMNL
+PAIR_SECONDS = 600                      # how long "Add new device" listens for a new TRMNL
 KEEP_IMAGES = 4                         # pictures kept for the device to fetch after /api/display
 KEEP_LOGS = 20
 
@@ -60,7 +60,7 @@ HOST_RE = re.compile(r"^[A-Za-z0-9.\-]+(:[0-9]{1,5})?$|^\[[0-9A-Fa-f:.]+\](:[0-9
 FRIENDLY_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 # What the TRMNL shows on its own screen (its font is plain ASCII).
-NOT_PAIRING = "Not paired yet. In Home Assistant, open e-Paper and add this TRMNL as a screen."
+NOT_PAIRING = "Not paired yet. In Home Assistant, open e-Paper and add this TRMNL as a device."
 PAIRED_MESSAGE = "Paired with e-Paper. Your pages come next."
 
 
@@ -242,7 +242,7 @@ async def api_setup(request):
     owner = next((d for d in devices.all_devices()
                   if d.get("kind") == Trmnl.id and (d.get("setup") or {}).get("mac") == mac), None)
     if owner is not None and owner["id"] != dev["id"]:
-        return _refused(f"This TRMNL is already the screen {owner.get('name')}. Pair it again from there.")
+        return _refused(f"This TRMNL is already the device {owner.get('name')}. Pair it again from there.")
     key = devices.rekey(dev["id"])                      # a key it had before stops working
     setup = dev.get("setup") or {}
     fid = setup.get("friendly_id") or _friendly_id()
@@ -423,9 +423,9 @@ def _trmnl_by_path(request) -> dict:
     try:
         dev = devices.get(request.match_info["id"])
     except KeyError:
-        raise web.HTTPNotFound(text="There's no such screen.")
+        raise web.HTTPNotFound(text="There's no such device.")
     if dev.get("kind") != Trmnl.id or not shown(dev):
-        raise web.HTTPNotFound(text="That screen isn't a TRMNL.")
+        raise web.HTTPNotFound(text="That device isn't a TRMNL.")
     return dev
 
 

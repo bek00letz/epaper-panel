@@ -566,9 +566,9 @@ async def editor_stay_awake(request):
     try:
         dev = devices.get(request.match_info["id"])
     except KeyError:
-        raise web.HTTPNotFound(text="There's no such screen.")
+        raise web.HTTPNotFound(text="There's no such device.")
     if dev.get("kind") != CrowPanel.id:
-        raise web.HTTPNotFound(text="That screen isn't a CrowPanel.")
+        raise web.HTTPNotFound(text="That device isn't a CrowPanel.")
     if not KIND.sleeps(dev):
         raise web.HTTPConflict(text="It's always on, so it's already awake.")
     info = paging.ask_to_stay_awake(dev, request.method == "POST")

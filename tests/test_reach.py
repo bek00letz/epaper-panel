@@ -153,7 +153,7 @@ class TestAddresses(unittest.TestCase):
         pane = pane[pane.index("async function reachPane"):pane.index("async function sourcesPane")]
         self.assertIn('String(picked() === m)', pane)
         self.assertIn('if (picked() === "own") {', pane)
-        self.assertIn("Until you save an https address here, screens keep reaching the add-on", pane)
+        self.assertIn("Until you save an https address here, devices keep reaching the add-on", pane)
 
     def test_the_panel_file_uses_the_outside_address(self):
         fresh_data_dir()

@@ -98,7 +98,7 @@ function element(app, head, body, el, i) {
   head.append(h("div", { class: "ttl" }, h("span", { class: "kind" }, icon(TYPES[el.type]?.icon || "square", "xs"), t), h("span", { class: "tname", text: d || t })));
   const set = setter(app, el);
   const doc = app.doc, g = app.geometry();
-  if (el._auto) body.append(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: `Placed automatically for ${app.screen?.name || "this screen"}. Move or resize it and this screen keeps its own place for it.` })));
+  if (el._auto) body.append(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: `Placed automatically for ${app.screen?.name || "this device"}. Move or resize it and this device keeps its own place for it.` })));
 
   if (hasText(el)) {
     body.append(shows(app, el, set));
@@ -461,7 +461,7 @@ function together(app, members, grp) {
   const rows = [seg([["none", "None"], ...GROUP_STYLES], grp?.style || "none", choose, "Style around them")];
   if (grp) {
     rows.push(field("Space inside", number(grp.pad ?? GROUP_PAD, (v) => { grp.pad = Math.max(0, Math.min(60, Number(v) || 0)); doc.commit("pad"); }, { min: "0", max: "60", style: { width: "5em" } })));
-    rows.push(h("p", { class: "fnote", text: "It follows them when they move, and on every screen." }));
+    rows.push(h("p", { class: "fnote", text: "It follows them when they move, and on every device." }));
   } else rows.push(h("p", { class: "fnote", text: "An outline, a pill or an inverted area around all of them." }));
   return section("Together", ...rows);
 }
@@ -521,8 +521,8 @@ function page(app, head, body) {
       h("div", { class: "btnrow" },
         h("button", { class: "btn tinted", onclick: () => { doc.spec.rotation.push(cur); doc.commit(); } }, times ? "Show again" : "Add to rotation"),
         times ? h("button", { class: "btn tinted", onclick: () => { doc.spec.rotation.splice(doc.spec.rotation.lastIndexOf(cur), 1); doc.commit(); } }, times > 1 ? "Show once less" : "Take out") : null),
-      // Rotate every is the screen's own (Settings › Screen), next to Update every.
-      h("p", { class: "fnote", text: `${app.screen?.name || "This screen"} shows ${turning(app.screen?.timing) || "your pages in turn"}. Change it under the canvas.` })));
+      // Rotate every is the screen's own (Settings › Device), next to Update every.
+      h("p", { class: "fnote", text: `${app.screen?.name || "This device"} shows ${turning(app.screen?.timing) || "your pages in turn"}. Change it under the canvas.` })));
   }
   body.append(section(null, h("div", { class: "btnrow" },
     h("button", { class: "btn tinted", onclick: () => app.duplicatePage() }, icon("dup", "sm"), "Duplicate"),
