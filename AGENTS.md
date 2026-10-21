@@ -189,6 +189,10 @@ than a frame does.
   `kinds/`; the core never names one. A kind can be optional (`Kind.enabled`):
   list devices for anything a person or a render sees through
   `kinds.shown_devices()`, so a kind that's off shows nowhere.
+- **Everything about a size is in its profile** (`theme.DISPLAYS`), the
+  firmware's facts too: `frame_model` (its id in a frame file), `mirrored`,
+  `full_refresh` and `keep_picture` (the C++ for its driver). `epf.py` and
+  `firmware_gen.py` read them; never add a table keyed by a size elsewhere.
 - **A size a screen reports is a profile too**: `theme.sized_display` gives
   the kind's own profile, or `<kind>_<w>x<h>` made from it, which
   `theme.get_display` understands anywhere. Don't add one to `DISPLAYS` at
