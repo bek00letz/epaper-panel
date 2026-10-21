@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 import aiohttp
 
 import runtime
+from render import sport
 from sources.geo import get_home_timezone
 
 
@@ -60,7 +61,8 @@ LEAGUE_SLUGS = {
 }
 
 
-def _parse_espn_event(ev, league_title="MATCH", tz_name=None):
+def _parse_espn_event(ev, league_title="", tz_name=None, league="soccer"):
+    said = sport.words(league)
     comp = (ev.get("competitions") or [{}])[0]
     competitors = comp.get("competitors") or []
     home = next((c for c in competitors if c.get("homeAway") == "home"), competitors[0] if competitors else {})
@@ -97,7 +99,7 @@ def _parse_espn_event(ev, league_title="MATCH", tz_name=None):
         if kickoff_day_str:
             clock_badge = f"{kickoff_day_str}{kickoff_time_str}"
         elif kickoff_time_str:
-            clock_badge = f"Kickoff {kickoff_time_str}"
+            clock_badge = f"{said.start} {kickoff_time_str}"
         else:
             clock_badge = st_desc
     else:
@@ -122,7 +124,7 @@ def _parse_espn_event(ev, league_title="MATCH", tz_name=None):
 
     return {
         "id": str(ev.get("id") or comp.get("id") or f"{home_id}_{str(away.get('team', {}).get('id') or '')}"),
-        "league": league_title,
+        "league": league_title or said.event.upper(),
         "venue": venue_title,
         "clock": clock_badge,
         "status": st_state.upper(),
@@ -196,13 +198,13 @@ async def compute_sports_active_window(session, entity_or_league="soccer/eng.1",
 
     today_url = f"https://site.api.espn.com/apis/site/v2/sports/{endpoint_path}/scoreboard?dates={today_str}"
     events = []
-    league_title = "MATCH"
+    league_title = ""
     try:
         async with session.get(today_url, headers=headers, timeout=timeout) as r:
             if r.status == 200:
                 data = await r.json()
                 events = data.get("events") or []
-                league_title = (data.get("leagues") or [{}])[0].get("name") or "MATCH"
+                league_title = (data.get("leagues") or [{}])[0].get("name") or ""
     except Exception as exc:
         print(f"compute_sports_active_window error: {health.describe(exc)}", flush=True)
 
@@ -239,7 +241,7 @@ async def compute_sports_active_window(session, entity_or_league="soccer/eng.1",
     today_parsed = []
 
     for ev in filtered_today:
-        parsed = _parse_espn_event(ev, league_title, tz_name=tz_name)
+        parsed = _parse_espn_event(ev, league_title, tz_name=tz_name, league=endpoint_path)
         today_parsed.append(parsed)
 
     for ev in all_candidate_events:
@@ -334,7 +336,7 @@ async def fetch_sports_match(session, entity_or_league="soccer/eng.1", team=None
         last_play = attrs.get("last_play") or ""
         down_dist = attrs.get("down_distance_text") or ""
         venue = attrs.get("venue") or ""
-        league_name = attrs.get("league") or "MATCH"
+        league_name = attrs.get("league") or sport.words(attrs.get("sport")).event.upper()
         return [{
             "id": str(attrs.get("event_id") or attrs.get("id") or f"{home}_{away}"),
             "league": league_name,
@@ -372,13 +374,13 @@ async def fetch_sports_match(session, entity_or_league="soccer/eng.1", team=None
 
     try:
         events = []
-        league_title = "MATCH"
+        league_title = ""
         # First try today's games so today's upcoming/live matches take precedence
         async with session.get(url_today, headers=headers, timeout=timeout) as r:
             if r.status == 200:
                 data = await r.json()
                 events = data.get("events") or []
-                league_title = (data.get("leagues") or [{}])[0].get("name") or "MATCH"
+                league_title = (data.get("leagues") or [{}])[0].get("name") or ""
 
         # If no games today, fall back to default scoreboard (upcoming or current round)
         if not events:
@@ -391,7 +393,7 @@ async def fetch_sports_match(session, entity_or_league="soccer/eng.1", team=None
         if not events:
             return cached["data"] if cached else None
 
-        parsed_matches = [_parse_espn_event(ev, league_title, tz_name=tz_name) for ev in events]
+        parsed_matches = [_parse_espn_event(ev, league_title, tz_name=tz_name, league=endpoint_path) for ev in events]
 
         # Most important first: when the panel can't hold every match, the
         # ones at the end are the ones left out (frames.fit_counts).

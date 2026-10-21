@@ -29,6 +29,7 @@ from . import theme as T
 from . import binding
 from . import energy
 from . import media
+from . import sport
 from . import sun
 from . import todo
 from . import units
@@ -1942,7 +1943,7 @@ def _draw_sports_match(img, d, el, raw_val, display=None):
     else:
         return                        # nothing yet, or no matches: never a made-up match
 
-    league = str(data.get("league") or "MATCH").upper()
+    league = str(data.get("league") or sport.words(el.get("league")).event).upper()
     venue = str(data.get("venue") or "").upper()
     header_title = f"{league} · {venue}" if venue else league
     clock = str(data.get("clock") or data.get("status") or "LIVE").upper()

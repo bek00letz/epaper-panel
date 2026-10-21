@@ -13,7 +13,7 @@ from config import HA_BASE, HA_TOKEN, PUBLISH_VIA_STATES_API, RETIRED_SENSORS, v
 from ha import call_ha_service, ha_json
 from layouts_store import load_layouts, load_sources
 from sources.flights import fetch_overhead_aircraft, place_of
-from render import todo
+from render import sport, todo
 from sources.geo import get_home_timezone
 from sources.ha_services import fetch_todo_items, todo_list_id
 from sources.racing import SERIES, compute_racing_active_window, fetch_racing_data, series_slug
@@ -274,7 +274,7 @@ async def publish_computed(session):
             await publish_entity(
                 session, sensor_id, win_info["state"],
                 {
-                    "friendly_name": f"E-Paper · {win_info['league_name']} Matchday",
+                    "friendly_name": f"E-Paper · {win_info['league_name'] or slug.replace('_', ' ').title()} {sport.words(league_slug(lg)[0]).day}",
                     "is_active": win_info["is_active"],
                     "is_live": win_info["is_live"],
                     "matches_today": win_info["matches_today"],

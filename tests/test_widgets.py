@@ -512,3 +512,33 @@ class TestExamples(EditorClient):
         self.assertIn("'", examples.match("soccer/eng.1")["clock"])
         self.assertEqual(examples.race("indycar")["series"], "INDYCAR")
         self.assertEqual(examples.race("nascar")["standings"][0]["driver"], "LAR")
+
+
+# ---------------------------------------------------------------- each sport's own words
+
+from render import sport  # noqa: E402
+from sources import sports  # noqa: E402
+
+
+class TestSportWords(unittest.TestCase):
+    def test_a_premier_league_match_is_never_a_game(self):
+        self.assertEqual(sport.words("soccer/eng.1").event, "match")
+        self.assertEqual(sport.words("basketball/nba").event, "game")
+        self.assertEqual(sport.words("football/nfl").event, "game")
+        self.assertEqual(sport.words("racing").event, "race")
+        self.assertEqual(sport.words("rugby/premiership").event, "match")
+
+    def _event(self, league):
+        start = datetime.now(TZ).replace(hour=20, minute=0, second=0, microsecond=0)
+        ev = {"date": start.isoformat(), "competitions": [{"status": {"type": {"state": "pre"}},
+              "competitors": [{"homeAway": "home", "team": {"displayName": "A"}}, {"homeAway": "away", "team": {"displayName": "B"}}]}]}
+        return sports._parse_espn_event(ev, "", tz_name="Europe/Bucharest", league=league)
+
+    def test_the_start_says_the_sports_word(self):
+        self.assertEqual(self._event("soccer/eng.1")["clock"], "Kick-off 20:00")
+        self.assertEqual(self._event("basketball/nba")["clock"], "Tip-off 20:00")
+        self.assertEqual(self._event("baseball/mlb")["clock"], "First pitch 20:00")
+
+    def test_with_no_league_name_the_heading_is_the_sports_word(self):
+        self.assertEqual(self._event("soccer/eng.1")["league"], "MATCH")
+        self.assertEqual(self._event("hockey/nhl")["league"], "GAME")

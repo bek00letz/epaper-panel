@@ -99,6 +99,10 @@
   something's wrong (the key, the address, or not Jellyfin at all), and
   then you pick whose unwatched to show. With JellyHA installed, the
   address is filled in for you.
+- **Each sport in its own words.** A football match is a match, an NBA or
+  NFL game is a game, and the time before one starts reads "Kick-off
+  20:00", "Tip-off 20:00", "First pitch 20:00" or "Puck drop 20:00". Home
+  Assistant's sensor for a league says Matchday or Game day to match.
 - **Fixed:** a Race weekend page set to NASCAR or IndyCar showed Formula 1's
   race, drivers and status. Each series now reads its own results, and its
   page names it ("NASCAR · …"). Whether the page shows still followed the
