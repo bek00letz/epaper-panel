@@ -12,6 +12,7 @@ import { h, icon, api } from "./util.js";
 import { select, linkButton } from "./ui.js";
 import { dateEditor, binsEditor, ready as countsReady } from "./countdown.js";
 import { zonesEditor } from "./zones.js";
+import { busyNote } from "./busyday.js";
 import { sleepsBetweenUpdates, lookOf, asksOf, needsOf, pageFor, examplePage, rankSensors, groupName, sensorOf, freeSourceName, energyRoles, staleNote, presetChangesEvery } from "./presets.js";
 
 const WHAT = { calendar: "Which calendar should it show?", todo: "Which list should it show?", weather: "Which weather should it show?",
@@ -108,9 +109,17 @@ export function setupStep(app, p, { thumb, add, foot, initialLook = 0, rememberL
     // …and one that draws differently on a device that sleeps says how, there.
     const asleep = () => (sleepsBetweenUpdates(app.screen) ? look().onSleeping || "" : "");
     const drawNote = () => { const t = [look().note, asleep()].filter(Boolean).join(" "); note.textContent = t; note.hidden = !t; };
+    // Scores: whether a busy day, with this league added, could pass what the device holds (busyday.js).
+    let busy = h("span", { hidden: true });
+    const drawBusy = () => {
+      if (p.choose !== "League") return;
+      const spec = app.doc.spec, adding = "\u0000adding";
+      const fresh = busyNote(app, { pages: { ...spec.pages, [adding]: { elements: look().make() } }, rotation: [...spec.rotation, adding] });
+      busy.replaceWith(fresh); busy = fresh;
+    };
     const choose = (i) => {
       const before = [asksOf(p, look()), needsOf(p, look())].join();
-      li = i; rememberLook && rememberLook(i); drawLooks(); drawNote();
+      li = i; rememberLook && rememberLook(i); drawLooks(); drawNote(); drawBusy();
       if ([asksOf(p, look()), needsOf(p, look())].join() !== before) drawWhat();   // a countdown's date, bins or calendar
       changed();
     };
@@ -120,7 +129,8 @@ export function setupStep(app, p, { thumb, add, foot, initialLook = 0, rememberL
         thumb(app, `preset:${l.id}:example`, examplePage(p, l), { example: true }), h("span", { class: "pt", text: l.name }))));
     radioKeys(group, choose);
     drawLooks(); drawNote();
-    node.append(h("div", { class: "stepsec" }, h("h3", { class: "slab", text: p.choose || "Style" }), group, note));
+    node.append(h("div", { class: "stepsec" }, h("h3", { class: "slab", text: p.choose || "Style" }), group, note, busy));
+    drawBusy();
   }
 
   /* What it shows, or what it sets up: the look's own, or else the preset's. */

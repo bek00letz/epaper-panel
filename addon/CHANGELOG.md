@@ -4,6 +4,13 @@
 - **A Scores page shows every game of the day,** not just six: your teams
   first, then live, upcoming and finished. On a busy day an always-on panel
   can run out of room; it then keeps the most important games.
+- **Setting up Scores says when a busy day won't all fit.** On a device that's
+  always on, picking a league (in New page, or under League in the
+  inspector) shows a line when your leagues' busiest day, with your other
+  pages, could have more games than the device holds: "On a busy day your
+  leagues can have a lot of scores, and Kitchen can only show about 25 of
+  them." Nothing shows when it all fits, or on a device that sleeps between
+  updates or a TRMNL, which have no such limit.
 
 ## 0.18.0
 **Firmware change:** install the panel again (Settings › Install or update,
