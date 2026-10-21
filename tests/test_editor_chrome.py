@@ -33,10 +33,43 @@ class TestFit(unittest.TestCase):
         body = rule(".canvasarea")
         self.assertIn("grid-template: minmax(0, 1fr) / minmax(0, 1fr)", body)
 
-    def test_actual_size_scrolls_instead_of_spilling(self):
-        body = rule(".canvasarea.actual")
+    def test_a_chosen_zoom_scrolls_instead_of_spilling(self):
+        body = rule(".canvasarea.zoomed")
         self.assertIn("grid-template: auto / auto", body)
         self.assertIn("overflow: auto", body)
+        self.assertIn("width: calc(var(--pw, 792px) * var(--zoom, 1) + 24px)", rule(".canvasarea.zoomed .device"))
+
+
+class TestZoom(unittest.TestCase):
+    """Between actual size and Fit (the user's call): a menu of steps, − and +, ⌘+ ⌘− ⌘0, a pinch."""
+    def setUp(self):
+        self.main = js("main.js")
+
+    def test_the_steps_and_the_menu(self):
+        self.assertIn("const ZOOM_STEPS = [0.75, 1, 1.25, 1.5, 2];", self.main)
+        control = self.main[self.main.index("  zoomControl() {"):self.main.index("  renderBar() {")]
+        for part in ('"Zoom out"', '{ label: "Fit"', "...ZOOM_STEPS.map(", '"Zoom in"'):
+            self.assertIn(part, control)
+
+    def test_the_keys(self):
+        self.assertIn('if (mod && (e.key === "=" || e.key === "+")) { e.preventDefault(); this.zoomStep(1); return; }', self.main)
+        self.assertIn('if (mod && e.key === "0") { e.preventDefault(); this.setZoom(1); return; }', self.main)
+        self.assertIn('["Zoom in, out, actual size"', js("sheets.js"))
+
+    def test_a_pinch_keeps_what_is_under_the_fingers(self):
+        pinch = self.main[self.main.index("  wirePinch() {"):self.main.index("  zoomControl() {")]
+        self.assertIn("if (!e.ctrlKey || narrow()) return;", pinch)
+        self.assertIn('"gesturechange"', pinch, "Safari pinches with gesture events")
+        zoom = self.main[self.main.index("  setZoom(z, at) {"):self.main.index("  applyZoom() {")]
+        self.assertIn("area.scrollLeft += after.left + fx * after.width - x;", zoom)
+
+    def test_the_old_actual_size_is_100_percent(self):
+        self.assertIn('if (z === "actual") return 1;', self.main)
+
+    def test_fit_is_worked_out_not_measured(self):
+        # Fit's frame springs to its size; stepping from a frame still moving picked the wrong step.
+        scale = self.main[self.main.index("  shownScale() {"):self.main.index("  setZoom(z, at) {")]
+        self.assertNotIn("canvas.device.getBoundingClientRect", scale)
 
 
 

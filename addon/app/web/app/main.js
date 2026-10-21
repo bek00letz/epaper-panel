@@ -16,6 +16,9 @@ import { CATEGORY_TERMS } from "./legacy.js";
 import { unitsRows } from "./units.js";
 import { renderScreenBar } from "./screenbar.js";
 
+const ZOOM_STEPS = [0.75, 1, 1.25, 1.5, 2];
+const ZOOM_MIN = 0.5, ZOOM_MAX = 3;                  // a pinch can go a little past the steps
+
 const CLIP_KEY = "clipboard";
 
 class App {
@@ -45,6 +48,7 @@ class App {
     matchMedia("(min-width: 901px)").addEventListener("change", () => this.renderStrip());
     matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => this.applyTheme());
     this.wireKeys();
+    this.wirePinch();
     addEventListener("beforeunload", (e) => { if (this.doc.saving !== "saved") { this.doc.flush(); e.preventDefault(); e.returnValue = ""; } });
     document.addEventListener("visibilitychange", () => { if (document.hidden) this.doc.flush(); else this.poll(); });
   }
@@ -288,10 +292,81 @@ class App {
     else tb.replaceChildren(...items);
   }
 
+  /* ---------- zoom ---------- */
+  /* Fit, or a size of the panel's own pixels (1 = actual size). Steps for the menu and
+     ⌘+ ⌘−; a pinch goes anywhere between the ends. Remembered. */
+  zoom() {
+    if (matchMedia("(max-width: 760px)").matches) return "fit";       // a phone has no zoom control
+    const z = prefs.get("zoom", "fit");
+    if (z === "actual") return 1;                       // before 0.15: Fit or Actual size
+    const n = Number(z);
+    return z !== "fit" && n > 0 ? Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, n)) : "fit";
+  }
+  shownScale() {
+    const z = this.zoom();
+    if (z !== "fit") return z;
+    // Fit's size from the area, as editor.css works it out (the frame may still be moving).
+    const a = this.el.area, cs = getComputedStyle(a), g = this.geometry();
+    const w = a.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    const hgt = a.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
+    return Math.max(0.01, (Math.min(w, (hgt - 32) * (g.W / g.H) + 24) - 24) / g.W);
+  }
+  // Keeps the point at (x, y) on screen where it was: the pointer for a pinch, else the middle of the view.
+  setZoom(z, at) {
+    const area = this.el.area, before = this.canvas.device.getBoundingClientRect(), view = area.getBoundingClientRect();
+    const x = at?.x ?? view.left + view.width / 2, y = at?.y ?? view.top + view.height / 2;
+    const fx = (x - before.left) / before.width, fy = (y - before.top) / before.height;
+    prefs.set("zoom", z === "fit" ? "fit" : String(Math.round(Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z)) * 1000) / 1000));
+    this.applyZoom();
+    if (z !== "fit") {
+      const after = this.canvas.device.getBoundingClientRect();
+      area.scrollLeft += after.left + fx * after.width - x;
+      area.scrollTop += after.top + fy * after.height - y;
+    }
+    this.renderBar();
+  }
+  applyZoom() {
+    const z = this.zoom(), area = this.el.area;
+    area.classList.toggle("zoomed", z !== "fit");
+    area.style.setProperty("--zoom", z === "fit" ? "1" : String(z));
+  }
+  zoomStep(dir) {
+    const cur = this.shownScale();
+    const next = dir > 0 ? ZOOM_STEPS.find((s) => s > cur + 0.001) : [...ZOOM_STEPS].reverse().find((s) => s < cur - 0.001);
+    if (next) this.setZoom(next);
+  }
+  // A trackpad pinch: ctrl + wheel in Chrome and Firefox, gesture events in Safari.
+  wirePinch() {
+    const area = this.el.area;
+    let start = 1, settle = null;
+    const done = () => { clearTimeout(settle); settle = setTimeout(() => this.say(`Zoom ${Math.round(this.shownScale() * 100)}%.`), 300); };
+    const narrow = () => matchMedia("(max-width: 760px)").matches;
+    area.addEventListener("wheel", (e) => {
+      if (!e.ctrlKey || narrow()) return;
+      e.preventDefault();
+      this.setZoom(this.shownScale() * Math.exp(-e.deltaY * 0.01), { x: e.clientX, y: e.clientY });
+      done();
+    }, { passive: false });
+    area.addEventListener("gesturestart", (e) => { if (narrow()) return; e.preventDefault(); start = this.shownScale(); });
+    area.addEventListener("gesturechange", (e) => { if (narrow()) return; e.preventDefault(); this.setZoom(start * e.scale, { x: e.clientX, y: e.clientY }); done(); });
+    area.addEventListener("gestureend", (e) => { if (!narrow()) e.preventDefault(); });
+  }
+  zoomControl() {
+    const z = this.zoom(), label = z === "fit" ? "Fit" : `${Math.round(z * 100)}%`;
+    const cur = this.shownScale();
+    return h("div", { class: "zoomc hide-narrow", role: "group", "aria-label": "Zoom" },
+      h("button", { class: "btn icon small", "aria-label": "Zoom out", title: `Zoom out  ${modKey}−`, disabled: cur <= ZOOM_STEPS[0] + 0.001, onclick: () => this.zoomStep(-1) }, icon("minus", "sm")),
+      h("button", { class: "btn small zoomv", "aria-haspopup": "menu", "aria-label": `Zoom: ${label}. Choose a size`, onclick: (e) => menu(e.currentTarget, [
+        { label: "Fit", sub: "As big as the window allows", checked: z === "fit", run: () => this.setZoom("fit") },
+        "sep",
+        ...ZOOM_STEPS.map((s) => ({ label: `${s * 100}%`, kb: s === 1 ? `${modKey}0` : null, checked: z === s, run: () => this.setZoom(s) }))], { label: "Zoom", align: "right" }) },
+        h("span", { text: label }), icon("down", "sm")),
+      h("button", { class: "btn icon small", "aria-label": "Zoom in", title: `Zoom in  ${modKey}+`, disabled: cur >= ZOOM_STEPS[ZOOM_STEPS.length - 1] - 0.001, onclick: () => this.zoomStep(1) }, icon("plus", "sm")));
+  }
+
   renderBar() {
     const doc = this.doc, bar = this.el.bar, p = doc.page();
-    const zoom = prefs.get("zoom", "fit");
-    this.el.area.classList.toggle("actual", zoom === "actual");
+    this.applyZoom();
     bar.replaceChildren(
       h("div", { class: "crumb" }, h("b", { text: p ? pageTitle(doc.cur) : "No page" }),
         p ? h("span", { class: "muted", text: p.tier === "alert" ? "Alert page" : p.tier === "when" ? "Shows only sometimes" : "Shows always" }) : null),
@@ -299,8 +374,7 @@ class App {
       h("span", { class: "spacer" }),
       h("button", { class: "btn small", "aria-pressed": String(prefs.get("guides") === "1"), title: "Show where the footer is, and every element's box", onclick: () => { prefs.set("guides", prefs.get("guides") === "1" ? "0" : "1"); this.refresh(); } }, icon("guides", "sm"), h("span", { class: "hide-narrow", text: "Guides" })),
       h("button", { class: "btn small", "aria-pressed": String(prefs.get("layers") === "1"), "aria-controls": "layers", title: "Layers, front first", onclick: () => this.showLayers() }, icon("layers", "sm"), h("span", { text: "Layers" })),
-      h("div", { class: "segc small hide-narrow", role: "radiogroup", "aria-label": "Zoom" },
-        ...[["fit", "Fit"], ["actual", "Actual size"]].map(([v, l]) => h("button", { role: "radio", "aria-checked": String(zoom === v), onclick: () => { prefs.set("zoom", v); this.renderBar(); } }, l))));
+      this.zoomControl());
   }
 
   /* Pages shared with other screens: say so quietly, and what an edit here reaches. */
@@ -685,6 +759,9 @@ class App {
       const mod = isMac ? e.metaKey : e.ctrlKey, k = e.key.toLowerCase();
       if (mod && k === "s") { e.preventDefault(); this.send(); return; }
       if (typing) return;
+      if (mod && (e.key === "=" || e.key === "+")) { e.preventDefault(); this.zoomStep(1); return; }
+      if (mod && (e.key === "-" || e.key === "_")) { e.preventDefault(); this.zoomStep(-1); return; }
+      if (mod && e.key === "0") { e.preventDefault(); this.setZoom(1); return; }
       if (mod && k === "z") { e.preventDefault(); e.shiftKey ? doc.redo() : doc.undo(); return; }
       if (mod && k === "y") { e.preventDefault(); doc.redo(); return; }
       if (!doc.page()) return;

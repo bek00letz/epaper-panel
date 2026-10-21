@@ -354,7 +354,7 @@ export function openShortcuts() {
     ["Duplicate", `${modKey}D`], ["Select everything on the page", `${modKey}A`], ["Delete", "⌫"], ["Nudge 1 px, 10 px", "Arrows, ⇧ arrows"],
     ["Bring forward, send backward", `${modKey}], ${modKey}[`], ["To the front, to the back", `⌥${modKey}], ⌥${modKey}[`], ["Next or previous element", "Tab, ⇧Tab on the canvas"],
     ["Next or previous page", `${modKey}↓, ${modKey}↑`], ["Insert", `${modKey}I`], ["Send to panel", `${modKey}S`], ["Move a page in the strip", "⌥← ⌥→"],
-    ["Snap off while dragging", "Hold ⌥"], ["Click again without moving", "Selects what's underneath"], ["This list", "?"]];
+    ["Zoom in, out, actual size", `${modKey}+, ${modKey}−, ${modKey}0`], ["Snap off while dragging", "Hold ⌥"], ["Click again without moving", "Selects what's underneath"], ["This list", "?"]];
   sheet("Keyboard shortcuts", (node) => {
     node.append(h("div", { class: "sheet-body" }, h("dl", { class: "keys" }, ...rows.flatMap(([a, b]) => [h("dt", { text: a }), h("dd", {}, h("kbd", { text: b }))]))));
   });

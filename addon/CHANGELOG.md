@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Zoom to any size between actual size and Fit.** Fit and Actual size are
+  now one zoom control: − and + around a menu of Fit, 75%, 100%, 125%, 150%
+  and 200%. ⌘+ and ⌘− step, ⌘0 is 100%, and a trackpad pinch zooms smoothly
+  around your fingers. It remembers your size; on a phone it always fits.
 - **The screen menu can remove a screen too.** Under the screen's name: your
   screens, then Rename and Remove, then Add new device. Removing shows an
   Undo, as in Settings. "Add a screen" is now "Add new device" there, in
