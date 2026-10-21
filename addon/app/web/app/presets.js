@@ -17,7 +17,7 @@
 // No imports from util.js: the tests read this file under node.
 
 import { getWidgetSensorId, todoShowIf } from "./legacy.js";
-import { leagues, series, widgetChangesEvery } from "./catalog.js";
+import { leagues, series, widgetChangesEvery, stateWords } from "./catalog.js";
 
 export const GROUPS = [
   ["day", "Your day"],
@@ -129,8 +129,9 @@ export const PRESETS = [
     asks: "binary_sensor", alsoShows: ["person", "device_tracker", "lock", "cover", "input_boolean", "switch", "sensor"],
     example: "binary_sensor.front_door", namedByEntity: true,
     looks: [{ id: "presence_door", name: "Status", make: (ent) => [
-      { type: "icon", icon: "mdi:door", x: 32, y: 44, w: 116, h: 116 },
-      { type: "text", entity: ent || "", show: "state", replace: { on: "Open", off: "Closed" }, size: 80, bold: true, x: 164, y: 30, w: 360, h: 128, align: "left" },
+      // Its words and icon are the picked sensor's kind's (framework review #2): Home Assistant's own.
+      { type: "icon", entity: ent || "", icon: "entity", x: 32, y: 44, w: 116, h: 116 },
+      { type: "text", entity: ent || "", show: "state", words: "entity", size: 80, bold: true, x: 164, y: 30, w: 360, h: 128, align: "left" },
       { type: "text", entity: ent || "", show: "last_changed", format: "relative", prefix: "since ", size: 30, bold: false, x: 164, y: 170, w: 420, h: 40, align: "left" },
     ] }],
   },
@@ -438,8 +439,9 @@ export function pageFor(p, look, ent, extra, unitOf = () => "") {
 /* The example sensors' units (and, for a running total, its state class) as the fixture has them. */
 export const EXAMPLE_UNITS = { "sensor.indoor_temperature": "°C", "sensor.solar_today_production": "kWh", "sensor.home_battery": "%",
   "sensor.house_power": "W", "sensor.solar_pv_power": "W" };
+const EXAMPLE_CLASSES = { "binary_sensor.front_door": "door" };
 const EXAMPLE_PARTS = { battery: "sensor.home_battery", load: "sensor.house_power", solar: "sensor.solar_pv_power" };
-const exampleUnit = (id) => EXAMPLE_UNITS[id] || "";
+const exampleUnit = (id) => ({ unit: EXAMPLE_UNITS[id] || "", device_class: EXAMPLE_CLASSES[id] || "" });
 const POWER_MAX = { W: 5000, kW: 5, MW: 0.005 };
 /* `total: "today"` (Solar today, framework review #3): a running total (state class total or
    total_increasing: an inverter's lifetime meter, or a daily one) shows how much it went up
@@ -449,8 +451,18 @@ const RUNNING = ["total", "total_increasing"];
 export function withUnits(elements, infoOf = () => "") {
   const info = (id) => { const r = id ? infoOf(id) : ""; return typeof r === "string" ? { unit: r } : r || {}; };
   return elements.map((el) => {
-    if (el.unit !== "entity" && el.max_val !== "power" && !el.total) return el;
+    if (el.unit !== "entity" && el.max_val !== "power" && !el.total && el.words !== "entity" && el.icon !== "entity") return el;
     const e = { ...el }, about = info(e.entity), u = String(about.unit || "");
+    // A state's words and icons, by the sensor's domain and device class (the catalog's): you can still edit them.
+    if (e.words === "entity" || (e.type === "icon" && e.icon === "entity")) {
+      const words = e.entity ? stateWords(e.entity, about.device_class) : null;
+      if (e.words === "entity") { delete e.words; if (words) e.replace = Object.fromEntries(Object.entries(words).map(([k, v]) => [k, v.word])); }
+      if (e.icon === "entity") {
+        const icons = words ? Object.fromEntries(Object.entries(words).filter(([, v]) => v.icon).map(([k, v]) => [k, v.icon])) : {};
+        e.icon = (words && (words.off || Object.values(words)[0])?.icon) || "mdi:information-outline";   // its resting state's
+        if (Object.keys(icons).length) e.state_icons = icons;
+      }
+    }
     if (e.total) { if (RUNNING.includes(about.state_class)) e.show = "change_today"; delete e.total; }
     // No unit is an empty suffix, not a missing one: a gauge with none would add its own "%".
     if (e.unit === "entity") { delete e.unit; e.suffix = !u ? "" : u === "%" ? "%" : ` ${u}`; }

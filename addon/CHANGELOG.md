@@ -285,6 +285,12 @@
   appears in New page and the inspector by itself. Race weekend now says
   when it can be older than a sleeping device's update, like Scores.
 
+- **Status speaks your sensor's language.** A door says Open and Closed, a
+  motion sensor Detected and Clear, a switch On and Off, a lock Locked and
+  Unlocked, a person Home and Away, each with its own icon: Home
+  Assistant's own words for that kind of device, which you can still
+  change. Before, everything read "Open" with a door.
+
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) for the quiet-hours fix below.

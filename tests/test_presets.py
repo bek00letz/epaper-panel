@@ -475,7 +475,8 @@ class TestThumbnailsHaveValues(unittest.TestCase):
                 page = look["example"]
                 vals, series = examples.page_values(page)
                 for i, el in enumerate(page["elements"]):
-                    shows = el.get("entity") or "{{" in str(el.get("value", "")) or el["type"] in ("dynamic_grid", "weather_forecast")
+                    # An icon always draws its own icon (its state's, once it has one): nothing to be empty.
+                    shows = el["type"] != "icon" and (el.get("entity") or "{{" in str(el.get("value", "")) or el["type"] in ("dynamic_grid", "weather_forecast"))
                     if not shows:
                         continue
                     with self.subTest(look=look["id"], element=i, type=el["type"]):
@@ -691,6 +692,33 @@ class TestAGaugeNeverMakesUpAValue(unittest.TestCase):
         self.assertIn("1.8 kW", said)
         said = self.drawn({**self.BAR, "entity": "sensor.house", "suffix": ""}, {0: "640"})
         self.assertIn("640", said, "no unit stays no unit, not %")
+
+
+@unittest.skipUnless(shutil.which("node"), "no node to read the editor's presets")
+class TestStatusSpeaksTheSensorsKind(unittest.TestCase):
+    """Framework review #2: Status uses Home Assistant's words and icon for the picked sensor's kind
+    (the catalog's state table, render/states.py), editable after."""
+
+    def page(self, ent, device_class):
+        return run_js(f"""const p = P.presetById("status");
+          console.log(JSON.stringify(P.pageFor(p, p.looks[0], {json.dumps(ent)}, undefined, () => ({{ device_class: {json.dumps(device_class)} }})).elements))""")
+
+    def test_by_device_class_then_domain(self):
+        from render import states
+        cat = states.catalog()
+        for ent, dc in (("binary_sensor.front_door", "door"), ("binary_sensor.hall", "motion"), ("switch.guest_mode", ""), ("lock.front", ""), ("person.sam", "")):
+            icon, text = self.page(ent, dc)[:2]
+            words = cat.get(f"{ent.split('.')[0]}.{dc}") or cat[ent.split(".")[0]]
+            with self.subTest(entity=ent):
+                self.assertEqual(text["replace"], {k: v["word"] for k, v in words.items()})
+                self.assertEqual(icon["state_icons"], {k: v["icon"] for k, v in words.items() if v.get("icon")})
+                self.assertNotIn("words", text)
+        self.assertEqual(self.page("binary_sensor.hall", "motion")[1]["replace"]["on"], "Detected", "never \"Open\" for motion")
+        self.assertEqual(self.page("switch.guest_mode", "")[1]["replace"]["on"], "On")
+
+    def test_its_thumbnail_is_a_doors(self):
+        els = run_js('const p = P.presetById("status"); console.log(JSON.stringify(P.examplePage(p, p.looks[0]).elements))')
+        self.assertEqual(els[1]["replace"]["on"], "Open")
 
 
 class TestTheSheet(unittest.TestCase):
