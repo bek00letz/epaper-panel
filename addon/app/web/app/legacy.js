@@ -4,7 +4,9 @@ import { leagueOf, seriesOf } from "./catalog.js";
 // between orientations, breaking a widget apart, the widgets' own sensors,
 // and icon suggestions.
 
-export function reflowPageElements(p, toPortrait, disp) {
+/* `times`: which elements show the time of day (indices into p.elements), as the add-on says
+   (POST /api/shows-time, or a render's shows_time metrics): the one place that knows. */
+export function reflowPageElements(p, toPortrait, disp, times = []) {
   const list = p && p.elements;
   if (!Array.isArray(list) || !list.length) return;
 
@@ -34,7 +36,8 @@ export function reflowPageElements(p, toPortrait, disp) {
   }
 
   // Detect Clock page: single prominent time template + date
-  const isClock = texts.some(t => String(t.value || "").includes("%H:%M") || String(t.value || "").includes("%I:%M"));
+  const clockEls = times.map((i) => list[i]).filter((e) => e && e.type === "text");
+  const isClock = clockEls.length > 0;
 
   // Detect 2-stat comparison page (e.g. temps: 2 numbers + 2 labels)
   const isTwoStat = (numbers.length === 2 && texts.length === 2) || (numbers.length === 2 && texts.length <= 3 && curves.length === 0);
@@ -87,7 +90,7 @@ export function reflowPageElements(p, toPortrait, disp) {
 
     if (isClock) {
       // Clock layout in portrait: Icon top, Time centered, Date below
-      const timeEl = texts.find(t => String(t.value || "").includes("%H:%M") || String(t.value || "").includes("%I:%M"));
+      const timeEl = clockEls[0];
       const dateEl = texts.find(t => t !== timeEl);
       const iconEl = icons[0];
 
@@ -230,7 +233,7 @@ export function reflowPageElements(p, toPortrait, disp) {
     }
 
     if (isClock) {
-      const timeEl = texts.find(t => String(t.value || "").includes("%H:%M") || String(t.value || "").includes("%I:%M"));
+      const timeEl = clockEls[0];
       const dateEl = texts.find(t => t !== timeEl);
       const iconEl = icons[0];
 

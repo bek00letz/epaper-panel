@@ -291,6 +291,11 @@
   Assistant's own words for that kind of device, which you can still
   change. Before, everything read "Open" with a door.
 
+- **Turning a page upright knows a clock however it's written.** Rearrange
+  this page, and New page on an upright device, ask the add-on which texts
+  show the time, so a clock written any way Home Assistant allows is laid
+  out as a clock.
+
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) for the quiet-hours fix below.

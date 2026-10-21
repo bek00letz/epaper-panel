@@ -721,6 +721,30 @@ class TestStatusSpeaksTheSensorsKind(unittest.TestCase):
         self.assertEqual(els[1]["replace"]["on"], "Open")
 
 
+@unittest.skipUnless(shutil.which("node"), "no node to read the editor's presets")
+class TestUprightAsksWhatShowsTheTime(unittest.TestCase):
+    """Framework review #11: turning a page upright arranges a clock as a clock by the add-on's
+    answer (render/clocktime.times, POST /api/shows-time, the render's shows_time), not a string
+    match of the editor's own."""
+
+    def test_the_clock_preset_upright(self):
+        from render import clocktime
+        page = {"elements": run_js('console.log(JSON.stringify(P.presetById("clock").looks[0].make()))')}
+        times = clocktime.times(page)
+        self.assertEqual(times, [0], "the add-on's own clock (show now) is a time")
+        got = run_js(f"""const page = {{ elements: {json.dumps(page["elements"])} }};
+          L.reflowPageElements(page, true, {{ portrait: {{ w: 272, h: 792, band: 36, margin: 12 }}, landscape: {{ w: 792, h: 272, band: 32, margin: 12 }} }}, {json.dumps(times)});
+          console.log(JSON.stringify(page.elements[0]))""")
+        self.assertEqual((got["align"], got["bold"]), ("center", True))
+        self.assertLessEqual(got["size"], 76, "laid out as the clock it is")
+
+    def test_no_detector_of_its_own(self):
+        src = (APP_JS / "legacy.js").read_text()
+        self.assertNotIn('"%H:%M"', src)
+        self.assertIn("const times = (app.canvas.metrics || []).filter((m) => m.shows_time).map((m) => m.i);", (APP_JS / "sheets.js").read_text())
+        self.assertIn('api("api/shows-time", { method: "POST", body: { page } })', (APP_JS / "newpage.js").read_text())
+
+
 class TestTheSheet(unittest.TestCase):
     """New page's wiring and look, pinned in its source."""
 

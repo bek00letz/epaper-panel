@@ -424,7 +424,11 @@ export async function setMounted(app, v) {
   const doc = app.doc, spec = doc.spec;
   const was = [90, 270].includes(Number(spec.orientation)), now = [90, 270].includes(Number(v));
   if (!(await placeFor(app, spec.display, v))) return;
-  if (was !== now) toast(`The canvas is ${now ? "portrait" : "landscape"} now.`, { label: "Rearrange this page", run: () => { reflowPageElements(doc.page(), now, app.geometry().d); doc.commit(); } });
+  if (was !== now) toast(`The canvas is ${now ? "portrait" : "landscape"} now.`, { label: "Rearrange this page", run: () => {
+    // Which of its texts show the time is the add-on's answer (the canvas's own render says: shows_time).
+    const times = (app.canvas.metrics || []).filter((m) => m.shows_time).map((m) => m.i);
+    reflowPageElements(doc.page(), now, app.geometry().d, times); doc.commit();
+  } });
 }
 export async function placeFor(app, display, orientation) {
   const doc = app.doc, spec = doc.spec;

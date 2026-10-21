@@ -303,7 +303,7 @@ export function guestWifi({ ssid = "", password = "", auth = "WPA" } = {}) {
    (arrange.auto_box): scaled to fit the content area and centred. Upright,
    the page is then rearranged as turning a page upright does. */
 export const CANVAS = { w: 792, h: 272, band: 32 };
-export function fitToCanvas(elements, g, reflow) {
+export function fitToCanvas(elements, g, reflow, times = []) {
   if (g.W === CANVAS.w && g.H === CANVAS.h) return elements;
   const s = Math.min(g.W / CANVAS.w, g.safeH / (CANVAS.h - CANVAS.band));
   const ox = (g.W - CANVAS.w * s) / 2, oy = (g.safeH - (CANVAS.h - CANVAS.band) * s) / 2;
@@ -314,7 +314,7 @@ export function fitToCanvas(elements, g, reflow) {
     if (typeof e.size === "number" && e.size) e.size = Math.max(8, Math.round(e.size * s));
     return e;
   });
-  if (g.portrait && reflow) reflow({ elements: out }, true, g.d);
+  if (g.portrait && reflow) reflow({ elements: out }, true, g.d, times);   // times: the add-on's answer (api/shows-time)
   return out;
 }
 

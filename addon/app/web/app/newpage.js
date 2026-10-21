@@ -5,6 +5,15 @@
 // it, scrolled where they were, so Back returns to the same spot.
 
 import { h, icon, api, clone, slug, prefs } from "./util.js";
+
+/* Which texts of a page show the time, as the add-on says (POST /api/shows-time): what an upright
+   device's rearranging needs. Asked once per page. */
+const timesAsked = new Map();
+function timesOf(page) {
+  const key = JSON.stringify(page.elements || []);
+  if (!timesAsked.has(key)) timesAsked.set(key, api("api/shows-time", { method: "POST", body: { page } }).then((r) => r.body?.time || [], () => []));
+  return timesAsked.get(key);
+}
 import { sheet, toast } from "./ui.js";
 import { syncDynamicGridShowIf } from "./conditions.js";
 import { reflowPageElements } from "./legacy.js";
@@ -25,8 +34,11 @@ function thumb(app, key, page, { example = false, fit = true, cls = "" } = {}) {
   const g = app.geometry();
   const img = h("img", { class: "thumb", alt: "", "data-thumb": key, draggable: "false" });
   // Built-in presets are drawn for the 5.79" and fitted to this device; your own are as you saved them.
-  const fitted = fit ? { ...page, elements: fitToCanvas(page.elements || [], g, reflowPageElements) } : page;
-  requestAnimationFrame(() => thumbnail(app, key, img, fitted, { example }));
+  requestAnimationFrame(async () => {
+    const times = fit && g.portrait ? await timesOf(page) : [];
+    const fitted = fit ? { ...page, elements: fitToCanvas(page.elements || [], g, reflowPageElements, times) } : page;
+    thumbnail(app, key, img, fitted, { example });
+  });
   return h("span", { class: "thumbwrap " + cls, style: { aspectRatio: `${g.W} / ${g.H}` } }, img);
 }
 
@@ -156,9 +168,9 @@ export function openPresets(app) {
     drawShelves();
   }, { cls: "wide tall", focus: "input[type=search]" });
 
-  function add(p, look, ent, extra) {
+  async function add(p, look, ent, extra) {
     const page = pageFor(p, look, ent, extra, (id) => app.entMap.get(id) || "");
-    page.elements = fitToCanvas(page.elements, g, reflowPageElements);
+    page.elements = fitToCanvas(page.elements, g, reflowPageElements, g.portrait ? await timesOf(page) : []);
     if (page.tier === "when") syncDynamicGridShowIf(page);
     const entName = ent ? app.entMap.get(ent)?.name : "";
     app.addPage(slug(pageName(p, look, ent, entName, extra)) || p.id, page);
