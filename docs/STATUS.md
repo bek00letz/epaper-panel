@@ -30,6 +30,9 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 |---|---|---|
 | Say when Scores won't all fit an always-on CrowPanel: a line while setting up Scores, "showing 14 of 23 games" when trimming happens; no global counter (session "scores-fit") | branch `scores-fit` from main | Started 21 Oct |
 
+Merged into local main for the next release (user, 21 Oct): next year's racing
+calendar not being published yet no longer counts as the service failing.
+
 Worker notes are in the notes folders (`break-it-0.12.0.md`,
 `timers-addon.md`, `firmware-013.md`, `fixes-0131.md`, `editor-polish.md`,
 `alerts-todo.md` in the first coordinator's; `widgets-015.md`,
