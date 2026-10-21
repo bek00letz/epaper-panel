@@ -87,6 +87,44 @@ def words(entity_id: str, device_class: str = "") -> dict[str, tuple[str, str]]:
     return STATES.get(f"{domain}.{device_class}") or STATES.get(domain) or {}
 
 
+NO_STATE = ("", "unavailable", "unknown", "none")
+MOST = 24                      # a list longer than this is a value, not a set of states
+
+
+def offered(entity_id: str, device_class: str = "", options=(), seen=()) -> list[dict]:
+    """The states an icon that follows an entity offers, each with an icon: [{"state", "word", "icon"}].
+
+    In order: Home Assistant's own for its kind (`words`), the choices it lists (`options`), then
+    what it was (`seen`: (state, icon) newest first, its state now first). One row per state,
+    whatever its case, spelt as Home Assistant spells it; no value (unavailable, unknown) is never
+    one, it's what "Anything else" is for. The icon is the one the entity itself had in that state
+    when its icon changes with its state (a template's icon), else Home Assistant's for its kind,
+    else the one it always has; "" when none is known.
+    """
+    kind = words(entity_id, device_class)
+    had: dict[str, str] = {}
+    for st, ic in seen or ():
+        k = str(st or "").strip().lower()
+        if k not in NO_STATE and k not in had:
+            had[k] = str(ic or "")
+    own = {ic for ic in had.values() if ic}
+    varies = len(own) > 1
+    out, keys = [], set()
+    names = list(kind) + [str(o) for o in (options or ()) if isinstance(o, (str, int, float))]
+    names += [str(st).strip() for st, _ in (seen or ())]
+    for name in names:
+        k = name.strip().lower()
+        if k in NO_STATE or k in keys:
+            continue
+        keys.add(k)
+        word, kind_icon = kind.get(name, (name, ""))
+        icon = (had.get(k) if varies else "") or kind_icon or (next(iter(own)) if len(own) == 1 else "")
+        out.append({"state": name, "word": word, "icon": icon})
+        if len(out) >= MOST:
+            break
+    return out
+
+
 def catalog() -> dict:
     """The table as the editor reads it: {"<domain>[.<class>]": {state: {"word", "icon"}}}."""
     return {k: {st: {"word": w, "icon": i} for st, (w, i) in v.items()} for k, v in STATES.items()}

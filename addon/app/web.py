@@ -567,6 +567,21 @@ async def api_changed(request):
     return web.json_response({**got, "now": time.time()})
 
 
+async def api_entity_states(request):
+    """The states an icon that follows an entity offers, each with Home Assistant's icon for it
+    (sources.states_seen): {"states": [{"state", "word", "icon"}]}."""
+    from sources import states_seen
+    eid = (request.query.get("entity") or "").strip()
+    if not valid_entity_id(eid):
+        return web.json_response({"error": "That isn't an entity ID."}, status=400)
+    try:
+        got = await states_seen.fetch(runtime.SESSION, eid)
+    except Exception as exc:
+        print(f"states of {eid}: {health.describe(exc)}", flush=True)
+        return web.json_response({"error": "Home Assistant didn't say what states it has."}, status=502)
+    return web.json_response({"states": got})
+
+
 async def api_airport(request):
     """A three-letter airport code, as a place for the flight widget."""
     code = (request.query.get("code") or "").strip()
@@ -1148,6 +1163,7 @@ def make_apps():
         web.get("/api/aircraft", api_aircraft),
         web.get("/api/airport", api_airport),
         web.get("/api/changed", api_changed),
+        web.get("/api/entity_states", api_entity_states),
         web.get("/api/energy", api_energy),
         web.get("/api/catalog", api_catalog),
         web.get("/api/timezones", api_timezones),
