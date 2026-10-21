@@ -391,6 +391,15 @@ class TestThePageEachWake(TrmnlBase):
         expected = [(p["name"], i) for p in self.plans for i in range(max(1, p["want"]))]
         self.assertEqual(seen, expected + expected[:1], "every item of every page, then round again")
 
+    async def test_with_a_cycle_between_wakes_every_picture_was_drawn_ahead(self):
+        # Drawn ahead is only what the next wakes can reach (paging.reachable); in the usual
+        # cadence, a cycle between wakes, no wake has to draw while the screen waits.
+        with mock.patch.object(paging, "_draw_now", wraps=paging._draw_now) as drawn_now:
+            for source in ("", "", "button", "", "button", ""):
+                await frames.refresh_frames(None)
+                await self.wake(self.key, **({"source": source} if source else {}))
+        self.assertEqual(drawn_now.call_count, 0, "a wake drew while the screen waited")
+
     async def test_a_button_wake_goes_to_the_next_page(self):
         await self.wake(self.key)
         first = self.cursor()["pos"]

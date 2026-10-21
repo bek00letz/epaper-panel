@@ -4,6 +4,10 @@
 - **A Scores page shows every game of the day,** not just six: your teams
   first, then live, upcoming and finished. On a busy day an always-on panel
   can run out of room; it then keeps the most important games.
+- **A device that sleeps draws only what it can show next.** Each minute the
+  add-on drew every item of every page for it; now it draws the page it's
+  on, the next few, and the first of each page (where a button press goes).
+  A busy Scores day costs the add-on a few pictures a minute, not 80.
 - **Setting up Scores says when a busy day won't all fit.** On a device that's
   always on, picking a league (in New page, or under League in the
   inspector) shows a line when your leagues' busiest day, with your other

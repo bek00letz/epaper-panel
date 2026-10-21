@@ -450,11 +450,16 @@ Assistant. Each CrowPanel device has its own link. It never guesses names:
 more, sleep between updates and let the add-on pick the page. They share one mode; each kind keeps
 only its protocol (how a wake asks, how the answer is said).
 
-- **Drawn ahead** (`draw_ahead`, from the kind's `render`). Every item of
-  every live page, the empty page and the sleep screen, each as the kind's
-  picture (a TRMNL's PNG, a CrowPanel's one-page frame file), kept whole per
-  screen until the next cycle replaces it. All of them rather than just the
-  next one, so wakes close together (a press, then another) still find theirs.
+- **Drawn ahead** (`draw_ahead`, from the kind's `render`). What the wakes
+  before the next cycle can ask for (`reachable`): the item the cursor is on
+  and the next few (`steps_ahead`: as many as the wakes a cycle can span,
+  and one to spare), the first few items of every live page, the empty page
+  and the sleep screen, each as the kind's picture (a TRMNL's PNG, a
+  CrowPanel's one-page frame file), kept whole per screen until the next
+  cycle replaces it. Every page's first item, so wakes close together (a
+  press, then another, each going to the next page) still find theirs; not
+  every item, since a Scores page can have 80 games. A wake that finds
+  nothing drawn still gets its page, drawn then (logged).
 - **"updated" is when the page last changed** (`steady`). A page is drawn
   again with the time it had; if it comes out the same, nothing changed and it
   keeps its bytes, so its name or ETag stays the same and the screen neither
