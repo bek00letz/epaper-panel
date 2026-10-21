@@ -492,10 +492,11 @@ async def api_catalog(request):
     from sources.geo import get_home_locale
 
     def said(w):
-        return {"event": w.event, "start": w.start, "day": w.day}
+        return {"event": w.event, "events": w.events, "start": w.start, "day": w.day}
     return web.json_response({
         "leagues": [{"path": lg.path, "slug": lg.slug, "name": lg.name, "aliases": list(lg.aliases),
-                     "sensor": lg.sensor, "words": said(sport.words(lg.path))} for lg in sports.LEAGUES],
+                     "sensor": lg.sensor, "words": said(sport.words(lg.path)), "busiest_day": lg.busiest_day}
+                    for lg in sports.LEAGUES],
         "series": [{"slug": s.slug, "code": s.code, "title": s.title, "aliases": list(s.aliases),
                     "sensor": f"sensor.epaper_racing_{s.slug}"} for s in racing.SERIES.values()],
         "sport_words": {**{k: said(v) for k, v in sport.SPORTS.items()}, "other": said(sport.OTHER)},

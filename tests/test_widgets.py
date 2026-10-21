@@ -537,6 +537,16 @@ class TestSportWords(unittest.TestCase):
         self.assertEqual(sport.words("football/nfl").event, "game")
         self.assertEqual(sport.words("racing").event, "race")
         self.assertEqual(sport.words("rugby/premiership").event, "match")
+        self.assertEqual((sport.words("soccer/eng.1").events, sport.words("hockey/nhl").events), ("matches", "games"))
+        self.assertEqual(sport.OTHER.events, "matches")
+
+    def test_every_league_knows_its_busiest_day(self):
+        # What the editor's "on a busy day" line counts with: a round, a week, a busy Saturday.
+        busiest = {lg.slug: lg.busiest_day for lg in sports.LEAGUES}
+        self.assertEqual((busiest["premier_league"], busiest["nba"], busiest["nfl"], busiest["bundesliga"]), (10, 15, 16, 9))
+        self.assertGreater(busiest["college_football"], 50)
+        for lg in sports.LEAGUES:
+            self.assertGreater(lg.busiest_day, 1, lg.slug)
 
     def _event(self, league):
         start = datetime.now(TZ).replace(hour=20, minute=0, second=0, microsecond=0)
@@ -760,6 +770,7 @@ class TestCatalog(EditorClient):
         self.assertEqual([lg["path"] for lg in got["leagues"]], [lg.path for lg in sports.LEAGUES])
         nfl = next(lg for lg in got["leagues"] if lg["slug"] == "nfl")
         self.assertEqual((nfl["sensor"], nfl["words"]["event"]), ("sensor.epaper_sports_nfl", "game"))
+        self.assertEqual((nfl["busiest_day"], nfl["words"]["events"]), (16, "games"))
         nascar = next(s for s in got["series"] if s["slug"] == "nascar")
         self.assertIn("nascar_cup", nascar["aliases"])
         self.assertEqual({s["slug"] for s in got["series"]}, set(racing.SERIES), "every series is offered")

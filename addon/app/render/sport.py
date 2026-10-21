@@ -15,20 +15,21 @@ class Words:
     event: str          # one of them: "match"
     start: str          # before its start time: "Kick-off 19:30"
     day: str            # a day with one on: "Matchday"
+    events: str         # several of them: "matches"
 
 
 SPORTS = {
-    "soccer": Words("match", "Kick-off", "Matchday"),
-    "rugby": Words("match", "Kick-off", "Matchday"),
-    "tennis": Words("match", "Starts", "Match day"),
-    "cricket": Words("match", "Starts", "Match day"),
-    "basketball": Words("game", "Tip-off", "Game day"),
-    "football": Words("game", "Kickoff", "Game day"),        # American football; ESPN's soccer is "soccer"
-    "baseball": Words("game", "First pitch", "Game day"),
-    "hockey": Words("game", "Puck drop", "Game day"),
-    "racing": Words("race", "Lights out", "Race day"),
+    "soccer": Words("match", "Kick-off", "Matchday", "matches"),
+    "rugby": Words("match", "Kick-off", "Matchday", "matches"),
+    "tennis": Words("match", "Starts", "Match day", "matches"),
+    "cricket": Words("match", "Starts", "Match day", "matches"),
+    "basketball": Words("game", "Tip-off", "Game day", "games"),
+    "football": Words("game", "Kickoff", "Game day", "games"),        # American football; ESPN's soccer is "soccer"
+    "baseball": Words("game", "First pitch", "Game day", "games"),
+    "hockey": Words("game", "Puck drop", "Game day", "games"),
+    "racing": Words("race", "Lights out", "Race day", "races"),
 }
-OTHER = Words("match", "Starts", "Match day")
+OTHER = Words("match", "Starts", "Match day", "matches")
 
 
 def words(league) -> Words:

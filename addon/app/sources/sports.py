@@ -24,6 +24,11 @@ class League:
     slug: str                   # names its sensor, sensor.epaper_sports_<slug>
     name: str                   # "Premier League"
     aliases: tuple = ()         # what a page may say for it
+    # The most games its scoreboard lists at once on its busiest day: today's, or with none today the
+    # round or week ahead (fetch_sports_match). How the editor knows a page could outgrow an always-on
+    # panel before it does (frames.busy_day). From the league's size and calendar, checked against
+    # ESPN's scoreboards in Oct 2026.
+    busiest_day: int = 1
 
     @property
     def sensor(self) -> str:
@@ -32,18 +37,20 @@ class League:
 
 # In the order the editor offers them.
 LEAGUES = (
-    League("soccer/eng.1", "premier_league", "Premier League", ("premier_league", "epl")),
-    League("soccer/uefa.champions", "champions_league", "Champions League", ("champions_league", "ucl")),
-    League("soccer/esp.1", "la_liga", "La Liga", ("la_liga",)),
-    League("soccer/ger.1", "bundesliga", "Bundesliga", ("bundesliga",)),
-    League("soccer/ita.1", "serie_a", "Serie A", ("serie_a",)),
-    League("soccer/usa.1", "mls", "MLS", ("mls",)),
-    League("basketball/nba", "nba", "NBA", ("nba",)),
-    League("basketball/wnba", "wnba", "WNBA", ("wnba",)),
-    League("football/nfl", "nfl", "NFL", ("nfl",)),
-    League("football/college-football", "college_football", "College football", ("college_football",)),
-    League("baseball/mlb", "mlb", "MLB", ("mlb",)),
-    League("hockey/nhl", "nhl", "NHL", ("nhl",)),
+    League("soccer/eng.1", "premier_league", "Premier League", ("premier_league", "epl"), 10),       # 20 clubs: a round
+    League("soccer/uefa.champions", "champions_league", "Champions League", ("champions_league", "ucl"),
+           18),                                                     # 36 clubs, the last league night all at once
+    League("soccer/esp.1", "la_liga", "La Liga", ("la_liga",), 10),                                  # 20 clubs
+    League("soccer/ger.1", "bundesliga", "Bundesliga", ("bundesliga",), 9),                          # 18 clubs
+    League("soccer/ita.1", "serie_a", "Serie A", ("serie_a",), 10),                                  # 20 clubs
+    League("soccer/usa.1", "mls", "MLS", ("mls",), 15),                                              # 30 clubs, Decision Day
+    League("basketball/nba", "nba", "NBA", ("nba",), 15),                                            # 30 teams
+    League("basketball/wnba", "wnba", "WNBA", ("wnba",), 7),                                         # 15 teams in 2026
+    League("football/nfl", "nfl", "NFL", ("nfl",), 16),                                              # 32 teams: a week
+    League("football/college-football", "college_football", "College football", ("college_football",),
+           80),                                                     # ESPN's list of a busy Saturday (80 on 6 Sep 2025)
+    League("baseball/mlb", "mlb", "MLB", ("mlb",), 16),                                              # 30 teams and a doubleheader
+    League("hockey/nhl", "nhl", "NHL", ("nhl",), 16),                                                # 32 teams, the last day
 )
 # What a page may say, to the ESPN path; and a path or alias to the slug that names its sensor.
 LEAGUE_MAP = {a: lg.path for lg in LEAGUES for a in lg.aliases}
