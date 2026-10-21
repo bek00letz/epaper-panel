@@ -92,7 +92,7 @@ export function setupStep(app, p, { thumb, add, foot, initialLook = 0, rememberL
   function ready() { addBtn.disabled = need ? !need.ready() : asksEntity && !ent; skip.hidden = !asksEntity; }
   function drawPreview() {
     const shown = need ? need.shows() : { ent, mine: !!ent, caption: ent ? `With ${app.entMap.get(ent)?.name || ent}.` : "" };
-    const page = shown.mine ? pageFor(p, look(), shown.ent || "", shown.extra) : examplePage(p, look());
+    const page = shown.mine ? pageFor(p, look(), shown.ent || "", shown.extra, (id) => app.entMap.get(id)?.unit) : examplePage(p, look());
     const key = `preset:${look().id}:` + (shown.mine ? JSON.stringify([shown.ent || "", shown.extra || null]) : "example");
     preview.replaceChildren(thumb(app, key, page, { example: !shown.mine, cls: "big" }));
     caption.textContent = shown.mine ? shown.caption : "Example values. Your page shows yours.";
@@ -150,7 +150,7 @@ export function setupStep(app, p, { thumb, add, foot, initialLook = 0, rememberL
 }
 
 /* ---------- what presets set up in place ---------- */
-const SETUPS = { wifi: wifiSetup, jellyfin: jellyfinSetup, energy: energySetup, players: playersSetup, date: countSetup("date"), bins: countSetup("bins") };
+const SETUPS = { wifi: wifiSetup, jellyfin: jellyfinSetup, energy: energySetup, players: playersSetup, date: countSetup("date"), bins: countSetup("bins"), parts: partsSetup };
 
 /* Guest Wi-Fi: the network goes into the code, so it's asked for. */
 function wifiSetup({ changed }) {
@@ -370,5 +370,45 @@ function countSetup(to) {
       shows: () => (countsReady(el) ? { mine: true, extra: extra(), caption: "With your dates." } : { mine: false }),
       commit: async () => ({ extra: extra() }),
     };
+  };
+}
+
+/* A preset that shows several sensors (Battery and solar) asks for each, one
+   at a time in place, with the Energy dashboard's own picked first and said
+   so. Each part is optional: an empty one can be filled in the inspector. */
+function partsSetup({ app, p, changed }) {
+  const picks = {}, tags = {};
+  let open = null, roles = {};
+  const node = h("div", { class: "stepsec" }, h("h3", { class: "slab", text: "What it shows" }));
+  const list = h("div", { class: "group parts" });
+  node.append(list, h("p", { class: "fnote", text: "Leave one out and its gauge stays empty until you pick it in the inspector." }));
+  const name = (id) => app.entMap.get(id)?.name || id;
+  function draw() {
+    list.replaceChildren(...p.parts.map((part) => {
+      const q = { asks: "sensor", prefer: part.prefer };
+      const row = h("div", { class: "gr part" },
+        h("span", { class: "gl" }, part.label, h("small", { text: picks[part.key] ? `${name(picks[part.key])}${tags[part.key] ? " · " + tags[part.key] : ""}` : "Not chosen" })),
+        h("button", { class: "btn tinted", "aria-expanded": String(open === part.key), onclick: () => { open = open === part.key ? null : part.key; draw(); } },
+          open === part.key ? "Done" : picks[part.key] ? "Change" : "Choose"));
+      if (open !== part.key) return row;
+      const picker = sensorPicker(app, q, (id) => { picks[part.key] = id; tags[part.key] = ""; open = null; draw(); changed(); }, part.label);
+      picker.rank(roles);
+      return h("div", {}, row, picker.node);
+    }));
+  }
+  energySensors().then((en) => {
+    roles = en || {};
+    for (const part of p.parts) {
+      const first = rankSensors({ asks: "sensor", prefer: part.prefer }, app.ents, roles)[0];
+      if (!picks[part.key] && first?.tag) { picks[part.key] = first.e.entity_id; tags[part.key] = first.tag; }
+    }
+    draw(); changed();
+  });
+  draw();
+  return {
+    node,
+    ready: () => Object.values(picks).some(Boolean),
+    shows: () => (Object.values(picks).some(Boolean) ? { mine: true, extra: { ...picks }, caption: "With your sensors." } : { mine: false }),
+    commit: async () => ({ extra: { ...picks } }),
   };
 }

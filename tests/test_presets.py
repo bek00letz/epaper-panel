@@ -533,6 +533,77 @@ class TestNotedNeverHidden(unittest.TestCase):
         self.assertNotIn("presetChangesEvery(p) != null && sleeps", js, "never filtered out")
 
 
+@unittest.skipUnless(shutil.which("node"), "no node to read the editor's presets")
+class TestUnitsAreTheSensors(unittest.TestCase):
+    """Framework review #1: a preset never writes a unit; a °F home reads °F, a Wh meter Wh."""
+    UNITS = ("°C", "°F", "K", "kWh", "Wh", "MWh", "W", "kW", "%")
+
+    def made(self, unit):
+        return run_js(f"""const unitOf = () => {json.dumps(unit)};
+          const parts = {{ battery: "sensor.a", load: "sensor.b", solar: "sensor.c" }};
+          console.log(JSON.stringify(P.PRESETS.flatMap((p) => p.looks.map((l) => [l.id,
+            P.pageFor(p, l, "sensor.picked", p.needs === "parts" ? parts : undefined, unitOf).elements]))))""")
+
+    def test_every_value_shows_its_sensors_unit(self):
+        for unit in ("°F", "Wh"):
+            for look, els in self.made(unit):
+                for el in els:
+                    if el.get("type") in ("number", "bar") and str(el.get("entity", "")).startswith("sensor.") and el.get("show", "state") == "state":
+                        with self.subTest(look=look, unit=unit):
+                            self.assertEqual(el.get("suffix", "").strip(), unit)
+
+    def test_none_when_the_sensor_has_none(self):
+        for look, els in self.made(""):
+            for el in els:
+                self.assertNotIn(el.get("suffix", "").strip(), self.UNITS, look)
+                self.assertNotIn("unit", el, f"{look}: the marker never reaches a page")
+
+    def test_no_preset_writes_a_unit_of_its_own(self):
+        src = (APP_JS / "presets.js").read_text()
+        looks = src.split("export const PRESETS", 1)[1].split("/* Guest Wi-Fi", 1)[0]
+        for unit in self.UNITS:
+            self.assertNotIn(f'suffix: " {unit}"', looks)
+            self.assertNotIn(f'suffix: "{unit}"', looks)
+
+    def test_changing_a_values_sensor_changes_its_unit(self):
+        src = (APP_JS / "inspector.js").read_text()
+        self.assertIn('if (el.type === "number" && (!mine || mine === was)) { if (e?.unit) el.suffix', src, "your own words stay")
+
+    def test_a_power_gauge_follows_its_unit(self):
+        got = run_js("""console.log(JSON.stringify(["W", "kW"].map((u) => P.withUnits([{ type: "bar", entity: "sensor.x", unit: "entity", max_val: "power" }], () => u)[0])))""")
+        self.assertEqual([(g["max_val"], g["suffix"]) for g in got], [(5000, " W"), (5, " kW")])
+
+    def test_the_examples_units_are_the_example_sensors(self):
+        states = json.loads((support.APP / "render" / "fixture.json").read_text())["states"]
+        units = run_js("console.log(JSON.stringify(P.EXAMPLE_UNITS))")
+        for ent, unit in units.items():
+            if ent in states:
+                self.assertEqual(states[ent].get("unit"), unit, ent)
+
+
+@unittest.skipUnless(shutil.which("node"), "no node to read the editor's presets")
+class TestBatteryAndSolarAsksForEachPart(unittest.TestCase):
+    """Framework review #4: every part it shows is asked for, the Energy dashboard's first."""
+
+    def test_three_parts_and_each_lands_in_its_place(self):
+        got = run_js("""const p = P.presetById("energy_gauges");
+          console.log(JSON.stringify([p.needs, p.parts.map((x) => x.key), P.pageFor(p, p.looks[0], "", { battery: "sensor.b", load: "sensor.l", solar: "sensor.s" }).elements.map((e) => e.entity || null)]))""")
+        needs, keys, ents = got
+        self.assertEqual((needs, keys), ("parts", ["battery", "load", "solar"]))
+        self.assertEqual([e for e in ents if e], ["sensor.b", "sensor.l", "sensor.s"])
+
+    def test_the_dashboards_solar_power_first(self):
+        roles = run_js("""console.log(JSON.stringify(P.energyRoles({ solar: [{ energy: "sensor.pv_kwh", power: "sensor.pv_w" }] })))""")
+        self.assertEqual(roles["solar_power"], ["sensor.pv_w"])
+        ents = [{"entity_id": "sensor.other_w", "unit": "W", "device_class": "power"}, {"entity_id": "sensor.pv_w", "unit": "W", "device_class": "power"}]
+        first = run_js(f"""const p = P.presetById("energy_gauges"), part = p.parts.find((x) => x.key === "solar");
+          console.log(JSON.stringify(P.rankSensors({{ asks: "sensor", prefer: part.prefer }}, {json.dumps(ents)}, {json.dumps(roles)})[0]))""")
+        self.assertEqual((first["e"]["entity_id"], first["tag"]), ("sensor.pv_w", "From your Energy dashboard"))
+
+    def test_asked_in_place(self):
+        self.assertIn("parts: partsSetup", (APP_JS / "setup.js").read_text())
+
+
 class TestTheSheet(unittest.TestCase):
     """New page's wiring and look, pinned in its source."""
 

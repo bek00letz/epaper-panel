@@ -231,6 +231,14 @@
 - **Fixed:** with the page strip down the side, New page shrank to a sliver
   and, with this release's sliding strip, the pages ran under the canvas.
 
+- **Fixed:** presets wrote their own units, so a temperature in °F read
+  "71.6 °C" and a solar meter in Wh read kWh. A value now shows its sensor's
+  own unit, and changing a value's sensor in the inspector changes its unit
+  too (words you typed yourself stay).
+- **Battery and solar asks for each part it shows**: the home battery, the
+  house power and the solar power, the Energy dashboard's own picked first.
+  Before, two of its three gauges started empty.
+
 ## 0.14.0
 **Firmware change:** install the panel again (Settings › Install or update,
 then Send to ESPHome and Install in ESPHome) for the quiet-hours fix below.

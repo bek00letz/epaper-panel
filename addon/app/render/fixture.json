@@ -4,6 +4,7 @@
   "states": {
     "sensor.solar_today_production": {"state": "10.6", "unit": "kWh", "device_class": "energy", "friendly_name": "Solar Today"},
     "sensor.solar_pv_power":         {"state": "420", "unit": "W", "device_class": "power", "friendly_name": "Solar Power"},
+    "sensor.house_power":            {"state": "640", "unit": "W", "device_class": "power", "friendly_name": "House Power"},
     "sensor.epaper_solar_month":     {"state": "287", "unit": "kWh", "device_class": "energy", "friendly_name": "Solar This Month"},
     "sensor.home_battery":           {"state": "67", "unit": "%", "device_class": "battery", "friendly_name": "Home Battery"},
     "sensor.cat_location":           {"state": "Outdoor Cat", "unit": null, "friendly_name": "Cat Location", "last_changed": "2026-10-15T14:30:00+00:00"},

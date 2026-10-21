@@ -115,7 +115,7 @@ export const PRESETS = [
     asks: "sensor", prefer: { device_class: ["temperature"], units: ["°C", "°F", "K"] }, example: "sensor.indoor_temperature",
     looks: [{ id: "climate", name: "Room temperature", make: (ent) => [
       { type: "icon", icon: "mdi:thermometer", x: 32, y: 44, w: 116, h: 116 },
-      { type: "number", entity: ent || "", show: "state", suffix: " °C", decimals: 1, x: 160, y: 30, w: 320, h: 128, align: "left" },
+      { type: "number", entity: ent || "", show: "state", unit: "entity", decimals: 1, x: 160, y: 30, w: 320, h: 128, align: "left" },
       { type: "text", value: "room climate", size: 30, bold: false, x: 164, y: 170, w: 320, h: 40, align: "left" },
       { type: "curve", entity: ent || "", hours: 24, x: 490, y: 100, w: 270, h: 86 },
     ] }],
@@ -155,7 +155,7 @@ export const PRESETS = [
     asks: "sensor", prefer: { energy: "solar", device_class: ["energy"], units: ["kWh", "Wh", "MWh"] }, example: "sensor.solar_today_production",
     looks: [{ id: "solar", name: "Solar today", make: (ent) => [
       { type: "icon", icon: "mdi:white-balance-sunny", x: 32, y: 44, w: 116, h: 116 },
-      { type: "number", entity: ent || "", show: "state", suffix: " kWh", decimals: 1, x: 160, y: 30, w: 310, h: 128, align: "left" },
+      { type: "number", entity: ent || "", show: "state", unit: "entity", decimals: 1, x: 160, y: 30, w: 310, h: 128, align: "left" },
       { type: "text", value: "produced today", size: 30, bold: false, x: 164, y: 170, w: 320, h: 40, align: "left" },
       { type: "curve", entity: ent || "", hours: 24, x: 490, y: 100, w: 270, h: 86 },
     ] }],
@@ -169,17 +169,22 @@ export const PRESETS = [
     ] }],
   },
   {
-    id: "energy_gauges", group: "energy", title: "Battery and solar", desc: "Home battery and house load as gauges, with today's solar as bars.", kw: "load gauges storage",
-    asks: "sensor", prefer: { device_class: ["battery"], units: ["%"] }, example: "sensor.home_battery",
-    looks: [{ id: "energy_gauges", name: "Battery and solar", make: (ent) => [
+    id: "energy_gauges", group: "energy", title: "Battery and solar", desc: "Home battery and house power as gauges, with today's solar as bars.", kw: "load gauges storage battery house power",
+    asks: "", needs: "parts",
+    // Each part it shows is asked for in its step (a preset sets up what it needs); the Energy dashboard's first.
+    parts: [
+      { key: "battery", label: "Home battery", prefer: { device_class: ["battery"], units: ["%"] } },
+      { key: "load", label: "House power", prefer: { device_class: ["power"], units: ["W", "kW"], names: ["house", "home", "load", "consumption"] } },
+      { key: "solar", label: "Solar power", prefer: { energy: "solar_power", device_class: ["power"], units: ["W", "kW"] } },
+    ],
+    looks: [{ id: "energy_gauges", name: "Battery and solar", make: (_, x = {}) => [
       { type: "box", x: 18, y: 14, w: 356, h: 218, fill: "outline", radius: 14, thickness: 3 },
       { type: "text", value: "ENERGY & STORAGE", size: 18, bold: true, invert: true, radius: 8, x: 34, y: 28, w: 280, h: 32, align: "center" },
-      { type: "bar", entity: ent || "", title: "HOME BATTERY", bar_style: "segmented", segments: 10, min_val: 0, max_val: 100, suffix: "%", decimals: 0, show_label: true, x: 34, y: 74, w: 324, h: 66 },
-      { type: "bar", entity: "", title: "HOUSE LOAD", bar_style: "solid", min_val: 0, max_val: 5000, suffix: " W", decimals: 0, show_label: true, x: 34, y: 152, w: 324, h: 64 },
-      { type: "bar_chart", entity: "", title: "24H GENERATION", hours: 24, bars: 12, show_labels: true, show_border: true, x: 390, y: 14, w: 384, h: 218 },
+      { type: "bar", entity: x.battery || "", title: "HOME BATTERY", bar_style: "segmented", segments: 10, min_val: 0, max_val: 100, unit: "entity", decimals: 0, show_label: true, x: 34, y: 74, w: 324, h: 66 },
+      { type: "bar", entity: x.load || "", title: "HOUSE POWER", bar_style: "solid", min_val: 0, max_val: "power", unit: "entity", decimals: 0, show_label: true, x: 34, y: 152, w: 324, h: 64 },
+      { type: "bar_chart", entity: x.solar || "", title: "24H GENERATION", hours: 24, bars: 12, show_labels: true, show_border: true, x: 390, y: 14, w: 384, h: 218 },
     ] }],
   },
-
   {
     id: "grid_now", group: "energy", title: "Grid now", kw: "import export buying selling power electricity",
     desc: "Buying or selling right now, and today's hours, from your Energy dashboard's grid sensors.",
@@ -397,7 +402,7 @@ export function staleNote(minutes, screen, { short = false } = {}) {
 }
 /* A preset's, from what its looks show. */
 export const presetChangesEvery = (p) => {
-  const all = p.looks.map((l) => pageChangesEvery(l.make(""))).filter((m) => m != null);
+  const all = p.looks.map((l) => pageChangesEvery(examplePage(p, l).elements)).filter((m) => m != null);   // with real units
   return all.length ? Math.min(...all) : null;
 };
 
@@ -411,8 +416,8 @@ export const needsOf = (p, look) => (look.needs !== undefined ? look.needs : p.n
 /* What a look's page is: its elements and when it shows. A widget's own
    condition comes from the widget (conditions.syncWidgetShowIf), so a league
    or series always shows by its own sensor. */
-export function pageFor(p, look, ent, extra) {
-  const page = { tier: look.tier || p.tier || "rotate", elements: look.make(ent, extra) };
+export function pageFor(p, look, ent, extra, unitOf = () => "") {
+  const page = { tier: look.tier || p.tier || "rotate", elements: withUnits(look.make(ent, extra), unitOf) };
   const showIf = look.showIf || p.showIf;
   if (showIf) { const s = showIf(ent, extra); if (s) page.show_if = s; }
   if (look.widget) {
@@ -422,13 +427,34 @@ export function pageFor(p, look, ent, extra) {
   return page;
 }
 
+/* A preset never writes a unit (framework review #1): an element marked
+   unit: "entity" shows its sensor's own unit, or none when it has none, so a
+   °F home reads °F. A gauge marked max_val: "power" goes to 5000 in watts,
+   5 in kW. `unitOf(entityId)` is the editor's entity list; the thumbnails'
+   examples use the example sensors' own units (render/fixture.json). */
+export const EXAMPLE_UNITS = { "sensor.indoor_temperature": "°C", "sensor.solar_today_production": "kWh", "sensor.home_battery": "%",
+  "sensor.house_power": "W", "sensor.solar_pv_power": "W" };
+const EXAMPLE_PARTS = { battery: "sensor.home_battery", load: "sensor.house_power", solar: "sensor.solar_pv_power" };
+const exampleUnit = (id) => EXAMPLE_UNITS[id] || "";
+const POWER_MAX = { W: 5000, kW: 5, MW: 0.005 };
+export function withUnits(elements, unitOf = () => "") {
+  return elements.map((el) => {
+    if (el.unit !== "entity" && el.max_val !== "power") return el;
+    const e = { ...el }, u = e.entity ? String(unitOf(e.entity) || "") : "";
+    if (e.unit === "entity") { delete e.unit; if (u) e.suffix = u === "%" ? "%" : ` ${u}`; else delete e.suffix; }
+    if (e.max_val === "power") { e.max_val = POWER_MAX[u] ?? 5000; if (u === "kW" || u === "MW") e.decimals = 1; }
+    return e;
+  });
+}
+
 /* The page a thumbnail draws: the look with the add-on's example values. */
 export function examplePage(p, look) {
-  if (look.exampleExtra) return pageFor(p, look, "", look.exampleExtra());
+  if (look.exampleExtra) return pageFor(p, look, "", look.exampleExtra(), exampleUnit);
+  if (p.needs === "parts") return pageFor(p, look, "", EXAMPLE_PARTS, exampleUnit);
   const ex = look.example || (typeof p.example === "function" ? p.example(look) : p.example);
-  if (Array.isArray(ex)) return pageFor(p, look, ex[0], ex);
+  if (Array.isArray(ex)) return pageFor(p, look, ex[0], ex, exampleUnit);
   if (p.needs === "wifi") return pageFor(p, look, "", { ssid: "Guests", password: "example-only", auth: "WPA" });
-  return pageFor(p, look, ex || "");
+  return pageFor(p, look, ex || "", undefined, exampleUnit);
 }
 
 /* What a new page is called: the list or sensor it shows, the league or
@@ -487,6 +513,7 @@ export function energyRoles(body) {
     known: true, has_cost: !!body.has_cost, currency: body.currency || "",
     solar: ids(solar.flatMap((x) => [x.energy, x.power])),
     solar_energy: ids(solar.map((x) => x.energy)),
+    solar_power: ids(solar.map((x) => x.power)),
     grid: ids(grid.flatMap((x) => [...(x.flows || []).flatMap((f) => [f.import, f.export]), x.power?.plus, x.power?.minus])),
     grid_power: ids(grid.flatMap((x) => [x.power?.plus, x.power?.minus])),
   };

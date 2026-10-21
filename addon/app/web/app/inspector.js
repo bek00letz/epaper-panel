@@ -193,9 +193,11 @@ function shows(app, el, set) {
     s.append(field("Template", textarea(el.value, (v) => set("value", v)), { wide: true, note: "Anything Home Assistant can render." }));
   } else {
     s.append(entityButton(app, el.entity, (id) => {
+      // The unit follows the sensor when it was the old sensor's own (or none); words you typed stay.
+      const was = String(app.entMap.get(el.entity)?.unit || "").trim(), mine = String(el.suffix || "").trim();
       el.entity = id;
       const e = app.entMap.get(id);
-      if (el.type === "number" && e && e.unit && !el.suffix) el.suffix = " " + e.unit;
+      if (el.type === "number" && (!mine || mine === was)) { if (e?.unit) el.suffix = e.unit === "%" ? "%" : " " + e.unit; else if (mine) delete el.suffix; }
       app.doc.commit();
     }));
     const show = el.show || "state";
