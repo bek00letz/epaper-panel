@@ -196,8 +196,15 @@ class TestCompanion(unittest.TestCase):
         tree = ast.parse((companion.SOURCE / "__init__.py").read_text())
         kept = next(ast.literal_eval(n.value) for n in ast.walk(tree)
                     if isinstance(n, ast.Assign) and getattr(n.targets[0], "id", "") == "KEEP_RESPONSE")
-        import paging
-        answered = {*crowpanel.sleep_header(paging.Wake(None, 900, 0)), "ETag", "Retry-After", "X-EPF-Version"}
+        # Every X-EPF- header the device port can send, found in the kinds' source, so one added
+        # later can't be forgotten here (X-EPF-Next was: clock alignment never reached a panel
+        # fetching through Home Assistant's address).
+        import re
+        sent = set()
+        for path in (companion.SOURCE.parents[1] / "kinds").glob("*.py"):
+            sent |= set(re.findall(r"[\"'](X-EPF-[A-Za-z-]+)[\"']", path.read_text()))
+        self.assertIn("X-EPF-Sleep", sent)
+        answered = {*sent, "ETag", "Retry-After"}
         for header in answered:
             self.assertIn(header.lower(), kept, f"{header} must reach a screen away from home")
 

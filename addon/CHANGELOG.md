@@ -9,6 +9,10 @@
 - **Fixed:** an icon file with an absurdly wide line was accepted, then
   couldn't be drawn, and the page using it was left out. Such a file is now
   left out of the set, like any other file no icon is like.
+- **Fixed:** a panel that fetches through Home Assistant's address (Reaching
+  home) never got its clock lined up (0.18): the e-Paper Panel integration
+  dropped the add-on's "fetch next at" hint on the way. Restart Home
+  Assistant once after updating the add-on so it loads the new integration.
 
 ## 0.20.0
 Add-on only; no firmware change, so nothing to reinstall on the panel.
