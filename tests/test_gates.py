@@ -16,28 +16,29 @@ from test_presets import APP_JS, catalog_json
 
 class TestTheRenderCycleReadsTheGate(unittest.TestCase):
     def gated(self, page):
-        got = widgets.gate_of(page)
-        return got[0]["type"] if got else None
+        return [el["type"] for el, _ in widgets.widget_part(page)]
 
-    def test_a_widgets_own_condition_or_none_is_answered_by_the_widget(self):
+    def test_every_gated_widget_has_its_part_whatever_the_page_says(self):
         match = {"type": "sports_match", "league": "soccer/eng.1"}
-        self.assertEqual(self.gated({"elements": [match]}), "sports_match")
-        self.assertEqual(self.gated({"elements": [match], "show_if": "{{ is_state('sensor.epaper_sports_premier_league','active') }}"}),
-                         "sports_match")
+        self.assertEqual(self.gated({"elements": [match]}), ["sports_match"])
+        self.assertEqual(self.gated({"elements": [match], "show_if": "{{ is_state('person.ada','home') }}"}), ["sports_match"])
+        self.assertEqual(self.gated({"elements": [match], "by_widget": False}), [], "switched off")
+
+    def test_what_the_editor_wrote_for_it_is_its_part_yours_stays(self):
+        page = lambda el, s: {"tier": "when", "elements": [el], "show_if": s}
+        self.assertTrue(widgets.wrote_for_widget(page({"type": "sports_match", "league": "soccer/eng.1"},
+                                                      "{{ is_state('sensor.epaper_sports_premier_league','active') }}")))
         # What 0.9 pages say still counts as the widget's own.
-        self.assertEqual(self.gated({"elements": [{"type": "sports_racing"}], "show_if": "{{ is_state('sensor.f1_status','active') }}"}),
-                         "sports_racing")
-        self.assertEqual(self.gated({"elements": [{"type": "flight_tracker"}],
-                                     "show_if": "{{ states('sensor.overhead_aircraft_count') | int > 0 }}"}), "flight_tracker")
+        self.assertTrue(widgets.wrote_for_widget(page({"type": "sports_racing"}, "{{ is_state('sensor.f1_status','active') }}")))
+        self.assertTrue(widgets.wrote_for_widget(page({"type": "flight_tracker"}, "{{ states('sensor.overhead_aircraft_count') | int > 0 }}")))
+        self.assertFalse(widgets.wrote_for_widget(page({"type": "sports_match"}, "{{ is_state('person.ada','home') }}")))
 
-    def test_your_own_condition_stays_yours(self):
-        page = {"elements": [{"type": "sports_match"}], "show_if": "{{ is_state('person.ada','home') }}"}
-        self.assertIsNone(self.gated(page))
-        self.assertEqual(self.gated({**page, "elements": [{"type": "sports_match", "auto_window": True}]}), "sports_match")
-
-    def test_a_count_gate_is_a_condition_not_a_check(self):
-        self.assertIsNone(self.gated({"elements": [{"type": "notifications"}]}))
-        self.assertIsNone(self.gated({"elements": [{"type": "todo_list", "entity": "todo.chores"}]}))
+    def test_a_count_gate_is_a_condition_home_assistant_answers(self):
+        el = {"type": "todo_list", "entity": "todo.chores", "show": "due"}
+        _, g = widgets.widget_part({"elements": [el]})[0]
+        self.assertFalse(g.checks(el))
+        self.assertEqual(g.asks(el), "{{ has_value('sensor.epaper_todo_chores_due') and states('sensor.epaper_todo_chores_due') | float(0) > 0 }}")
+        self.assertEqual(self.gated({"elements": [{"type": "todo_list", "entity": ""}]}), [], "no list: nothing to wait for")
 
     def test_eligible_pages_ask_the_widgets_gate(self):
         asked = []
@@ -83,17 +84,20 @@ def run_js(body):
 
 @unittest.skipUnless(shutil.which("node"), "no node to run the editor")
 class TestTheEditorReadsTheGate(unittest.TestCase):
-    def test_each_widget_writes_its_gates_condition(self):
+    def test_each_widgets_part_is_the_switch_not_a_written_condition(self):
+        """Since 0.21.1 (the user's call): the editor writes nothing for a widget, and what it wrote before goes."""
         got = run_js("""
 const pages = [{ type: "sports_match", league: "basketball/nba" }, { type: "sports_racing", series: "nascar_cup" },
   { type: "flight_tracker" }, { type: "notifications" }, { type: "todo_list", entity: "todo.chores", show: "due" }]
-  .map((el) => { const p = { tier: "when", elements: [el] }; C.syncWidgetShowIf(p); return [L.getWidgetSensorId(el), p.show_if]; });
+  .map((el) => {
+    const p = { tier: "when", elements: [el] }; C.syncWidgetShowIf(p);
+    const before = { tier: "when", show_if: L.gateShowIf(el), elements: [el] }; C.syncWidgetShowIf(before);
+    return [L.getWidgetSensorId(el), p.show_if ?? null, before.show_if ?? null, C.partEls(p).length];
+  });
 console.log(JSON.stringify(pages));""")
-        self.assertEqual(got[0], ["sensor.epaper_sports_nba", "{{ is_state('sensor.epaper_sports_nba','active') }}"])
+        self.assertEqual(got[0], ["sensor.epaper_sports_nba", None, None, 1])
         self.assertEqual(got[1][0], "sensor.epaper_racing_nascar", "an alias finds its series")
-        self.assertIn("sensor.epaper_flights_overhead", got[2][1])
-        self.assertIn("sensor.epaper_notifications", got[3][1])
-        self.assertIn("sensor.epaper_todo_chores_due", got[4][1])
+        self.assertEqual([g[1:] for g in got], [[None, None, 1]] * 5)
 
     def test_a_condition_you_wrote_stays(self):
         got = run_js("""

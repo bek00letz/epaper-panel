@@ -14,6 +14,7 @@ import support
 import fixture
 from render import arrange, layout, theme as T, todo
 from sources import racing, sports
+import widgets
 
 WEB = support.APP / "web"
 APP_JS = WEB / "app"
@@ -189,16 +190,17 @@ class TestCatalogue(unittest.TestCase):
                 page = look["page"]
                 el = page["elements"][0]
                 self.assertEqual(page["tier"], "when")
-                if pid == "race_weekend":
-                    slug = racing.series_slug(el["series"])[0]
-                    self.assertEqual(page["show_if"], "{{ is_state('sensor.epaper_racing_%s','active') }}" % slug)
-                else:
-                    self.assertRegex(page["show_if"], r"^\{\{ is_state\('sensor\.epaper_sports_[a-z_]+','active'\) \}\}$")
+                # Since 0.21.1 its widget's part shows it (widgets.widget_part), not a written condition.
+                self.assertNotIn("show_if", page)
+                self.assertEqual([e["type"] for e, _ in widgets.widget_part(page)], [el["type"]])
+                sensor = widgets.get(el["type"]).gate.sensors_for(el)[0]
+                self.assertRegex(sensor, r"^sensor\.epaper_(sports|racing)_[a-z0-9_]+$")
                 self.assertEqual(look["name_of_page"], look["name"], "the page is named after the league or series")
 
     def test_planes_show_while_one_is_near(self):
         for look in self.by_id["planes"]["looks"]:
-            self.assertEqual(look["page"]["show_if"], "{{ has_value('sensor.epaper_flights_overhead') and states('sensor.epaper_flights_overhead') | float(0) > 0 }}")
+            self.assertNotIn("show_if", look["page"], "a plane near is its widget's part (0.21.1)")
+            self.assertEqual(len(widgets.widget_part(look["page"])), 1)
         self.assertEqual([l["page"]["elements"][0]["style"] for l in self.by_id["planes"]["looks"]], ["card", "radar", "split"])
 
     def test_no_guessed_entity_ids(self):

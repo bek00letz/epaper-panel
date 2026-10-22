@@ -5,11 +5,11 @@
 import { h, icon, api, clone, pageTitle, slug, modKey, turning } from "./util.js";
 import { field, input, number, select, seg, textarea, toggle, toggleRow, section, linkButton, toast } from "./ui.js";
 import { TYPES, breakable, isWidget, hasText, elName, normalizeLineParity, GROUP_STYLES, GROUP_PAD } from "./elements.js";
-import { OPS, CHANGED_MINUTES, parseShowIf, compileShowIf, asTemplate, homeAssistantsChanged, valueChoices, evaluate, describe, changedLine, syncWidgetShowIf, syncDynamicGridShowIf, GRID_RULES, gridRule, gridByNumber, gridWrote } from "./conditions.js";
+import { OPS, CHANGED_MINUTES, parseShowIf, compileShowIf, asTemplate, homeAssistantsChanged, valueChoices, evaluate, describe, changedLine, syncWidgetShowIf, syncDynamicGridShowIf, GRID_RULES, gridRule, gridByNumber, gridWrote, partEls, pagePartWords, showsWords } from "./conditions.js";
 import { explodeWidget, getWidgetSensorId, suggestIconForEntity } from "./legacy.js";
 import { dateEditor, binsEditor } from "./countdown.js";
 import { zonesEditor } from "./zones.js";
-import { staleNote, changesEvery, pageChangesEvery, sleepsBetweenUpdates, batterySensors, ruleTicks, isLowSensor } from "./presets.js";
+import { staleNote, changesEvery, pageChangesEvery, sleepsBetweenUpdates, batterySensors, ruleTicks, isLowSensor, NO_ANSWER_HOURS, NO_ANSWER_WAITS } from "./presets.js";
 import { busyNote, leftOutNote } from "./busyday.js";
 import { notifyRows } from "./notify.js";
 import { dataRows } from "./data.js";
@@ -481,6 +481,7 @@ function typeSections(app, el, set, i) {
       if (f.key === "league") s.append(busyNote(app, app.doc.spec));   // could a busy day pass what the device holds (busyday.js)
     }
     else if (f.kind === "toggle") s.append(toggleRow(f.label, f.def ? el[f.key] !== false : !!el[f.key], (v) => set(f.key, f.def ? (v ? "" : false) : (v ? true : ""))));
+    else if (f.kind === "window" && !WINDOW_TOGGLES) s.append(showsPointer(app));
     else if (f.kind === "window") s.append(toggleRow(typeof f.label === "function" ? f.label(el) : f.label, app.doc.page().tier === "when", (v) => {
       const p = app.doc.page();
       el.auto_window = v;
@@ -577,6 +578,16 @@ function placeRows(app, el, set) {
   ];
 }
 
+/* Since 0.21.1 when a page shows is its Shows section's alone (the user's call): a widget's "Only show
+   while…" / "Hide the page when nothing shows" switch points there instead. The way back: true. */
+const WINDOW_TOGGLES = false;
+function showsPointer(app) {
+  const p = app.doc.page(), tier = p.tier || "rotate";
+  const now = tier === "rotate" ? "This page always shows." : `${showsWords(p, app.entMap)}.`;
+  return h("div", { class: "trow" }, h("span", { class: "tl" }, "When the page shows", h("small", { text: now })),
+    linkButton("Change", () => app.doc.select([]), { "aria-label": "Change when the page shows, in the page's settings" }));
+}
+
 function gridSections(app, el, set) {
   if (!Array.isArray(el.items)) el.items = [];
   const p = app.doc.page();
@@ -594,12 +605,16 @@ function gridSections(app, el, set) {
       resync(); app.doc.commit();
     }, { "aria-label": "Shows each" })),
     byNumber ? field(cmp, number(el.filter_value, (v) => { el.filter_value = v; resync(); app.doc.commit(); }, { step: "any", "aria-label": `${cmp} this number`, style: { width: "6em" } })) : null,
+    // A battery that's gone quiet (sources/batteries.silent): on a Low page it shows, after the low ones.
+    el.batteries && el.filter_rule === "below" ? field("Count one that hasn't answered for", select(NO_ANSWER_WAITS, el.no_answer_hours ?? NO_ANSWER_HOURS, (v) => {
+      el.no_answer_hours = v === "never" ? "never" : Number(v); app.doc.commit();
+    }, { "aria-label": "Count a battery that hasn't answered for" })) : null,
     field("Layout", select([["grid", "Grid"], ["columns", "One row"], ["list", "List"]], el.layout_mode || (el.layout_4 === "columns" ? "columns" : "grid"), (v) => set("layout_mode", v))),
     field("Shows", select([["both", "Icon, name and detail"], ["name_only", "Icon and name"], ["icons_only", "Icons only, large"]], el.show_labels || "both", (v) => set("show_labels", v))),
     field("Icon size", select([["auto", "Fit"], ["medium", "Medium"], ["large", "Large"], ["huge", "Huge"]], el.icon_size || "auto", (v) => set("icon_size", v))),
     // By a number, the detail is its level (render/layout); a state can say how long, or itself.
     byNumber ? null : field("Detail", select([["runtime", "How long it's been on"], ["state", "Its state"], ["none", "Nothing"]], el.secondary_mode || "runtime", (v) => set("secondary_mode", v))),
-    toggleRow(byNumber ? "Hide the page when nothing shows" : "Hide the page when nothing's on", p.tier === "when", (v) => {
+    !WINDOW_TOGGLES ? showsPointer(app) : toggleRow(byNumber ? "Hide the page when nothing shows" : "Hide the page when nothing's on", p.tier === "when", (v) => {
       if (v) { p.tier = "when"; resync(); if (!app.doc.spec.rotation.includes(app.doc.cur)) app.doc.spec.rotation.push(app.doc.cur); }
       else { p.tier = "rotate"; delete p.show_if; }
       app.doc.commit();
@@ -760,7 +775,7 @@ function page(app, head, body) {
 
   const tier = p.tier || "rotate";
   const when = section("Shows", seg([["rotate", "Always"], ["when", "Only when"], ["alert", "As an alert"]], tier, (v) => app.setTier(v), "When this page shows"));
-  if (tier !== "rotate") when.append(conditionRows(app, p));
+  if (tier !== "rotate") when.append(...showsRows(app, p));
   if (tier === "alert") when.append(...endRows(app, p));
   if (tier !== "rotate" || p.notify) when.append(notifyRows(app, p, cur));   // its phone notifications (notify.js)
   body.append(when);
@@ -848,6 +863,24 @@ function endRows(app, p) {
   if (ends === "time") rows.push(minutes("Holds for", onChange ? "Minutes. It takes over the panel each time it changes, then gives it back." : "Minutes. It takes over the panel when its condition turns true, then gives it back."));
   else rows.push(conditionRows(app, p, UNTIL), minutes("At most", "Minutes. It gives the panel back sooner if this happens or its start stops being true, and comes back if this is undone."));
   return rows;
+}
+
+/* A page's "Shows", in one place (0.21.1, the user's call): with a widget that can say whether it has
+   something to show, two parts that must both hold: that (a switch, on to start with) and the page's
+   own condition, if any. Said as one sentence, with whether the widget's part holds now (the add-on's
+   answer, api/status "parts"). Without such a widget, only its own condition, as before. */
+function showsRows(app, p) {
+  if (!partEls(p).length) return [conditionRows(app, p)];
+  const on = p.by_widget !== false, now = app.status?.parts?.[app.doc.cur];
+  const said = pagePartWords(p);
+  return [
+    h("p", { class: "fnote", role: "status", "aria-live": "polite", text: `${showsWords(p, app.entMap)}.` }),
+    toggleRow("Something on it to show", on, (v) => { if (v) delete p.by_widget; else p.by_widget = false; app.doc.commit(); },
+      said ? `While ${said}.` : ""),
+    on && typeof now === "boolean" ? h("div", { class: "note " + (now ? "good" : "warn"), role: "note" }, h("span", { class: "led" }),
+      h("span", { text: now ? "Something on it to show now." : "Nothing on it to show right now." })) : null,
+    field("And when", conditionRows(app, p), { wide: true, note: p.show_if ? "Both must hold." : "Optional. Add one, and both must hold." }),
+  ].filter(Boolean);
 }
 
 // The condition a page shows by (show_if), or the Until an alert ends by.

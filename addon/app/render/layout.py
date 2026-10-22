@@ -825,6 +825,22 @@ def _draw_grid_list(d, x, y, w, h, items, detail, by_number, fscale=1.0, icons_o
             d.text((tx, mid), _fit_text(name, avail, f), font=f, fill=T.BLACK, anchor="lm")
 
 
+def _no_answer_text(res: dict, now: datetime | None = None) -> str:
+    """A battery that hasn't answered: "No answer since Tue 14:02" (12- or 24-hour, as set); one older than
+    six days by its date, "No answer since 12 Oct", since a weekday would be last week's. Several from one
+    integration that went quiet together are one line: "4 not answering" (its name is the integration's)."""
+    if res.get("no_answer_count"):
+        return f"{res['no_answer_count']} not answering"
+    try:
+        at = datetime.fromisoformat(str(res.get("no_answer")).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return "No answer"
+    now = now or datetime.now(at.tzinfo)
+    if (now - at).days > 6:
+        return f"No answer since {at.day} {at:%b}"
+    return f"No answer since {at:%a} {clock.hm(at)}"
+
+
 def _draw_dynamic_grid(img, d, el, raw_val, display=None):
     x, y, w, h = _clamp_box(el, 752, 214, display=display)
     has_resolved = False
@@ -869,7 +885,11 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
 
             level = _number_or_none(state) if by_number else None
             low_sensor = by_number and ent.startswith("binary_sensor.") and res.get("device_class") == "battery"
-            if low_sensor:
+            silent = rule == "below" and bool(res.get("no_answer"))
+            if silent:
+                # Hasn't answered for its wait (sources/batteries.shown): it shows, after the low ones.
+                is_active = True
+            elif low_sensor:
                 # A "battery low" sensor: below whenever it's on, never charged; it shows "Low", no level.
                 is_active = rule == "below" and state.lower() == "on"
             elif by_number:
@@ -879,13 +899,15 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
             if is_active:
                 chosen_icon = _resolve_spot_icon(it, state)
                 if by_number and not it.get("icon") and res.get("device_class") == "battery":
-                    chosen_icon = state_words.battery_icon(0 if low_sensor else level)   # Home Assistant's own glyph for its level
+                    chosen_icon = state_words.battery_icon(None if silent else 0 if low_sensor else level)   # Home Assistant's own glyph for its level
                 if by_number and res.get("device_class") == "battery":
                     # On a page of batteries, "Door Sensor Battery" is the Door Sensor.
                     friendly = re.sub(r"\s+battery(\s+level)?$", "", friendly, flags=re.I) or friendly
                 active_items.append({
-                    "level": 0 if low_sensor else level,
-                    "level_text": "Low" if low_sensor else _level_text(level, res.get("unit")) if by_number else "",
+                    "level": None if silent else 0 if low_sensor else level,
+                    "silent": silent,
+                    "level_text": (_no_answer_text(res) if silent else "Low" if low_sensor
+                                   else _level_text(level, res.get("unit")) if by_number else ""),
                     "entity": ent,
                     "name": name or friendly or ent.split(".")[-1].replace("_", " ").title(),
                     "icon": chosen_icon,
@@ -909,7 +931,9 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
 
     if by_number:
         # The most urgent first: the emptiest battery when it's "below", the fullest when "at least".
+        # Ones that haven't answered come after the low ones.
         active_items.sort(key=lambda it: it.get("level") if it.get("level") is not None else 0, reverse=rule == "at_least")
+        active_items.sort(key=lambda it: bool(it.get("silent")))
 
     if not configured_items and not active_items:
         active_items = [{

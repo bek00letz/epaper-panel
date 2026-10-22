@@ -5,7 +5,7 @@
 import { h, icon, api, clone, pageTitle, slug, modKey, prefs, withDevice, span, seconds, turning } from "./util.js";
 import { sheet, popover, field, input, number, select, seg, toggle, toggleRow, section, linkButton, toast, closeAll } from "./ui.js";
 import { DISPLAYS, isWidget } from "./elements.js";
-import { describe, parseShowIf, syncDynamicGridShowIf } from "./conditions.js";
+import { describe, parseShowIf, syncDynamicGridShowIf, partOn, showsWords } from "./conditions.js";
 import { reflowPageElements } from "./legacy.js";
 import { LOOKS as PRESETS, clockPages, dateInstead } from "./presets.js";
 import { thumbnail, statusSummary, forgetThumbnails, unsentWords } from "./strip.js";
@@ -142,7 +142,12 @@ export function openStatus(app, anchor) {
     const hidden = [...new Set(doc.live.rotation)].filter((n) => doc.live.pages[n]?.tier === "when" && !live.includes(n));
     if (hidden.length) {
       pop.append(h("div", { class: "poplab", text: "Hidden right now" }));
-      hidden.forEach((n) => { const d = describe(doc.live.pages[n].show_if, app.entMap); pop.append(h("p", { class: "fnote" }, h("b", { text: pageTitle(n) + ". " }), `${d.text}. ${d.why}`)); });
+      hidden.forEach((n) => {
+        const p = doc.live.pages[n], d = describe(p.show_if, app.entMap);
+        // With a widget's part (0.21.1): the whole of it, and which part doesn't hold now.
+        const why = partOn(p) && s.parts?.[n] === false ? "Nothing on it to show right now." : p.show_if ? d.why : "";
+        pop.append(h("p", { class: "fnote" }, h("b", { text: pageTitle(n) + ". " }), `${partOn(p) ? showsWords(p, app.entMap) : d.text}. ${why}`.trim()));
+      });
     }
     if (s.active_alert) pop.append(h("div", { class: "poplab", text: "Alert" }), h("p", { class: "fnote", text: wakes ? `${pageTitle(s.active_alert)} shows at its next ${wake}. It can't be woken sooner.` : `${pageTitle(s.active_alert)} has taken over the panel.` }));
     const qh = doc.live.quiet_hours || {};

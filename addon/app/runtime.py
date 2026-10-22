@@ -111,6 +111,15 @@ def showing(design_id: str) -> set:
     return SHOWING.setdefault(design_id, set())
 
 
+# Per design: each page's widget part ("something on it to show"), as last answered (frames), for the
+# editor's page panel to say whether it holds now.
+PARTS: dict[str, dict] = {}
+
+
+def parts(design_id: str) -> dict:
+    return PARTS.setdefault(design_id, {})
+
+
 FEED_ITEMS = {}
 
 

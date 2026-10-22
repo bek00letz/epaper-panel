@@ -16,7 +16,7 @@
 //   was      its old name, so search still finds it and the card can say so.
 // No imports from util.js: the tests read this file under node.
 
-import { gateShowIf, todoShowIf } from "./legacy.js";
+import { gateOf, gateShowIf, todoShowIf, WIDGET_WRITES_CONDITION } from "./legacy.js";
 import { leagues, series, widgetChangesEvery, stateWords } from "./catalog.js";
 
 export const GROUPS = [
@@ -436,18 +436,21 @@ export const lookOf = (p, i = 0) => p.looks[Math.min(Math.max(0, i | 0), p.looks
 export const asksOf = (p, look) => (look.asks !== undefined ? look.asks : p.asks);
 export const needsOf = (p, look) => (look.needs !== undefined ? look.needs : p.needs);
 
-/* What a look's page is: its elements and when it shows. A widget's own
-   condition comes from the widget (conditions.syncWidgetShowIf), so a league
-   or series always shows by its own sensor. */
+/* What a look's page is: its elements and when it shows. Since 0.21.1 a
+   widget's own part is the page's "Something on it to show", answered by the
+   add-on (widgets.widget_part), never written as the page's condition. */
 export function pageFor(p, look, ent, extra, unitOf = () => "") {
   const tier = typeof look.tier === "function" ? look.tier(extra) : look.tier;    // a look may ask its step (Batteries: an alert)
   const page = { tier: tier || p.tier || "rotate", elements: withUnits(look.make(ent, extra), unitOf) };
   const showIf = look.showIf || p.showIf;
   if (showIf) { const s = showIf(ent, extra); if (s) page.show_if = s; }
-  if (look.widget) {
+  if (look.widget && WIDGET_WRITES_CONDITION) {
     const c = gateShowIf(page.elements[0]);          // the widget's own, from its descriptor's gate
     if (c) page.show_if = c;
   }
+  // A look's condition that only says what its widget's part says (a to-do list's count) is the part.
+  if (!WIDGET_WRITES_CONDITION && typeof page.show_if === "string" && page.elements.some((el) => gateOf(el) && page.show_if === gateShowIf(el)))
+    delete page.show_if;
   return page;
 }
 
@@ -581,8 +584,10 @@ const levelOf = (e) => { if (isLowSensor(e)) return e.state === "on" ? 0 : null;
 /* Home Assistant's batteries: sensors of device class battery in %, and "battery low" binary sensors
    (on is low), the emptiest first (a low one counts as empty while on). */
 export const isLowSensor = (e) => String(e?.entity_id || "").startsWith("binary_sensor.") && e.device_class === "battery";
+/* One its integration no longer provides (Home Assistant keeps it, restored) is a leftover, never a
+   battery: the editor's mirror of sources/batteries.leftover. */
 export function batterySensors(ents) {
-  return (ents || []).filter((e) => e.device_class === "battery" && ((String(e.unit || "").trim() === "%" && String(e.entity_id).startsWith("sensor.")) || isLowSensor(e)))
+  return (ents || []).filter((e) => !e.restored && e.device_class === "battery" && ((String(e.unit || "").trim() === "%" && String(e.entity_id).startsWith("sensor.")) || isLowSensor(e)))
     .map((e, k) => ({ e, k, v: levelOf(e) }))
     .sort((a, b) => (a.v == null) - (b.v == null) || (a.v ?? 0) - (b.v ?? 0) || a.k - b.k)
     .map(({ e }) => e);
@@ -604,11 +609,22 @@ export function preselectBatteries(ents, rule, byDevice = {}) {
   const ids = new Set((ents || []).map((e) => e.entity_id));
   return batterySensors(ents).filter((e) => (levelOf(e) != null || isLowSensor(e)) && chargedByYou(e, ids, byDevice) === (rule === "at_least")).map((e) => e.entity_id);
 }
-/* How many would show now, as the step says it. */
-export function batteriesPast(ents, chosen, rule, value) {
+/* A battery that hasn't answered for a while (unavailable or unknown since `changed`) counts on a Low
+   page, never a Charged one: the editor's mirror of sources/batteries.silent. `hours` is the rule's
+   `no_answer_hours`: 12 when it has none, "never" for none (the way it was before 0.21.1). */
+export const NO_ANSWER_HOURS = 12;
+export const NO_ANSWER_WAITS = [[1, "1 hour"], [3, "3 hours"], [6, "6 hours"], [12, "12 hours"], [24, "1 day"], [48, "2 days"], ["never", "Never"]];
+export function silentBattery(e, rule, hours, now = Date.now()) {
+  if (rule === "at_least" || hours == null || !e || !["unavailable", "unknown"].includes(e.state)) return false;
+  const at = Date.parse(e.changed || "");
+  return Number.isFinite(at) && now - at >= hours * 3600e3;
+}
+/* How many would show now, as the step says it: past the number, or silent past the wait. */
+export function batteriesPast(ents, chosen, rule, value, hours = NO_ANSWER_HOURS, now = Date.now()) {
   const by = new Map((ents || []).map((e) => [e.entity_id, e])), t = Number(value);
   if (!Number.isFinite(t)) return 0;
-  return [...chosen].filter((id) => { const v = levelOf(by.get(id)); return v != null && (rule === "at_least" ? v >= t : v < t); }).length;
+  return [...chosen].filter((id) => { const e = by.get(id), v = levelOf(e);
+    return (v != null && (rule === "at_least" ? v >= t : v < t)) || silentBattery(e, rule, hours, now); }).length;
 }
 
 /* The Energy dashboard, asked once per editor session (GET /api/energy:

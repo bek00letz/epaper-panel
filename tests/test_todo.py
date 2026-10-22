@@ -198,9 +198,12 @@ const show_if = p.showIf("todo.chores");
 console.log(JSON.stringify({ asks: p.asks, named: p.namedByEntity, tier: p.tier, show_if, parsed: C.parseShowIf(show_if),
   compiled: C.compileShowIf({ ent: "todo.chores", op: "gt", val: "0" }), els: p.makeElements("todo.chores"), skip: p.showIf("") }));""")
         self.assertEqual((got["asks"], got["tier"]), ("todo", "when"))
-        self.assertEqual(got["show_if"], got["compiled"], "written as the simple form writes it")
-        self.assertEqual(got["parsed"], {"mode": "simple", "ent": "todo.chores", "op": "gt", "val": "0"})
-        self.assertEqual(conditions.guarded(got["show_if"]), got["show_if"])
+        # Since 0.21.1 the list's count is its widget's part (the page's switch), not a written condition.
+        self.assertEqual(got["show_if"], "")
+        import widgets
+        asks = widgets.get("todo_list").gate.asks({"type": "todo_list", "entity": "todo.chores"})
+        self.assertEqual(asks, got["compiled"], "the add-on asks what the simple form would write")
+        self.assertEqual(conditions.guarded(asks), asks)
         self.assertEqual(got["els"][0]["type"], "todo_list")
         self.assertTrue(got["named"], "a page per list, named after it")
         self.assertEqual(got["skip"], "")
@@ -209,13 +212,15 @@ console.log(JSON.stringify({ asks: p.asks, named: p.namedByEntity, tier: p.tier,
         got = self.run_js("""
 import("%s").then((L) => {
   const el = { type: "todo_list", entity: "todo.chores", show: "due" };
-  const page = { tier: "when", show_if: "{{ has_value('todo.chores') and states('todo.chores') | float(0) > 0 }}", elements: [el] };
+  const page = { tier: "when", elements: [el] };
   C.syncWidgetShowIf(page, el);
-  console.log(JSON.stringify([page.show_if, L.getWidgetSensorId(el), L.todoDueSensor("sensor.x")]));
+  console.log(JSON.stringify([page.show_if ?? null, L.getWidgetSensorId(el), L.todoDueSensor("sensor.x")]));
 });""" % (support.APP / "web" / "app" / "legacy.js"))
         sensor = todo.due_sensor("todo.chores")
-        self.assertEqual(got, ["{{ has_value('%s') and states('%s') | float(0) > 0 }}" % (sensor, sensor), sensor, ""],
-                         "the editor names the sensor the add-on publishes")
+        self.assertEqual(got, [None, sensor, ""], "the editor names the sensor the add-on publishes, and writes nothing")
+        import widgets
+        self.assertEqual(widgets.get("todo_list").gate.sensors_for(
+            {"entity": "todo.chores", "show": "due"})[0], sensor, "the add-on goes by it")
 
     def test_the_style_menu_offers_the_three_styles(self):
         """The inspector's Style menu is the widget's descriptor (widgets.py), read from the catalog."""
@@ -229,14 +234,14 @@ import("%s").then((L) => {
         self.assertIn('if (p.namedByEntity && ent) return entName || ent.split(".")[1];', src)
         self.assertIn('app.addPage(slug(pageName(p, look, ent, entName, extra)) || p.id, page);', (support.APP / "web" / "app" / "newpage.js").read_text())
 
-    def test_the_condition_follows_the_list_but_never_replaces_your_own(self):
+    def test_what_the_editor_wrote_goes_your_own_stays(self):
         got = self.run_js("""
 const el = { type: "todo_list", entity: "todo.shopping" };
-const ours = { tier: "when", show_if: "{{ has_value('todo.chores') and states('todo.chores') | float(0) > 0 }}", elements: [el] };
+const ours = { tier: "when", show_if: "{{ has_value('todo.shopping') and states('todo.shopping') | float(0) > 0 }}", elements: [el] };
 const yours = { tier: "when", show_if: "{{ now().hour > 7 }}", elements: [el] };
 C.syncWidgetShowIf(ours, el); C.syncWidgetShowIf(yours, el);
-console.log(JSON.stringify([ours.show_if, yours.show_if]));""")
-        self.assertEqual(got, ["{{ has_value('todo.shopping') and states('todo.shopping') | float(0) > 0 }}", "{{ now().hour > 7 }}"])
+console.log(JSON.stringify([ours.show_if ?? null, yours.show_if]));""")
+        self.assertEqual(got, [None, "{{ now().hour > 7 }}"])
 
 
 if __name__ == "__main__":

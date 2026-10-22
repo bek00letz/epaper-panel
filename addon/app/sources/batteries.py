@@ -29,9 +29,16 @@ def says_charging(st: dict) -> bool:
     return bool(said & CHARGING_WORDS) and "charging" in " ".join(said)
 
 
+def leftover(st: dict) -> bool:
+    """One its integration no longer provides: Home Assistant keeps it, restored from before, until
+    it's removed (attributes.restored). A leftover, not a battery that stopped answering: never one
+    (seen on the user's Home Assistant, 22 Oct: Salus's old battery sensors)."""
+    return bool((st.get("attributes") or {}).get("restored"))
+
+
 def is_battery(st: dict) -> bool:
     attrs = st.get("attributes") or {}
-    return (str(st.get("entity_id", "")).startswith("sensor.") and attrs.get("device_class") == "battery"
+    return (not leftover(st) and str(st.get("entity_id", "")).startswith("sensor.") and attrs.get("device_class") == "battery"
             and str(attrs.get("unit_of_measurement") or "").strip() == "%")
 
 
@@ -73,7 +80,7 @@ KINDS = ("swap", "charge")
 def is_battery_low_sensor(st: dict) -> bool:
     """A binary sensor of device class battery: on means low (Zigbee and Z-Wave devices)."""
     attrs = st.get("attributes") or {}
-    return str(st.get("entity_id", "")).startswith("binary_sensor.") and attrs.get("device_class") == "battery"
+    return not leftover(st) and str(st.get("entity_id", "")).startswith("binary_sensor.") and attrs.get("device_class") == "battery"
 
 
 def _by_name(eid: str, ids: set) -> bool:
@@ -88,23 +95,118 @@ def _by_name(eid: str, ids: set) -> bool:
                                   f"binary_sensor.{base}_charging", f"binary_sensor.{base}_battery_charging"))
 
 
-def every_battery(registry: list, states: list) -> list[dict]:
+def every_battery(registry: list, states: list, entries: list | None = None) -> list[dict]:
     """Every battery Home Assistant has, a level in % or a low sensor: [{"entity", "state", "name",
-    "unit", "device_class", "changed", "kind"}], `kind` swap or charge."""
+    "unit", "device_class", "changed", "kind", "entry", "source"}], `kind` swap or charge; `entry` its
+    integration's config entry and `source` that integration's name (its entry's title), for "Matter:
+    4 not answering" when one integration stops answering for all of them. A leftover isn't one."""
     device_of = {e.get("entity_id"): e.get("device_id") for e in registry or [] if isinstance(e, dict)}
+    reg = {e.get("entity_id"): e for e in registry or [] if isinstance(e, dict)}
+    title_of = {c.get("entry_id"): c.get("title") or c.get("domain") or "" for c in entries or [] if isinstance(c, dict)}
     charging = {device_of.get(st.get("entity_id")) for st in states or [] if isinstance(st, dict) and says_charging(st)}
     charging.discard(None)
     ids = {st.get("entity_id") for st in states or [] if isinstance(st, dict)}
     out = []
     for st in states or []:
-        if not isinstance(st, dict) or not (is_battery(st) or is_battery_low_sensor(st)):
+        if not isinstance(st, dict):
+            continue
+        if str(st.get("state")).lower() in NO_ANSWER and st.get("entity_id") in reg:
+            # One that isn't answering may have lost what it is: the registry still says.
+            r = reg[st["entity_id"]]
+            attrs = {"device_class": r.get("device_class") or r.get("original_device_class"),
+                     "unit_of_measurement": r.get("unit_of_measurement"), **{k: v for k, v in (st.get("attributes") or {}).items() if v}}
+            st = {**st, "attributes": attrs}
+        if not (is_battery(st) or is_battery_low_sensor(st)):
             continue
         eid, attrs, dev = st["entity_id"], st.get("attributes") or {}, device_of.get(st["entity_id"])
         yours = (dev in charging) if dev else _by_name(eid, ids)
+        r = reg.get(eid) or {}
+        entry = r.get("config_entry_id") or ""
         out.append({"entity": eid, "state": str(st.get("state") or ""), "name": attrs.get("friendly_name") or "",
                     "unit": attrs.get("unit_of_measurement") or "", "device_class": "battery",
-                    "changed": st.get("last_changed") or "", "kind": "charge" if yours else "swap"})
+                    "changed": st.get("last_changed") or "", "kind": "charge" if yours else "swap",
+                    "entry": entry, "source": title_of.get(entry) or str(r.get("platform") or "").replace("_", " ").title()})
     return out
+
+
+# ---------------------------------------------------------------- one that stops answering (the user's call, 22 Oct)
+#
+# A battery its rule picks whose state has been unavailable or unknown for longer than the page's wait
+# shows on a "below" page as "No answer since Tue 14:02", after the low ones, and counts for the page's
+# "only when": a dead battery often just stops answering. A short dropout (a Thread or Matter hiccup)
+# never shows. When every battery one integration gives the rule stopped answering together (within a
+# few minutes), it's the integration, not the batteries: one line, "Salus: 4 not answering".
+#
+# Since-when is Home Assistant's last_changed. A restart of Home Assistant sets it again for an entity
+# whose integration doesn't come back (it's restored as unavailable, at the restart), so the wait starts
+# again after a restart: it can only show later than it should, never early.
+
+NO_ANSWER = ("unavailable", "unknown")
+WAIT_HOURS = 12                             # the page's `no_answer_hours` when it hasn't said; "never": off
+TOGETHER = 5 * 60                           # seconds: stopped answering "together"
+
+
+def wait_seconds(el: dict) -> float | None:
+    """How long a battery may not answer before it shows; None: never (the page said so)."""
+    raw = el.get("no_answer_hours", WAIT_HOURS)
+    if raw in ("never", None, False):
+        return None
+    try:
+        hours = float(raw)
+    except (TypeError, ValueError):
+        hours = WAIT_HOURS
+    return max(0.0, hours) * 3600
+
+
+def _since(b: dict) -> float | None:
+    from datetime import datetime
+    try:
+        return datetime.fromisoformat(str(b.get("changed") or "").replace("Z", "+00:00")).timestamp()
+    except (TypeError, ValueError):
+        return None
+
+
+def silent(b: dict, el: dict, now: float) -> bool:
+    """Whether a battery hasn't answered for longer than its page waits. Only on a "below" page."""
+    wait = wait_seconds(el)
+    if wait is None or el.get("filter_rule") == "at_least" or str(b.get("state")).lower() not in NO_ANSWER:
+        return False
+    since = _since(b)
+    return since is not None and now - since >= wait
+
+
+def shown(el: dict, picked: list[dict], now: float) -> list[dict]:
+    """The rule's batteries as the page draws them: each as it is, a silent one marked `no_answer`
+    (since when), and the silent ones of an integration that stopped answering for all of them
+    together replaced by one line {"entity": "integration:<entry>", "no_answer_count": n}."""
+    quiet = [b for b in picked if silent(b, el, now)]
+    groups: dict[str, list[dict]] = {}
+    for b in quiet:
+        if b.get("entry"):
+            groups.setdefault(b["entry"], []).append(b)
+    together = set()
+    for entry, bs in groups.items():
+        everyone = [b for b in picked if b.get("entry") == entry]
+        times = [t for t in (_since(b) for b in bs) if t is not None]
+        if len(bs) >= 2 and len(bs) == len(everyone) and times and max(times) - min(times) <= TOGETHER:
+            together.add(entry)
+    out = []
+    for b in picked:
+        if b.get("entry") in together:
+            continue
+        out.append({**b, "no_answer": b["changed"]} if b in quiet else b)
+    for entry in together:
+        bs = groups[entry]
+        first = min(bs, key=lambda b: _since(b) or 0)
+        out.append({"entity": f"integration:{entry}", "name": first.get("source") or "One integration",
+                    "state": "unavailable", "device_class": "battery", "unit": "", "kind": first.get("kind"),
+                    "no_answer": first["changed"], "no_answer_count": len(bs)})
+    return out
+
+
+def needs_you(el: dict, picked: list[dict], now: float) -> bool:
+    """The page's "only when": one past its number, or one that hasn't answered for its wait."""
+    return any(past(b, el) or silent(b, el, now) for b in picked)
 
 
 def chosen(el: dict, every: list[dict]) -> list[dict]:
@@ -132,11 +234,11 @@ def past(b: dict, el: dict) -> bool:
 
 def offline() -> list[dict]:
     """every_battery() from the offline fixture (render/fixture.json): examples, never someone's."""
-    from fixture import load_fixture
-    states = [{"entity_id": eid, "state": info.get("state"),
+    from fixture import _dated, load_fixture
+    states = [{"entity_id": eid, "state": info.get("state"), "last_changed": info.get("last_changed") or "",
                "attributes": {"device_class": info.get("device_class"), "unit_of_measurement": info.get("unit"),
                               "friendly_name": info.get("friendly_name")}}
-              for eid, info in (load_fixture().get("states") or {}).items()]
+              for eid, info in ((e, _dated(i)) for e, i in (load_fixture().get("states") or {}).items())]
     return every_battery([], states)
 
 
@@ -147,7 +249,11 @@ async def fetch_every(session) -> list[dict]:
         return offline()
     registry = await runtime.HASS.ws({"type": "config/entity_registry/list"})
     states = await ha_json(session, "/states")
-    return every_battery(registry, states)
+    try:
+        entries = await runtime.HASS.ws({"type": "config_entries/get"})
+    except Exception:
+        entries = []                                # their names only; the platform names it instead
+    return every_battery(registry, states, entries)
 
 
 # ---------------------------------------------------------------- pages made before the rule

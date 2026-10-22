@@ -4,7 +4,7 @@
 // the panel's status, which opens "Now on the panel".
 
 import { h, icon, api, pageTitle, span, seconds } from "./util.js";
-import { describe, parseShowIf, evaluate } from "./conditions.js";
+import { describe, parseShowIf, evaluate, partOn, showsWords } from "./conditions.js";
 import { slider } from "./slider.js";
 import { leftOut, leftOutShort } from "./busyday.js";
 
@@ -155,8 +155,8 @@ function tile(app, n, { again, out, slot, pend }) {
   const live = (app.status?.pages || []).includes(n);
   let sub = "Shows always", badge = null, dim = !!again || !!out;
   if (p.tier === "when") {
-    const parsed = parseShowIf(p.show_if);
-    const holds = evaluate(parsed, app.entMap);
+    // With a widget's part (0.21.1), only the add-on can say: it's in the rotation or not.
+    const holds = partOn(p) ? null : evaluate(parseShowIf(p.show_if), app.entMap);
     const showing = holds === null ? live : holds;
     sub = showing ? "Showing now" : "Hidden now";
     badge = h("span", { class: "badge when", text: "when" });
@@ -173,7 +173,7 @@ function tile(app, n, { again, out, slot, pend }) {
   if (short && !again) sub = short;
   const img = h("img", { class: "thumb", alt: "", "data-thumb": n, draggable: "false" });
   const t = h("button", { class: "tile" + (dim ? " dim" : "") + (words ? " unsent" : ""), role: "option", title: words ? `${words}. Not sent yet` : null, "aria-selected": String(n === doc.cur && !again), "aria-current": n === doc.cur && !again ? "page" : null,
-    "aria-label": `${pageTitle(n)}. ${words ? `Not sent yet: ${words}` : sub}${p.tier === "when" ? ". " + describe(p.show_if, app.entMap).text : ""}` },
+    "aria-label": `${pageTitle(n)}. ${words ? `Not sent yet: ${words}` : sub}${p.tier === "when" ? ". " + (partOn(p) ? showsWords(p, app.entMap) : describe(p.show_if, app.entMap).text) : ""}` },
     h("span", { class: "thumbwrap", style: { aspectRatio: `${app.geometry().W} / ${app.geometry().H}` } }, img),
     h("span", { class: "tname" }, words ? h("span", { class: "udot", "aria-hidden": "true" }) : null, h("span", { class: "tn", text: pageTitle(n) }), badge), h("span", { class: "tsub", text: sub }));
   // A right-click opens the page's menu. A long press on a touch screen is the hold that shows its

@@ -11,6 +11,7 @@
     "sensor.door_sensor_battery":    {"state": "21", "unit": "%", "device_class": "battery", "state_class": "measurement", "friendly_name": "Door Sensor Battery"},
     "sensor.remote_battery":         {"state": "34", "unit": "%", "device_class": "battery", "state_class": "measurement", "friendly_name": "Remote Battery"},
     "sensor.thermostat_battery":     {"state": "76", "unit": "%", "device_class": "battery", "state_class": "measurement", "friendly_name": "Thermostat Battery"},
+    "sensor.garage_remote_battery":  {"state": "unavailable", "unit": "%", "device_class": "battery", "friendly_name": "Garage Remote Battery", "last_changed_in_days": -2},
     "sensor.cat_location":           {"state": "Outdoor Cat", "unit": null, "friendly_name": "Cat Location", "last_changed": "2026-10-15T14:30:00+00:00"},
     "sensor.outdoor_temperature":    {"state": "12.4", "unit": "°C", "device_class": "temperature", "friendly_name": "Outdoor Temperature"},
     "sensor.indoor_temperature":     {"state": "21.2", "unit": "°C", "device_class": "temperature", "friendly_name": "Indoor Temperature"},

@@ -278,41 +278,64 @@ async def resolve_conditions(session, conds: dict, minutes: dict | None = None) 
     return out
 
 
-async def eligible_pages(session, spec, linger, shown: set | None = None):
-    """Pages whose tier and show_if (or built-in widget active window) say they belong in the rotation now.
+def _widget_asks(parts_by_page: dict) -> dict:
+    """The conditions Home Assistant answers for the pages' widget parts (widgets.widget_part), keyed
+    "<page>#<k>", for the same request as the pages' own conditions."""
+    return {f"{n}#{k}": conditions.guarded(g.asks(el))
+            for n, parts in parts_by_page.items() for k, (el, g) in enumerate(parts) if not g.checks(el)}
+
+
+async def _widget_on(session, name: str, parts: list, answered: dict, home_tz, what: str = "") -> bool:
+    """A page's widget part: any of its widgets has something to show (the add-on's check, or Home
+    Assistant's answer). One that can't say has nothing."""
+    for k, (el, gate) in enumerate(parts):
+        if gate.checks(el):
+            try:
+                if await gate.check(session, el, home_tz):
+                    return True
+            except Exception as exc:
+                print(f"{what or name}: its {el.get('type')} couldn't say ({health.describe(exc)})", flush=True)
+        elif conditions.is_true(answered.get(f"{name}#{k}", "")):
+            return True
+    return False
+
+
+async def eligible_pages(session, spec, linger, shown: set | None = None, answered: dict | None = None):
+    """Pages whose tier and "Shows" say they belong in the rotation now: an "Only when" page while its
+    widget part (something on it to show) and its own condition both hold, whichever it has.
 
     `linger` is the design's (runtime.linger): pages that stay a while after their condition.
     `shown` (runtime.showing) is set to the "Only when" pages whose own condition holds now,
     never the page shown because nothing else could be (notify.py tells Home Assistant).
+    `answered` (runtime.parts) gets each page's widget part as answered, for the editor.
     """
     rotation = spec.get("rotation", [])
     defs = spec.get("pages", {})
     home_tz = await get_home_timezone(session)
 
-    widget_gates: dict[str, tuple] = {}
+    widget_gates: dict[str, list] = {}
     template_gates: dict[str, str] = {}
 
     for n in set(rotation):
         p = defs.get(n)
         if not p or p.get("tier") != "when":
             continue
-        w_gate = widgets.gate_of(p)                   # a widget that decides when its page shows (its descriptor)
-        if w_gate is not None:
-            widget_gates[n] = w_gate
-        elif p.get("show_if"):
+        parts = widgets.widget_part(p)                # something on it to show (its widgets' gates)
+        if parts:
+            widget_gates[n] = parts
+        if p.get("show_if"):                          # and the page's own condition: both, when it has both
             template_gates[n] = conditions.guarded(p["show_if"])
 
-    passed = await resolve_conditions(session, template_gates) if template_gates else {}
+    asks = {**template_gates, **_widget_asks(widget_gates)}
+    passed = await resolve_conditions(session, asks) if asks else {}
     widget_results: dict[str, bool] = {}
-    for n, (w_el, gate) in widget_gates.items():
-        try:
-            is_on = await gate.check(session, w_el, home_tz)
-        except Exception as exc:
-            print(f"widget gate eval error for {n}: {health.describe(exc)}", flush=True)
-            is_on = False
+    for n, parts in widget_gates.items():
+        is_on = await _widget_on(session, n, parts, passed, home_tz)
         # Live widgets flicker (a plane at the edge of the radius); once a page
         # has appeared it stays a few minutes, so the rotation keeps its shape.
         widget_results[n] = linger.keep(n, is_on)
+        if answered is not None:
+            answered[n] = is_on
     linger.forget_except(widget_gates)
 
     live = []
@@ -323,12 +346,10 @@ async def eligible_pages(session, spec, linger, shown: set | None = None):
             continue
         if countdown.page_hidden(page, now_home):          # past a one-off date, or not yet its time to show
             continue
-        if name in widget_results:
-            if not widget_results[name]:
-                continue
-        elif name in template_gates:
-            if not conditions.is_true(passed.get(name, "")):
-                continue
+        if name in widget_results and not widget_results[name]:
+            continue
+        if name in template_gates and not conditions.is_true(passed.get(name, "")):
+            continue
         live.append(name)
     if shown is not None:
         shown.clear()
@@ -336,7 +357,7 @@ async def eligible_pages(session, spec, linger, shown: set | None = None):
     return live or [n for n in rotation if n in defs and defs[n].get("tier") != "alert"][:1]
 
 
-async def check_alerts(session, spec, state: dict):
+async def check_alerts(session, spec, state: dict, answered: dict | None = None):
     """Alert pages never rotate. They seize the screen when their condition
     turns true, hold, then hand it back.
 
@@ -359,8 +380,9 @@ async def check_alerts(session, spec, state: dict):
     """
     now = time.time()
     defs = spec.get("pages", {})
-    # An alert whose widget decides it (a Batteries page by rule: widgets.py's gate) is asked of the widget.
-    gated = {n: g for n, p in defs.items() if p.get("tier") == "alert" and (g := widgets.gate_of(p))}
+    # An alert with something on it to show (its widgets' gates: a Batteries page by rule, say) fires
+    # while that and its own condition both hold, whichever it has (0.21.1).
+    gated = {n: w for n, p in defs.items() if p.get("tier") == "alert" and (w := widgets.widget_part(p))}
     alerts = {n: p for n, p in defs.items()
               if p.get("tier") == "alert" and (p.get("show_if") or n in gated)}
     active = state.setdefault("active", {})
@@ -369,22 +391,22 @@ async def check_alerts(session, spec, state: dict):
         active.clear()
         return None
 
-    asks = {n: conditions.guarded(p["show_if"]) for n, p in alerts.items() if n not in gated}
+    asks = {n: conditions.guarded(p["show_if"]) for n, p in alerts.items() if p.get("show_if")}
     ends = {n: until for n, p in alerts.items() if (until := conditions.ending(p))}
     asks.update({f"{n}:until": conditions.guarded(until) for n, until in ends.items()})
     # One that fires when something changes holds from the change, as long as
     # it holds (or at most, ending when something happens): its window is that.
     changing = {n: ch for n, p in alerts.items() if (ch := conditions.changed(p.get("show_if") or ""))}
     holds = {n: conditions.hold_minutes(alerts[n]) for n in changing}
+    asks.update(_widget_asks(gated))
     states = await resolve_conditions(session, asks, holds)
     home_tz = await get_home_timezone(session) if gated else None
-    for n, (el, gate) in gated.items():
-        try:
-            states[n] = "True" if await gate.check(session, el, home_tz) else "False"
-        except Exception as exc:
-            print(f"alert {n}: its widget couldn't say ({health.describe(exc)})", flush=True)
-            states[n] = "False"
-    truthy = {n for n in alerts if conditions.is_true(states.get(n, ""))
+    widget_on = {n: await _widget_on(session, n, w, states, home_tz, f"alert {n}") for n, w in gated.items()}
+    if answered is not None:
+        answered.update(widget_on)
+    truthy = {n for n, p in alerts.items()
+              if (not p.get("show_if") or conditions.is_true(states.get(n, "")))
+              and (n not in gated or widget_on[n])
               and not (n in ends and conditions.is_true(states.get(f"{n}:until", "")))}
     # Each change is its own episode: a new one fires again while the last still holds.
     episode = {n: True for n in truthy}
@@ -427,13 +449,14 @@ class DesignState:
 
 
 async def design_state(session, design_id: str, spec: dict) -> DesignState:
-    alert = await check_alerts(session, spec, runtime.alert(design_id))
+    alert = await check_alerts(session, spec, runtime.alert(design_id), runtime.parts(design_id))
     if alert and alert in spec.get("pages", {}):
         # One page while an alert is active: decodes in ~1 s on the ESP32 and
         # keeps a 5-minute interval from rotating away from it.
         live = [alert]
     else:
-        live = await eligible_pages(session, spec, runtime.linger(design_id), runtime.showing(design_id))
+        live = await eligible_pages(session, spec, runtime.linger(design_id), runtime.showing(design_id),
+                                    runtime.parts(design_id))
     if not live:
         return DesignState(alert, [], [])
 
@@ -635,9 +658,19 @@ async def follow_sensor_units(session) -> list[str]:
     return done
 
 
+def follow_widget_parts() -> list[str]:
+    """0.21.1: a page's widget part and its own condition hold together. What the editor wrote into a
+    page for its widget goes (widgets.follow_widget_parts), so it shows as it did; yours stays."""
+    done = _upgrade_pages(widgets.follow_widget_parts, None)
+    if done:
+        print(f"pages: {', '.join(done)} now show by their widgets' part", flush=True)
+    return done
+
+
 async def _refresh_all(session) -> dict[str, Frames]:
     timeformat.apply(*await get_home_locale(session))          # 12- or 24-hour, for every device
     await follow_battery_rules(session)
+    follow_widget_parts()
     await follow_sensor_units(session)
     await publish_computed(session)
     # Devices of a kind that's switched off aren't drawn (kinds.shown).

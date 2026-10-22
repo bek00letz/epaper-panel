@@ -20,6 +20,8 @@ charts, QR) are the editor's own and aren't here.
 """
 from __future__ import annotations
 
+import re
+import time as _time
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Awaitable, Callable
@@ -65,19 +67,24 @@ class Ctx:
 
 @dataclass(frozen=True)
 class Gate:
-    """How a widget's page shows "only when" (review 2 #4), said once and read by the render cycle
-    (frames.eligible_pages), the editor (the page's condition and "Its sensor", from the catalog) and
-    entities.publish_computed:
+    """A widget's part in when its page shows (review 2 #4): "something on it to show". Since 0.21.1
+    (the user's call, 22 Oct) it's one part of the page's "Shows", ANDed with the page's own
+    condition, never either/or (widget_part, frames.eligible_pages and check_alerts). Read by the
+    render cycle, the editor (the catalog) and entities.publish_computed:
 
-    - `rule`: what the editor writes as the page's condition: "active" (its sensor is active), "count"
-      (its sensor above 0), or "" (none: the add-on answers `check` itself);
+    - `rule`: what its sensor says: "active" (it's active), or "count" (above 0);
     - `sensor`: that sensor, or `sensor_of` to find it per element ("league", "series", "todo");
     - `check`: the add-on answers it from the element's own settings, so changing a league or a
-      radius in the inspector takes effect at once (async (session, el, home_tz) -> bool);
-    - `markers`: sensor names a page's condition may say for it, older ones included: a condition
-      naming one is the widget's own, so `check` answers it and the editor may rewrite it;
-    - `applies`: only for elements it says yes to (a Devices grid only when it lists batteries by rule);
-    - `publish`: which of entities.py's publishers keeps its sensors.
+      radius in the inspector takes effect at once (async (session, el, home_tz) -> bool); only
+      for elements with the setting `check_if` names, when it names one ("batteries");
+    - `condition`: otherwise, the condition Home Assistant answers for it (a Devices grid of states);
+      without one, its sensor's `rule` (asks);
+    - `markers`: sensor names a page's condition may say for it, older ones included: what the
+      editor wrote for it before 0.21.1 (frames.follow_widget_parts takes those out);
+    - `applies`: only for elements it says yes to;
+    - `publish`: which of entities.py's publishers keeps its sensors;
+    - `says`: the part in words for the editor ("a plane is near"), or {setting: {value: words},
+      "else": words}, nested, as a window field's label is.
     """
     rule: str = ""
     sensor: str = ""
@@ -86,10 +93,42 @@ class Gate:
     markers: tuple = ()
     applies: Callable[[dict], bool] | None = None
     publish: str = ""
+    check_if: str = ""
+    condition: Callable[[dict], str] | None = None
+    says: Any = ""
 
     def describe(self) -> dict:
         return {"rule": self.rule, "sensor": self.sensor, "sensor_of": self.sensor_of,
-                "markers": list(self.markers), "checked": self.check is not None}
+                "markers": list(self.markers), "checked": self.check is not None, "says": self.says,
+                "check_if": self.check_if, "own_condition": self.condition is not None}
+
+    def checks(self, el: dict) -> bool:
+        """Whether the add-on answers this element's part itself."""
+        return self.check is not None and (not self.check_if or bool(el.get(self.check_if)))
+
+    def sensors_for(self, el: dict) -> list[str]:
+        """The sensors this element's part reads, the one it goes by first."""
+        if self.sensor:
+            return [self.sensor]
+        if self.sensor_of == "league":
+            return [f"sensor.epaper_sports_{sports.league_slug(el.get('league'))[1]}"]
+        if self.sensor_of == "series":
+            return [f"sensor.epaper_racing_{racing.series_slug(el.get('series') or 'f1')[0]}"]
+        if self.sensor_of == "todo":
+            lst = ha_services.todo_list_id(el.get("entity"))
+            due = f"sensor.epaper_todo_{lst[5:]}_due" if lst else ""
+            return [x for x in ((due, lst) if el.get("show") == "due" else (lst, due)) if x]
+        return []
+
+    def asks(self, el: dict) -> str:
+        """The condition Home Assistant answers for this element's part when the add-on doesn't check
+        it: "" when there's nothing to wait for (no list chosen, a grid of any state)."""
+        if self.condition is not None:
+            return self.condition(el)
+        sid = (self.sensors_for(el) or [""])[0]
+        if not sid:
+            return ""
+        return f"{{{{ is_state('{sid}','active') }}}}" if self.rule == "active" else count_condition(sid)
 
 
 @dataclass
@@ -180,28 +219,88 @@ def _is_batteries(el: dict) -> bool:
     return bool(el.get("batteries"))
 
 
+_BATTERIES_SAY = {"filter_rule": {"at_least": "one of its batteries is charged"}, "else": "one of its batteries is low"}
+
+
+def count_condition(sid: str) -> str:
+    """A count above 0, guarded so a sensor with no value isn't 0 (the editor's legacy.countShowIf)."""
+    return f"{{{{ has_value('{sid}') and states('{sid}') | float(0) > 0 }}}}"
+
+
+def _js_number(t: float) -> str:
+    return str(int(t)) if float(t).is_integer() else repr(float(t))
+
+
+def grid_condition(el: dict) -> str:
+    """A Devices grid's part: any item in its state, or past its number (its own `threshold`, or the
+    grid's). The editor's conditions.gridShowIf, which wrote it into the page before 0.21.1. "" when
+    it shows something whatever happens (any state), or watches nothing."""
+    items = [str(x.get("entity") or "").strip() for x in el.get("items") or [] if isinstance(x, dict)]
+    own = {str(x.get("entity") or "").strip(): x.get("threshold") for x in el.get("items") or [] if isinstance(x, dict)}
+    items = [e for e in items if e]
+    if not items:
+        return ""
+    rule = el.get("filter_rule")
+    if rule in ("below", "at_least"):
+        sym = "<" if rule == "below" else ">="
+        parts = []
+        for e in items:
+            raw = own.get(e)
+            try:
+                t = float(raw if raw not in (None, "") else el.get("filter_value"))
+            except (TypeError, ValueError):
+                continue
+            e = e.replace("'", "")
+            parts.append(f"(has_value('{e}') and states('{e}') | float(0) {sym} {_js_number(t)})")
+        return "{{ " + " or ".join(parts) + " }}" if parts else ""
+    st = str(el.get("filter_state") or "on").lower()
+    if st == "*":
+        return ""
+    return "{{ " + " or ".join(f"is_state('{e}','{st}')" for e in items) + " }}"
+
+
 async def _batteries_past(session, el, home_tz):
-    """A Batteries page shows while one of the batteries its rule picks is past its number."""
+    """A Batteries page shows while one of the batteries its rule picks is past its number, or hasn't
+    answered for its wait (sources/batteries.needs_you)."""
+    import time
     every = await batteries.fetch_every(session)
-    return any(batteries.past(b, el) for b in batteries.chosen(el, every or []))
+    return batteries.needs_you(el, batteries.chosen(el, every or []), time.time())
 
 
 # ---------------------------------------------------------------- fetches
 
-async def _grid(session, el, ctx):
+async def _batteries_list(session, el, ctx):
     """A Devices grid of batteries by rule: the batteries it picks, now (sources/batteries.chosen).
     A grid of its own entities is answered by its template (render/layout.collect_templates)."""
     if not _is_batteries(el):
         return None
     every = await batteries.fetch_every(session)
-    return None if every is None else batteries.chosen(el, every)
+    if every is None:
+        return None
+    return _in_zone(batteries.shown(el, batteries.chosen(el, every), _time.time()), getattr(ctx, "home_tz", None))
 
 
-def _grid_example(el, now):
+def _in_zone(rows: list[dict], tz: str | None) -> list[dict]:
+    """A silent battery's since-when in Home Assistant's time zone, so the panel says it as you'd read it."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    out = []
+    for r in rows:
+        if r.get("no_answer"):
+            try:
+                at = datetime.fromisoformat(str(r["no_answer"]).replace("Z", "+00:00"))
+                r = {**r, "no_answer": (at.astimezone(ZoneInfo(tz)) if tz else at.astimezone()).isoformat()}
+            except (TypeError, ValueError, KeyError):
+                pass
+        out.append(r)
+    return out
+
+
+def _batteries_example(el, now):
     """Batteries by rule: the offline examples it picks; a grid of states: the fixture answers (None)."""
     if not _is_batteries(el):
         return None
-    return batteries.chosen(el, batteries.offline())
+    return _in_zone(batteries.shown(el, batteries.chosen(el, batteries.offline()), now.timestamp()), None)
 
 def _num(value, default: int) -> int:
     try:
@@ -386,7 +485,8 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
     Widget("todo_list", "To-do list", "todo", _todo,
            lambda el, now: (lambda got: {**got, "tz": None} if got else None)(
                examples.fixture_todo(str(el.get("entity") or "todo.chores")) or examples.fixture_todo("todo.chores")),
-           defaults={"entity": ""}, gate=Gate("count", sensor_of="todo", markers=("todo.", "sensor.epaper_todo_")),
+           defaults={"entity": ""}, gate=Gate("count", sensor_of="todo", markers=("todo.", "sensor.epaper_todo_"),
+                     says={"show": {"due": "something on its list is due"}, "else": "its list has something to do"}),
            fields=[entity("entity", "List", ["todo"]),
                    sel("show", "Shows", [["open", "Everything to do"], ["due", "Due today or overdue"]], "open"),
                    # render/todo.STYLES but "plain" (kept as the way back, not offered).
@@ -401,7 +501,8 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
     Widget("notifications", "Notifications", "bell", _notifications,
            lambda el, now: {"items": examples.notifications(now), "tz": None},
            defaults={"title": ""},
-           gate=Gate("count", sensor=needs_you.SENSOR["notifications"], markers=(needs_you.SENSOR["notifications"],)),
+           gate=Gate("count", sensor=needs_you.SENSOR["notifications"], markers=(needs_you.SENSOR["notifications"],),
+                     says="there are notifications"),
            fields=[text("title", "Title", "Notifications"),
                    {"kind": "window", "label": "Only show while there are any"},
                    {"kind": "sensorid", "note": "The add-on counts them as {sensor}, its own value: a page's "
@@ -409,7 +510,8 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
     # Every update waiting, by group as Home Assistant shows them; a skipped version isn't one.
     Widget("updates", "Updates", "update", _updates, lambda el, now: {"items": examples.updates()},
            defaults={"title": ""},
-           gate=Gate("count", sensor=needs_you.SENSOR["updates"], markers=(needs_you.SENSOR["updates"],)),
+           gate=Gate("count", sensor=needs_you.SENSOR["updates"], markers=(needs_you.SENSOR["updates"],),
+                     says="there are updates"),
            fields=[text("title", "Title", "Updates"),
                    {"kind": "window", "label": "Only show while there are any"},
                    {"kind": "sensorid", "note": "The add-on counts them as {sensor}, its own value: a page's "
@@ -420,9 +522,14 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
            fields=[sel("counts", "Counts", [["updates", "Updates"], ["notifications", "Notifications"],
                                             ["repairs", "Repairs"], ["all", "All of these"]], "updates"),
                    {"kind": "note", "text": "It's hidden while the count is zero, so it may not show on the canvas right now."}]),
-    Widget("dynamic_grid", "Devices", "grid", _grid, _grid_example,
-           # A Batteries page shows while one its rule picks is past its number (review 2 #5).
-           gate=Gate(check=_batteries_past, applies=_is_batteries),
+    Widget("dynamic_grid", "Devices", "grid", _batteries_list, _batteries_example,
+           # Something to show: one of its items in its state or past its number; Batteries by rule
+           # (review 2 #5) asks the add-on, which knows every battery the rule picks, and which are silent.
+           gate=Gate(check=_batteries_past, check_if="batteries", condition=grid_condition,
+                     says={"batteries": {"swap": _BATTERIES_SAY, "charge": _BATTERIES_SAY},
+                           "else": {"filter_rule": {"below": "one of them is below its number",
+                                                    "at_least": "one of them has reached its number"},
+                                    "else": {"filter_state": {"off": "one of them is off"}, "else": "one of them is on"}}}),
            box={"fill": True, "y": 16, "inset": 24},
            defaults={"header_icon": "mdi:lightning-bolt", "header_title": "On now", "filter_state": "on", "layout_mode": "grid",
                      "show_labels": "both", "icon_size": "auto", "secondary_mode": "runtime",
@@ -431,7 +538,7 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
     Widget("flight_tracker", "Flights", "plane", _flights, lambda el, now: list(examples.AIRCRAFT),
            live=(flights.fetch_overhead_aircraft,), items=(5, "flight"), items_word=lambda el: "planes",
            breakable=True, shape="flights",
-           gate=Gate("count", sensor="sensor.epaper_flights_overhead", check=_planes_near, publish="flights",
+           gate=Gate("count", sensor="sensor.epaper_flights_overhead", check=_planes_near, publish="flights", says="a plane is near",
                      markers=("sensor.epaper_flights_overhead", "sensor.overhead_aircraft_count")),
            defaults={"radius": 35, "style": "card", "show_border": True},
            fields=[sel("style", "Style", [["card", "Details"], ["split", "Radar and details"], ["radar", "Radar"]], "card"),
@@ -442,6 +549,7 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
            live=(racing.fetch_racing_data,), breakable=True, shape="racing",
            # sensor.f1_status and sensor.formula_e_status: what 0.9 pages say.
            gate=Gate("active", sensor_of="series", check=_race_on, publish="racing",
+                     says={"window_mode": {"weekend": "it's a race weekend"}, "else": "it's around a session"},
                      markers=("sensor.epaper_racing_", "sensor.f1_status", "sensor.formula_e_status")),
            defaults={"series": "f1", "entity": "", "show_border": True},
            fields=[sel("series", "Series", "series", "f1"), entity("entity", "Sensor, if you have one"),
@@ -455,7 +563,7 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
            lambda el, now: examples.match(el.get("league") or el.get("entity") or "soccer/eng.1"),
            # Every game of the day (the user's call, 21 Oct); the way back is items=(6, "sports").
            live=(sports.fetch_sports_match,), items=(None, "sports"), breakable=True, shape="scores",
-           gate=Gate("active", sensor_of="league", check=_match_on, publish="sports",
+           gate=Gate("active", sensor_of="league", check=_match_on, publish="sports", says="it's a {event} day",
                      markers=("sensor.epaper_sports_", "sensor.sports_")),
            # A Team Tracker sensor is one game; a league, its busiest day.
            busiest=lambda el: 1 if str(el.get("entity") or "").strip() else sports.busiest_day(el.get("league")),
@@ -492,19 +600,71 @@ def sensor_changes_every(attributes: dict) -> int | None:
     return None
 
 
-def gate_of(page: dict) -> tuple[dict, Gate] | None:
-    """The element whose own gate decides when its page shows, with that gate: one the add-on answers
-    itself (`check`), while the page's condition is empty, the widget's own (it names one of the gate's
-    markers), or the element says auto_window. None: the page goes by its own condition."""
-    show_if = str(page.get("show_if") or "").strip()
+def widget_part(page: dict) -> list[tuple[dict, Gate]]:
+    """The page's widget part, "something on it to show": each element with a gate and something to
+    wait for, unless the page switched it off (`by_widget: false`). It holds while any of them has
+    something (frames). Since 0.21.1 it's ANDed with the page's own condition (the user's call,
+    22 Oct): before, one or the other decided, and the other was silently left out."""
+    if page.get("by_widget") is False:
+        return []
+    out = []
     for el in page.get("elements") or []:
         w = get(el.get("type")) if isinstance(el, dict) else None
         g = w.gates(el) if w else None
-        if g is None or g.check is None:
-            continue
-        if not show_if or el.get("auto_window") or any(m in show_if for m in g.markers):
-            return el, g
-    return None
+        if g is not None and (g.checks(el) or g.asks(el)):
+            out.append((el, g))
+    return out
+
+
+
+# What the editor wrote into a page for its widget before 0.21.1 (legacy.gateShowIf, older forms, and
+# conditions.gridShowIf): now its widget part, so not the page's own condition.
+_SENSOR_FORMS = [re.compile(r"^" + f + r"$") for f in (
+    r"is_state\(\s*'(?P<s>[^']+)'\s*,\s*'active'\s*\)",
+    r"has_value\(\s*'(?P<s>[^']+)'\s*\)\s+and\s+states\(\s*'(?P=s)'\s*\)\s*\|\s*float\(0\)\s*>\s*0",
+    r"states\(\s*'(?P<s>[^']+)'\s*\)\s*\|\s*(?:int|float)(?:\(\s*0?\s*\))?\s*>\s*0")]
+_GRID_PART = re.compile(r"^(?:is_state\('([^']+)','[^']*'\)"
+                        r"|\(has_value\('([^']+)'\) and states\('\2'\) \| float\(0\) (?:<|>=) -?\d+(?:\.\d+)?\))$")
+
+
+def wrote_for_widget(page: dict) -> bool:
+    """Whether the page's own condition is only what the editor wrote for its widget part: its sensor
+    active or above 0 (the element's own sensor, or an older name for it), or a grid's own parts joined
+    by "or" (at least one on its items). A condition that says anything else is yours."""
+    s = page.get("show_if")
+    if not isinstance(s, str) or not s.strip().startswith("{{") or not s.strip().endswith("}}"):
+        return False
+    inner = s.strip()[2:-2].strip()
+    parts = widget_part(page)
+    own, prefixes, grids = set(), set(), []
+    for el, g in parts:
+        own |= set(g.sensors_for(el)) | {m for m in g.markers if not m.endswith(("_", "."))}
+        prefixes |= {g.sensor} if g.sensor else set()
+        if el.get("type") == "dynamic_grid":
+            grids.append(el)
+    for form in _SENSOR_FORMS:
+        m = form.match(inner)
+        if m and (m["s"] in own or any(m["s"].startswith(p) for p in prefixes)):
+            return True
+    if grids:
+        mine = {str(x.get("entity") or "").strip() for el in grids for x in el.get("items") or [] if isinstance(x, dict)}
+        got = [_GRID_PART.match(p.strip()) for p in re.split(r"\s+or\s+(?=is_state|\(has_value)", inner)]
+        if all(got) and (any((m[1] or m[2]) in mine for m in got)
+                         or any(el.get("batteries") for el in grids) and all(m[2] for m in got)):
+            return True
+    return False
+
+
+def follow_widget_parts(pages: dict, _=None) -> list[str]:
+    """Pages from before 0.21.1: a condition the editor wrote for its widget goes, since the widget's
+    part (on unless switched off) says the same; your own stays, and both hold from now on. Once:
+    after it, nothing's left to take out. Returns the pages changed."""
+    changed = []
+    for name, page in (pages or {}).items():
+        if isinstance(page, dict) and page.get("tier") in ("when", "alert") and wrote_for_widget(page):
+            page.pop("show_if", None)
+            changed.append(name)
+    return changed
 
 
 def get(widget_type) -> Widget | None:

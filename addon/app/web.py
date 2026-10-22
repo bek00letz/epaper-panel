@@ -29,7 +29,7 @@ import runtime
 import services
 import timing
 from config import ADDON_VERSION, FRAME_PORT, HA_BASE, HA_TOKEN, INGRESS_GATEWAY, REFRESH, SLEEP_PAGE, WEB_DIR, valid_entity_id
-from fixture import load_fixture
+from fixture import _dated, load_fixture
 from frames import _png, as_int, busy_day, date_for_time, enrich_page_values, refresh_frames, split_page_values
 from ha import curve_series, ha_json, resolve_templates
 from layouts_store import clear_draft, layouts_etag, load_draft, load_layouts, load_sources, sanitize_layouts, save_draft, save_layouts
@@ -151,6 +151,8 @@ async def status(request):
         "device": {"id": dev["id"], "name": dev.get("name"), "kind": dev.get("kind")},
         "esphome_device": link.preferred_node() if link else None,
         "active_alert": runtime.alert(dev["design"]).get("name"),
+        # Each page's widget part as last answered ("something on it to show"), for the page panel.
+        "parts": runtime.parts(dev["design"]),
         "frame_port": FRAME_PORT,
         "display": spec.get("display", T.DEFAULT_DISPLAY),
         "orientation": int(spec.get("orientation") or 0),
@@ -362,6 +364,8 @@ async def api_entities(request):
                 "changes_every": widgets.sensor_changes_every(info),
                 "is_epaper": eid.startswith("sensor.epaper_"),
             }
+            if info.get("state") in ("unavailable", "unknown"):
+                by_id[eid]["changed"] = _dated(info).get("last_changed") or ""
     else:
         if time.time() - runtime.ENTITY_CACHE["at"] >= 30 or not runtime.ENTITY_CACHE["items"]:
             try:
@@ -385,6 +389,10 @@ async def api_entities(request):
                     "changes_every": widgets.sensor_changes_every(attrs),
                     "is_epaper": eid.startswith("sensor.epaper_") or attrs.get("source") == "epaper_studio",
                 }
+                if s.get("state") in ("unavailable", "unknown"):
+                    by_id[eid]["changed"] = s.get("last_changed") or ""      # how long it's been quiet
+                if attrs.get("restored"):
+                    by_id[eid]["restored"] = True        # its integration no longer provides it: a leftover
 
     # Always merge live E-Paper Studio published entities so newly added widgets appear immediately
     for eid, info in runtime.PUBLISHED.items():
