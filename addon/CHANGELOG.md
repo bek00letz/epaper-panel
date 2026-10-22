@@ -17,6 +17,11 @@
   sensor in Home Assistant, and a failed download said the racing calendar
   was failing. Iconify is now a service of its own, with its own problem
   sensor once you use it.
+- **Fixed:** two times of day ignored the 12/24-hour setting: a Countdown to
+  a timed event ("Thursday 24 December, 18:00") and the sunrise or sunset line
+  on the first page a new device shows. That line is now the Sunrise and
+  sunset widget, which also works before Home Assistant answers. A test now
+  fails on any time of day that skips the setting.
 
 ## 0.20.0
 Add-on only; no firmware change, so nothing to reinstall on the panel.
