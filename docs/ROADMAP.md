@@ -86,7 +86,7 @@ Assistant entity that condition needs (nothing by default) and opens a shipped
 blueprint, prefilled, so the notification is an ordinary automation. The add-on
 never sends notifications itself.
 
-## Outside services, visible in the editor (agreed 22 Oct; design pass with the user before building)
+## Outside services, visible in the editor (agreed 22 Oct; all of it in 0.21, worker services-021)
 
 Today a failing outside service (icons, racing calendars, scores) shows only in
 the add-on's log and Home Assistant's problem sensors; the editor never shows
@@ -103,6 +103,13 @@ know what you're doing" step, editable. Proposal to design with them:
   start, result), not the raw outside formats, and let a user's own data
   source fill them. That makes swapping a source real without documenting
   outside formats that change without warning.
+
+The user's design choices (22 Oct): the status card's dot stays about the
+panel, failing services get their own section; addresses change behind an
+Advanced switch in Settings › Services that turns itself off each time
+Settings opens; a source fills a widget either by answering in the add-on's
+own shape or through a Home Assistant entity's attributes. Mapping each field
+to a path in a source's own format may come later on top.
 
 ## Later
 
