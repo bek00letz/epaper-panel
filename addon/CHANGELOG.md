@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.20.2
+Add-on only; no firmware change, so nothing to reinstall on the panel
+and no Home Assistant restart. Update the add-on.
 
 - **Notify a group, not only a phone.** "Also notify my phone…" now lists
   notifiers that aren't entities too, such as a group written in YAML
@@ -40,6 +42,11 @@
   says its own shortest sleep (a TRMNL's is a minute, a CrowPanel's 30
   seconds).
 
+- **Fixed:** a racing calendar whose format changed was ignored without a
+  word, and one that said it had no races turned its problem sensor on and
+  off every ten minutes. Both now keep the problem sensor on until the
+  calendar reads again, and the page keeps the last season it read.
+
 ## 0.20.1
 Add-on only; no firmware change. **Restart Home Assistant once** after
 updating, so it loads the updated e-Paper Panel integration (it carries the
@@ -70,10 +77,6 @@ clock fix for panels that reach home through Home Assistant's address).
   downloaded them all again (about 2.7 MB) every five minutes. It now waits
   longer after each failure, up to four hours, and tries at once when Home
   Assistant updates.
-- **Fixed:** a racing calendar whose format changed was ignored without a
-  word, and one that said it had no races turned its problem sensor on and
-  off every ten minutes. Both now keep the problem sensor on until the
-  calendar reads again, and the page keeps the last season it read.
 
 ## 0.20.0
 Add-on only; no firmware change, so nothing to reinstall on the panel.
