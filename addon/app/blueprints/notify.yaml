@@ -1,0 +1,97 @@
+blueprint:
+  name: When an e-paper alert fires, notify
+  description: >-
+    Sends a notification when an E-paper panel alert fires, or when one of its
+    "Only when" pages starts showing. The E-paper panel add-on makes the alert's
+    sensor when you choose "Also notify my phone…" on a page.
+  domain: automation
+  author: E-paper panel add-on
+  source_url: https://github.com/bek00letz/epaper-panel/blob/main/addon/app/blueprints/notify.yaml
+  homeassistant:
+    min_version: "2024.8.0"
+  input:
+    alert:
+      name: Alert or page
+      description: The page's sensor, made by the E-paper panel add-on.
+      selector:
+        entity:
+          filter:
+            - integration: mqtt
+              domain: binary_sensor
+    notify:
+      name: Notify
+      description: The phones or other devices to send it to.
+      selector:
+        entity:
+          multiple: true
+          filter:
+            - domain: notify
+    message:
+      name: Message
+      description: Leave empty to use the page's name.
+      default: ""
+      selector:
+        text:
+    title:
+      name: Title
+      description: Optional.
+      default: ""
+      selector:
+        text:
+    quiet_minutes:
+      name: Not again within
+      description: >-
+        Minutes after a notification when it doesn't send another, so a sensor
+        that keeps changing can't notify you over and over. 0 sends every time.
+      default: 0
+      selector:
+        number:
+          min: 0
+          max: 1440
+          step: 1
+          mode: box
+          unit_of_measurement: minutes
+
+mode: single
+max_exceeded: silent
+
+triggers:
+  # From off: a restart (unavailable, then on again) is not a new alert.
+  - trigger: state
+    entity_id: !input alert
+    from: "off"
+    to: "on"
+
+variables:
+  alert_entity: !input alert
+  message_text: !input message
+  title_text: !input title
+  quiet_minutes: !input quiet_minutes
+  text: >-
+    {{ message_text if message_text | trim
+       else state_attr(alert_entity, 'page') or state_attr(alert_entity, 'friendly_name') }}
+
+conditions:
+  - condition: template
+    value_template: >-
+      {{ quiet_minutes | int(0) <= 0
+         or this.attributes.last_triggered is none
+         or (now() - this.attributes.last_triggered).total_seconds() >= (quiet_minutes | int(0)) * 60 }}
+
+actions:
+  - if:
+      - condition: template
+        value_template: "{{ title_text | trim != '' }}"
+    then:
+      - action: notify.send_message
+        target:
+          entity_id: !input notify
+        data:
+          title: "{{ title_text }}"
+          message: "{{ text }}"
+    else:
+      - action: notify.send_message
+        target:
+          entity_id: !input notify
+        data:
+          message: "{{ text }}"

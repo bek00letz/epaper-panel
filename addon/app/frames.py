@@ -16,6 +16,7 @@ import devices
 import feeds
 import health
 import kinds
+import notify
 import runtime
 import timeformat
 import widgets
@@ -335,10 +336,12 @@ async def resolve_conditions(session, conds: dict, minutes: dict | None = None) 
     return out
 
 
-async def eligible_pages(session, spec, linger):
+async def eligible_pages(session, spec, linger, shown: set | None = None):
     """Pages whose tier and show_if (or built-in widget active window) say they belong in the rotation now.
 
     `linger` is the design's (runtime.linger): pages that stay a while after their condition.
+    `shown` (runtime.showing) is set to the "Only when" pages whose own condition holds now,
+    never the page shown because nothing else could be (notify.py tells Home Assistant).
     """
     rotation = spec.get("rotation", [])
     defs = spec.get("pages", {})
@@ -385,6 +388,9 @@ async def eligible_pages(session, spec, linger):
             if not conditions.is_true(passed.get(name, "")):
                 continue
         live.append(name)
+    if shown is not None:
+        shown.clear()
+        shown.update(n for n in live if defs[n].get("tier") == "when")
     return live or [n for n in rotation if n in defs and defs[n].get("tier") != "alert"][:1]
 
 
@@ -405,13 +411,18 @@ async def check_alerts(session, spec, state: dict):
 
     One that fires when a sensor changes (`conditions.changed`) fires again
     at each new change, even while the last one still holds it.
+
+    `state["active"]` keeps each alert that fired and still holds, with when
+    it fired, whichever one has the screen (notify.py tells Home Assistant).
     """
     now = time.time()
     defs = spec.get("pages", {})
     alerts = {n: p for n, p in defs.items()
               if p.get("tier") == "alert" and p.get("show_if")}
+    active = state.setdefault("active", {})
     if not alerts:
         state["name"], state["until"] = None, 0.0
+        active.clear()
         return None
 
     asks = {n: conditions.guarded(p["show_if"]) for n, p in alerts.items()}
@@ -440,8 +451,12 @@ async def check_alerts(session, spec, state: dict):
         hold = conditions.hold_minutes(alerts[name]) * 60
         state.update(name=name, until=now + hold)
         state["fired"][name] = episode[name]
+        active[name] = {"until": now + hold, "at": now}
         print(f"alert {name} fired, holding {hold}s", flush=True)
         break
+
+    for name in [n for n, a in active.items() if n not in truthy or now > a["until"]]:
+        del active[name]
 
     for name in list(state["fired"]):                  # re-arm when it goes false
         if name not in truthy:
@@ -467,7 +482,7 @@ async def design_state(session, design_id: str, spec: dict) -> DesignState:
         # keeps a 5-minute interval from rotating away from it.
         live = [alert]
     else:
-        live = await eligible_pages(session, spec, runtime.linger(design_id))
+        live = await eligible_pages(session, spec, runtime.linger(design_id), runtime.showing(design_id))
     if not live:
         return DesignState(alert, [], [])
 
@@ -644,6 +659,10 @@ async def _refresh_all(session) -> dict[str, Frames]:
             print(f"{dev['name']}: render failed: {health.describe(exc)}", flush=True)
             runtime.device(dev["id"]).frames.error = health.describe(exc)
     await publish_category_sensors(session, runtime.device(devices.primary()["id"]).frames)
+    try:
+        await notify.publish(runtime.HASS)                  # pages that notify a phone, now the alerts are known
+    except Exception as exc:
+        print(f"notify sensors failed: {health.describe(exc)}", flush=True)
     await sync_entities()
     return out
 

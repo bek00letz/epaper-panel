@@ -84,7 +84,7 @@ def forget_devices_except(ids) -> None:
 
 
 def new_alert() -> dict:
-    return {"name": None, "until": 0.0, "fired": {}}
+    return {"name": None, "until": 0.0, "fired": {}, "active": {}}
 
 
 # Per design: which alert page, if any, currently owns its screens.
@@ -100,6 +100,15 @@ def alert(design_id: str) -> dict:
 
 def linger(design_id: str) -> Linger:
     return LINGERS.setdefault(design_id, Linger())
+
+
+# Per design: its "Only when" pages whose condition holds (frames.eligible_pages).
+# Kept as it was while an alert has the screen.
+SHOWING: dict[str, set] = {}
+
+
+def showing(design_id: str) -> set:
+    return SHOWING.setdefault(design_id, set())
 
 
 FEED_ITEMS = {}

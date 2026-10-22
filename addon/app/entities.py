@@ -8,6 +8,7 @@ import urllib.parse
 import devices
 import feeds
 import health
+import notify
 import runtime
 from config import HA_BASE, HA_TOKEN, PUBLISH_VIA_STATES_API, RETIRED_SENSORS, valid_entity_id
 from ha import call_ha_service, ha_json
@@ -392,6 +393,7 @@ async def publish_computed(session):
 
     wanted |= retired_sensors_in_use(cur_spec)
     wanted |= publish_health()
+    wanted |= notify.kept()                           # pages that notify a phone
     if runtime.PUBLISHER is not None:
         runtime.PUBLISHER.keep(wanted)
     await sync_entities()

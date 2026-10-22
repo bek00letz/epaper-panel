@@ -532,6 +532,13 @@ When touching display code, `it.image()` at a negative offset is a trap: see
   its next update. A CrowPanel away from home can't be woken either (that goes
   through Home Assistant's ESPHome connection, which is home only).
 
+- **Phone notifications are Home Assistant automations** (the user's call,
+  22 Oct; `notify.py`, ARCHITECTURE.md › Phone notifications). The add-on
+  never sends one and keeps no notification settings of its own: a page that
+  asks gets one sensor, and the shipped blueprint makes a normal automation
+  from it. Never withdraw a sensor an automation still uses, and delete only
+  automations made from our blueprint, only when the person chooses to.
+
 - **Never guess an entity ID or an action name** from a device name. Find the
   panel through `panel_link.PanelLink` (service list, registry unique_ids).
 - **Never write entities with `POST /api/states`.** The add-on's values go

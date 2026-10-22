@@ -23,6 +23,7 @@ import devices
 import frame_token
 import iconsets
 import kinds
+import notify
 import reach
 import runtime
 import timing
@@ -280,6 +281,60 @@ async def api_panel_device_post(request):
     ok, err = await link.set_device_setting(key, value) if link else (False, "the add-on can't reach this device")
     return web.json_response({"ok": ok, "error": err or None}, status=200 if ok or key in
                              ("sleep", "ghost_after", "ghost_mode", "clear_ghosting") else 400)
+
+
+def _notify_id(value) -> str:
+    nid = notify.clean_id(value)
+    if not nid:
+        raise web.HTTPBadRequest(text="That page has no notification to change.")
+    return nid
+
+
+async def api_notify_get(request):
+    """A page's phone notifications: its sensor and the automations that use it (notify.py).
+    ?id= the page's notify id; without one, only whether they can be set up here."""
+    nid = notify.clean_id(request.query.get("id"))
+    return web.json_response(await notify.status(runtime.HASS, nid))
+
+
+async def api_notify_targets(request):
+    """What can be notified (Home Assistant's notify entities), phones first."""
+    return web.json_response({"targets": await notify.targets(runtime.HASS)})
+
+
+async def api_notify_post(request):
+    """"Also notify my phone…": {page, id, tier, targets}. Makes the page's sensor, installs the
+    blueprint and makes an automation from it in Home Assistant."""
+    dev = _device(request)
+    body = await _json(request)
+    if not isinstance(body, dict):
+        raise web.HTTPBadRequest(text="expected {page, id, tier, targets}")
+    nid = _notify_id(body.get("id"))
+    page = str(body.get("page") or "").strip()
+    if not page:
+        raise web.HTTPBadRequest(text="Which page?")
+    targets = [t for t in body.get("targets") or [] if isinstance(t, str) and t.startswith("notify.") and valid_entity_id(t)]
+    tier = body.get("tier") if body.get("tier") in ("when", "alert") else "alert"
+    try:
+        made = await notify.set_up(runtime.HASS, nid=nid, design=dev["design"], page=page,
+                                   page_def={"tier": tier}, targets=targets)
+    except notify.SetupError as exc:
+        return web.json_response({"error": str(exc)}, status=409)
+    return web.json_response(made)
+
+
+async def api_notify_stop(request):
+    """Stop notifying: {id, delete: [automation ids]}. Deletes the automations named (only
+    ones made from our blueprint), then withdraws the sensor unless something still uses it."""
+    body = await _json(request)
+    if not isinstance(body, dict):
+        raise web.HTTPBadRequest(text="expected {id, delete}")
+    nid = _notify_id(body.get("id"))
+    delete = [str(d) for d in body.get("delete") or [] if isinstance(d, (str, int))]
+    try:
+        return web.json_response(await notify.stop(runtime.HASS, nid, delete))
+    except notify.SetupError as exc:
+        return web.json_response({"error": str(exc)}, status=409)
 
 
 async def api_draft_delete(request):
@@ -1308,6 +1363,10 @@ def make_apps():
         web.get("/api/layouts", api_layouts_get),
         web.put("/api/layouts", api_layouts_put),
         web.get("/api/draft", api_draft_get),
+        web.get("/api/notify", api_notify_get),
+        web.get("/api/notify/targets", api_notify_targets),
+        web.post("/api/notify", api_notify_post),
+        web.post("/api/notify/stop", api_notify_stop),
         web.put("/api/draft", api_draft_put),
         web.delete("/api/draft", api_draft_delete),
         web.get("/api/panel-device", api_panel_device_get),
