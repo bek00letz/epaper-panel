@@ -191,8 +191,10 @@ async def publish(hass) -> None:
         nid = obj[len(mqtt_bridge.SIGNAL_PREFIX):]
         if not obj.startswith(mqtt_bridge.SIGNAL_PREFIX) or nid in reqs or seen == 0.0:
             continue
-        eid = pub.entity_of(obj) or (pub.desired.get(obj) or {}).get("attrs", {}).get("default_entity_id")
-        users = await usage(hass, eid) if eid else []
+        eid = pub.entity_of(obj)
+        if eid is None:
+            continue              # not connected yet, or Home Assistant never had it: no decision
+        users = await usage(hass, eid)
         if users is None or users:
             was = (pub.desired.get(obj) or {}).get("attrs") or {}
             pub.set_signal(nid, False, {**was, "fired_at": was.get("fired_at"), "page_removed": True})

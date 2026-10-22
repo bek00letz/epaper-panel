@@ -280,6 +280,15 @@ class TestWithdrawal(NotifyCase):
         self.publish()
         self.assertTrue(self.config(NID), "still there hours later: kept, not stale")
 
+    def test_nothing_is_decided_before_home_assistant_says_which_entity_it_is(self):
+        """Just after a start: what's left from before, an automation's, isn't withdrawn."""
+        self.hass.use(self.eid)
+        self.remove_the_page()
+        self.pub.desired.clear()
+        self.pub._registered.clear()
+        run(notify.publish(self.hass))
+        self.assertNotEqual(self.pub.last_seen.get(f"epaper_page_{NID}"), 0.0, "not retired")
+
     def test_kept_when_home_assistant_cant_say(self):
         self.hass.down = True
         self.remove_the_page()
