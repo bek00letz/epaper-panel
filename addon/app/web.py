@@ -21,6 +21,7 @@ import companion
 import config
 import devices
 import frame_token
+import iconsets
 import kinds
 import reach
 import runtime
@@ -1180,6 +1181,85 @@ async def api_icon_outlines(request):
     return web.json_response({"icons": out})
 
 
+async def api_iconsets_get(request):
+    """Settings › Icons: your own icons, the chosen Iconify sets and how each is doing
+    (iconsets.status). The editor asks again while one is downloading."""
+    return web.json_response(iconsets.status(), headers={"Cache-Control": "no-store"})
+
+
+async def api_iconsets_available(request):
+    """Add a set: the single-color sets Iconify offers, fetched only now (and kept); ?refresh=1
+    asks Iconify again."""
+    try:
+        got = await iconsets.available(runtime.SESSION, refresh=request.query.get("refresh") == "1")
+    except iconsets.SetError as exc:
+        return web.json_response({"error": str(exc)}, status=502)
+    have = set(iconsets.chosen())
+    return web.json_response({"sets": [{**s, "chosen": s["prefix"] in have} for s in got]})
+
+
+async def api_iconsets_samples(request):
+    """Previews for Add a set: {"prefixes": [...]} (the rows on screen, at most 24) -> {"samples":
+    {prefix: [record, ...]}}, outlines like any other icon's."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+    prefixes = body.get("prefixes") if isinstance(body, dict) else None
+    if not isinstance(prefixes, list) or len(prefixes) > 24 or not all(isinstance(p, str) and icons.PREFIX_RE.match(p) for p in prefixes):
+        return web.json_response({"error": "Ask for up to 24 sets by prefix."}, status=400)
+    return web.json_response({"samples": await iconsets.samples(runtime.SESSION, prefixes)})
+
+
+async def api_iconsets_add(request):
+    """Choose a set, or try one again: {"prefix"}. It downloads in the background."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+    prefix = body.get("prefix") if isinstance(body, dict) else None
+    if not isinstance(prefix, str) or not icons.PREFIX_RE.match(prefix):
+        return web.json_response({"error": "Choose a set from the list."}, status=400)
+    try:
+        await iconsets.add(runtime.SESSION, prefix, wait=1.5)
+    except iconsets.SetError as exc:
+        return web.json_response({"error": str(exc)}, status=502)
+    return web.json_response(iconsets.status())
+
+
+async def api_iconsets_remove(request):
+    prefix = request.match_info["prefix"]
+    if not icons.PREFIX_RE.match(prefix):
+        raise web.HTTPNotFound()
+    await iconsets.remove(prefix)
+    return web.json_response(iconsets.status())
+
+
+async def api_iconsets_check(request):
+    """Check for updates: each chosen set, in the background; the status says how it went."""
+    await iconsets.check_updates(runtime.SESSION)
+    return web.json_response(iconsets.status())
+
+
+async def api_icons_own(request):
+    """Add icons: {"files": [{"name", "svg"}]} (at most 40 at once, and under the editor's 1 MB a
+    request) saved into the own folder as cleaned copies, then used."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+    files = body.get("files") if isinstance(body, dict) else None
+    if not isinstance(files, list) or not files or len(files) > 40 or not all(isinstance(f, dict) for f in files):
+        return web.json_response({"error": "Choose up to 40 SVG files at a time."}, status=400)
+    loop = asyncio.get_running_loop()
+    try:
+        said = await loop.run_in_executor(None, iconsets.save_own, files)
+    except OSError as exc:
+        return web.json_response({"error": f"Couldn't save into {iconsets.OWN_FOLDER.as_posix()}: {health.describe(exc)}"}, status=500)
+    await loop.run_in_executor(None, lambda: iconsets.copy_custom(force=True))
+    return web.json_response({**said, **iconsets.status()})
+
+
 async def api_displays(request):
     """Catalog of supported CrowPanel e-paper hardware models."""
     on = {k.id for k in kinds.enabled_kinds()}
@@ -1261,6 +1341,13 @@ def make_apps():
         web.post("/api/panel-setup/esphome", api_panel_setup_esphome),
         web.get("/api/icons", api_icons),
         web.post("/api/icons/outlines", api_icon_outlines),
+        web.post("/api/icons/own", api_icons_own),
+        web.get("/api/iconsets", api_iconsets_get),
+        web.get("/api/iconsets/available", api_iconsets_available),
+        web.post("/api/iconsets", api_iconsets_add),
+        web.post("/api/iconsets/check", api_iconsets_check),
+        web.post("/api/iconsets/samples", api_iconsets_samples),
+        web.delete("/api/iconsets/{prefix}", api_iconsets_remove),
         web.get("/api/mdi/font", api_mdi_font),
         web.get("/api/mdi/list", api_mdi_list),
         web.get("/api/mdi/all", api_mdi_all),

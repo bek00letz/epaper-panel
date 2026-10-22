@@ -11,20 +11,26 @@ This keeps what it draws the same as Home Assistant's (the user's design,
   `/data/icons/mdi.json` and used from then on. Checked at start and when
   Home Assistant's own version changes; never per icon, never on demand,
   never during a render.
-- **Custom sets**, read from Home Assistant's configuration folder whenever
-  their files change, each copied whole:
-  - Custom Icons (thomasloven/hass-custom_icons): SVG files in
-    `<config>/custom_icons` (prefix `local:`), and the Iconify sets it
-    downloaded (`iconify-icon-sets-master.zip`, one prefix each), the ones
-    switched on in its settings, as Home Assistant says (`collections_on`).
+- **Custom sets**, each copied whole when its files change. Nothing else needs
+  to be installed (the user's design, 22 Oct: e-paper no longer depends on
+  Custom Icons, whose Iconify download breaks other integrations):
+  - Your own icons (`local:`): SVG files in `<config>/epaper/icons`, which
+    the editor's Add icons saves into as cleaned copies, and in Custom Icons'
+    old folder `<config>/custom_icons`, still read (the own folder wins).
+  - Iconify sets the user chooses in the editor (Settings › Icons), one
+    prefix each. Each is downloaded on its own from Iconify's published
+    files, only when asked, and converted once. A set Custom Icons'
+    download (`custom_icons/iconify-icon-sets-master.zip`) has is taken
+    from there instead, without the internet.
   - Script sets that HACS installs under `<config>/www/community`, written
     the way custom-brand-icons (`phu:`) and its kin are: a `var icons = {}`
     of name -> [x, y, w, h, path] and `window.customIcons["prefix"]`.
   A custom icon is its outline only (render/vector): nothing in an SVG runs,
   is fetched or is shown as it is, here or in the editor.
 
-Nothing here reaches the internet: Home Assistant is on the add-on's own
-network, and its configuration folder is mapped in.
+Only an Iconify download reaches the internet, and only when the user asks:
+Home Assistant is on the add-on's own network, and its configuration folder
+is mapped in.
 """
 from __future__ import annotations
 
@@ -35,6 +41,9 @@ import json
 import math
 import os
 import re
+import threading
+import time
+import urllib.parse
 import xml.etree.ElementTree as ET
 import zipfile
 from pathlib import Path
@@ -98,6 +107,12 @@ def load_copies() -> None:
                 icons.install(icons.DEFAULT, got)
         except (OSError, ValueError) as exc:
             print(f"icons: the copy of Home Assistant's set can't be read ({health.describe(exc)}); using the shipped one", flush=True)
+    try:
+        chosen_now = chosen()               # the first start after 0.19 keeps the sets it drew (_migrate)
+        forget_unchosen()
+    except OSError as exc:
+        chosen_now = []
+        print(f"icons: the chosen sets can't be read ({health.describe(exc)})", flush=True)
     custom = d / "custom.json.gz"
     if custom.exists():
         try:
@@ -106,6 +121,13 @@ def load_copies() -> None:
                     icons.install(prefix, data)
         except (OSError, ValueError, AttributeError) as exc:
             print(f"icons: the custom sets can't be read ({health.describe(exc)}); they'll be copied again", flush=True)
+    for prefix in chosen_now:
+        try:
+            got = _read_json(iconify_dir() / f"{prefix}.json.gz", compressed=True)
+        except (OSError, ValueError):
+            continue                        # copied again from what's kept, by the first copy_custom
+        if _usable(got):
+            icons.install(prefix, got)
 
 
 def _usable(data) -> bool:
@@ -341,31 +363,22 @@ def svg_record(text: str):
     return rec if vector.check(rec) else None
 
 
-# What Custom Icons switches on when it's set up (its config flow): when Home Assistant can't say
-# which collections are on, and the add-on never heard before.
-CUSTOM_ICONS_DEFAULTS = frozenset({"local", "fa6-regular", "fa6-solid", "fa6-brands"})
+# ------------------------------------------------------- your own icons
+
+OWN_FOLDER = Path("epaper") / "icons"           # in Home Assistant's configuration folder (the user's call, 22 Oct)
+LEGACY_FOLDER = "custom_icons"                  # Custom Icons' folder: still read, so nothing has to move
+LEGACY_ZIP = "iconify-icon-sets-master.zip"     # its Iconify download: a set is taken from it once, never fetched
 
 
-async def collections_on(hass) -> frozenset[str] | None:
-    """The collections Custom Icons has switched on, as Home Assistant says (its websocket command
-    custom_icons/activesets): empty when it isn't installed or set up; None when Home Assistant
-    can't say (unreachable, no key), and then `copy_custom` keeps the last answer it had. Never from
-    Home Assistant's own storage files, which hold every integration's credentials."""
-    from hass import HassError
-    if hass is None or not hass.available:
-        return None
-    try:
-        got = await hass.ws({"type": "custom_icons/activesets"})
-    except HassError as exc:
-        if exc.code == "unknown_command":           # Custom Icons isn't installed
-            return frozenset()
-        return None
-    return frozenset(str(x) for x in got if isinstance(x, str)) if isinstance(got, list) else frozenset()
+def own_dir(config_dir: Path | None = None) -> Path:
+    return (config_dir or config.HA_CONFIG_DIR) / OWN_FOLDER
 
 
 def _read_local(folder: Path) -> dict:
-    """<config>/custom_icons/**/*.svg, named by their path there without .svg ("pets/cat-outside")."""
+    """<folder>/**/*.svg, named by their path there without .svg ("pets/cat-outside")."""
     out = {}
+    if not folder.is_dir():
+        return out
     for path in sorted(folder.rglob("*.svg")):
         if path.name.endswith("-webfont.svg") or not path.is_file() or path.stat().st_size > MAX_SVG:
             continue
@@ -383,31 +396,286 @@ def _read_local(folder: Path) -> dict:
     return out
 
 
-def _read_iconify(zip_path: Path, prefix: str) -> tuple[str, dict]:
-    """One Iconify set from Custom Icons' download (its own name, {name: record}). Iconify's file
-    is {"info": {"name"}, "icons": {name: {"body", "width", ...}}, "width", ...}."""
-    with zipfile.ZipFile(zip_path) as zf:
-        member = f"icon-sets-master/json/{prefix}.json"
-        info = zf.getinfo(member)
-        if info.file_size > MAX_SCRIPT:
-            return prefix, {}
-        data = json.loads(zf.read(member))
-    title = str((data.get("info") or {}).get("name") or prefix)[:60]
+def clean_svg(rec) -> str:
+    """An outline record as an SVG file holding nothing but that outline: what Add icons saves, so
+    nothing else from an uploaded file ever lands in the configuration folder. Reads back the same."""
+    d, e, v, strokes = vector.parts(rec)
+    num = lambda x: f"{x:.3f}".rstrip("0").rstrip(".")  # noqa: E731
+    paths = []
+    if d:
+        paths.append(f'<path fill="currentColor" d="{d}"/>')
+    if e:
+        paths.append(f'<path fill="currentColor" fill-rule="evenodd" d="{e}"/>')
+    for sd, w in strokes:
+        paths.append(f'<path fill="none" stroke="currentColor" stroke-width="{num(w)}" stroke-linecap="round" '
+                     f'stroke-linejoin="round" d="{sd}"/>')
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{" ".join(num(x) for x in v)}">'
+            + "".join(paths) + "</svg>\n")
+
+
+def own_name(filename: str) -> str:
+    """The name an uploaded file is used by ("Paw Paw.svg" -> "Paw Paw"), or "" when nothing's left.
+    One folder deep only: no slashes, no leading dots."""
+    base = str(filename or "").replace("\\", "/").rsplit("/", 1)[-1]
+    base = re.sub(r"\.svg$", "", base, flags=re.IGNORECASE)
+    base = re.sub(r"[^\w .+-]+", "-", base).strip(" .-")[:100]
+    return base if base and icons.NAME_RE.match(base) else ""
+
+
+def save_own(files, config_dir: Path | None = None) -> dict:
+    """Add icons (the editor): each {"name", "svg"} saved into the own folder as a cleaned copy
+    (clean_svg). {"added": [name], "replaced": [name], "refused": [{"file", "why"}]}. Blocking."""
+    folder = own_dir(config_dir)
+    added, replaced, refused = [], [], []
+    for f in files:
+        label = str((f or {}).get("name") or "")[:120] or "A file"
+        text = (f or {}).get("svg")
+        name = own_name(label)
+        if not isinstance(text, str) or len(text) > MAX_SVG:
+            refused.append({"file": label, "why": "is larger than 512 kB, more than any icon needs"})
+            continue
+        if not name:
+            refused.append({"file": label, "why": "has a name e-paper can't use. Rename it with letters, numbers and dashes"})
+            continue
+        rec = svg_record(text)
+        if rec is None:
+            refused.append({"file": label, "why": "has no shapes e-paper can draw. Text and pictures inside an SVG aren't used"})
+            continue
+        path = folder / f"{name}.svg"
+        (replaced if path.exists() else added).append(name)
+        folder.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_name(path.name + ".tmp")
+        tmp.write_text(clean_svg(rec), encoding="utf-8")
+        os.replace(tmp, path)
+    return {"added": added, "replaced": replaced, "refused": refused}
+
+
+# ---------------------------------------------------------- Iconify sets
+#
+# The user chooses sets in the editor (Settings › Icons). Each is downloaded on its own, only when
+# asked (added, Try again, Check for updates), from Iconify's published files, through the add-on's
+# own connection. Kept as downloaded (`<prefix>.raw.json.gz`) and converted once
+# (`<prefix>.json.gz`), so nothing slow happens when other icons change.
+
+ICONIFY = "https://raw.githubusercontent.com/iconify/icon-sets/master"
+ICONIFY_API = "https://api.iconify.design"      # a few icons of a set, for the previews in Add a set
+SAMPLES = 6                                     # icons a preview shows, as Iconify's own list names them
+MAX_DOWNLOAD = 32 * 1024 * 1024     # the largest single-color set is about 13 MB
+CONVERTER = 1                       # raise when the conversion changes: every set is converted again
+
+
+def iconify_dir() -> Path:
+    return icon_dir() / "iconify"
+
+
+def _chosen_path() -> Path:
+    return icon_dir() / "chosen.json"
+
+
+def chosen() -> list[str]:
+    """The Iconify sets the user has chosen, in the order they were added (the first time, the
+    ones the add-on drew from Custom Icons: `_migrate`)."""
+    try:
+        got = json.loads(_chosen_path().read_text()).get("iconify")
+    except (OSError, ValueError, AttributeError):
+        got = None
+    if not isinstance(got, list):
+        got = _migrate()
+        _write_json(_chosen_path(), {"iconify": got})
+    return _valid_prefixes(got)
+
+
+def _migrate() -> list[str]:
+    """Before e-paper chose its own sets, it drew the Iconify sets Custom Icons had switched on
+    (0.18, 0.19). Those it drew are chosen, and their outlines kept as they were, so they draw on
+    after Custom Icons and its download are gone."""
+    try:
+        old = _read_json(icon_dir() / "custom.json.gz", compressed=True)
+    except (OSError, ValueError):
+        return []
+    got = []
+    for prefix, data in (old.items() if isinstance(old, dict) else ()):
+        if prefix == "local" or not _usable(data) or data.get("from") != "custom_icons" or not _valid_prefixes([prefix]):
+            continue
+        _write_json(iconify_dir() / f"{prefix}.json.gz", {
+            "prefix": prefix, "name": str(data.get("name") or prefix), "from": "iconify", "source": "custom_icons",
+            "version": "", "license": "", "converter": CONVERTER, "icons": data["icons"]}, compress=True)
+        got.append(prefix)
+    return got
+
+
+def _valid_prefixes(got) -> list[str]:
+    out = []
+    for p in got or []:
+        if isinstance(p, str) and icons.PREFIX_RE.match(p) and p not in RESERVED and p != "local" and p not in out:
+            out.append(p)
+    return out
+
+
+def set_chosen(prefixes) -> list[str]:
+    got = _valid_prefixes(prefixes)
+    _write_json(_chosen_path(), {"iconify": got})
+    return got
+
+
+def _convert_iconify(data) -> tuple[str, dict]:
+    """An Iconify set's own name and {name: record}. Iconify's file is {"prefix", "info": {"name"},
+    "icons": {name: {"body", "width", ...}}, "aliases": {name: {"parent"}}, "width", ...}. An icon
+    turned or flipped by Iconify is left out; an alias without either is its parent's outline."""
+    if not isinstance(data, dict) or not isinstance(data.get("icons"), dict):
+        raise ValueError("not an Iconify set")
+    title = str((data.get("info") or {}).get("name") or data.get("prefix") or "")[:60]
     left, top = data.get("left", 0), data.get("top", 0)
     width, height = data.get("width", 16), data.get("height", 16)
     out = {}
-    for name, ic in (data.get("icons") or {}).items():
+    for name, ic in data["icons"].items():
         if not (isinstance(ic, dict) and isinstance(ic.get("body"), str) and icons.NAME_RE.match(name)):
             continue
         if ic.get("rotate") or ic.get("hFlip") or ic.get("vFlip"):
             continue
         vb = (ic.get("left", left), ic.get("top", top), ic.get("width", width), ic.get("height", height))
+        if not all(isinstance(x, (int, float)) for x in vb):
+            continue
         rec = svg_record(f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{vb[0]} {vb[1]} {vb[2]} {vb[3]}">{ic["body"]}</svg>')
         if rec:
             out[name] = rec
         if len(out) >= MAX_ICONS:
             break
+    aliases = data.get("aliases") if isinstance(data.get("aliases"), dict) else {}
+    for name, al in aliases.items():
+        if len(out) >= MAX_ICONS:
+            break
+        if not (isinstance(al, dict) and icons.NAME_RE.match(name)) or name in out:
+            continue
+        if set(al) - {"parent"}:        # turned, flipped or resized: not the parent's outline
+            continue
+        if al.get("parent") in out:
+            out[name] = out[al["parent"]]
     return title, out
+
+
+def _zip_member(zip_path: Path, prefix: str) -> bytes | None:
+    """One set's file from Custom Icons' download, read no further than the size it states."""
+    try:
+        with zipfile.ZipFile(zip_path) as zf:
+            member = f"icon-sets-master/json/{prefix}.json"
+            info = zf.getinfo(member)
+            if info.file_size > MAX_DOWNLOAD:
+                return None
+            return zf.read(member)
+    except (OSError, KeyError, zipfile.BadZipFile, ValueError):
+        return None
+
+
+def store_iconify(prefix: str, raw: bytes, *, source: str, etag: str = "") -> dict:
+    """Keep a set as it came (`source`: "iconify" downloaded, "custom_icons" from its zip) and its
+    outlines, both written whole or not at all. Raises ValueError when it isn't that set or has
+    nothing to draw. Blocking."""
+    try:
+        data = json.loads(raw)
+    except ValueError:
+        raise ValueError("not an Iconify set") from None
+    if not isinstance(data, dict) or data.get("prefix") != prefix:
+        raise ValueError("not the set asked for")
+    title, got = _convert_iconify(data)
+    if not got:
+        raise ValueError("no icons e-paper can draw")
+    info = data.get("info") if isinstance(data.get("info"), dict) else {}
+    lic = info.get("license") if isinstance(info.get("license"), dict) else {}
+    out = {"prefix": prefix, "name": title or prefix, "from": "iconify", "source": source,
+           "version": str(info.get("version") or data.get("lastModified") or "")[:40],
+           "license": str(lic.get("title") or "")[:60], "converter": CONVERTER, "icons": got}
+    d = iconify_dir()
+    d.mkdir(parents=True, exist_ok=True)
+    tmp = d / f"{prefix}.raw.json.gz.tmp"
+    tmp.write_bytes(gzip.compress(raw, 6, mtime=0))
+    os.replace(tmp, d / f"{prefix}.raw.json.gz")
+    _write_json(d / f"{prefix}.json.gz", out, compress=True)
+    state = _read_state()
+    meta = state.get("iconify") if isinstance(state.get("iconify"), dict) else {}
+    meta[prefix] = {"etag": etag if source == "iconify" else "", "source": source}
+    state["iconify"] = meta
+    _write_json(_state_path(), state)
+    return out
+
+
+def _iconify_set(prefix: str) -> dict | None:
+    """A chosen set's outlines as converted, converted again from the kept download when the
+    conversion changed; None when the add-on has neither."""
+    d = iconify_dir()
+    try:
+        got = _read_json(d / f"{prefix}.json.gz", compressed=True)
+        if _usable(got) and got.get("converter") == CONVERTER:
+            return got
+    except (OSError, ValueError):
+        pass
+    try:
+        raw = gzip.decompress((d / f"{prefix}.raw.json.gz").read_bytes())
+        source = ((_read_state().get("iconify") or {}).get(prefix) or {})
+        return store_iconify(prefix, raw, source=source.get("source") or "iconify", etag=source.get("etag") or "")
+    except (OSError, ValueError, EOFError, gzip.BadGzipFile):
+        return None
+
+
+def _iconify_from_zip(config_dir: Path, prefix: str) -> dict | None:
+    zp = config_dir / LEGACY_FOLDER / LEGACY_ZIP
+    raw = _zip_member(zp, prefix) if zp.is_file() else None
+    if raw is None:
+        return None
+    try:
+        return store_iconify(prefix, raw, source="custom_icons")
+    except ValueError:
+        return None
+
+
+def forget_unchosen() -> None:
+    """At start: copies of sets no longer chosen are deleted (kept until then, so Undo is instant)."""
+    keep = set(chosen())
+    d = iconify_dir()
+    if not d.is_dir():
+        return
+    for p in d.glob("*.json.gz"):
+        prefix = p.name.split(".", 1)[0]
+        if prefix not in keep:
+            p.unlink(missing_ok=True)
+
+
+# The way back (the user's call, 22 Oct): True asks Custom Icons which collections are on and reads
+# its own choice instead of the editor's, as 0.18 and 0.19 did. Kept, switched off, until e-paper's
+# own sets have proven themselves.
+ASK_CUSTOM_ICONS = False
+
+# What Custom Icons switches on when it's set up (its config flow): when Home Assistant can't say
+# which collections are on, and the add-on never heard before. Only for the way back.
+CUSTOM_ICONS_DEFAULTS = frozenset({"local", "fa6-regular", "fa6-solid", "fa6-brands"})
+
+
+async def collections_on(hass) -> frozenset[str] | None:
+    """The collections Custom Icons has switched on, as Home Assistant says (its websocket command
+    custom_icons/activesets): empty when it isn't installed or set up; None when Home Assistant
+    can't say (unreachable, no key). Never from Home Assistant's own storage files, which hold
+    every integration's credentials. Only for the way back (ASK_CUSTOM_ICONS)."""
+    from hass import HassError
+    if hass is None or not hass.available:
+        return None
+    try:
+        got = await hass.ws({"type": "custom_icons/activesets"})
+    except HassError as exc:
+        if exc.code == "unknown_command":           # Custom Icons isn't installed
+            return frozenset()
+        return None
+    return frozenset(str(x) for x in got if isinstance(x, str)) if isinstance(got, list) else frozenset()
+
+
+def heard_from_custom_icons(on: frozenset[str] | None) -> frozenset[str]:
+    """The way back: Custom Icons' answer, else the last one heard, else its own defaults."""
+    state = _read_state()
+    if on is None:
+        known = state.get("custom_on")
+        return frozenset(known) if isinstance(known, list) else CUSTOM_ICONS_DEFAULTS
+    state["custom_on"] = sorted(on)
+    _write_json(_state_path(), state)
+    return on
 
 
 _SCRIPT_PREFIX = re.compile(r"""window\.customIcons\s*\[\s*["']([a-z][a-z0-9_-]{0,31})["']\s*\]\s*=""")
@@ -457,44 +725,50 @@ def _script_files(config_dir: Path):
     return sorted(p for p in root.glob("*/*.js") if p.is_file() and p.stat().st_size <= MAX_SCRIPT)
 
 
-def custom_signature(config_dir: Path, on: frozenset[str]) -> str:
-    """What the custom sets are now (their files' names, sizes, times, and the collections switched
-    on), so a change is noticed cheaply."""
+
+def custom_signature(config_dir: Path, local: bool, iconify: list[str]) -> str:
+    """What the custom sets are now (their files' names, sizes and times, and the sets chosen), so
+    a change is noticed cheaply."""
     bits = []
-    folder = config_dir / "custom_icons"
-    if folder.is_dir():
-        for p in sorted(folder.rglob("*")):
-            if p.is_file() and (p.suffix in (".svg", ".zip")):
-                s = p.stat()
-                bits.append(f"{p.relative_to(folder).as_posix()}:{s.st_size}:{int(s.st_mtime)}")
-    bits.append("on:" + ",".join(sorted(on)))
+    for name, folder in (("own", own_dir(config_dir)), ("legacy", config_dir / LEGACY_FOLDER)):
+        if local and folder.is_dir():
+            for p in sorted(folder.rglob("*.svg")):
+                if p.is_file():
+                    s = p.stat()
+                    bits.append(f"{name}/{p.relative_to(folder).as_posix()}:{s.st_size}:{int(s.st_mtime)}")
+    bits.append(f"local:{int(local)}|on:" + ",".join(iconify))
+    zp = config_dir / LEGACY_FOLDER / LEGACY_ZIP
+    for prefix in iconify:
+        p = iconify_dir() / f"{prefix}.json.gz"
+        if p.is_file():
+            s = p.stat()
+            bits.append(f"{prefix}:{s.st_size}:{int(s.st_mtime)}")
+        elif zp.is_file():                          # it may come from Custom Icons' download
+            s = zp.stat()
+            bits.append(f"zip:{s.st_size}:{int(s.st_mtime)}")
     for p in _script_files(config_dir):
         s = p.stat()
         bits.append(f"{p.relative_to(config_dir).as_posix()}:{s.st_size}:{int(s.st_mtime)}")
     return "|".join(bits)
 
 
-def read_custom_sets(config_dir: Path, on: frozenset[str] = frozenset()) -> dict:
-    """Every custom set on this Home Assistant: {prefix: {"name", "from", "icons"}}, Custom Icons'
-    collections as far as `on` has them switched on. Sets that can't be read are left out (and said
-    in the log); the first of two with one prefix wins."""
+def read_custom_sets(config_dir: Path, iconify=(), *, local: bool = True) -> dict:
+    """Every custom set on this Home Assistant: {prefix: {"name", "from", "icons", ...}}: your own
+    icons (`local:`, from the own folder and Custom Icons' folder, the own one first), the chosen
+    Iconify sets (`iconify`) the add-on has, taking one from Custom Icons' download when it has
+    none yet, and script sets. Sets that can't be read are left out (and said in the log); the
+    first of two with one prefix wins."""
     sets: dict[str, dict] = {}
-    folder = config_dir / "custom_icons"
-    if on and folder.is_dir():
-        if "local" in on:
-            got = _read_local(folder)
-            if got:
-                sets["local"] = {"name": "Your own icons", "from": "custom_icons", "icons": got}
-        zp = folder / "iconify-icon-sets-master.zip"
-        for prefix in sorted(on - {"local"}):
-            if prefix in RESERVED or prefix in sets or not icons.PREFIX_RE.match(prefix) or not zp.is_file():
-                continue
-            try:
-                title, got = _read_iconify(zp, prefix)
-            except (OSError, KeyError, ValueError, zipfile.BadZipFile):
-                title, got = prefix, {}
-            if got:
-                sets[prefix] = {"name": title, "from": "custom_icons", "icons": got}
+    if local:
+        got = {**_read_local(config_dir / LEGACY_FOLDER), **_read_local(own_dir(config_dir))}
+        if got:
+            sets["local"] = {"name": "Your own icons", "from": "yours", "icons": got}
+    for prefix in iconify:
+        if prefix in RESERVED or prefix in sets or not icons.PREFIX_RE.match(prefix):
+            continue
+        got = _iconify_set(prefix) or _iconify_from_zip(config_dir, prefix)
+        if got:
+            sets[prefix] = got
     for path in _script_files(config_dir):
         try:
             found = read_script_set(path.read_text(encoding="utf-8", errors="replace"))
@@ -511,41 +785,294 @@ def read_custom_sets(config_dir: Path, on: frozenset[str] = frozenset()) -> dict
     return sets
 
 
+_copying = threading.Lock()
+
+
 def copy_custom(config_dir: Path | None = None, on: frozenset[str] | None = None, *, force: bool = False) -> str:
-    """Copy every custom set again when their files or Custom Icons' switches changed (whole), and
-    use them. `on`: the collections switched on (`collections_on`); None when Home Assistant
-    couldn't say, which keeps the last answer, else Custom Icons' own defaults. Blocking: run it
-    off the event loop."""
+    """Copy every custom set again when their files or the chosen sets changed (whole), and use
+    them. `on` is only for the way back (ASK_CUSTOM_ICONS): the collections Custom Icons has
+    switched on, which then stand for the editor's choice. Blocking: run it off the event loop."""
     config_dir = config_dir or config.HA_CONFIG_DIR
+    with _copying:
+        if on is None:
+            local, iconify = True, chosen()
+        else:
+            local, iconify = "local" in on, sorted(on - {"local"})
+        sig = custom_signature(config_dir, local, iconify)
+        state = _read_state()
+        if not force and state.get("custom_signature") == sig:
+            return "unchanged"
+        sets = read_custom_sets(config_dir, iconify, local=local)
+        _write_json(icon_dir() / "custom.json.gz", {p: d for p, d in sets.items() if d.get("from") != "iconify"}, compress=True)
+        for s in icons.sets():
+            if s["prefix"] not in RESERVED and s["prefix"] not in sets:
+                icons.remove(s["prefix"])
+        for prefix, data in sets.items():
+            icons.install(prefix, data)
+        own = _read_local(own_dir(config_dir)) if local else {}
+        state = _read_state()
+        state.update(custom_signature=custom_signature(config_dir, local, iconify), own_count=len(own),
+                     legacy_count=len((sets.get("local") or {}).get("icons") or {}) - len(own))
+        _write_json(_state_path(), state)
+        return ", ".join(f"{p}: {len(d['icons'])}" for p, d in sets.items()) or "none"
+
+
+# ------------------------------------------------------ downloading sets
+
+class SetError(Exception):
+    """Why a set couldn't be had, in words the editor shows as they are."""
+
+
+_jobs: dict[str, dict] = {}         # prefix -> {"state": "downloading" | "failed", "error"}
+_tasks: set = set()                 # running downloads (kept, so none is collected half way)
+_check: dict = {}                   # the last Check for updates: {"at", "running", "updated", "failed"}
+
+UNREACHABLE = "Couldn't reach Iconify. Check that Home Assistant is online, then try again."
+
+
+async def _fetch(session, path: str, etag: str = "", *, base: str = ICONIFY, limit: int = MAX_DOWNLOAD,
+                 total: float = 180) -> tuple[bytes | None, str]:
+    """A file of Iconify's (bytes, its ETag); (None, etag) when it hasn't changed since `etag`.
+    Only from Iconify's own addresses, over checked HTTPS, never redirected, never more than `limit`."""
+    headers = {"If-None-Match": etag} if etag else {}
+    try:
+        async with session.get(base + path, headers=headers, allow_redirects=False,
+                               timeout=aiohttp.ClientTimeout(total=total, sock_connect=15, sock_read=30)) as r:
+            if r.status == 304 and etag:
+                return None, etag
+            if r.status == 404:
+                raise SetError("Iconify doesn't have this set any more.")
+            if r.status != 200:
+                raise SetError(f"Iconify answered {r.status}. Try again later.")
+            if (r.content_length or 0) > limit:
+                raise SetError("This set is larger than e-paper accepts (32 MB).")
+            buf = bytearray()
+            async for chunk in r.content.iter_chunked(1 << 16):
+                buf += chunk
+                if len(buf) > limit:
+                    raise SetError("This set is larger than e-paper accepts (32 MB).")
+            return bytes(buf), r.headers.get("ETag", "")
+    except (aiohttp.ClientError, asyncio.TimeoutError, OSError):
+        raise SetError(UNREACHABLE) from None
+
+
+def _available_from(raw) -> list[dict]:
+    """Iconify's list of sets (collections.json) as the ones e-paper offers: single-color only (a
+    colored set would draw as solid shapes), not hidden, with a prefix of its own."""
+    data = json.loads(raw)
+    if not isinstance(data, dict):
+        raise ValueError("not Iconify's list of sets")
+    out = []
+    for prefix, c in data.items():
+        if not (isinstance(c, dict) and icons.PREFIX_RE.match(prefix)) or prefix in RESERVED or prefix == "local":
+            continue
+        if c.get("palette") is not False or c.get("hidden"):
+            continue
+        lic = c.get("license") if isinstance(c.get("license"), dict) else {}
+        author = c.get("author") if isinstance(c.get("author"), dict) else {}
+        samples = [n for n in (c.get("samples") or []) if isinstance(n, str) and icons.NAME_RE.match(n)][:SAMPLES]
+        out.append({"prefix": prefix, "name": str(c.get("name") or prefix)[:60], "total": int(c.get("total") or 0),
+                    "license": str(lic.get("title") or "")[:60], "author": str(author.get("name") or "")[:60],
+                    "category": str(c.get("category") or "")[:40], "samples": samples})
+    return sorted(out, key=lambda s: s["name"].lower())
+
+
+async def available(session, *, refresh: bool = False) -> list[dict]:
+    """The sets the editor offers. Iconify's list is fetched only when asked (the first time Add a
+    set opens, or `refresh`), then kept; a failed fetch with a kept list uses the kept one."""
+    path = iconify_dir() / "collections.json"
+    have = path.read_bytes() if path.is_file() else None
+    if have is None or refresh:
+        try:
+            got, etag = await _fetch(session, "/collections.json", (_read_state().get("collections_etag") or "") if have else "")
+            if got is not None:
+                _available_from(got)                # it reads, or it isn't kept
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.with_name("collections.json.tmp").write_bytes(got)
+                os.replace(path.with_name("collections.json.tmp"), path)
+                state = _read_state()
+                state["collections_etag"] = etag
+                _write_json(_state_path(), state)
+                have = got
+        except (SetError, ValueError):
+            if have is None:
+                raise SetError(UNREACHABLE) from None
+    try:
+        return _available_from(have)
+    except ValueError:
+        path.unlink(missing_ok=True)
+        raise SetError("Iconify's list of sets couldn't be read. Try again.") from None
+
+
+_samples: dict[str, list] | None = None     # prefix -> its sample outlines, in Iconify's order
+
+
+def _samples_path() -> Path:
+    return icon_dir() / "samples.json.gz"         # not with the sets, which forget_unchosen tidies
+
+
+async def samples(session, prefixes) -> dict[str, list]:
+    """Previews for Add a set: each set's sample icons (named in Iconify's list) as outlines,
+    {prefix: [record, ...]}. Asked of Iconify only for the sets the editor shows, a few at a time,
+    each converted like every other icon and kept; one that can't be had now is left out (the
+    editor keeps its empty squares), never an error."""
+    global _samples
+    if _samples is None:
+        try:
+            got = _read_json(_samples_path(), compressed=True)
+            _samples = got if isinstance(got, dict) else {}
+        except (OSError, ValueError):
+            _samples = {}
+    path = iconify_dir() / "collections.json"
+    try:
+        names = {s["prefix"]: s["samples"] for s in _available_from(path.read_bytes())} if path.is_file() else {}
+    except ValueError:
+        names = {}
+    wanted = [p for p in dict.fromkeys(prefixes) if p in names and names[p]][:24]
+    gate = asyncio.Semaphore(4)
+    loop = asyncio.get_running_loop()
+
+    async def one(prefix):
+        q = urllib.parse.quote(",".join(names[prefix]), safe=",")
+        async with gate:
+            raw, _ = await _fetch(session, f"/{prefix}.json?icons={q}", base=ICONIFY_API, limit=256 * 1024, total=15)
+        data = json.loads(raw)
+        if not isinstance(data, dict) or data.get("prefix") != prefix:
+            raise ValueError("not the set asked for")
+        _, got = await loop.run_in_executor(None, _convert_iconify, data)
+        return [got[n] for n in names[prefix] if n in got]
+
+    missing = [p for p in wanted if p not in _samples]
+    if missing:
+        got = await asyncio.gather(*(one(p) for p in missing), return_exceptions=True)
+        fresh = {p: g for p, g in zip(missing, got) if isinstance(g, list) and g}
+        if fresh:
+            _samples.update(fresh)
+            snapshot = dict(_samples)
+            await loop.run_in_executor(None, lambda: _write_json(_samples_path(), snapshot, compress=True))
+    return {p: _samples[p] for p in wanted if p in _samples}
+
+
+async def _get_set(session, prefix: str, *, update: bool = False) -> bool:
+    """Make sure the add-on has this chosen set, then use it: one it has already, else from Custom
+    Icons' download, else from Iconify. With `update`, ask Iconify whether it changed (a set from
+    Custom Icons' download is replaced by Iconify's). True when the set changed. Raises SetError."""
+    loop = asyncio.get_running_loop()
+    have = await loop.run_in_executor(None, _iconify_set, prefix)
+    meta = ((_read_state().get("iconify") or {}).get(prefix) or {})
+    changed = False
+    if have is None and not update:
+        have = await loop.run_in_executor(None, _iconify_from_zip, config.HA_CONFIG_DIR, prefix)
+        changed = have is not None
+    if have is None or update:
+        etag = (meta.get("etag") or "") if have is not None and meta.get("source") == "iconify" else ""
+        raw, new_etag = await _fetch(session, f"/json/{prefix}.json", etag)
+        if raw is not None:
+            try:
+                await loop.run_in_executor(None, lambda: store_iconify(prefix, raw, source="iconify", etag=new_etag))
+            except ValueError:
+                raise SetError("Iconify sent something that isn't this icon set. Try again later.") from None
+            changed = True
+    await loop.run_in_executor(None, lambda: copy_custom(force=True))
+    return changed
+
+
+def _start(session, prefix: str, *, update: bool = False):
+    if (_jobs.get(prefix) or {}).get("state") == "downloading":
+        return None
+    _jobs[prefix] = {"state": "downloading"}
+
+    async def run():
+        try:
+            changed = await _get_set(session, prefix, update=update)
+            _jobs.pop(prefix, None)
+            return changed
+        except SetError as exc:
+            _jobs[prefix] = {"state": "failed", "error": str(exc)}
+        except Exception as exc:                    # noqa: BLE001 -- said, never a stuck "Downloading"
+            print(f"icons: {prefix} not copied: {health.describe(exc)}", flush=True)
+            _jobs[prefix] = {"state": "failed", "error": "Something went wrong copying this set. Try again."}
+        return None
+    task = asyncio.get_running_loop().create_task(run())
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+    return task
+
+
+async def add(session, prefix: str, *, wait: float = 0):
+    """Choose a set (or try it again) and get it in the background, waiting up to `wait` seconds
+    so one the add-on has at hand is ready in the answer, never a flash of "Downloading". Raises
+    SetError when Iconify doesn't offer it as a single-color set."""
+    if prefix not in chosen():
+        offered = {s["prefix"] for s in await available(session)}
+        if prefix not in offered:
+            raise SetError("Iconify has no single-color set by that name.")
+        set_chosen(chosen() + [prefix])
+    task = _start(session, prefix)
+    if task is not None and wait > 0:
+        await asyncio.wait({task}, timeout=wait)
+
+
+async def remove(prefix: str) -> None:
+    """Stop using a set. Its copy stays until the next start, so adding it back is instant."""
+    set_chosen([p for p in chosen() if p != prefix])
+    _jobs.pop(prefix, None)
+    await asyncio.get_running_loop().run_in_executor(None, lambda: copy_custom(force=True))
+
+
+async def check_updates(session) -> None:
+    """Check for updates (the editor): every chosen set, asking Iconify only whether it changed."""
+    if _check.get("running"):
+        return
+    _check.clear()
+    _check.update(running=True, at=time.time(), updated=[], failed=[])
+
+    async def run():
+        try:
+            for prefix in chosen():
+                task = _start(session, prefix, update=True)
+                if task is None:
+                    continue
+                changed = await task
+                name = (icons.set_for(prefix) or {}).get("name") or prefix
+                if (_jobs.get(prefix) or {}).get("state") == "failed":
+                    _check["failed"].append(name)
+                elif changed:
+                    _check["updated"].append(name)
+        finally:
+            _check["running"] = False
+    task = asyncio.get_running_loop().create_task(run())
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+
+
+def status(config_dir: Path | None = None) -> dict:
+    """What Settings › Icons shows: your own icons, the chosen sets and how each is doing."""
     state = _read_state()
-    if on is None:
-        known = state.get("custom_on")
-        on = frozenset(known) if isinstance(known, list) else CUSTOM_ICONS_DEFAULTS
-    sig = custom_signature(config_dir, on)
-    if not force and state.get("custom_signature") == sig:
-        return "unchanged"
-    sets = read_custom_sets(config_dir, on)
-    _write_json(icon_dir() / "custom.json.gz", sets, compress=True)
-    for s in icons.sets():
-        if s["prefix"] not in RESERVED and s["prefix"] not in sets:
-            icons.remove(s["prefix"])
-    for prefix, data in sets.items():
-        icons.install(prefix, data)
-    state = _read_state()
-    state.update(custom_signature=sig, custom_on=sorted(on))
-    _write_json(_state_path(), state)
-    return ", ".join(f"{p}: {len(d['icons'])}" for p, d in sets.items()) or "none"
+    meta = state.get("iconify") if isinstance(state.get("iconify"), dict) else {}
+    sets = []
+    for prefix in chosen():
+        s = icons.set_for(prefix) or {}
+        job = _jobs.get(prefix) or {}
+        sets.append({"prefix": prefix, "name": s.get("name") or prefix, "count": len(s.get("icons") or {}),
+                     "license": s.get("license") or "",
+                     "source": (meta.get(prefix) or {}).get("source") or s.get("source") or "",
+                     "state": job.get("state") or ("ready" if s else "missing"), "error": job.get("error") or ""})
+    return {"own": {"folder": OWN_FOLDER.as_posix(), "count": int(state.get("own_count") or 0),
+                    "legacy_folder": LEGACY_FOLDER, "legacy": max(0, int(state.get("legacy_count") or 0))},
+            "sets": sets, "check": {k: _check[k] for k in ("at", "running", "updated", "failed") if k in _check}}
 
 
 # ------------------------------------------------------------------ the loop
 
 async def keep_in_step(session, hass) -> None:
     """At start and every few minutes: Home Assistant's set when its version changed, custom sets
-    when their files did. A failure keeps what's in use and shows in the problem sensors."""
+    when their files did. A failure keeps what's in use and shows in the problem sensors. Never
+    downloads an Iconify set: that's only when the user asks."""
     loop = asyncio.get_running_loop()
     while True:
         try:
-            on = await collections_on(hass)
+            on = heard_from_custom_icons(await collections_on(hass)) if ASK_CUSTOM_ICONS else None
             said = await loop.run_in_executor(None, lambda: copy_custom(None, on))
             if said != "unchanged":
                 print(f"icons: custom sets: {said}", flush=True)

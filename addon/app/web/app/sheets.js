@@ -10,6 +10,7 @@ import { reflowPageElements } from "./legacy.js";
 import { LOOKS as PRESETS, clockPages, dateInstead } from "./presets.js";
 import { thumbnail, statusSummary, forgetThumbnails, unsentWords } from "./strip.js";
 import { SETTING_NAMES } from "./doc.js";
+import { paint } from "./glyphs.js";
 
 const thumbImg = (app, key, page) => {
   const img = h("img", { class: "thumb", alt: "", "data-thumb": key, draggable: "false" });
@@ -425,6 +426,7 @@ export function openSettings(app, sectionName = "panel") {
       quiet: ["Quiet hours", "moon", () => quietPane(app, pane)],
       reach: ["Reaching home", "globe", () => reachPane(app, pane)],
       sources: ["Data sources", "plug", () => sourcesPane(app, pane)],
+      icons: ["Icons", "grid", () => iconsPane(app, pane)],
       time: ["Time and language", "clock", () => timePane(app, pane)],
       editor: ["Editor", "gear", () => editorPane(app, pane)],
     };
@@ -950,6 +952,207 @@ async function sourcesPane(app, pane) {
   }
   pane.append(list, h("div", { class: "btnrow" }, add, h("span", { class: "spacer" }), msg, h("button", { class: "btn primary", onclick: save }, "Save sources")));
   draw();
+}
+
+/* ---------- icons ---------- */
+// Your own SVGs (local:, in epaper/icons) and Iconify sets, each downloaded only when someone asks
+// (iconsets.py). Nothing here needs Custom Icons (the user's design, 22 Oct).
+const ICON_BATCH = 600 * 1024;              // what one request carries, under the editor's 1 MB
+const MAX_ICON_FILE = 512 * 1024;           // iconsets.MAX_SVG
+const many = (n, one, more) => `${n.toLocaleString()} ${n === 1 ? one : more}`;
+const listed = (names) => (names.length < 3 ? names.join(" and ") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`);
+
+async function iconsPane(app, pane) {
+  const box = h("div");
+  const said = h("p", { class: "fnote", role: "status", "aria-live": "polite" });
+  pane.append(box);
+  let st = null, timer = 0, busyBefore = new Set(), checking = false;
+  const here = () => box.isConnected;
+  const refreshIcons = (prefixes) => { prefixes.forEach((p) => app.glyphs.forget(p)); app.glyphs.load().then(() => app.refresh()); };
+
+  async function load() {
+    try { st = (await api("api/iconsets")).body; }
+    catch (e) {
+      box.replaceChildren(h("p", { class: "fnote bad", text: `Couldn't read your icon sets: ${e.message}` }),
+        h("div", { class: "btnrow" }, h("button", { class: "btn tinted", onclick: load }, "Try again")));
+      return;
+    }
+    settled();
+  }
+  // After every answer: what finished since the last one is drawn again everywhere, and the pane
+  // asks again while anything is still downloading.
+  function settled() {
+    const busy = new Set(st.sets.filter((s) => s.state === "downloading").map((s) => s.prefix));
+    const done = [...busyBefore].filter((p) => !busy.has(p));
+    const checked = checking && !st.check?.running;
+    if (done.length || checked) refreshIcons(checked ? st.sets.map((s) => s.prefix) : done);
+    if (checked) {
+      const c = st.check;
+      said.textContent = c.failed.length ? `Couldn't check ${listed(c.failed)}. ${st.sets.find((s) => s.error)?.error || ""}`.trim()
+        : c.updated.length ? `Updated ${listed(c.updated)}.` : "Your sets are up to date.";
+    }
+    busyBefore = busy; checking = !!st.check?.running;
+    draw();
+    clearTimeout(timer);
+    if ((busy.size || checking) && here()) timer = setTimeout(() => here() && load(), 1000);
+  }
+
+  async function upload(files) {
+    const svgs = files.filter((f) => /\.svg$/i.test(f.name) || f.type === "image/svg+xml");
+    const out = { added: [], replaced: [], refused: files.filter((f) => !svgs.includes(f)).map((f) => ({ file: f.name, why: "isn't an SVG file" })) };
+    if (!svgs.length) { said.textContent = "Choose SVG files. Other kinds of pictures can't be icons."; return; }
+    said.textContent = "";
+    let batch = [], size = 0;
+    const send = async () => {
+      if (!batch.length) return;
+      const r = (await api("api/icons/own", { method: "POST", body: { files: batch } })).body;
+      ["added", "replaced", "refused"].forEach((k) => out[k].push(...r[k]));
+      st = r; batch = []; size = 0;
+    };
+    try {
+      for (const f of svgs) {
+        if (f.size > MAX_ICON_FILE) { out.refused.push({ file: f.name, why: "is larger than 512 kB, more than any icon needs" }); continue; }
+        const item = { name: f.name, svg: await f.text() };
+        const n = JSON.stringify(item).length;
+        if (batch.length && (size + n > ICON_BATCH || batch.length >= 40)) await send();
+        batch.push(item); size += n;
+      }
+      await send();
+    } catch (e) { said.textContent = `Couldn't add them: ${e.message}`; draw(); return; }
+    const names = [...out.added, ...out.replaced];
+    const lines = [];
+    if (names.length === 1) lines.push(`Added ${names[0]}. Use it as local:${names[0]}.`);
+    else if (names.length) lines.push(`Added ${many(names.length, "icon", "icons")}${out.replaced.length ? `, ${out.replaced.length} of them replacing ones you had` : ""}.`);
+    out.refused.forEach((r) => lines.push(`${r.file} ${r.why}.`));
+    said.textContent = lines.join(" ");
+    if (names.length) refreshIcons(["local"]);
+    draw();
+  }
+
+  async function addSet(prefix, name) {
+    // The row is there at once; "Downloading…" fades in only if it takes a while (editor.css).
+    if (!st.sets.some((s) => s.prefix === prefix)) { st.sets.push({ prefix, name: name || prefix, state: "downloading" }); draw(); }
+    try { st = (await api("api/iconsets", { method: "POST", body: { prefix } })).body; }
+    catch (e) { toast(e.message); st.sets = st.sets.filter((s) => s.prefix !== prefix || s.state !== "downloading"); draw(); return; }
+    busyBefore.add(prefix);       // ready already counts as finished: drawn again everywhere
+    settled();
+  }
+  async function removeSet(s) {
+    try { st = (await api(`api/iconsets/${encodeURIComponent(s.prefix)}`, { method: "DELETE" })).body; }
+    catch (e) { toast(`Couldn't remove it: ${e.message}`); return; }
+    refreshIcons([s.prefix]);
+    settled();
+    toast(`Removed ${s.name}.`, { label: "Undo", run: () => addSet(s.prefix, s.name) });
+  }
+
+  function draw() {
+    const own = st.own, total = own.count + own.legacy;
+    const fileIn = h("input", { type: "file", accept: ".svg,image/svg+xml", multiple: true, hidden: true,
+      onchange: () => { upload([...fileIn.files]); fileIn.value = ""; } });
+    const ownGroup = group(grow("Your own icons", total ? `${many(total, "icon", "icons")}, used as local:name` : "None yet",
+      h("button", { class: "btn tinted", onclick: () => fileIn.click() }, "Add icons…")), fileIn);
+    // The note's words are the same for everyone; Custom Icons' folder is named only to those who have icons in it.
+    const where = h("p", { class: "fnote" }, "Add SVG files with the button, or drop them here. They're kept in ", h("code", { text: own.folder }),
+      " in Home Assistant's configuration folder, where you can also put them yourself.",
+      own.legacy ? [" Icons in ", h("code", { text: own.legacy_folder }), ", the Custom Icons integration's folder, are used too."] : null);
+    // Dropping SVG files anywhere on the group or its note adds them too.
+    const ownZone = h("div", { class: "dropzone" }, ownGroup, where);
+    ownZone.addEventListener("dragover", (e) => { if ([...(e.dataTransfer?.types || [])].includes("Files")) { e.preventDefault(); ownGroup.classList.add("dropping"); } });
+    ownZone.addEventListener("dragleave", (e) => { if (!ownZone.contains(e.relatedTarget)) ownGroup.classList.remove("dropping"); });
+    ownZone.addEventListener("drop", (e) => { e.preventDefault(); ownGroup.classList.remove("dropping"); upload([...(e.dataTransfer?.files || [])]); });
+
+    const rows = st.sets.map((s) => {
+      const sub = s.state === "downloading" ? h("small", { class: "waiting", text: "Downloading…" })
+        : s.state === "failed" ? h("small", { class: "bad", text: s.error })
+        : s.state === "missing" ? h("small", { text: "Not downloaded yet" })
+        : h("small", { text: [`${s.prefix}:`, many(s.count, "icon", "icons"), s.license, s.source === "custom_icons" ? "from Custom Icons' download" : ""].filter(Boolean).join(" · ") });
+      const retry = s.state === "failed" || s.state === "missing";
+      return h("div", { class: "gr" }, h("span", { class: "gl" }, s.name, sub),
+        h("span", { class: "rowbtns" },
+          retry ? h("button", { class: "btn tinted", onclick: () => addSet(s.prefix) }, s.state === "missing" ? "Download" : "Try again") : null,
+          h("button", { class: "btn tinted danger", "aria-label": `Remove ${s.name}`, disabled: s.state === "downloading" ? "" : null, onclick: () => removeSet(s) }, "Remove")));
+    });
+    const sets = rows.length ? group(...rows)
+      : h("p", { class: "fnote", text: "No sets yet. Iconify has over 150 single-color sets, like Phosphor, Tabler and Font Awesome. Each is downloaded when you add it." });
+    const check = h("button", { class: "btn tinted", disabled: !st.sets.length || checking ? "" : null,
+      onclick: async () => {
+        try { st = (await api("api/iconsets/check", { method: "POST" })).body; } catch (e) { said.textContent = `Couldn't check: ${e.message}`; return; }
+        checking = true; said.textContent = ""; settled();
+      } }, checking ? "Checking…" : "Check for updates");
+    box.replaceChildren(ownZone,
+      h("h4", { class: "gtitle", text: "Iconify sets" }), sets,
+      h("div", { class: "btnrow" }, h("button", { class: "btn primary", onclick: () => addSetPane(app, pane, st, addSet, () => { pane.replaceChildren(pane.firstChild, box); draw(); }) }, "Add a set…"),
+        h("span", { class: "spacer" }), check),
+      said);
+  }
+  await load();
+}
+
+/* Add a set: Iconify's single-color sets, searchable, inside the Icons pane (Back returns). The
+   list is fetched the first time it's opened, then kept by the add-on. */
+async function addSetPane(app, pane, st, addSet, back) {
+  const title = pane.firstChild;
+  const q = h("input", { type: "search", "aria-label": "Search Iconify's sets", placeholder: "Search sets: phosphor, weather, brands…", autocomplete: "off", spellcheck: "false" });
+  const list = h("div");
+  const head = h("div", { class: "subhead" }, h("button", { class: "btn icon", "aria-label": "Back to Icons", onclick: back }, icon("back")), h("h4", { text: "Add a set" }));
+  pane.replaceChildren(title, head, h("div", { class: "search" }, icon("search", "sm"), q), list);
+  // Fades in only when it's slow (editor.css), so a kept list never flashes it.
+  list.replaceChildren(h("p", { class: "fnote waiting", text: "Getting Iconify's list of sets…" }));
+  let sets;
+  const fetchList = async (refresh) => {
+    try { sets = (await api(`api/iconsets/available${refresh ? "?refresh=1" : ""}`)).body.sets; }
+    catch (e) {
+      list.replaceChildren(h("p", { class: "fnote bad", text: e.message }),
+        h("div", { class: "btnrow" }, h("button", { class: "btn tinted", onclick: () => fetchList(true) }, "Try again")));
+      return;
+    }
+    draw();
+  };
+  const chosen = new Set(st.sets.map((s) => s.prefix));
+  // Previews: each set's sample icons, asked for when its row comes into view, a few rows at a
+  // time; drawn into squares that are there from the start, so nothing moves.
+  const seen = new Map(), asked = new Set();
+  let wantTimer = 0;
+  const viewer = new IntersectionObserver((entries) => {
+    for (const e of entries) if (e.isIntersecting && !asked.has(e.target.dataset.prefix)) { asked.add(e.target.dataset.prefix); viewer.unobserve(e.target); }
+    clearTimeout(wantTimer);
+    wantTimer = setTimeout(askSamples, 120);
+  }, { root: pane, rootMargin: "200px 0px" });
+  async function askSamples() {
+    const want = [...asked].filter((p) => !seen.has(p)).slice(0, 24);
+    if (!want.length || !list.isConnected) return;
+    want.forEach((p) => seen.set(p, null));
+    let got = {};
+    try { got = (await api("api/iconsets/samples", { method: "POST", body: { prefixes: want } })).body.samples || {}; } catch (_) { /* the squares stay empty */ }
+    for (const [p, recs] of Object.entries(got)) { seen.set(p, recs); fill(p); }
+    if ([...asked].some((p) => !seen.has(p))) askSamples();
+  }
+  function fill(prefix) {
+    const recs = seen.get(prefix);
+    const strip = list.querySelector(`.samples[data-prefix="${CSS.escape(prefix)}"]`);
+    if (!recs || !strip) return;
+    [...strip.children].forEach((svg, i) => { if (recs[i]) paint(svg, recs[i]); });
+  }
+  const strip = (s) => {
+    const n = Math.max(1, (s.samples || []).length);
+    const el = h("span", { class: "samples", "aria-hidden": "true", data: { prefix: s.prefix } },
+      ...Array.from({ length: n }, () => { const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("viewBox", "0 0 24 24"); return svg; }));
+    if (seen.get(s.prefix)) requestAnimationFrame(() => fill(s.prefix));
+    else if (!asked.has(s.prefix)) viewer.observe(el);
+    return el;
+  };
+  function draw() {
+    const words = q.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const shown = sets.filter((s) => words.every((w) => `${s.name} ${s.prefix} ${s.category} ${s.author}`.toLowerCase().includes(w)));
+    list.replaceChildren(shown.length ? group(...shown.slice(0, 250).map((s) => h("div", { class: "gr" },
+      h("span", { class: "gl" }, s.name, h("small", { text: [`${s.prefix}:`, many(s.total, "icon", "icons"), s.license, s.category].filter(Boolean).join(" · ") }), strip(s)),
+      chosen.has(s.prefix) ? h("span", { class: "added" }, icon("check", "sm"), "Added")
+        : h("button", { class: "btn tinted", "aria-label": `Add ${s.name}`, onclick: () => { chosen.add(s.prefix); back(); addSet(s.prefix, s.name); } }, "Add"))))
+      : h("p", { class: "empty-note", text: `No set matches “${q.value.trim()}”. Try a simpler word.` }));
+  }
+  q.addEventListener("input", () => sets && draw());
+  q.focus({ preventScroll: true });
+  await fetchList(false);
 }
 
 /* ---------- time and language ---------- */

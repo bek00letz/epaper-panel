@@ -9,6 +9,7 @@ import shutil
 import subprocess
 import time
 import unittest
+import urllib.parse
 import zipfile
 from pathlib import Path
 from unittest import mock
@@ -330,6 +331,11 @@ def write(path: Path, text: str) -> Path:
 
 
 LOCAL = frozenset({"local"})
+LOCAL_DEFAULTS_NEVER_HEARD = frozenset({"local", "fa6-regular", "fa6-solid", "fa6-brands"})
+# An Iconify set as Iconify publishes it: an icon, one turned, an alias and an alias flipped.
+PH = {"prefix": "ph", "info": {"name": "Phosphor", "license": {"title": "MIT"}, "version": "2.1"}, "width": 256, "height": 256,
+      "icons": {"cat": {"body": '<path fill="currentColor" d="M16 16H240V240H16Z"/>'}, "spin": {"body": "<path d='M0 0H9V9Z'/>", "rotate": 1}},
+      "aliases": {"kitty": {"parent": "cat"}, "mirrored": {"parent": "cat", "hFlip": True}}}
 
 
 CAT_SVG = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
@@ -381,31 +387,54 @@ class TestCustomSets(IconTest):
         write(self.cfg / "custom_icons" / "cat-outside.svg", CAT_SVG)
         self.assertEqual(iconsets.copy_custom(self.cfg, LOCAL), "local: 1")
 
-    def test_custom_icons_local_folder(self):
+    def test_custom_icons_old_folder_without_custom_icons(self):
+        # Custom Icons' folder is still read, with nothing asked of Home Assistant: it can be uninstalled.
         write(self.cfg / "custom_icons" / "cat-outside.svg", CAT_SVG)
         write(self.cfg / "custom_icons" / "pets" / "Dog.svg", CAT_SVG)
         write(self.cfg / "custom_icons" / "broken.svg", "<svg><path d='nonsense'/></svg>")
         write(self.cfg / "custom_icons" / "rpg-webfont.svg", CAT_SVG)
-        said = iconsets.copy_custom(self.cfg, LOCAL)
+        said = iconsets.copy_custom(self.cfg)
         self.assertEqual(said, "local: 2")
         self.assertTrue(layout.can_draw_icon("local:cat-outside") and layout.can_draw_icon("local:pets/Dog"))
         self.assertFalse(layout.can_draw_icon("local:broken") or layout.can_draw_icon("local:rpg-webfont"))
         page = {"elements": [{"type": "icon", "icon": "local:cat-outside", "x": 10, "y": 10, "w": 120, "h": 120}]}
         self.assertGreater(ink(layout.render_page(page, {})), ink(layout.render_page({"elements": []}, {})) + 500)
 
-    def test_only_what_custom_icons_has_switched_on(self):
+    def test_your_own_folder(self):
+        write(self.cfg / "epaper" / "icons" / "pawpaw.svg", CAT_SVG)
+        write(self.cfg / "custom_icons" / "pawpaw.svg", "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M0 0H2V2Z'/></svg>")
+        write(self.cfg / "custom_icons" / "old.svg", CAT_SVG)
+        self.assertEqual(iconsets.copy_custom(self.cfg), "local: 2")
+        self.assertEqual(icons.get("local:pawpaw"), iconsets.svg_record(CAT_SVG), "the own folder wins a name both have")
+        self.assertTrue(layout.can_draw_icon("local:old"))
+        self.assertEqual(icons.set_for("local")["name"], "Your own icons")
+        own = iconsets.status(self.cfg)["own"]
+        self.assertEqual((own["folder"], own["count"], own["legacy"]), ("epaper/icons", 1, 1))
+
+    def test_the_way_back_asks_custom_icons(self):
+        # Switched off: e-paper's own choice. Switched on, Custom Icons' collections stand for it, as in 0.19.
+        self.assertFalse(iconsets.ASK_CUSTOM_ICONS)
         write(self.cfg / "custom_icons" / "cat-outside.svg", CAT_SVG)
         self.assertEqual(iconsets.copy_custom(self.cfg, frozenset()), "none", "Custom Icons isn't set up, or Local is off")
         self.assertEqual(iconsets.copy_custom(self.cfg, LOCAL), "local: 1", "switched on: copied")
-        self.assertEqual(iconsets.copy_custom(self.cfg, frozenset()), "none", "switched off: taken out")
-        # Home Assistant can't say: the last answer stands.
-        self.assertEqual(iconsets.copy_custom(self.cfg, None), "unchanged")
-        self.assertFalse(layout.can_draw_icon("local:cat-outside"))
+        self.assertEqual(iconsets.heard_from_custom_icons(None), LOCAL_DEFAULTS_NEVER_HEARD, "never heard: its defaults")
+        self.assertEqual(iconsets.heard_from_custom_icons(frozenset({"local", "ph"})), {"local", "ph"})
+        self.assertEqual(iconsets.heard_from_custom_icons(None), {"local", "ph"}, "can't say: the last answer stands")
 
-    def test_never_heard_uses_custom_icons_defaults(self):
+    def test_custom_icons_is_never_asked(self):
         write(self.cfg / "custom_icons" / "cat-outside.svg", CAT_SVG)
-        self.assertEqual(iconsets.copy_custom(self.cfg, None), "local: 1", "Local is on when Custom Icons is set up")
-        self.assertIn("local", iconsets.CUSTOM_ICONS_DEFAULTS)
+
+        async def go(way_back):
+            asked = mock.AsyncMock(return_value=LOCAL)
+            with mock.patch.object(iconsets, "CHECK_EVERY", 3600), mock.patch.object(config, "HA_CONFIG_DIR", self.cfg), \
+                    mock.patch.object(iconsets, "collections_on", asked), mock.patch.object(iconsets, "ASK_CUSTOM_ICONS", way_back):
+                task = asyncio.create_task(iconsets.keep_in_step(None, None))
+                await asyncio.sleep(0.05)
+                task.cancel()
+            return asked.await_count
+        self.assertEqual(asyncio.run(go(False)), 0)
+        self.assertTrue(layout.can_draw_icon("local:cat-outside"), "your own icons without Custom Icons")
+        self.assertEqual(asyncio.run(go(True)), 1, "the way back still asks")
 
     def test_which_collections_are_on_comes_from_home_assistant(self):
         from hass import HassError
@@ -459,17 +488,22 @@ class TestCustomSets(IconTest):
         self.assertEqual(iconsets.copy_custom(self.cfg, LOCAL), "none")
         self.assertFalse(layout.can_draw_icon("local:a"), "a set that's gone isn't offered any more")
 
-    def test_an_iconify_set_custom_icons_downloaded(self):
+    def test_a_chosen_set_custom_icons_downloaded_is_taken_from_there_once(self):
         buf = io.BytesIO()
         with zipfile.ZipFile(buf, "w") as zf:
-            zf.writestr("icon-sets-master/json/ph.json", json.dumps({"prefix": "ph", "info": {"name": "Phosphor"}, "width": 256, "height": 256,
-                "icons": {"cat": {"body": '<path fill="currentColor" d="M16 16H240V240H16Z"/>'}, "spin": {"body": "<path d='M0 0H9V9Z'/>", "rotate": 1}}}))
+            zf.writestr("icon-sets-master/json/ph.json", json.dumps(PH))
             zf.writestr("icon-sets-master/json/other.json", json.dumps({"prefix": "other", "icons": {"x": {"body": "<path d='M0 0H9V9Z'/>"}}}))
-        write(self.cfg / "custom_icons" / "x.svg", CAT_SVG)
-        (self.cfg / "custom_icons" / "iconify-icon-sets-master.zip").write_bytes(buf.getvalue())
-        self.assertEqual(iconsets.copy_custom(self.cfg, frozenset({"ph"})), "ph: 1")
-        self.assertTrue(layout.can_draw_icon("ph:cat"))
+        zp = write(self.cfg / "custom_icons" / "x.svg", CAT_SVG).parent / "iconify-icon-sets-master.zip"
+        zp.write_bytes(buf.getvalue())
+        self.assertEqual(iconsets.copy_custom(self.cfg), "local: 1", "only chosen sets")
+        iconsets.set_chosen(["ph"])
+        self.assertEqual(iconsets.copy_custom(self.cfg), "local: 1, ph: 2")
+        self.assertTrue(layout.can_draw_icon("ph:cat") and layout.can_draw_icon("ph:kitty"), "an alias is its parent")
+        self.assertFalse(layout.can_draw_icon("ph:spin") or layout.can_draw_icon("ph:mirrored"), "turned or flipped: left out")
         self.assertEqual(icons.set_for("ph")["name"], "Phosphor")
+        zp.unlink()
+        self.assertEqual(iconsets.copy_custom(self.cfg, force=True), "local: 1, ph: 2", "kept: the download can go")
+        self.assertEqual(iconsets.status(self.cfg)["sets"][0]["source"], "custom_icons")
 
     def test_a_zip_that_lies_about_its_size_is_read_no_further(self):
         # A member that says it's small and inflates to 50 MB: reading stops at the size it states,
@@ -491,7 +525,8 @@ class TestCustomSets(IconTest):
                 with self.assertRaises(zipfile.BadZipFile):
                     f.read()
         t = time.monotonic()
-        self.assertEqual(iconsets.copy_custom(self.cfg, frozenset({"ph"})), "none")
+        iconsets.set_chosen(["ph"])
+        self.assertEqual(iconsets.copy_custom(self.cfg), "local: 1")
         self.assertLess(time.monotonic() - t, 2.0)
 
     def test_a_script_set_like_brand_icons(self):
@@ -521,6 +556,307 @@ window.customIcons["phu"] = { getIcon, getIconList };
                 self.assertFalse(task.done())
                 task.cancel()
         asyncio.run(go())
+
+
+class TestUpgrading(IconTest):
+    def test_the_sets_it_drew_draw_on_without_custom_icons(self):
+        # 0.19 drew Custom Icons' sets from its download; the first start after keeps every one, even
+        # once Custom Icons, its settings and its download are gone.
+        old = {"local": {"name": "Your own icons", "from": "custom_icons", "icons": {"pawpaw": SQUARE}},
+               "ph": {"name": "Phosphor", "from": "custom_icons", "icons": {"cat": SQUARE}},
+               "phu": {"name": "Custom brand icons", "from": "script", "icons": {"02tv": SQUARE}}}
+        iconsets._write_json(iconsets.icon_dir() / "custom.json.gz", old, compress=True)
+        iconsets._write_json(iconsets._state_path(), {"custom_on": ["local", "ph", "fa6-solid"]})
+        iconsets.load_copies()
+        self.assertEqual(iconsets.chosen(), ["ph"], "what it drew, not what it last heard")
+        self.assertTrue(layout.can_draw_icon("ph:cat"))
+        cfg = support.temp_dir()
+        self.assertEqual(iconsets.copy_custom(cfg), "ph: 1")
+        icons._sets.clear()
+        iconsets.load_copies()
+        self.assertTrue(layout.can_draw_icon("ph:cat"), "and after the next start")
+
+    def test_a_new_install_chooses_nothing(self):
+        self.assertEqual(iconsets.chosen(), [])
+        self.assertEqual(iconsets.set_chosen(["ph", "mdi", "custom", "local", "Bad!", "ph", "tabler"]), ["ph", "tabler"])
+
+
+class TestAddIcons(IconTest):
+    def setUp(self):
+        super().setUp()
+        self.cfg = support.temp_dir()
+
+    def test_a_cleaned_copy_lands_in_the_folder(self):
+        evil = CAT_SVG.replace("<g ", "<script>alert(1)</script><image href='http://example.invalid/x.png'/><g onload='alert(1)' ")
+        said = iconsets.save_own([{"name": "Paw Paw.svg", "svg": evil}], self.cfg)
+        self.assertEqual(said, {"added": ["Paw Paw"], "replaced": [], "refused": []})
+        saved = (self.cfg / "epaper" / "icons" / "Paw Paw.svg").read_text()
+        self.assertNotRegex(saved, r"alert|script|href=|onload|example|image")
+        self.assertEqual(iconsets.svg_record(saved), iconsets.svg_record(CAT_SVG), "it reads back as the same outline")
+        self.assertEqual(iconsets.copy_custom(self.cfg), "local: 1")
+        self.assertTrue(layout.can_draw_icon("local:Paw Paw"))
+        again = iconsets.save_own([{"name": "Paw Paw.SVG", "svg": CAT_SVG}], self.cfg)
+        self.assertEqual(again["replaced"], ["Paw Paw"])
+
+    def test_what_isnt_an_icon_is_refused_in_words(self):
+        said = iconsets.save_own([
+            {"name": "notes.svg", "svg": "<svg xmlns='http://www.w3.org/2000/svg'><text>Hi</text></svg>"},
+            {"name": "../../secrets.svg", "svg": CAT_SVG},
+            {"name": "...svg", "svg": CAT_SVG},
+            {"name": "huge.svg", "svg": "<svg>" + " " * (iconsets.MAX_SVG + 1) + "</svg>"},
+            {"name": "x.svg", "svg": 4}], self.cfg)
+        self.assertEqual(said["added"], ["secrets"], "a path is only ever its file's name")
+        self.assertEqual([r["file"] for r in said["refused"]], ["notes.svg", "...svg", "huge.svg", "x.svg"])
+        self.assertTrue(all(r["why"] and not r["why"].endswith(".") for r in said["refused"]))
+        self.assertEqual(sorted(p.name for p in (self.cfg / "epaper" / "icons").iterdir()), ["secrets.svg"])
+
+
+class FakeBody:
+    def __init__(self, raw, step=1 << 16):
+        self.raw, self.step = raw, step
+
+    async def iter_chunked(self, n):
+        for i in range(0, len(self.raw), self.step):
+            yield self.raw[i:i + self.step]
+
+
+class FakeIconifyResponse:
+    def __init__(self, status, raw=b"", etag="", length=None):
+        self.status, self.headers = status, {"ETag": etag} if etag else {}
+        self.content, self.content_length = FakeBody(raw), len(raw) if length is None else length
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+
+COLLECTIONS = {
+    "ph": {"name": "Phosphor", "total": 2, "samples": ["cat", "kitty", "gone"], "license": {"title": "MIT"}, "author": {"name": "Phosphor Icons"}, "category": "UI 16px / 32px", "palette": False},
+    "tabler": {"name": "Tabler Icons", "total": 1, "palette": False},
+    "twemoji": {"name": "Twitter Emoji", "total": 3000, "palette": True},
+    "old": {"name": "Old", "total": 1, "palette": False, "hidden": True},
+    "mdi": {"name": "Material Design Icons", "total": 7000, "palette": False},
+}
+
+
+class FakeIconify:
+    """Iconify's published files: collections.json and json/<prefix>.json, each with an ETag."""
+
+    def __init__(self, files=None, down=False):
+        self.files = files if files is not None else {
+            "/collections.json": json.dumps(COLLECTIONS).encode(), "/json/ph.json": json.dumps(PH).encode(),
+            "/json/tabler.json": json.dumps({"prefix": "tabler", "icons": {"home": {"body": "<path d='M2 2H22V22H2Z'/>"}}, "width": 24, "height": 24}).encode()}
+        self.down, self.asked = down, []
+
+    def get(self, url, headers=None, allow_redirects=True, timeout=None):
+        assert not allow_redirects, url
+        if url.startswith(iconsets.ICONIFY_API + "/"):         # a few icons of a set: /ph.json?icons=a,b
+            path, _, query = url[len(iconsets.ICONIFY_API):].partition("?icons=")
+            self.asked.append((path, query))
+            if self.down:
+                import aiohttp
+                raise aiohttp.ClientConnectionError("Cannot connect to host api.iconify.design:443")
+            whole = json.loads(self.files.get("/json" + path, b"null"))
+            if whole is None:
+                return FakeIconifyResponse(404)
+            want = urllib.parse.unquote(query).split(",")
+            return FakeIconifyResponse(200, json.dumps({**whole, "icons": {n: i for n, i in whole["icons"].items() if n in want},
+                                                         "aliases": {n: a for n, a in whole.get("aliases", {}).items() if n in want}}).encode())
+        assert url.startswith(iconsets.ICONIFY + "/"), url
+        path = url[len(iconsets.ICONIFY):]
+        self.asked.append((path, (headers or {}).get("If-None-Match", "")))
+        if self.down:
+            import aiohttp
+            raise aiohttp.ClientConnectionError("Cannot connect to host raw.githubusercontent.com:443")
+        raw = self.files.get(path)
+        if raw is None:
+            return FakeIconifyResponse(404)
+        etag = f'"{hash(raw) & 0xffff:x}"'
+        if (headers or {}).get("If-None-Match") == etag:
+            return FakeIconifyResponse(304)
+        return FakeIconifyResponse(200, raw, etag)
+
+
+class TestIconifySets(IconTest):
+    def setUp(self):
+        super().setUp()
+        self.cfg = support.temp_dir()
+        self._cfg = mock.patch.object(config, "HA_CONFIG_DIR", self.cfg)
+        self._cfg.start()
+        iconsets._jobs.clear()
+        iconsets._check.clear()
+        iconsets._samples = None
+
+    def tearDown(self):
+        self._cfg.stop()
+        super().tearDown()
+
+    def run_async(self, coro):
+        async def go():
+            out = await coro
+            while iconsets._tasks:
+                await asyncio.gather(*list(iconsets._tasks))
+            return out
+        return asyncio.run(go())
+
+    def row(self, prefix):
+        return next(s for s in iconsets.status()["sets"] if s["prefix"] == prefix)
+
+    def test_only_single_color_sets_are_offered_and_the_list_is_kept(self):
+        web = FakeIconify()
+        got = self.run_async(iconsets.available(web))
+        self.assertEqual([s["prefix"] for s in got], ["ph", "tabler"], "no colored, hidden or Material Design set")
+        self.assertEqual(got[0]["license"], "MIT")
+        self.run_async(iconsets.available(FakeIconify(down=True)))      # kept: no need to reach Iconify
+        self.assertEqual(len(web.asked), 1)
+        self.run_async(iconsets.available(web, refresh=True))
+        self.assertTrue(web.asked[-1][1], "asked again only whether it changed")
+        self.assertEqual(len(self.run_async(iconsets.available(FakeIconify(down=True), refresh=True))), 2, "a failed refresh keeps the list")
+
+    def test_no_list_and_no_internet_says_what_to_do(self):
+        with self.assertRaises(iconsets.SetError) as cm:
+            self.run_async(iconsets.available(FakeIconify(down=True)))
+        self.assertIn("Check that Home Assistant is online", str(cm.exception))
+
+    def test_adding_a_set_downloads_it_and_only_it(self):
+        web = FakeIconify()
+        self.run_async(iconsets.add(web, "ph"))
+        self.assertEqual([p for p, _ in web.asked], ["/collections.json", "/json/ph.json"])
+        self.assertEqual(iconsets.chosen(), ["ph"])
+        self.assertTrue(layout.can_draw_icon("ph:cat"))
+        row = self.row("ph")
+        self.assertEqual((row["state"], row["count"], row["license"], row["source"], row["name"]), ("ready", 2, "MIT", "iconify", "Phosphor"))
+        icons._sets.clear()
+        iconsets.load_copies()
+        self.assertTrue(layout.can_draw_icon("ph:cat"), "kept for the next start")
+        with self.assertRaises(iconsets.SetError):
+            self.run_async(iconsets.add(web, "twemoji"))
+        self.assertEqual(iconsets.chosen(), ["ph"])
+
+    def test_converted_once_not_when_other_icons_change(self):
+        self.run_async(iconsets.add(FakeIconify(), "ph"))
+        write(self.cfg / "epaper" / "icons" / "pawpaw.svg", CAT_SVG)
+        with mock.patch.object(iconsets, "_convert_iconify", side_effect=AssertionError("converted again")):
+            self.assertEqual(iconsets.copy_custom(), "local: 1, ph: 2")
+
+    def test_a_failed_download_says_why_and_can_be_tried_again(self):
+        self.run_async(iconsets.add(FakeIconify(), "tabler"))      # the list is kept from here on
+        self.run_async(iconsets.add(FakeIconify(down=True), "ph"))
+        row = self.row("ph")
+        self.assertEqual(row["state"], "failed")
+        self.assertIn("Couldn't reach Iconify", row["error"])
+        self.assertEqual(iconsets.chosen(), ["tabler", "ph"], "still chosen, to try again")
+        self.run_async(iconsets.add(FakeIconify(), "ph"))
+        self.assertEqual(self.row("ph")["state"], "ready")
+
+    def test_what_isnt_the_set_is_never_kept(self):
+        files = FakeIconify().files
+        cases = {
+            "the wrong set": json.dumps({**PH, "prefix": "tabler"}).encode(),
+            "not JSON": b"<html>rate limited</html>",
+            "nothing to draw": json.dumps({"prefix": "ph", "icons": {"x": {"body": "<text>Hi</text>"}}}).encode(),
+        }
+        for why, raw in cases.items():
+            with self.subTest(why):
+                iconsets._jobs.clear()
+                self.run_async(iconsets.add(FakeIconify({**files, "/json/ph.json": raw}), "ph"))
+                self.assertEqual(self.row("ph")["state"], "failed")
+                self.assertFalse(layout.can_draw_icon("ph:cat"))
+                self.assertFalse((iconsets.iconify_dir() / "ph.json.gz").exists())
+
+    def test_too_large_is_refused_while_it_downloads(self):
+        big = b" " * (iconsets.MAX_DOWNLOAD + 1)
+
+        class Lying(FakeIconify):
+            def get(self, url, **kw):
+                r = super().get(url, **kw)
+                if url.endswith("/ph.json"):
+                    r.content, r.content_length = FakeBody(big, 1 << 20), None     # says no size, sends too much
+                return r
+        self.run_async(iconsets.add(Lying(), "ph"))
+        self.assertIn("32 MB", self.row("ph")["error"])
+
+    def test_check_for_updates_downloads_only_what_changed(self):
+        web = FakeIconify()
+        self.run_async(iconsets.add(web, "ph"))
+        self.run_async(iconsets.add(web, "tabler"))
+        web.asked.clear()
+        self.run_async(iconsets.check_updates(web))
+        self.assertEqual([bool(etag) for _, etag in web.asked], [True, True], "asked only whether each changed")
+        self.assertEqual(iconsets.status()["check"]["updated"], [])
+        web.files["/json/ph.json"] = json.dumps({**PH, "icons": {**PH["icons"], "dog": PH["icons"]["cat"]}}).encode()
+        self.run_async(iconsets.check_updates(web))
+        check = iconsets.status()["check"]
+        self.assertEqual((check["updated"], check["failed"], check["running"]), (["Phosphor"], [], False))
+        self.assertTrue(layout.can_draw_icon("ph:dog"))
+        self.run_async(iconsets.check_updates(FakeIconify(down=True)))
+        self.assertEqual(sorted(iconsets.status()["check"]["failed"]), ["Phosphor", "tabler"], "named as the editor shows them")
+        self.assertTrue(layout.can_draw_icon("ph:dog"), "a failed check keeps the set")
+
+    def test_a_set_from_custom_icons_download_needs_no_internet(self):
+        buf = io.BytesIO()
+        with zipfile.ZipFile(buf, "w") as zf:
+            zf.writestr("icon-sets-master/json/ph.json", json.dumps(PH))
+        (self.cfg / "custom_icons").mkdir()
+        (self.cfg / "custom_icons" / "iconify-icon-sets-master.zip").write_bytes(buf.getvalue())
+        iconsets.set_chosen(["ph"])
+        web = FakeIconify(down=True)
+        self.run_async(iconsets.add(web, "ph"))
+        self.assertEqual(web.asked, [])
+        self.assertEqual((self.row("ph")["state"], self.row("ph")["source"]), ("ready", "custom_icons"))
+        self.run_async(iconsets.check_updates(FakeIconify()))
+        self.assertEqual(self.row("ph")["source"], "iconify", "Check for updates swaps in Iconify's own")
+
+    def test_removing_is_undone_without_the_internet(self):
+        self.run_async(iconsets.add(FakeIconify(), "ph"))
+        self.run_async(iconsets.remove("ph"))
+        self.assertEqual(iconsets.chosen(), [])
+        self.assertFalse(layout.can_draw_icon("ph:cat"))
+        web = FakeIconify()
+        self.run_async(iconsets.available(web))
+        web.asked.clear()
+        self.run_async(iconsets.add(web, "ph"))
+        self.assertEqual(web.asked, [], "Undo: the copy was kept")
+        self.run_async(iconsets.remove("ph"))
+        iconsets.load_copies()
+        self.assertEqual(list(iconsets.iconify_dir().glob("ph.*")), [], "gone at the next start")
+
+    def test_previews_are_a_few_outlines_asked_for_once(self):
+        web = FakeIconify()
+        self.run_async(iconsets.available(web))
+        web.asked.clear()
+        got = self.run_async(iconsets.samples(web, ["ph", "tabler", "nope"]))
+        self.assertEqual(list(got), ["ph"], "only a set Iconify lists with samples")
+        self.assertEqual(len(got["ph"]), 2, "an alias draws as its parent; a sample that's gone is left out")
+        self.assertTrue(all(vector.check(r) for r in got["ph"]))
+        self.assertEqual(web.asked, [("/ph.json", "cat,kitty,gone")])
+        iconsets._samples = None                    # kept across starts
+        iconsets.load_copies()
+        self.assertEqual(self.run_async(iconsets.samples(FakeIconify(down=True), ["ph"])), got)
+        self.assertEqual(iconsets.chosen(), [], "a preview chooses nothing")
+        self.assertFalse(layout.can_draw_icon("ph:cat"))
+
+    def test_a_preview_that_cant_be_had_is_just_left_out(self):
+        self.run_async(iconsets.available(FakeIconify()))
+        self.assertEqual(self.run_async(iconsets.samples(FakeIconify(down=True), ["ph"])), {})
+        self.assertEqual(len(self.run_async(iconsets.samples(FakeIconify(), ["ph"]))["ph"]), 2, "asked again later")
+
+    def test_the_loop_never_downloads(self):
+        iconsets.set_chosen(["ph"])
+
+        class NoInternet:
+            def get(self, url, **kw):
+                raise AssertionError(f"reached {url}")
+
+        async def go():
+            with mock.patch.object(iconsets, "CHECK_EVERY", 3600):
+                task = asyncio.create_task(iconsets.keep_in_step(NoInternet(), None))
+                await asyncio.sleep(0.05)
+                task.cancel()
+        asyncio.run(go())
+        self.assertEqual(self.row("ph")["state"], "missing")
 
 
 class TestEditorRoutes(EditorClient):
@@ -559,6 +895,40 @@ class TestEditorRoutes(EditorClient):
         self.assertEqual(got["phu:02tv"]["v"], [0, 0, 48, 24])
         r = await self.ed.post("/api/icons/outlines", json={"names": ["mdi:cat"] * 601})
         self.assertEqual(r.status, 400)
+
+    async def test_settings_icons(self):
+        import runtime
+        cfg = support.temp_dir()
+        iconsets._jobs.clear()
+        with mock.patch.object(config, "HA_CONFIG_DIR", cfg), mock.patch.object(runtime, "SESSION", FakeIconify()):
+            st = await (await self.ed.get("/api/iconsets")).json()
+            self.assertEqual((st["own"]["count"], st["sets"]), (0, []))
+            r = await self.ed.post("/api/icons/own", json={"files": [{"name": "pawpaw.svg", "svg": CAT_SVG}, {"name": "a.txt", "svg": "hi"}]})
+            body = await r.json()
+            self.assertEqual((body["added"], len(body["refused"]), body["own"]["count"]), (["pawpaw"], 1, 1))
+            self.assertTrue(layout.can_draw_icon("local:pawpaw"))
+            self.assertEqual((await self.ed.post("/api/icons/own", json={"files": []})).status, 400)
+            got = await (await self.ed.get("/api/iconsets/available")).json()
+            self.assertEqual([s["prefix"] for s in got["sets"]], ["ph", "tabler"])
+            r = await self.ed.post("/api/iconsets", json={"prefix": "ph"})
+            self.assertEqual([(s["prefix"], s["state"]) for s in (await r.json())["sets"]], [("ph", "ready")], "ready in the answer")
+            self.assertEqual((await self.ed.post("/api/iconsets", json={"prefix": "twemoji"})).status, 502)
+            self.assertEqual((await self.ed.post("/api/iconsets", json={"prefix": "../x"})).status, 400)
+            self.assertEqual((await self.ed.post("/api/iconsets/check")).status, 200)
+            r = await self.ed.post("/api/iconsets/samples", json={"prefixes": ["ph"]})
+            self.assertEqual(len((await r.json())["samples"]["ph"]), 2)
+            self.assertEqual((await self.ed.post("/api/iconsets/samples", json={"prefixes": ["ph"] * 25})).status, 400)
+            self.assertEqual((await self.ed.post("/api/iconsets/samples", json={"prefixes": ["../x"]})).status, 400)
+            r = await self.ed.delete("/api/iconsets/ph")
+            self.assertEqual((await r.json())["sets"], [])
+            self.assertFalse(layout.can_draw_icon("ph:cat"))
+            while iconsets._tasks:
+                await asyncio.gather(*list(iconsets._tasks))
+        with mock.patch.object(runtime, "SESSION", FakeIconify(down=True)):
+            (iconsets.iconify_dir() / "collections.json").unlink()
+            r = await self.ed.get("/api/iconsets/available")
+            self.assertEqual(r.status, 502)
+            self.assertIn("Couldn't reach Iconify", (await r.json())["error"])
 
     async def test_the_way_back_lists_the_fonts_icons(self):
         icons.install("phu", {"icons": {"02tv": SQUARE}})

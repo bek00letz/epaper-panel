@@ -1,6 +1,22 @@
 # Changelog
 
 ## Unreleased
+- **Your own icons and icon sets, without Custom Icons.** A new **Settings ›
+  Icons** (also **More icons…** in the icon picker) holds both:
+  - **Your own icons:** **Add icons** takes SVG files, or drop them on the
+    box. They're kept in `epaper/icons` in Home Assistant's configuration
+    folder, and used as `local:name`, as before. Icons in `custom_icons`
+    still work, so nothing has to move.
+  - **Iconify sets:** **Add a set** lists Iconify's single-color sets with a
+    few icons of each, its size and its license. A set is downloaded when you
+    add it, only that set, and works offline from then on. **Check for
+    updates** downloads only the sets that changed. If a download fails, the
+    set says why and offers **Try again**.
+  - **Coming from Custom Icons:** the sets you used keep drawing after this
+    update and after you uninstall Custom Icons, because the add-on keeps its
+    own copy. Its "Download Iconify icons" button breaks other integrations
+    (for example, camera video) until Home Assistant restarts, so you no
+    longer need it.
 - **Fixed: one odd SVG file could stop all your own icons loading.** A file
   with thousands of groups inside groups made copying your icon folder fail
   as a whole; now that one file is left out and the rest load. An icon with

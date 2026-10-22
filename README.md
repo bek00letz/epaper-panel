@@ -336,6 +336,32 @@ New to watch** shows them in three styles (Newest, Episode card, Up next),
 and connects Jellyfin itself the first time: the server's address (filled in
 from JellyHA if you have it), an API key, and whose unwatched to show.
 
+### Your own icons and more icon sets
+
+Every Material Design icon Home Assistant has is already there. For more,
+open **Settings › Icons** (or **More icons…** in the icon picker). Nothing
+else needs to be installed.
+
+- **Your own icons:** **Add icons** takes SVG files (or drop them on the
+  box). They're kept in `epaper/icons` in Home Assistant's configuration
+  folder, so you can also put files there yourself, in folders if you like.
+  Use them as `local:name`, for example `local:pets/cat-outside`. Icons in
+  `custom_icons`, the folder of the Custom Icons integration, are used too, so
+  nothing has to move.
+- **Iconify sets:** **Add a set** lists Iconify's single-color sets, with a
+  few of each set's icons, its size and its license. A set is downloaded when
+  you add it, only that set, and then works without the internet. **Check for
+  updates** asks Iconify whether your sets changed. A set that has colors
+  isn't offered: the panel draws in black.
+
+An icon becomes plain black shapes before it's used, on the panel and in the
+editor; nothing else in an SVG file is kept. Add icons saves only those
+shapes into the folder.
+
+**Coming from Custom Icons?** The sets you used keep drawing after you update,
+and stay after you uninstall Custom Icons: the add-on keeps its own copy.
+Add them again in **Settings › Icons** only if you removed them there.
+
 ### When something stops answering
 
 Every outside service (the sports and racing feeds, Flightradar24, OpenSky,
@@ -421,8 +447,9 @@ removed only once nothing produces it any more.
   a tunnel. Away from home, nothing gets in without a key, and a sender that
   keeps getting keys wrong is refused for a while.
 - **No accounts, no analytics.** The add-on reaches outside services only for
-  the widgets you put on a page and the data sources you set up. Airport codes
-  are looked up from a copy bundled with the add-on.
+  the widgets you put on a page, the data sources you set up, and Iconify
+  while you add or update icon sets. Airport codes are looked up from a copy
+  bundled with the add-on.
 - **The panel talks to Home Assistant encrypted**, with its own key, which
   also protects its updates over Wi-Fi.
 
@@ -506,4 +533,6 @@ source, the reference for the pins;
 [DejaVu](https://dejavu-fonts.github.io/) (free licence),
 [Roboto Mono](https://fonts.google.com/specimen/Roboto+Mono) (Apache 2.0);
 [Material Design Icons](https://pictogrammers.com/library/mdi/) (Apache 2.0);
+[Iconify](https://iconify.design/) for the icon sets you add, each under its
+own license, shown in Settings › Icons;
 [OurAirports](https://ourairports.com/) (public domain) for airport codes.
