@@ -72,6 +72,7 @@ class Trmnl(Kind):
     setup_flow = "pair"
     stays_on = False                    # it always sleeps between updates
     shortest_update = 5                 # its firmware's floor: it wakes no more often than this
+    shortest_sleep = 60                 # refresh_rate under 60 isn't kept (TRMNL gotchas in AGENTS.md)
 
     def enabled(self) -> bool:
         return config.TRMNL

@@ -5,11 +5,11 @@
 import { h, icon, api, clone, pageTitle, slug, modKey, turning } from "./util.js";
 import { field, input, number, select, seg, textarea, toggle, toggleRow, section, linkButton, toast } from "./ui.js";
 import { TYPES, breakable, isWidget, hasText, elName, normalizeLineParity, GROUP_STYLES, GROUP_PAD } from "./elements.js";
-import { OPS, CHANGED_MINUTES, parseShowIf, compileShowIf, valueChoices, evaluate, describe, changedLine, syncWidgetShowIf, syncDynamicGridShowIf, GRID_RULES, gridRule, gridByNumber, gridWrote } from "./conditions.js";
+import { OPS, CHANGED_MINUTES, parseShowIf, compileShowIf, asTemplate, homeAssistantsChanged, valueChoices, evaluate, describe, changedLine, syncWidgetShowIf, syncDynamicGridShowIf, GRID_RULES, gridRule, gridByNumber, gridWrote } from "./conditions.js";
 import { explodeWidget, getWidgetSensorId, suggestIconForEntity } from "./legacy.js";
 import { dateEditor, binsEditor } from "./countdown.js";
 import { zonesEditor } from "./zones.js";
-import { staleNote, changesEvery, pageChangesEvery, sleepsBetweenUpdates } from "./presets.js";
+import { staleNote, changesEvery, pageChangesEvery, sleepsBetweenUpdates, batterySensors, ruleTicks, isLowSensor } from "./presets.js";
 import { busyNote, leftOutNote } from "./busyday.js";
 import { notifyRows } from "./notify.js";
 import { widget, leagueOptions, seriesOptions, sportWord, stateWords } from "./catalog.js";
@@ -316,11 +316,10 @@ function shows(app, el, set) {
   } else {
     s.append(entityButton(app, el.entity, (id) => {
       if (!id) return;
-      // The unit follows the sensor when it was the old sensor's own (or none); words you typed stay.
+      // The unit follows the sensor (review 2 #3) when it was the old sensor's own, or none; words you typed stay.
       const was = String(app.entMap.get(el.entity)?.unit || "").trim(), mine = String(el.suffix || "").trim();
       el.entity = id;
-      const e = app.entMap.get(id);
-      if (el.type === "number" && (!mine || mine === was)) { if (e?.unit) el.suffix = e.unit === "%" ? "%" : " " + e.unit; else if (mine) delete el.suffix; }
+      if (el.type === "number" && el.unit !== "entity" && (!mine || mine === was)) { el.unit = "entity"; delete el.suffix; }
       app.doc.commit();
     }, { cls: "shows-sensor" }));
     const show = el.show || "state";
@@ -341,9 +340,10 @@ function shows(app, el, set) {
     if (["last_changed", "last_updated", "date_formatted"].includes(show)) {
       s.append(field("Looks like", select(FORMATS, el.format || (show === "date_formatted" ? "date" : "relative"), (v) => set("format", v))));
     }
+    s.append(unitRow(app, el));
     s.append(h("div", { class: "pair" },
       field("Before", input(el.prefix, (v) => set("prefix", v), { placeholder: "nothing" })),
-      field("After", input(el.suffix, (v) => set("suffix", v), { placeholder: "nothing" }))));
+      el.unit === "entity" ? null : field("After", input(el.suffix, (v) => set("suffix", v), { placeholder: "nothing" }))));
     s.append(h("div", { class: "field" }, h("span", { class: "lab", text: "As" }), seg([["number", "A number"], ["text", "Text"]], el.type, (v) => {
       el.type = v; if (v === "number" && el.decimals === undefined) el.decimals = 1; app.doc.commit();
     }, "Treat the value as")));
@@ -358,6 +358,18 @@ function shows(app, el, set) {
     s.append(replacements(app, el));
   }
   return s;
+}
+
+/* "Its unit": the unit after the value follows the sensor (unit "entity", resolved at every render,
+   render/units.py), saying what it is now; off, the words after it are yours (After). Review 2 #3. */
+function unitRow(app, el) {
+  if (!["number", "bar"].includes(el.type) || !el.entity) return null;
+  const now = String(app.entMap.get(el.entity)?.unit || "").trim();
+  const label = now ? `Its unit (${now})` : "Its unit (none now)";
+  return toggleRow(label, el.unit === "entity", (v) => {
+    if (v) { el.unit = "entity"; delete el.suffix; } else { delete el.unit; el.suffix = now === "%" ? "%" : now ? ` ${now}` : ""; }
+    app.doc.commit();
+  }, "Follows the sensor, so it changes if Home Assistant shows it in another unit");
 }
 
 /* Show the sensor's unit as the word it uses right now (950 W, then kW). */
@@ -409,7 +421,8 @@ const TYPE_FIELDS = {
   box: [F.sel("fill", "Fill", [["outline", "Outline"], ["black", "Black"], ["screen", "Half tone"], ["white", "White"]], "outline"), F.num("radius", "Corners", "12", 0, 120), F.num("thickness", "Border", "3", 1, 20)],
   bar: [F.entity("entity", "Sensor"), F.text("title", "Title", "Battery"), F.sel("bar_style", "Style", [["solid", "Solid"], ["segmented", "Segments"], ["vertical", "Upright"]], "solid"),
     { kind: "num", key: "segments", label: "Segments", ph: "10", min: 2, max: 40, when: (el) => el.bar_style === "segmented" },
-    F.num("min_val", "From", "0"), F.num("max_val", "To", "100"), F.text("suffix", "Unit", "%"), F.num("decimals", "Decimals", "0", 0, 4), F.on("show_label", "Show the value", true)],
+    F.num("min_val", "From", "0"), F.num("max_val", "To", "100"), { kind: "unit" },
+    { kind: "text", key: "suffix", label: "Unit", ph: "%", when: (el) => el.unit !== "entity" }, F.num("decimals", "Decimals", "0", 0, 4), F.on("show_label", "Show the value", true)],
   curve: [F.entity("entity", "Sensor"), F.num("hours", "Hours", "24", 1, 168)],
   bar_chart: [F.entity("entity", "Sensor"), F.text("title", "Title", "Last 24 hours"), F.num("hours", "Hours", "24", 1, 168), F.num("bars", "Bars", "12", 2, 48), F.on("show_labels", "Lowest and highest", true), F.on("show_border", "Border", false)],
 };
@@ -481,6 +494,7 @@ function typeSections(app, el, set, i) {
         h("p", { class: "fnote" }, before, h("code", { class: "sel", text: getWidgetSensorId(el) || f.none || "" }), after)));
     }
     else if (f.kind === "note") s.append(h("p", { class: "fnote" }, f.text || ""));   // the descriptor's words, as text
+    else if (f.kind === "unit") { const r = unitRow(app, el); if (r) s.append(r); }   // follows its sensor (review 2 #3)
     else if (f.kind === "place") s.append(...placeRows(app, el, set));
     else if (f.kind === "countdown") s.append((el.to === "bins" ? binsEditor : dateEditor)(el, () => app.doc.commit()));
     // A world clock's cities: adding, removing or reordering one redraws the canvas at once (each commit does).
@@ -588,6 +602,7 @@ function gridSections(app, el, set) {
       else { p.tier = "rotate"; delete p.show_if; }
       app.doc.commit();
     }, "Sets when the whole page shows"));
+  if (el.batteries) return [top, batteriesSection(app, el, cmp, resync)];
   const spots = section(`Spots (${el.items.length})`);
   el.items.forEach((it, k) => {
     const card = h("div", { class: "spot" },
@@ -615,6 +630,48 @@ function gridSections(app, el, set) {
   });
   spots.append(h("button", { class: "btn tinted", onclick: () => { el.items.push({ entity: "", name: `Spot ${el.items.length + 1}`, icon: "mdi:radiator" }); resync(); app.doc.commit(); } }, icon("plus", "sm"), "Add a spot"));
   return [top, spots];
+}
+
+/* Batteries by rule (review 2 #5): every battery Home Assistant has, ticked as the rule picks it (its
+   kind, minus the unticked, plus the other kind's ticked). A tick changes `except` or `also`, never a
+   list of today's batteries, so one added later shows on its own. Each ticked one can have its own
+   number (`items` are each battery's own settings). Kinds are the add-on's (GET /api/batteries). */
+let batteryKinds = null;
+function batteriesSection(app, el, cmp, resync) {
+  const all = batterySensors(app.ents);
+  const box = section(`Batteries (${all.length})`);
+  const kindOf = (e) => (batteryKinds?.[e.entity_id] || "swap");
+  const own = (id) => (el.items || []).find((it) => it.entity === id);
+  function toggle(e) {
+    const id = e.entity_id, mine = kindOf(e) === el.batteries;
+    const listKey = mine ? "except" : "also", list = new Set(el[listKey] || []);
+    list.has(id) ? list.delete(id) : list.add(id);
+    el[listKey] = [...list];
+    resync(); app.doc.commit();
+  }
+  function draw() {
+    const ticks = ruleTicks(all, el, kindOf);
+    box.replaceChildren(h("h3", { class: "slab", text: `Batteries (${all.length})` }),
+      h("p", { class: "fnote", text: el.batteries === "charge"
+        ? "Every battery you charge, and any you tick. One you add to Home Assistant later shows too."
+        : "Every battery you swap, and any you tick. One you add to Home Assistant later shows too." }),
+      ...all.map((e) => {
+        const on = ticks.has(e.entity_id), it = own(e.entity_id);
+        return h("div", { class: "spot" },
+          h("button", { class: "opt", role: "checkbox", "aria-checked": String(on), onclick: () => { toggle(e); draw(); } },
+            h("span", { class: "ock", "aria-hidden": "true" }, on ? icon("check", "sm") : null),
+            h("span", { class: "otext" }, h("span", { class: "o1", text: e.name || e.entity_id }), h("span", { class: "o2", text: e.entity_id }))),
+          on && !isLowSensor(e) ? field(`Its own ${cmp.toLowerCase()}`, number(it?.threshold ?? "", (v) => {
+            const items = (el.items || []).filter((x) => x.entity !== e.entity_id);
+            if (v !== "") items.push({ ...(it || { entity: e.entity_id, name: "", icon: "" }), threshold: v });
+            el.items = items; resync(); app.doc.commit();
+          }, { step: "any", placeholder: String(el.filter_value ?? ""), "aria-label": `${e.name || e.entity_id}: its own number, or empty for the page's`, style: { width: "6em" } })) : null);
+      }));
+    if (!all.length) box.append(h("p", { class: "empty-note", text: "No batteries in Home Assistant yet. Any you add later shows here on its own." }));
+  }
+  draw();
+  if (!batteryKinds) api("api/batteries").then((r) => { batteryKinds = r.body?.kinds || {}; draw(); }, () => {});
+  return box;
 }
 
 /* ---------- several selected ---------- */
@@ -809,7 +866,10 @@ function conditionRows(app, p, c = SHOW) {
   }
   // An Until can't be "changed" in the simple form (see opSel); one written by hand stays as written.
   if (parsed.mode === "raw" || app[c.raw] || (c !== SHOW && parsed.op === "changed")) {
-    wrap.append(field(c === SHOW ? "Condition" : "Until", textarea(p[c.key], (v) => { if (v.trim()) p[c.key] = v.trim(); else delete p[c.key]; doc.commit(); }), { wide: true, note: c.rawNote }));
+    wrap.append(field(c === SHOW ? "Condition" : "Until", textarea(asTemplate(p[c.key]), (v) => { if (v.trim()) p[c.key] = v.trim(); else delete p[c.key]; doc.commit(); app.refresh(); }), { wide: true, note: c.rawNote }));
+    // Once it's no longer the add-on's own "changed", Home Assistant answers it: say what that means.
+    if (homeAssistantsChanged(p[c.key])) wrap.append(h("p", { class: "note warn" }, icon("info", "sm"),
+      h("span", { text: "Home Assistant answers this one, and to it a restart counts as a change. Use the simple form's \"changed\" to have the add-on read the sensor's history instead." })));
     const back = parseShowIf(p[c.key]);
     if (back.mode === "simple" && (c === SHOW || back.op !== "changed")) wrap.append(linkButton("Use the simple form", () => { app[c.raw] = false; app.refresh(); }));
     return wrap;

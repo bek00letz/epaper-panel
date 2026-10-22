@@ -108,3 +108,38 @@ def unit_for(raw, el: dict) -> str:
         return str(units.get("base") or "")
     _, unit, _ = apply(v, units)
     return unit
+
+
+# ---------------------------------------------------------------- a unit that follows its sensor (review 2 #3)
+
+FOLLOWS = ("number", "bar")                 # elements whose `unit: "entity"` is their sensor's unit
+
+
+def suffix_for(unit) -> str:
+    """What follows a value for a sensor's unit: "%" close up, any other with a space, nothing for none."""
+    u = str(unit or "").strip()
+    return "" if not u else u if u == "%" else f" {u}"
+
+
+def follows(el: dict) -> bool:
+    return isinstance(el, dict) and el.get("type") in FOLLOWS and el.get("unit") == "entity" and bool(str(el.get("entity") or "").strip())
+
+
+def follow_units(pages: dict, unit_of: dict) -> list[str]:
+    """Pages made before a unit followed its sensor: a number or gauge whose unit after it is its
+    sensor's own (as the editor copied it in) follows the sensor from now on. A unit you typed
+    that isn't the sensor's stays yours. `unit_of`: {entity: its unit now}. Returns the pages changed."""
+    changed = []
+    for name, page in (pages or {}).items():
+        for el in (page or {}).get("elements") or []:
+            if not isinstance(el, dict) or el.get("type") not in FOLLOWS or el.get("unit") or "suffix" not in el:
+                continue
+            ent = str(el.get("entity") or "").strip()
+            if not ent or ent not in unit_of or (isinstance(el.get("value"), str) and el["value"].strip()):
+                continue
+            if str(el.get("suffix") or "").strip() == str(unit_of[ent] or "").strip() and unit_of[ent]:
+                el["unit"] = "entity"
+                del el["suffix"]
+                if name not in changed:
+                    changed.append(name)
+    return changed

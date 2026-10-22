@@ -16,8 +16,8 @@
 //   was      its old name, so search still finds it and the card can say so.
 // No imports from util.js: the tests read this file under node.
 
-import { countShowIf, getWidgetSensorId, todoShowIf } from "./legacy.js";
-import { leagues, series, widget, widgetChangesEvery, stateWords } from "./catalog.js";
+import { gateShowIf, todoShowIf } from "./legacy.js";
+import { leagues, series, widgetChangesEvery, stateWords } from "./catalog.js";
 
 export const GROUPS = [
   ["day", "Your day"],
@@ -405,7 +405,8 @@ export function changesEvery(el, entMap) {
   if (["number", "text", "bar", "curve", "bar_chart"].includes(el.type)) {
     const ent = el.entity && entMap?.get?.(el.entity);
     if (ent && "changes_every" in ent) return ent.changes_every ? Math.max(1, Math.round(ent.changes_every / 60)) : null;
-    const unit = ent?.unit || el.suffix || "";
+    // A unit that follows its sensor is the sensor's (an example's in a thumbnail: EXAMPLE_UNITS).
+    const unit = ent?.unit || (el.unit === "entity" ? EXAMPLE_UNITS[el.entity] || "" : el.suffix) || "";
     if (POWER_UNIT.test(unit)) return 1;
   }
   return null;
@@ -444,9 +445,8 @@ export function pageFor(p, look, ent, extra, unitOf = () => "") {
   const showIf = look.showIf || p.showIf;
   if (showIf) { const s = showIf(ent, extra); if (s) page.show_if = s; }
   if (look.widget) {
-    const w = page.elements[0], sid = getWidgetSensorId(w);
-    page.show_if = widget(w.type)?.sensor ? countShowIf(sid)
-      : w.type === "flight_tracker" ? `{{ states('${sid}') | int(0) > 0 }}` : `{{ is_state('${sid}','active') }}`;
+    const c = gateShowIf(page.elements[0]);          // the widget's own, from its descriptor's gate
+    if (c) page.show_if = c;
   }
   return page;
 }
@@ -484,8 +484,9 @@ export function withUnits(elements, infoOf = () => "") {
       }
     }
     if (e.total) { if (RUNNING.includes(about.state_class)) e.show = "change_today"; delete e.total; }
-    // No unit is an empty suffix, not a missing one: a gauge with none would add its own "%".
-    if (e.unit === "entity") { delete e.unit; e.suffix = !u ? "" : u === "%" ? "%" : ` ${u}`; }
+    // The unit follows the sensor at every render (review 2 #3): kept as unit "entity", never copied in,
+    // so a unit Home Assistant changes later (°C to °F) changes on the page too (render/units.py).
+    if (e.unit === "entity") delete e.suffix;
     if (e.max_val === "power") { e.max_val = POWER_MAX[u] ?? 5000; if (u === "kW" || u === "MW") e.decimals = 1; }
     return e;
   });
@@ -548,7 +549,10 @@ export function rankSensors(p, ents, energy = {}) {
 
 /* Batteries (the preset): a Dynamic status grid by a number. Low: below the number, emptiest first;
    charged: at least it, fullest first (render/layout._draw_dynamic_grid). With no icon of its own,
-   each shows Home Assistant's glyph for its level. */
+   each shows Home Assistant's glyph for its level. It stores a rule, never today's list (review 2 #5,
+   the user's call): every battery of its kind (swap: you change it; charge: you charge it), minus
+   `except`, plus `also`, resolved by the add-on at each render (sources/batteries.chosen), so a
+   battery added next month shows too. `items` are each battery's own settings, not the list. */
 export const BATTERY_DEFAULT = { below: 20, at_least: 90 };
 export function batteryGrid(x = {}) {
   const low = x.rule !== "at_least";
@@ -557,13 +561,28 @@ export function batteryGrid(x = {}) {
     header_icon: low ? "mdi:battery-alert-variant-outline" : "mdi:battery-check", header_title: low ? "Low batteries" : "Charged",
     filter_rule: low ? "below" : "at_least", filter_value: Number.isFinite(Number(x.value)) && x.value !== "" ? Number(x.value) : BATTERY_DEFAULT[low ? "below" : "at_least"],
     layout_mode: "list", show_labels: "both", icon_size: "auto",          // a row each, so every name reads (the user's call)
-    items: (x.items || []).map((e) => ({ entity: e, name: "", icon: "" })),
+    batteries: low ? "swap" : "charge", except: [...(x.except || [])], also: [...(x.also || [])], items: [],
   };
 }
-const levelOf = (e) => { const v = parseFloat(e?.state); return Number.isFinite(v) ? v : null; };
-/* Home Assistant's batteries: sensors of device class battery, in %, the emptiest first. */
+/* The rule's lists from the ticks: of this kind and not ticked, left out; of the other kind and
+   ticked, also shown. `kindOf(e)` is "charge" or "swap". */
+export function batteryRule(all, chosen, rule, kindOf) {
+  const kind = rule === "at_least" ? "charge" : "swap";
+  return { except: all.filter((e) => kindOf(e) === kind && !chosen.has(e.entity_id)).map((e) => e.entity_id),
+           also: all.filter((e) => kindOf(e) !== kind && chosen.has(e.entity_id)).map((e) => e.entity_id) };
+}
+/* Which batteries a rule shows (the editor's mirror of sources/batteries.chosen, for its ticks). */
+export function ruleTicks(all, el, kindOf) {
+  const out = new Set(el.also || []), left = new Set(el.except || []);
+  for (const e of all) if (kindOf(e) === (el.batteries || "swap") && !left.has(e.entity_id)) out.add(e.entity_id);
+  return out;
+}
+const levelOf = (e) => { if (isLowSensor(e)) return e.state === "on" ? 0 : null; const v = parseFloat(e?.state); return Number.isFinite(v) ? v : null; };
+/* Home Assistant's batteries: sensors of device class battery in %, and "battery low" binary sensors
+   (on is low), the emptiest first (a low one counts as empty while on). */
+export const isLowSensor = (e) => String(e?.entity_id || "").startsWith("binary_sensor.") && e.device_class === "battery";
 export function batterySensors(ents) {
-  return (ents || []).filter((e) => e.device_class === "battery" && String(e.unit || "").trim() === "%" && String(e.entity_id).startsWith("sensor."))
+  return (ents || []).filter((e) => e.device_class === "battery" && ((String(e.unit || "").trim() === "%" && String(e.entity_id).startsWith("sensor.")) || isLowSensor(e)))
     .map((e, k) => ({ e, k, v: levelOf(e) }))
     .sort((a, b) => (a.v == null) - (b.v == null) || (a.v ?? 0) - (b.v ?? 0) || a.k - b.k)
     .map(({ e }) => e);
@@ -576,14 +595,14 @@ export function batterySensors(ents) {
 export function chargedByYou(e, ids, byDevice = {}) {
   const said = byDevice[e.entity_id];
   if (said === true || said === false) return said;
-  const base = String(e.entity_id).replace(/^sensor\./, "").replace(/_battery(_level)?$/, "");
+  const base = String(e.entity_id).replace(/^(binary_)?sensor\./, "").replace(/_battery(_level|_low)?$/, "");
   return [`sensor.${base}_battery_state`, `sensor.${base}_charging`, `binary_sensor.${base}_charging`, `binary_sensor.${base}_battery_charging`].some((x) => ids.has(x));
 }
 /* The ones ticked to start with: for Low, every battery with a level that you swap; for Charged,
    the ones you charge. You change the ticks; nothing here is about one home. */
 export function preselectBatteries(ents, rule, byDevice = {}) {
   const ids = new Set((ents || []).map((e) => e.entity_id));
-  return batterySensors(ents).filter((e) => levelOf(e) != null && chargedByYou(e, ids, byDevice) === (rule === "at_least")).map((e) => e.entity_id);
+  return batterySensors(ents).filter((e) => (levelOf(e) != null || isLowSensor(e)) && chargedByYou(e, ids, byDevice) === (rule === "at_least")).map((e) => e.entity_id);
 }
 /* How many would show now, as the step says it. */
 export function batteriesPast(ents, chosen, rule, value) {

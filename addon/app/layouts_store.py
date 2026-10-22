@@ -92,6 +92,8 @@ def sanitize_layouts(spec: dict) -> dict:
         entry = {"tier": tier, "elements": els}
         if p.get("show_if") and isinstance(p.get("show_if"), str):
             entry["show_if"] = migrate_legacy_entity_refs(p["show_if"].strip())
+        elif conditions.structured(p.get("show_if")):
+            entry["show_if"] = conditions.structured(p["show_if"])     # "changed", stored as data
         if isinstance(p.get("notify"), str) and re.match(r"^[a-z0-9]{6,16}$", p["notify"]):
             entry["notify"] = p["notify"]                 # its phone notifications (notify.py)
         if tier == "alert":
@@ -99,6 +101,8 @@ def sanitize_layouts(spec: dict) -> dict:
                 entry["ends"] = "until"
                 if isinstance(p.get("until_if"), str) and p["until_if"].strip():
                     entry["until_if"] = migrate_legacy_entity_refs(p["until_if"].strip())
+                elif conditions.structured(p.get("until_if")):
+                    entry["until_if"] = conditions.structured(p["until_if"])
             entry["hold_minutes"] = conditions.hold_minutes({**p, "ends": entry.get("ends")})
         pages[clean_name] = entry
 

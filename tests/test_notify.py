@@ -29,6 +29,7 @@ class FakeHass:
         self.states = {}
         self.automations = {}          # config id -> config
         self.blueprints = {}           # path -> yaml
+        self.services = {"send_message": {}, "persistent_notification": {}}   # notify's actions
         self.calls = []
         self.down = False
 
@@ -43,6 +44,8 @@ class FakeHass:
             return self.related.get(payload["item_id"], {})
         if t == "blueprint/list":
             return {p: {"metadata": {}} for p in self.blueprints}
+        if t == "get_services":
+            return {"notify": dict(self.services)}
         if t == "blueprint/save":
             self.blueprints[payload["path"]] = payload["yaml"]
             return {"overrides_existing": False}
@@ -473,7 +476,8 @@ class TestBlueprint(unittest.TestCase):
 
     def test_the_add_on_fills_exactly_the_inputs_without_a_default(self):
         required = {k for k, lines in self.inputs.items() if not any(l.strip().startswith("default:") for l in lines)}
-        self.assertEqual(required, {"alert", "notify"})
+        # Phones can be none when only a group (an action, notify_services) is picked: review 2 #7.
+        self.assertEqual(required, {"alert"})
 
     def test_fires_on_off_to_on_only(self):
         self.assertIn('from: "off"\n    to: "on"', self.text, "a restart (unavailable, then on) isn't an alert")
@@ -570,3 +574,39 @@ class TestAlertState(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestGroupsToo(SetUpCase):
+    """Review 2 #7, the user's call: a notifier that isn't an entity (a group written in YAML) can be picked."""
+
+    def setUp(self):
+        super().setUp()
+        self.hass.services.update({"paw_group": {"name": "Paw Group"}, "mobile_app_iphone": {}, "notify": {}})
+
+    def test_a_yaml_group_is_offered_and_a_phone_shows_once(self):
+        found = {t["entity_id"]: t for t in run(notify.targets(self.hass))}
+        self.assertEqual(found["notify.paw_group"], {"entity_id": "notify.paw_group", "service": True, "phone": False, "name": "Paw Group"})
+        self.assertNotIn("notify.mobile_app_iphone", found, "the app gives the phone an entity: listed once")
+        self.assertNotIn("notify.send_message", found)
+        self.assertNotIn("notify.persistent_notification", found)
+
+    def test_before_phones_were_entities_their_action_is_how(self):
+        self.hass.registry = [e for e in self.hass.registry if e.get("platform") != "mobile_app"]
+        found = {t["entity_id"]: t for t in run(notify.targets(self.hass))}
+        self.assertTrue(found["notify.mobile_app_iphone"]["phone"])
+        self.assertEqual(found["notify.mobile_app_iphone"]["name"], "Iphone")
+
+    def test_the_automation_calls_a_group_as_itself(self):
+        made = self.set_up(("notify.iphone", "notify.paw_group"))
+        cfg = self.hass.automations[made["automation"]["id"]]
+        self.assertEqual(cfg["use_blueprint"]["input"], {"alert": self.eid, "notify": ["notify.iphone"],
+                                                         "notify_services": ["notify.paw_group"]})
+        self.assertEqual(cfg["alias"], "Notify iPhone and Paw Group about Bins out")
+        self.assertEqual(sorted(run(notify.status(self.hass, NID))["automations"][0]["targets"]),
+                         ["notify.iphone", "notify.paw_group"])
+
+    def test_the_blueprint_sends_to_both(self):
+        text = notify.blueprint_text()
+        self.assertIn("notify_services:", text)
+        self.assertIn('action: "{{ repeat.item }}"', text)
+        self.assertIn("default: []", text.split("notify_services:")[0].split("notify:")[-1], "entities can be none")

@@ -2,8 +2,8 @@
 // the same Home Assistant template 0.9 wrote, and reads it back. Anything the
 // form can't express stays a custom template, untouched.
 
-import { countShowIf, getWidgetSensorId, todoShowIf } from "./legacy.js";
-import { widget, stateWords } from "./catalog.js";
+import { gateOf, gateShowIf, gateWrote } from "./legacy.js";
+import { stateWords } from "./catalog.js";
 
 const NO_VALUE = ["unavailable", "unknown"];
 
@@ -12,6 +12,10 @@ export const OPS = [["eq", "is"], ["ne", "isn't"], ["gt", "is above"], ["lt", "i
 export const CHANGED_MINUTES = 30;
 
 export function parseShowIf(expr) {
+  // "Changed", stored as data (review 2 #6): {changed, minutes, to}. The add-on answers it from history.
+  if (expr && typeof expr === "object" && typeof expr.changed === "string") {
+    return { mode: "simple", ent: expr.changed, op: "changed", val: expr.to ?? "", minutes: Number(expr.minutes) || CHANGED_MINUTES };
+  }
   const s = String(expr || "").trim();
   if (!s) return { mode: "simple", ent: "", op: "eq", val: "" };
   const inner = s.startsWith("{{") && s.endsWith("}}") ? s.slice(2, -2).trim() : s;
@@ -44,14 +48,30 @@ function parseChanged(inner) {
   return { mode: "simple", ent: m[4], op: "changed", val: m[2] ? m[3] : "", minutes: Number(m[5]) };
 }
 
+/* A condition as Home Assistant's template, for the custom condition's text: a structured "changed"
+   written as the template that comes nearest (conditions.as_template). */
+export function asTemplate(expr) {
+  if (expr && typeof expr === "object" && typeof expr.changed === "string") {
+    const which = expr.to ? `is_state('${expr.changed}','${expr.to}')` : `has_value('${expr.changed}')`;
+    return `{{ ${which} and now() - states['${expr.changed}'].last_changed < timedelta(minutes=${Number(expr.minutes) || CHANGED_MINUTES}) }}`;
+  }
+  return String(expr || "");
+}
+/* A custom condition that reads last_changed but isn't the add-on's "changed": Home Assistant answers
+   it, and there a restart counts as a change. */
+export function homeAssistantsChanged(expr) {
+  const s = typeof expr === "string" ? expr : "";
+  return /last_changed/.test(s) && parseShowIf(s).op !== "changed";
+}
+
 export function compileShowIf({ ent, op, val, minutes }) {
   ent = String(ent || "").trim().replace(/'/g, "");
   val = String(val ?? "").trim().replace(/'/g, "");
   if (!ent) return "";
   if (op === "changed") {
+    // Stored as data, never as Home Assistant's template (where a restart is a change): review 2 #6.
     const n = Math.max(1, Math.min(1440, Math.round(Number(minutes)) || CHANGED_MINUTES));
-    const which = val ? `is_state('${ent}','${val}')` : `has_value('${ent}')`;
-    return `{{ ${which} and now() - states['${ent}'].last_changed < timedelta(minutes=${n}) }}`;
+    return val ? { changed: ent, minutes: n, to: val } : { changed: ent, minutes: n };
   }
   if (op === "eq") return `{{ is_state('${ent}','${val}') }}`;
   // A sensor with no value (unavailable, unknown) never meets "isn't" or a
@@ -135,35 +155,15 @@ export function changedLine(parsed, got, { minutes, alert = "" } = {}) {
   return { holds: false, text: `Hidden now: no change${to} in the last ${minutesInWords(n)}.`, note };
 }
 
-/* Widgets that bring their own "when" (from 0.9, unchanged in effect). */
-const BUILTIN_MARKERS = ["sensor.epaper_sports_", "sensor.sports_", "sensor.epaper_racing_", "sensor.f1_status", "sensor.formula_e_status", "sensor.epaper_flights_overhead", "sensor.overhead_aircraft_count"];
+/* A widget's page shows "only when" by its descriptor's gate (widgets.py Gate, review 2 #4): the
+   condition is rewritten only while it's still the widget's own (empty, or naming one of its gate's
+   sensors), so one you wrote yourself stays. */
 export function syncWidgetShowIf(page, widgetEl) {
   if (!page || page.tier !== "when") return;
-  const list = widgetEl?.type === "todo_list" ? widgetEl : !widgetEl && (page.elements || []).find((x) => x.type === "todo_list");
-  if (list) {
-    // Ours to rewrite only while it's still a to-do list's own condition.
-    const cur = parseShowIf(page.show_if);
-    if (page.show_if && !(cur.mode === "simple" && /^(todo\.|sensor\.epaper_todo_)/.test(cur.ent))) return;
-    const c = todoShowIf(list.entity, list.show);
-    if (c) page.show_if = c; else delete page.show_if;
-    return;
-  }
-  // A widget whose page shows while a count of the add-on's is above 0 names it in its descriptor ("sensor").
-  const counted = widgetEl ? (widget(widgetEl.type)?.sensor ? widgetEl : null) : (page.elements || []).find((x) => widget(x.type)?.sensor);
-  if (counted) {
-    const sid = widget(counted.type).sensor, cur = parseShowIf(page.show_if);
-    if (page.show_if && !(cur.mode === "simple" && cur.ent === sid)) return;   // the person's own condition stays
-    page.show_if = countShowIf(sid);
-    return;
-  }
-  // A widget that shows only around its events says so in its descriptor ("window": the add-on's).
-  widgetEl = widgetEl || (page.elements || []).find((x) => x.type !== "todo_list" && widget(x.type)?.window);
-  if (!widgetEl) return;
-  const cur = String(page.show_if || "").trim();
-  if (cur && !BUILTIN_MARKERS.some((m) => cur.includes(m))) return;
-  const sid = getWidgetSensorId(widgetEl);
-  if (widgetEl.type === "flight_tracker") page.show_if = `{{ states('${sid}') | int(0) > 0 }}`;
-  else if (sid) page.show_if = `{{ is_state('${sid}','active') }}`;
+  widgetEl = widgetEl || (page.elements || []).find((x) => gateOf(x)?.rule);
+  if (!widgetEl || !gateOf(widgetEl)?.rule || !gateWrote(page.show_if, widgetEl)) return;
+  const c = gateShowIf(widgetEl);
+  if (c) page.show_if = c; else delete page.show_if;
 }
 /* What a Dynamic status grid shows by (render/layout._draw_dynamic_grid): a state, or a number,
    "below" a value or "at_least" one; an item may have its own `threshold`. */
@@ -193,6 +193,12 @@ export function gridShowIf(gridEl) {
 // A condition this grid wrote, and nobody changed: only the parts a grid writes, joined by "or", at
 // least one on its sensors (a sensor just taken off the grid is still in the condition it wrote).
 const GRID_PART = /^(?:is_state\('([^']+)','[^']*'\)|\(has_value\('([^']+)'\) and states\('\2'\) \| float\(0\) (?:<|>=) -?\d+(?:\.\d+)?\))$/;
+// What a grid by a number wrote over its list: only "(has_value('x') and states('x') | float(0) < 20)" parts.
+const NUMBER_PART = /^\(has_value\('([^']+)'\) and states\('\1'\) \| float\(0\) (?:<|>=) -?\d+(?:\.\d+)?\)$/;
+const gridShaped = (expr) => {
+  const s = String(expr || "").trim();
+  return s.startsWith("{{") && s.endsWith("}}") && s.slice(2, -2).trim().split(/\s+or\s+(?=\(has_value)/).every((part) => NUMBER_PART.test(part.trim()));
+};
 export function gridWrote(expr, gridEl) {
   const s = String(expr || "").trim();
   if (!s.startsWith("{{") || !s.endsWith("}}")) return false;
@@ -207,6 +213,12 @@ export function syncDynamicGridShowIf(page, gridEl) {
   if (!page || (page.tier !== "when" && page.tier !== "alert")) return;
   gridEl = gridEl || (page.elements || []).find((x) => x.type === "dynamic_grid");
   if (!gridEl) return;
+  if (gridEl.batteries) {
+    // Batteries by rule: the add-on decides when the page shows (its widget's gate), with whatever
+    // batteries Home Assistant has then; a condition a grid wrote over a list goes, yours stays.
+    if (!page.show_if || gridShaped(page.show_if)) delete page.show_if;
+    return;
+  }
   if (page.tier === "alert" && page.show_if && !gridWrote(page.show_if, gridEl)) return;
   const s = gridShowIf(gridEl);
   if (s) page.show_if = s;

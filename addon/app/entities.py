@@ -232,18 +232,17 @@ async def publish_computed(session):
     spec_text = json.dumps(cur_spec)
     home_tz = await get_home_timezone(session)
 
-    flight_elements = []
-    sports_elements = []
-    racing_elements = []
+    # Elements by the publisher their widget's gate names (widgets.py Gate.publish): never by type here.
+    import widgets
+    by_publisher: dict[str, list] = {"flights": [], "sports": [], "racing": []}
     for p in cur_spec.get("pages", {}).values():
         for el in p.get("elements", []):
-            t = el.get("type")
-            if t == "flight_tracker":
-                flight_elements.append(el)
-            elif t == "sports_match":
-                sports_elements.append(el)
-            elif t == "sports_racing":
-                racing_elements.append(el)
+            w = widgets.get(el.get("type")) if isinstance(el, dict) else None
+            gate = w.gates(el) if w else None
+            if gate is not None and gate.publish:
+                by_publisher.setdefault(gate.publish, []).append(el)
+    flight_elements, sports_elements, racing_elements = (by_publisher["flights"], by_publisher["sports"],
+                                                         by_publisher["racing"])
 
     # 1. Aircraft overhead: one pair of sensors per distinct place. The first
     #    place keeps the original names, so existing pages and automations stay

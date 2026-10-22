@@ -135,3 +135,22 @@ class TestDevicesAsk(Fresh):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestAKindsShortestSleep(unittest.TestCase):
+    """A kind's shortest sleep is the kind's (review 2 #8): 30 s is the CrowPanel firmware's floor, not every kind's."""
+
+    def test_each_kind_says_its_own(self):
+        import kinds
+        from kinds import crowpanel, trmnl
+        kind_of = lambda mod: next(k for k in vars(mod).values() if isinstance(k, type) and issubclass(k, kinds.Kind) and k is not kinds.Kind)  # noqa: E731
+        self.assertEqual(kind_of(crowpanel).shortest_sleep, 30)
+        self.assertEqual(kind_of(trmnl).shortest_sleep, 60, "a TRMNL doesn't keep a refresh_rate under 60")
+        now = 1_000_000_000.0 + 40 - cadence.fetch_second()
+        self.assertGreaterEqual(cadence.align_sleep(31, now, 60), 60)
+        self.assertGreaterEqual(cadence.align_sleep(31, now), cadence.MIN_SLEEP)
+
+    def test_paging_asks_the_kind(self):
+        import paging
+        src = open(paging.__file__).read()
+        self.assertIn("_kind(dev).shortest_sleep", src)

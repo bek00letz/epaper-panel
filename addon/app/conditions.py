@@ -28,8 +28,11 @@ _UNGUARDED = re.compile(
     r")\s*\}\}$")
 
 
-def guarded(expr: str) -> str:
-    """The condition with the no-value guard, if it's a simple one written without it."""
+def guarded(expr):
+    """The condition with the no-value guard, if it's a simple one written without it. A structured
+    "changed" condition (structured()) is returned as it is."""
+    if isinstance(expr, dict):
+        return expr
     s = str(expr or "").strip()
     m = _UNGUARDED.match(s)
     if not m:
@@ -101,8 +104,42 @@ class Changed(NamedTuple):
     minutes: int
 
 
-def changed(expr: str) -> Changed | None:
-    """The sensor, value and minutes of a "changed" condition, or None when it isn't one."""
+def structured(obj) -> dict | None:
+    """A "changed" condition as it's stored (review 2 #6): {"changed": entity, "minutes": n,
+    "to": value (optional)}, cleaned, or None when it isn't one. Stored as data, the add-on is the
+    only one that answers it, so editing it can't quietly turn it into Home Assistant's meaning
+    (where a restart is a change)."""
+    if not isinstance(obj, dict) or not isinstance(obj.get("changed"), str):
+        return None
+    ent = obj["changed"].strip()
+    if not re.match(r"^[a-z_]+\.[a-z0-9_]+$", ent):
+        return None
+    try:
+        minutes = max(1, min(HOLD_MAX, int(obj.get("minutes") or CHANGED_DEFAULT)))
+    except (TypeError, ValueError):
+        minutes = CHANGED_DEFAULT
+    out = {"changed": ent, "minutes": minutes}
+    if obj.get("to") not in (None, ""):
+        out["to"] = str(obj["to"])
+    return out
+
+
+def as_template(expr) -> str:
+    """A condition as Home Assistant's template: the stored text, or a structured "changed" written
+    as the template that comes nearest (for showing it, or for Home Assistant if it must read it)."""
+    c = structured(expr)
+    if c is None:
+        return str(expr or "").strip()
+    which = f"is_state('{c['changed']}','{c['to']}')" if "to" in c else f"has_value('{c['changed']}')"
+    return f"{{{{ {which} and now() - states['{c['changed']}'].last_changed < timedelta(minutes={c['minutes']}) }}}}"
+
+
+def changed(expr) -> Changed | None:
+    """The sensor, value and minutes of a "changed" condition (structured, or a template saved before
+    it was), or None when it isn't one."""
+    c = structured(expr)
+    if c is not None:
+        return Changed(c["changed"], c.get("to"), c["minutes"])
     m = _CHANGED.match(str(expr or "").strip())
     if not m or (m.group("g") or m.group("se")) != m.group("e"):
         return None
@@ -188,11 +225,11 @@ def is_true(value) -> bool:
     return str(value).strip().lower() in TRUE
 
 
-def ending(page: dict) -> str:
+def ending(page: dict):
     """An alert's Until condition when it ends "when something happens", else ""."""
     if page.get("ends") != "until":
         return ""
-    return str(page.get("until_if") or "").strip()
+    return structured(page.get("until_if")) or str(page.get("until_if") or "").strip()
 
 
 def hold_minutes(page: dict) -> int:

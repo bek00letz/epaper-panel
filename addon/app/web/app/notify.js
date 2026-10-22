@@ -89,7 +89,8 @@ async function openSetup(app, p, name) {
       list.replaceChildren(...(targets || []).map((t) => h("button", { class: "opt", role: "checkbox", "aria-checked": String(chosen.has(t.entity_id)),
         onclick: () => { chosen.has(t.entity_id) ? chosen.delete(t.entity_id) : chosen.add(t.entity_id); draw(); } },
         h("span", { class: "ock", "aria-hidden": "true" }, chosen.has(t.entity_id) ? icon("check", "sm") : null),
-        h("span", { class: "otext" }, h("span", { class: "o1", text: nameOf(app, t.entity_id) }), h("span", { class: "o2", text: t.entity_id })),
+        // An action that isn't an entity (a group written in YAML) goes by the name Home Assistant gives it.
+        h("span", { class: "otext" }, h("span", { class: "o1", text: app.entMap.get(t.entity_id)?.name || t.name || t.entity_id }), h("span", { class: "o2", text: t.entity_id })),
         t.phone ? h("span", { class: "otag", text: "Phone" }) : null)));
       if (targets && !targets.length) list.append(h("p", { class: "empty-note", text: "Home Assistant has nothing to notify yet. Install the Home Assistant app on your phone and sign in, then try again." }));
       go.disabled = !chosen.size || !!problem;

@@ -183,8 +183,11 @@ class TestDrawing(unittest.TestCase):
 class TestPreset(unittest.TestCase):
     def run_js(self, body):
         app = support.APP / "web" / "app"
+        from test_presets import catalog_json      # the editor reads the catalog at its start (gates included)
         script = (f"import {{ LOOKS as PRESETS }} from {json.dumps(str(app / 'presets.js'))};"
-                  f"import * as C from {json.dumps(str(app / 'conditions.js'))};\n{body}")
+                  f"import * as C from {json.dumps(str(app / 'conditions.js'))};"
+                  f"import * as Cat from {json.dumps(str(app / 'catalog.js'))};"
+                  f"Cat.setCatalog({json.dumps(catalog_json())});\n{body}")
         out = subprocess.run(["node", "--input-type=module", "-e", script], capture_output=True, text=True, check=True)
         return json.loads(out.stdout)
 

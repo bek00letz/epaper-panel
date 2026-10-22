@@ -1,5 +1,45 @@
 # Changelog
 
+## Unreleased
+
+- **Notify a group, not only a phone.** "Also notify my phone…" now lists
+  notifiers that aren't entities too, such as a group written in YAML
+  (notify.family), by their name, and the automation it makes sends to
+  them. On Home Assistant before 2026.5, where the app's phones aren't
+  notify entities yet, phones are listed this way too. The add-on's
+  blueprint in Home Assistant updates itself the next time you set one up.
+
+- **"Changed in the last N minutes" can't quietly change meaning.** It's
+  now saved as what it is, not as a Home Assistant template, so the add-on
+  always answers it from the sensor's history (a restart is never a
+  change). If you turn one into a custom condition and change it, the
+  editor says that Home Assistant answers it from then on, and that to it a
+  restart counts as a change. Conditions saved before keep working.
+
+- **A value's unit follows its sensor.** A number or gauge shows its
+  sensor's unit as Home Assistant has it now, so switching Home Assistant
+  to °F, or giving a sensor a unit of its own, changes the page too. Pages
+  you already have follow wherever the unit after a value was the
+  sensor's own; one you typed stays yours. In the inspector, "Its unit"
+  says what it is now; switch it off to write your own.
+
+- **Batteries follows a rule, not the batteries you had that day.** A
+  Batteries page shows every battery of its kind (the ones you swap, or the
+  ones you charge) that's past its number, minus the ones you untick. A
+  door sensor added next month shows on its own, and "battery low" sensors
+  (common on Zigbee and Z-Wave devices) count too, as low whenever they're
+  on. Batteries pages you already have keep showing what they show today,
+  then follow the rule; nothing to do.
+
+- **Planes overhead pages say "only when" the same way as every other
+  count**, so a page you set to show while a plane is near reads like one
+  set by Notifications or a to-do list. Nothing changes in when it shows.
+
+- **Fixed:** a TRMNL could be told to sleep less than a minute after a
+  button press, which its firmware doesn't keep. Each kind of device now
+  says its own shortest sleep (a TRMNL's is a minute, a CrowPanel's 30
+  seconds).
+
 ## 0.20.1
 Add-on only; no firmware change. **Restart Home Assistant once** after
 updating, so it loads the updated e-Paper Panel integration (it carries the

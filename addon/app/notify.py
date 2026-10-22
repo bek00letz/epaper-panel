@@ -252,8 +252,11 @@ async def _describe(hass, kind: str, eid: str) -> dict:
         bp = cfg.get("use_blueprint") or {}
         if bp.get("path") == BLUEPRINT_PATH:
             item["ours"] = True
-            targets = (bp.get("input") or {}).get("notify") or []
-            item["targets"] = [targets] if isinstance(targets, str) else list(targets)
+            got = []
+            for key in ("notify", "notify_services"):           # entities, and actions that aren't (review 2 #7)
+                t = (bp.get("input") or {}).get(key) or []
+                got += [t] if isinstance(t, str) else list(t)
+            item["targets"] = got
     return item
 
 
@@ -335,8 +338,15 @@ async def set_up(hass, *, nid: str, design: str, page: str, page_def: dict, targ
     if entity is None:
         raise SetupError("Home Assistant hasn't made the page's sensor yet. Check that the Mosquitto "
                          "broker app is running, then try again.")
+    # Entities go by notify.send_message; an action that isn't an entity (a group in YAML) is called itself.
+    offered = {t["entity_id"]: t for t in await notifiers(hass)}
+    services = [t for t in targets if (offered.get(t) or {}).get("service")]
+    entities = [t for t in targets if t not in services]
     names = {}
     for t in targets:
+        if t in services:
+            names[t] = offered[t].get("name") or _service_name(t)
+            continue
         try:
             names[t] = ((await hass.rest("GET", f"/states/{t}")) or {}).get("attributes", {}).get("friendly_name")
         except HassError:
@@ -344,7 +354,8 @@ async def set_up(hass, *, nid: str, design: str, page: str, page_def: dict, targ
     auto_id = str(int(time.time() * 1000))
     body = {"id": auto_id, "alias": f"Notify {_names(names, targets)} about {page_title(page)}",
             "description": "Made by the E-paper panel add-on. Yours to change: the add-on only reads it.",
-            "use_blueprint": {"path": BLUEPRINT_PATH, "input": {"alert": entity, "notify": list(targets)}}}
+            "use_blueprint": {"path": BLUEPRINT_PATH, "input": {"alert": entity, "notify": entities,
+                                                                **({"notify_services": services} if services else {})}}}
     try:
         await hass.rest("POST", f"/config/automation/config/{auto_id}", json=body)
     except HassError as exc:
@@ -398,15 +409,48 @@ async def status(hass, nid: str) -> dict:
             "automations": users or []}
 
 
+# Notify actions that aren't a notifier of their own.
+NOT_NOTIFIERS = {"send_message", "persistent_notification"}
+
+
+def _service_name(service: str) -> str:
+    """notify.paw_group -> "Paw group"; notify.mobile_app_iphone -> "Iphone" (the app's device name)."""
+    name = service.split(".", 1)[1]
+    if name.startswith("mobile_app_"):
+        name = name[len("mobile_app_"):]
+    return name.replace("_", " ").strip().capitalize()
+
+
 async def targets(hass) -> list[dict]:
-    """What can be notified: Home Assistant's notify entities, phones (the companion app) first."""
+    """What can be notified (review 2 #7, the user's call: groups too): Home Assistant's notify
+    entities, and its notify actions that aren't entities (a group written in YAML, a notifier an
+    integration still offers only as an action), phones (the companion app) first. Each is
+    {"entity_id": the entity or action, "service": whether it's an action, "phone", "name"}. A phone's
+    old action (mobile_app_…) isn't listed where the app gives its phones notify entities (Home
+    Assistant 2026.5 on), so a phone shows once; before that, it's how a phone is notified."""
     try:
         reg = await hass.ws({"type": "config/entity_registry/list"}) or []
     except HassError:
         return []
-    out = [{"entity_id": e["entity_id"], "phone": e.get("platform") == "mobile_app"}
+    out = [{"entity_id": e["entity_id"], "service": False, "phone": e.get("platform") == "mobile_app",
+            "name": e.get("name") or e.get("original_name") or ""}
            for e in reg if str(e.get("entity_id", "")).startswith("notify.") and not e.get("disabled_by")]
+    apps_are_entities = any(t["phone"] for t in out)
+    try:
+        services = ((await hass.ws({"type": "get_services"})) or {}).get("notify") or {}
+    except HassError:
+        services = {}
+    entity_ids = {t["entity_id"] for t in out}
+    for svc in sorted(services):
+        sid = f"notify.{svc}"
+        if svc in NOT_NOTIFIERS or sid in entity_ids or (svc.startswith("mobile_app_") and apps_are_entities):
+            continue
+        out.append({"entity_id": sid, "service": True, "phone": svc.startswith("mobile_app_"),
+                    "name": (services[svc] or {}).get("name") or _service_name(sid)})
     return sorted(out, key=lambda t: (not t["phone"], t["entity_id"]))
+
+
+notifiers = targets                         # set_up's own argument is called targets
 
 
 class SetupError(Exception):

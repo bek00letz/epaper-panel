@@ -225,10 +225,6 @@ async def counts(session, wanted=COUNTS) -> dict[str, int | None]:
     return out
 
 
-# What a page's elements show (widgets.py): which counts each needs.
-SHOWS = {"notifications": ("notifications",), "updates": ("updates",)}
-
-
 def counts_in(spec: dict) -> set[str]:
     """The counts the pages use: their widgets', a badge's, and any of the add-on's sensors a page's
     "only when" or an alert names. What entities.publish_needs_you keeps up to date."""
@@ -237,7 +233,11 @@ def counts_in(spec: dict) -> set[str]:
         for el in page.get("elements") or []:
             if not isinstance(el, dict):
                 continue
-            out |= set(SHOWS.get(el.get("type"), ()))
+            # A widget whose page shows by one of these counts needs it (its descriptor's gate, widgets.py).
+            import widgets                       # here: widgets.py imports this module
+            w = widgets.get(el.get("type"))
+            gate = w.gates(el) if w else None
+            out |= {k for k, sensor in SENSOR.items() if gate is not None and gate.sensor == sensor}
             if el.get("type") == "badge":
                 c = badge_counts(el)
                 out |= {"updates", "notifications", "repairs"} if c == "all" else {c}

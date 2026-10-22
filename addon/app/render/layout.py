@@ -843,6 +843,10 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
             info_by_ent = {x.get("entity"): x for x in raw_val if isinstance(x, dict)}
 
     configured_items = el.get("items") or []
+    if el.get("batteries"):
+        # Batteries by rule (review 2 #5): which ones come with the value; `items` are each one's own settings.
+        own = {it.get("entity"): it for it in configured_items if isinstance(it, dict)}
+        configured_items = [own.get(ent) or {"entity": ent, "name": "", "icon": ""} for ent in info_by_ent] if has_resolved else []
     filter_state = str(el.get("filter_state") or "on").strip().lower()
     # A number rule instead of a state (a battery below 40 %, or charged to at least 90 %): each item
     # shows while its level is past the grid's value, or its own `threshold`; the level is its second line.
@@ -864,19 +868,24 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
             changed = res.get("changed") or ""
 
             level = _number_or_none(state) if by_number else None
-            if by_number:
+            low_sensor = by_number and ent.startswith("binary_sensor.") and res.get("device_class") == "battery"
+            if low_sensor:
+                # A "battery low" sensor: below whenever it's on, never charged; it shows "Low", no level.
+                is_active = rule == "below" and state.lower() == "on"
+            elif by_number:
                 is_active = level is not None and _past(level, rule, it.get("threshold"), el.get("filter_value"))
             else:
                 is_active = (state and state not in ("unavailable", "unknown")) if filter_state in ("*", "any") else (state.lower() == filter_state)
             if is_active:
                 chosen_icon = _resolve_spot_icon(it, state)
                 if by_number and not it.get("icon") and res.get("device_class") == "battery":
-                    chosen_icon = state_words.battery_icon(level)      # Home Assistant's own glyph for its level
+                    chosen_icon = state_words.battery_icon(0 if low_sensor else level)   # Home Assistant's own glyph for its level
                 if by_number and res.get("device_class") == "battery":
                     # On a page of batteries, "Door Sensor Battery" is the Door Sensor.
                     friendly = re.sub(r"\s+battery(\s+level)?$", "", friendly, flags=re.I) or friendly
                 active_items.append({
-                    "level": level, "level_text": _level_text(level, res.get("unit")) if by_number else "",
+                    "level": 0 if low_sensor else level,
+                    "level_text": "Low" if low_sensor else _level_text(level, res.get("unit")) if by_number else "",
                     "entity": ent,
                     "name": name or friendly or ent.split(".")[-1].replace("_", " ").title(),
                     "icon": chosen_icon,
@@ -2459,6 +2468,9 @@ def render_page(page, vals, *, clock="", label="", footer=None, page_no=None, it
         # Per-element conditional visibility (show_if)
         if _hidden(vals, i):
             continue
+        if units.follows(el):
+            # The unit after it is its sensor's now, whatever it was when the page was made.
+            el = {**el, "suffix": units.suffix_for((vals or {}).get(f"__unit_{i}"))}
         try:
             if el["type"] == "icon" and isinstance(el.get("state_icons"), dict):
                 # Drawn by its entity's state, with its own icon when no state matches (or none yet).
@@ -2534,12 +2546,14 @@ def collect_templates(page):
             tpl = template_for(el)
             if tpl and "{{" in tpl:
                 out[i] = tpl
+            if units.follows(el):              # its sensor's unit, asked at each render (review 2 #3)
+                out[f"__unit_{i}"] = "{{ state_attr('%s', 'unit_of_measurement') or '' }}" % binding._quote(el["entity"].strip())
         elif el.get("type") == "icon" and isinstance(el.get("state_icons"), dict) and str(el.get("entity") or "").strip():
             # An icon that follows its entity: the state picks one of its state_icons.
             tpl = template_for({"entity": el["entity"], "show": "state"})
             if tpl:
                 out[i] = tpl
-        elif el.get("type") == "dynamic_grid":
+        elif el.get("type") == "dynamic_grid" and not el.get("batteries"):    # batteries by rule: fetched (widgets.py)
             items = el.get("items", [])
             ents = [it.get("entity", "").strip() for it in items if isinstance(it, dict) and it.get("entity", "").strip()]
             if ents:

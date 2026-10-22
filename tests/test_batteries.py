@@ -232,19 +232,20 @@ class TestThePreset(unittest.TestCase):
 
     def test_the_page_it_makes(self):
         got = self.js("""const p = P.presetById("batteries"), l = p.looks[0];
-          const low = P.pageFor(p, l, "", { rule: "below", value: 30, items: ["sensor.a", "sensor.b"], tier: "when" });
-          const full = P.pageFor(p, l, "", { rule: "at_least", value: 95, items: ["sensor.c"], tier: "alert" });
+          const low = P.pageFor(p, l, "", { rule: "below", value: 30, except: ["sensor.a"], also: ["sensor.b"], tier: "when" });
+          const full = P.pageFor(p, l, "", { rule: "at_least", value: 95, except: [], also: [], tier: "alert" });
           console.log(JSON.stringify({ low, full, names: [P.pageName(p, l, "", "", { rule: "below" }), P.pageName(p, l, "", "", { rule: "at_least" })],
             group: p.group, needs: p.needs, example: P.examplePage(p, l) }))""")
         g = got["low"]["elements"][0]
         self.assertEqual((got["low"]["tier"], g["type"], g["filter_rule"], g["filter_value"], g["header_title"]), ("when", "dynamic_grid", "below", 30, "Low batteries"))
-        self.assertEqual([i["entity"] for i in g["items"]], ["sensor.a", "sensor.b"])
-        self.assertEqual([i["icon"] for i in g["items"]], ["", ""], "Home Assistant's glyph for each level")
+        # A rule, not today's list (review 2 #5): its kind, minus the unticked, plus the other kind's ticked.
+        self.assertEqual((g["batteries"], g["except"], g["also"], g["items"]), ("swap", ["sensor.a"], ["sensor.b"], []))
         f = got["full"]["elements"][0]
-        self.assertEqual((got["full"]["tier"], f["filter_rule"], f["filter_value"], f["header_title"]), ("alert", "at_least", 95, "Charged"))
+        self.assertEqual((got["full"]["tier"], f["filter_rule"], f["filter_value"], f["header_title"], f["batteries"]),
+                         ("alert", "at_least", 95, "Charged", "charge"))
         self.assertEqual(got["names"], ["Low batteries", "Charged"])
         self.assertEqual((got["group"], got["needs"]), ("home", "batteries"))
-        self.assertEqual(len(got["example"]["elements"][0]["items"]), 4)
+        self.assertEqual(got["example"]["elements"][0]["batteries"], "swap", "the example follows the rule too")
 
     def test_the_example_thumbnail_shows_three_of_four(self):
         page = self.js("""const p = P.presetById("batteries"); console.log(JSON.stringify(P.examplePage(p, p.looks[0])))""")
@@ -321,3 +322,123 @@ class TestChargedByYouByDevice(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------- Batteries as a rule (review 2 #5)
+
+import asyncio  # noqa: E402
+
+import frames  # noqa: E402
+import widgets  # noqa: E402
+from sources import batteries  # noqa: E402
+
+REGISTRY = [{"entity_id": "sensor.phone_battery_level", "device_id": "phone"}, {"entity_id": "sensor.phone_battery_state", "device_id": "phone"},
+            {"entity_id": "sensor.door_battery", "device_id": "door"}, {"entity_id": "binary_sensor.remote_battery_low", "device_id": "remote"}]
+
+
+def st(eid, state, dc="battery", unit="%", **attrs):
+    return {"entity_id": eid, "state": state, "attributes": {"device_class": dc, "unit_of_measurement": unit, **attrs}}
+
+
+STATES = [st("sensor.phone_battery_level", "95"), st("sensor.phone_battery_state", "charging", dc=None, unit=None),
+          st("sensor.door_battery", "12"), st("binary_sensor.remote_battery_low", "on", unit=None),
+          st("sensor.outside_temperature", "3", dc="temperature", unit="°C")]
+
+
+class TestTheRuleResolves(unittest.TestCase):
+    every = batteries.every_battery(REGISTRY, STATES)
+
+    def test_every_battery_low_sensors_included_by_kind(self):
+        self.assertEqual({b["entity"]: b["kind"] for b in self.every},
+                         {"sensor.phone_battery_level": "charge", "sensor.door_battery": "swap", "binary_sensor.remote_battery_low": "swap"})
+
+    def test_its_kind_minus_except_plus_also(self):
+        el = {"batteries": "swap", "except": ["sensor.door_battery"], "also": ["sensor.phone_battery_level"]}
+        self.assertEqual([b["entity"] for b in batteries.chosen(el, self.every)],
+                         ["sensor.phone_battery_level", "binary_sensor.remote_battery_low"])
+
+    def test_a_low_sensor_is_below_while_on_and_never_charged(self):
+        low = next(b for b in self.every if b["entity"].startswith("binary_"))
+        self.assertTrue(batteries.past(low, {"filter_rule": "below", "filter_value": 20}))
+        self.assertFalse(batteries.past(low, {"filter_rule": "at_least", "filter_value": 20}))
+        self.assertFalse(batteries.past({**low, "state": "off"}, {"filter_rule": "below", "filter_value": 20}))
+
+    def test_a_battery_added_later_shows_without_editing_the_page(self):
+        el = {"type": "dynamic_grid", "batteries": "swap", "except": [], "also": [], "filter_rule": "below", "filter_value": 20}
+        later = batteries.every_battery(REGISTRY, STATES + [st("sensor.new_lock_battery", "5")])
+        self.assertIn("sensor.new_lock_battery", [b["entity"] for b in batteries.chosen(el, later)])
+
+    def test_drawn_from_the_rule_with_its_own_settings(self):
+        el = {**grid("below", 20), "batteries": "swap", "except": [], "also": [],
+              "items": [{"entity": "sensor.door_battery", "threshold": 10}]}
+        texts, _ = drawn(el, batteries.chosen(el, self.every))
+        self.assertIn("Low", texts, "a low sensor says Low")
+        self.assertNotIn("12%", texts, "its own number: 12 isn't below 10")
+
+
+class TestPagesMadeBeforeTheRule(unittest.TestCase):
+    every = batteries.every_battery(REGISTRY, STATES + [st("sensor.lock_battery", "40")])
+
+    def page(self, items, rule="below"):
+        return {"tier": "when", "show_if": "{{ (has_value('sensor.door_battery') and states('sensor.door_battery') | float(0) < 20) }}",
+                "elements": [{"type": "dynamic_grid", "filter_rule": rule, "filter_value": 20,
+                              "items": [{"entity": e, "name": "", "icon": ""} for e in items]}]}
+
+    def test_they_keep_showing_what_they_showed_then_follow_the_rule(self):
+        pages = {"low": self.page(["sensor.door_battery", "sensor.phone_battery_level"])}
+        self.assertEqual(batteries.migrate(pages, self.every), ["low"])
+        el = pages["low"]["elements"][0]
+        self.assertEqual((el["batteries"], sorted(el["except"]), el["also"]),
+                         ("swap", ["binary_sensor.remote_battery_low", "sensor.lock_battery"], ["sensor.phone_battery_level"]))
+        self.assertNotIn("show_if", pages["low"], "the condition over the old list goes; the rule decides")
+        today = [b["entity"] for b in batteries.chosen(el, self.every)]
+        self.assertEqual(sorted(today), ["sensor.door_battery", "sensor.phone_battery_level"])
+        later = self.every + batteries.every_battery([], [st("sensor.new_lock_battery", "5")])
+        self.assertIn("sensor.new_lock_battery", [b["entity"] for b in batteries.chosen(el, later)])
+        self.assertEqual(batteries.migrate(pages, self.every), [], "once")
+
+    def test_a_grid_of_other_numbers_is_left_alone(self):
+        pages = {"temps": self.page(["sensor.outside_temperature"])}
+        self.assertEqual(batteries.migrate(pages, self.every), [])
+        self.assertNotIn("batteries", pages["temps"]["elements"][0])
+
+    def test_saved_designs_follow_the_rule_at_render(self):
+        import devices
+        support.fresh_data_dir()
+        dev = devices.primary()
+        found = devices.design(dev["design"])
+        found["pages"] = {"low": self.page(["sensor.door_battery"])}
+        devices._save_design(dev["design"], found)
+        with mock.patch.object(batteries, "fetch_every", mock.AsyncMock(return_value=self.every)):
+            done = asyncio.run(frames.follow_battery_rules(None))
+        self.assertEqual(done, [f"{dev['design']}:low"])
+        self.assertEqual(devices.design(dev["design"])["pages"]["low"]["elements"][0]["batteries"], "swap")
+        support.use_test_data_dir()
+
+
+class TestThePageShowsByTheRule(unittest.TestCase):
+    def test_the_widgets_gate_answers_for_the_page_and_an_alert(self):
+        el = {"type": "dynamic_grid", "batteries": "swap", "except": [], "also": [], "filter_rule": "below", "filter_value": 20}
+        page = {"tier": "when", "elements": [el]}
+        got = widgets.gate_of(page)
+        self.assertIs(got[0], el)
+        every = batteries.every_battery(REGISTRY, STATES)
+        with mock.patch.object(batteries, "fetch_every", mock.AsyncMock(return_value=every)):
+            self.assertTrue(asyncio.run(got[1].check(None, el, "UTC")))
+            with mock.patch.object(frames, "get_home_timezone", mock.AsyncMock(return_value="UTC")):
+                state = {"name": None, "until": 0.0, "fired": {}}
+                fired = asyncio.run(frames.check_alerts(None, {"pages": {"low": {**page, "tier": "alert"}}}, state))
+        self.assertEqual(fired, "low")
+        self.assertIsNone(widgets.gate_of({"elements": [{"type": "dynamic_grid", "items": []}]}), "a grid of states has its own condition")
+
+
+@unittest.skipUnless(shutil.which("node"), "no node to run the editor")
+class TestTheEditorLeavesItToTheRule(unittest.TestCase):
+    def test_a_condition_over_the_old_list_goes_yours_stays(self):
+        got = node("""
+const el = { type: "dynamic_grid", batteries: "swap", except: [], also: [], filter_rule: "below", filter_value: 20, items: [] };
+const old = { tier: "alert", show_if: "{{ (has_value('sensor.a') and states('sensor.a') | float(0) < 20) }}", elements: [el] };
+const yours = { tier: "when", show_if: "{{ is_state('person.ada','home') }}", elements: [el] };
+C.syncDynamicGridShowIf(old); C.syncDynamicGridShowIf(yours);
+console.log(JSON.stringify([old.show_if ?? null, yours.show_if]));""")
+        self.assertEqual(got, [None, "{{ is_state('person.ada','home') }}"])

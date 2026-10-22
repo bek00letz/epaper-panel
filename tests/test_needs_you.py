@@ -287,7 +287,7 @@ class TestNotificationsDrawn(Sizes, unittest.TestCase):
 
     def test_its_page_shows_by_the_add_ons_count(self):
         d = widgets.catalog()["notifications"]
-        self.assertEqual((d["sensor"], d["window"]), ("sensor.epaper_notifications", True))
+        self.assertEqual((d["gate"]["sensor"], d["gate"]["rule"]), ("sensor.epaper_notifications", "count"))
         note = next(f for f in d["fields"] if f["kind"] == "sensorid")["note"]
         self.assertIn("{sensor}", note)
 
@@ -343,7 +343,7 @@ class TestUpdatesDrawn(Sizes, unittest.TestCase):
         self.assertGreater(ink(render(self.element, {"items": []})), ink(render(self.element, None)) + 300)
 
     def test_its_page_shows_by_the_add_ons_count(self):
-        self.assertEqual(widgets.catalog()["updates"]["sensor"], "sensor.epaper_updates")
+        self.assertEqual(widgets.catalog()["updates"]["gate"]["sensor"], "sensor.epaper_updates")
         got = run_js("""const p = P.presetById("updates"); console.log(JSON.stringify(P.pageFor(p, p.looks[0], "")));""") \
             if shutil.which("node") else None
         if got:
