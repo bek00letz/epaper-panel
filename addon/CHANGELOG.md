@@ -1,6 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.20.0
+Add-on only; no firmware change, so nothing to reinstall on the panel.
+
+In short: your own icons and Iconify sets without the Custom Icons
+integration; Home Assistant's notifications, an Updates page and a count
+badge; a Batteries preset that shows what needs charging (or is charged);
+"Also notify my phone…" for alerts, through a normal Home Assistant
+automation; Bin day's wording made plain; no inspector row squeezes its
+label.
+The details:
 - **A badge for any page.** Insert › Widgets › **Badge** puts an icon with
   a number in a solid dot on any page, like an app's icon on a phone: how
   many updates are waiting, notifications, Repairs issues, or all of these
