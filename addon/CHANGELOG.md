@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.21.1
+Add-on only; no firmware change, so nothing to reinstall on the panel
+and no Home Assistant restart. Update the add-on.
 
 - **Fixed:** a Batteries page showed a placeholder ("Sample Zone") instead of
   your batteries since 0.20.2: it asked for the power grid's numbers by
