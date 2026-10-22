@@ -402,10 +402,18 @@ up to v0.12.0). `app/legacy.js` keeps the pieces of it this one still uses.
   the right device class and unit). `tests/test_presets.py` draws every
   look at every offered size and fails on words wider than their box.
   A preset never writes a unit or a time format (framework review, 21 Oct):
-  a value takes its sensor's own unit (`unit: "entity"`, `withUnits`), and
+  a value takes its sensor's own unit (`unit: "entity"`, kept on the element
+  and resolved at every render by `render/units.py`, never copied in), and
   a clock is the add-on's own (`show: "now"`), 12- or 24-hour as Settings ›
   Time and language says. Clock is offered on every device; one that sleeps
   draws the date in its place (`render/clocktime.py`), never the editor.
+- **What a page holds is a rule, not a snapshot of Home Assistant** (review 2,
+  22 Oct): a unit follows its sensor (`unit: "entity"`), a Batteries page
+  is every battery of its kind minus the unticked (`sources/batteries.chosen`),
+  a "changed" condition is stored as data (`conditions.structured`) and
+  answered from history. A page saved the old way is moved over once, when
+  Home Assistant's facts are known (`frames.follow_battery_rules`,
+  `follow_sensor_units`), saved designs and drafts alike.
 - **The editor keeps no copies of the add-on's tables** (framework review,
   21 Oct): leagues, series, sport words, state words and every widget's
   descriptor (name, icon, box, fields, `changes_every`) come from
