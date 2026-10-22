@@ -479,6 +479,7 @@ function typeSections(app, el, set, i) {
       s.append(h("details", { class: "more" }, h("summary", {}, icon("chev", "sm"), "Its sensor"),
         h("p", { class: "fnote" }, before, h("code", { class: "sel", text: getWidgetSensorId(el) || f.none || "" }), after)));
     }
+    else if (f.kind === "note") s.append(h("p", { class: "fnote" }, f.text || ""));   // the descriptor's words, as text
     else if (f.kind === "place") s.append(...placeRows(app, el, set));
     else if (f.kind === "countdown") s.append((el.to === "bins" ? binsEditor : dateEditor)(el, () => app.doc.commit()));
     // A world clock's cities: adding, removing or reordering one redraws the canvas at once (each commit does).
