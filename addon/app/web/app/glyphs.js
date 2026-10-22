@@ -34,7 +34,8 @@ export function layersOf(record) {
   return { view, layers };
 }
 
-function paint(svg, record) {
+/* Draw an outline record into an <svg> (numbers only, set with setAttribute). */
+export function paint(svg, record) {
   const got = layersOf(record);
   if (!got) return;
   svg.setAttribute("viewBox", got.view.join(" "));
@@ -98,6 +99,8 @@ export class Glyphs {
   }
   /* Whether the panel can draw it (the add-on's own "custom:" drawings aren't outlines). */
   has(name) { return this.known.has(fullName(name)); }
+  /* A set that changed (added, updated, removed): its outlines are asked for again. */
+  forget(prefix) { for (const k of [...this.outlines.keys()]) if (k.startsWith(prefix + ":")) this.outlines.delete(k); }
   setName(prefix) { return (this.sets || []).find((s) => s.prefix === prefix)?.name || prefix; }
   search(q, opts = {}) { return search(this.names, q, opts); }
   /* An <svg> for the icon, sized 1em by the stylesheet: drawn now when its outline is here, else as

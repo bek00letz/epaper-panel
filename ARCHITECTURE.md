@@ -368,13 +368,42 @@ all read it, so nothing offers an icon that draws as nothing.
   isn't the shipped one; every chunk, every outline checked, or nothing.
   Kept in `/data/icons/` and used from the next start before anything draws.
 - **Custom sets are copied whole when their files change**
-  (`iconsets.copy_custom`), from the mapped configuration folder: Custom
-  Icons' SVG folder (`local:`) and Iconify sets, the ones switched on in its
-  settings (asked of Home Assistant: `custom_icons/activesets`; the last
-  answer, else Custom Icons' own defaults, while it can't say); and script sets HACS installs (custom-brand-icons' `phu:` and
-  those written like it). A custom SVG becomes outlines only: shapes,
-  groups, transforms, fill and stroke; scripts, links, pictures and text are
-  never kept, and nothing of the file is shown as it is.
+  (`iconsets.copy_custom`), and nothing else needs installing (the user's
+  call, 22 Oct: e-paper doesn't depend on Custom Icons, whose Iconify
+  download replaces `aiohttp.ClientSession` for every integration):
+  - **Your own icons** (`local:`): SVGs in `<config>/epaper/icons`
+    (`iconsets.OWN_FOLDER`), and in Custom Icons' old folder
+    `<config>/custom_icons`, still read; the own folder wins a name both
+    have. The editor's Add icons (`POST /api/icons/own`) saves a cleaned
+    copy (`iconsets.clean_svg`: the outline only) into the own folder.
+  - **Iconify sets** the user chooses in Settings › Icons (`/data/icons/
+    chosen.json`). Each is downloaded on its own, only when asked (Add, Try
+    again, Check for updates with its ETag), from Iconify's published files
+    (`iconsets.ICONIFY`) through the add-on's own session: one host, checked
+    HTTPS, no redirects, 32 MB at most, read in pieces. Kept as downloaded
+    and converted once (`/data/icons/iconify/<prefix>.raw.json.gz` and
+    `.json.gz`), so a change to your own icons never converts a big set
+    again. Only single-color sets are offered. A chosen set Custom Icons'
+    download has (`custom_icons/iconify-icon-sets-master.zip`) is taken
+    from there, without the internet. Add a set's previews are each set's
+    sample icons from Iconify's API (`ICONIFY_API`), asked for only for rows
+    on screen, converted the same way and kept. The background loop never
+    downloads.
+  - **Upgrading from 0.19**: the first start keeps every Iconify set it drew
+    from Custom Icons (`iconsets._migrate`, from the old `custom.json.gz`),
+    so they draw on after Custom Icons and its download are gone.
+  - **Script sets** HACS installs (custom-brand-icons' `phu:` and those
+    written like it).
+  - The way back: `iconsets.ASK_CUSTOM_ICONS = True` asks Home Assistant
+    which collections Custom Icons has on (`custom_icons/activesets`; the
+    last answer, else its defaults) and uses that instead of the editor's
+    choice, as 0.18 and 0.19 did. Off until the own sets have proven
+    themselves.
+
+  A custom SVG becomes outlines only: shapes, groups (at most 32 deep),
+  transforms, fill and stroke; scripts, links, pictures, styles and text are
+  never kept, nothing of the file is shown as it is, and a file the reader
+  can't take is left out on its own, never the set with it.
 - A render never waits on any of this: the copy runs in the background and
   swaps a whole set in when it's ready (`icons.install`).
 - One icon can't cost more than about twice the largest real one

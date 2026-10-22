@@ -630,6 +630,21 @@ button.uopen:focus-visible { outline: 2px solid var(--accent); outline-offset: -
 .gr .inp { width: auto; }
 .gr .inline .inp { width: 200px; }
 .gr small { display: block; color: var(--fg-2); font-size: 11.5px; margin-top: 1px; }
+/* Settings › Icons: a row's buttons keep together at its end; a group takes dropped files. */
+.rowbtns { display: flex; gap: 6px; flex: 0 0 auto; margin-left: auto; }
+.gr small.bad { color: var(--red); }
+/* Shown only when it takes a while: a quick answer never flashes it. */
+.gr small.waiting, .fnote.waiting { animation: fadein var(--t) var(--spring) 0.4s both; }
+.group.dropping { box-shadow: 0 0 0 2px var(--accent); }
+.subhead { display: flex; align-items: center; gap: 4px; margin: 0 0 8px -8px; }
+.subhead h4 { margin: 0; font: 600 15px var(--font-display); }
+.added { display: inline-flex; align-items: center; gap: 4px; min-height: var(--ctl); padding: 0 8px; color: var(--fg-2); font-size: 12.5px; }
+/* Add a set's previews: squares from the start (nothing moves), each icon fading in as it comes. */
+.samples { display: flex; gap: 10px; margin-top: 6px; color: var(--fg); }
+.samples svg { width: 20px; height: 20px; flex: none; fill: currentColor; overflow: visible; border-radius: 5px; background: var(--fill); transition: background-color var(--t-fast); }
+.samples svg.drawn { background: none; animation: fadein var(--t) var(--spring); }
+.pickmeta { display: flex; align-items: baseline; gap: 12px; }
+.pickmeta .fnote { flex: 1; }
 .steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
 .srccard { background: var(--surface-2); border-radius: var(--r-card); padding: 10px 14px 14px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 0 0 0.5px var(--sep); }
 .srchead { display: flex; align-items: center; gap: 6px; }

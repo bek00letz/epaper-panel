@@ -549,9 +549,18 @@ When touching display code, `it.image()` at a negative offset is a trap: see
   the panel blank. Actions always need a key.
 - **Never read Home Assistant's own storage folder** (`.storage` in its
   configuration): it holds every integration's credentials. Ask Home
-  Assistant through its API instead (as `iconsets.collections_on` asks
-  Custom Icons which collections are on); `tests/test_icon_sets.py` fails
-  if any code names it.
+  Assistant through its API instead (as the way back,
+  `iconsets.collections_on`, asks Custom Icons which collections are on);
+  `tests/test_icon_sets.py` fails if any code names it.
+- **Icons never depend on another integration.** Your own SVGs and Iconify
+  sets are the add-on's own (`iconsets.py`, Settings › Icons). Don't send
+  users to Custom Icons (thomasloven/hass-custom_icons): its "Download
+  Iconify icons" replaces `aiohttp.ClientSession` for the whole Home
+  Assistant process, which broke other integrations (Eufy cameras) until a
+  restart (issue #37, our fix PR #38, unmerged). Its folder and zip are only
+  read, so existing setups keep working.
+- **An Iconify download happens only when the user asks**, never in the
+  background loop, and only from `iconsets.ICONIFY` / `ICONIFY_API`.
 - **No built-in location or timezone.** Home Assistant's settings are the
   source; a default would be someone's real home.
 
