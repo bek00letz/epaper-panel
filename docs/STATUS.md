@@ -30,6 +30,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 | Work | Where | State |
 |---|---|---|
 | E-paper's own icon folder and prefix, and Iconify downloads of its own, so it stops depending on the Custom Icons integration (whose v1.0.2 "Download Iconify icons" breaks aiohttp for all of Home Assistant; upstream abandoned). Existing local: and Iconify references keep working; the Custom Icons path stays off as the way back (session "epaper-own-icons", started by the Eufy session at the user's request, 22 Oct) | branch `own-icons` | Done 22 Oct: 3 commits, add-on only; combined in `release-next` |
+| Home Assistant's notifications (a widget, a page that shows only while there are any) and a badge counting updates waiting (session "ha-notifications") | branch `ha-notifications` from `release-next` | Started 22 Oct; designs with the user first |
 | Bin day's long "Close to the day" menu becomes two plain choices, "Bin day ends" and "Says" (session "icon-follows", asked by the user directly) | branch `close-to-wording` | Done 22 Oct; combined in `release-next` |
 
 The next release (0.20.0) is put together in `release-next`: 883 tests pass, no
