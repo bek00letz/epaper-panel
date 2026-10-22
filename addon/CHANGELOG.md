@@ -29,8 +29,9 @@
   address" can give a kind of page's data in that form ("Gives" in Settings
   › Data sources, which shows the form with an example), and a page can
   read it in place of ESPN, the racing calendars or the flight feeds. Test
-  says whether it reads, or what's wrong. Pages you have keep reading the
-  add-on's services.
+  says whether it reads, or what's wrong. A Home Assistant sensor whose
+  attributes carry the same form can do it too: choose "A Home Assistant
+  sensor" in "Its data". Pages you have keep reading the add-on's services.
 
 ## 0.20.2
 Add-on only; no firmware change, so nothing to reinstall on the panel

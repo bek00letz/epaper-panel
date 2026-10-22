@@ -192,6 +192,32 @@ class OwnSource(unittest.IsolatedAsyncioTestCase):
         with live_data.waiting_for_fresh():
             self.assertIsNone(await widgets.fetch(self.session, el, widgets.Ctx(home_tz="UTC")))
 
+    async def test_a_home_assistant_sensor_can_give_the_fields(self):
+        import ha
+        states = {"sensor.my_races": {"state": "ok", "attributes": {"races": RACES["races"], "friendly_name": "Mine"}},
+                  "sensor.wrong": {"state": "ok", "attributes": {"something": "else"}}}
+
+        async def fake(session, path, *a, **kw):
+            return states[path.removeprefix("/states/")]
+        old, ha.ha_json = ha.ha_json, fake
+        try:
+            el = {"type": "sports_racing", "series": "f1", "data": {"entity": "sensor.my_races"}}
+            self.assertEqual(shapes.own_source(el), "entity:sensor.my_races")
+            with live_data.waiting_for_fresh():
+                got = await widgets.fetch(self.session, el, widgets.Ctx(home_tz="UTC"))
+            self.assertEqual(got["event_name"], "Own Grand Prix")
+            self.assertEqual(self.asked_a_service(), [], "the calendars and ESPN weren't asked")
+            wrong = {**el, "data": {"entity": "sensor.wrong"}}
+            with live_data.waiting_for_fresh(), contextlib.redirect_stdout(io.StringIO()):
+                self.assertIsNone(await widgets.fetch(self.session, wrong, widgets.Ctx(home_tz="UTC")))
+            self.assertIn("no list of races", shapes.problem(shapes.own_source(wrong)))
+            self.assertNotIn("Sensor", [e["name"] for e in health.status()], "a sensor gets no problem sensor of its own")
+            self.assertEqual(shapes.own_source({**el, "data": {"entity": ""}}), "", "until one is chosen: the services")
+            used = {x["id"]: x["used_by"] for x in services.listing([("Mine", {"elements": [el]})])}
+            self.assertEqual(used["racing_calendar"], [])
+        finally:
+            ha.ha_json = old
+
     async def test_try_again_reads_a_source_that_fills_a_page(self):
         got = await services.try_again(self.session, "source_races")
         self.assertEqual(got, {"ok": True, "said": "Racing pages' data, 2 races"})

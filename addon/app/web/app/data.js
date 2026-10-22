@@ -13,9 +13,11 @@ const ISO = /^\d{4}-\d\d-\d\d(T\d\d:\d\d)?/;
 const said = (v) => (ISO.test(v) && !Number.isNaN(Date.parse(v)) ? clockAt(Date.parse(v) / 1000) : v);
 // The elements whose section is open, so a change (which draws the inspector again) keeps it open.
 const opened = new Set();
-const ownOf = (el) => (el.data && typeof el.data === "object" ? String(el.data.source || "") : "");
+const ownOf = (el) => (el.data && typeof el.data === "object" ? ("entity" in el.data ? "entity" : String(el.data.source || "")) : "");
 
-export function dataRows(app, el) {
+/* `pickSensor(entityId, onPick)`: the inspector's sensor button, for a Home Assistant sensor whose
+   attributes carry the fields. */
+export function dataRows(app, el, pickSensor) {
   const shape = widget(el.type)?.shape;
   if (!shape) return [];
   const own = ownOf(el);
@@ -35,12 +37,19 @@ export function dataRows(app, el) {
     try { got = (await api("api/widget_data", { method: "POST", body: { element: el } })).body; } catch (e) { got = { error: e.message }; }
     const choices = [["", got?.services?.length ? `The add-on's services (${got.services.join(", ")})` : "The add-on's services"],
       ...srcs.map((s) => [s.id, `Your source “${s.name}”`])];
-    if (own && !srcs.some((s) => s.id === own)) choices.push([own, "A source that was removed"]);
+    choices.push(["entity", "A Home Assistant sensor"]);
+    if (own && own !== "entity" && !srcs.some((s) => s.id === own)) choices.push([own, "A source that was removed"]);
     const from = field("From", select(choices, own, (v) => {
-      if (v) el.data = { source: v }; else delete el.data;
+      if (v === "entity") el.data = { entity: "" }; else if (v) el.data = { source: v }; else delete el.data;
       app.doc.commit();                 // the inspector draws again, with this section as it is now
     }, { "aria-label": "Where it reads from" }));
     const rows = [from];
+    if (own === "entity") {
+      rows.push(field("Sensor", pickSensor(el.data.entity || "", (id) => { el.data = { entity: id || "" }; app.doc.commit(); })),
+        h("p", { class: "fnote", text: el.data.entity ? `Its attributes give the fields: a list "${shape.list}" in the add-on's form.`
+          : `Choose a sensor whose attributes have a list "${shape.list}" in the add-on's form. Until then it reads the add-on's services.` }));
+      if (got?.entity?.problem) rows.push(h("p", { class: "fnote bad", text: got.entity.problem }));
+    }
     if (got?.source?.missing) rows.push(h("p", { class: "fnote bad", text: "Its data source was removed, so it shows nothing. Choose another, or the add-on's services." }));
     if (got?.error) rows.push(h("p", { class: "fnote bad", text: `Couldn't read what it shows: ${got.error}` }));
     else if (got?.fields?.length) {
@@ -48,7 +57,7 @@ export function dataRows(app, el) {
         ...got.fields.flatMap((f) => [h("dt", { text: f.label }), h("dd", { text: said(f.value) || "–" })])));
     } else rows.push(h("p", { class: "fnote", text: "Nothing to show yet. Its fields fill in once it has answered." }));
     rows.push(h("p", { class: "fnote" },
-      `The add-on reads ${shape.name} pages in its own form. A data source that answers in that form can take the services' place: `,
+      `The add-on reads ${shape.name} pages in its own form. A data source that answers in that form, or a sensor whose attributes have it, can take the services' place: `,
       linkButton("Add one in Data sources", async () => (await import("./sheets.js")).openSettings(app, "sources"))),
       formNote(shape));
     box.replaceChildren(...rows);

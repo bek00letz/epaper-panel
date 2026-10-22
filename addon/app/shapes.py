@@ -2,8 +2,9 @@
 
 Every reader of an outside service (ESPN's scoreboards, the racing calendars, Flightradar24,
 OpenSky) turns its answer into these fields, and the widgets draw only from them. So they're also
-what one of your data sources can give instead (a rest source with "fills"): the same fields, in the
-add-on's form, which never changes because an outside service did. The editor shows them per
+what one of your data sources can give instead (a rest source with "fills"), or a Home Assistant sensor
+whose attributes carry them: the same fields, in the add-on's form, which never changes because an
+outside service did. The editor shows them per
 widget (its Data section, `shown`), with an example of the form (`example`).
 
 A shape here says, for one kind of widget:
@@ -257,12 +258,22 @@ def read(kind: str, body) -> list:
         raise ValueError(f"It isn't in the form the add-on reads for {shape.name} pages.") from None
 
 
-# ---------------------------------------------------------------- a widget's own source
+# ---------------------------------------------------------------- a widget's own data
+
+# How often a Home Assistant sensor that gives a widget's fields is read again, in seconds.
+ENTITY_EVERY = 30.0
+ENTITY = "entity:"
+
 
 def own_source(el: dict) -> str:
-    """The data source an element reads in place of the add-on's services (its id), or ""."""
+    """Where an element reads in place of the add-on's services, or "": one of your data sources (its
+    id), or a Home Assistant sensor whose attributes carry the fields ("entity:<entity_id>")."""
     data = el.get("data") if isinstance(el, dict) else None
-    return _text(data.get("source")) if isinstance(data, dict) else ""
+    if not isinstance(data, dict):
+        return ""
+    if _text(data.get("entity")):
+        return ENTITY + _text(data.get("entity"))
+    return _text(data.get("source"))
 
 
 def fills(kind: str) -> list[dict]:
@@ -271,14 +282,28 @@ def fills(kind: str) -> list[dict]:
     return [s for s in load_sources() if isinstance(s, dict) and s.get("fills") == kind and s.get("id")]
 
 
-async def read_own(session, source_id: str, kind: str) -> list | None:
-    """The add-on's own items from one of your sources: fetched in the background (live_data) on the
-    source's own interval, its last good answer kept; None until it has one, or once it's gone."""
+# What went wrong the last time a Home Assistant sensor was read for a widget's fields, by entity:
+# shown in the inspector ("Its data"). A sensor is Home Assistant's, not a service: it gets no
+# problem sensor of its own.
+_entity_errors: dict[str, str] = {}
+
+
+def problem(own: str) -> str:
+    """Why the last read of an element's own data failed, in plain words, or ""."""
+    return _entity_errors.get(own[len(ENTITY):], "") if own.startswith(ENTITY) else ""
+
+
+async def read_own(session, own: str, kind: str) -> list | None:
+    """The add-on's own items from where an element reads in place of the services (`own_source`):
+    fetched in the background (live_data), the last good answer kept; None until there is one, or
+    once the source is gone."""
+    import runtime
+    if own.startswith(ENTITY):
+        return await _read_entity(session, own[len(ENTITY):], kind)
     import feeds
     import health
-    import runtime
     from layouts_store import load_sources
-    src = next((s for s in load_sources() if isinstance(s, dict) and s.get("id") == source_id), None)
+    src = next((s for s in load_sources() if isinstance(s, dict) and s.get("id") == own), None)
     if src is None or src.get("fills") != kind:
         return None
     import services
@@ -294,3 +319,32 @@ async def read_own(session, source_id: str, kind: str) -> list | None:
         return items
 
     return await runtime.LIVE.read(("fills", kind, json.dumps(src, sort_keys=True, default=str)), fetch, feeds.interval_of(src))
+
+
+async def _read_entity(session, entity_id: str, kind: str) -> list | None:
+    """The fields from a Home Assistant sensor's attributes ({"races": [...]}, in the add-on's form)."""
+    import runtime
+    from config import valid_entity_id
+
+    if not valid_entity_id(entity_id):
+        return None
+
+    async def fetch():
+        import health
+        from ha import ha_json
+        try:
+            state = await ha_json(runtime.SESSION or session, f"/states/{entity_id}")
+            items = read(kind, (state or {}).get("attributes") or {})
+        except ValueError as exc:
+            said = f"Its attributes aren't in the add-on's form: {exc}"
+            _entity_errors[entity_id] = said
+            print(f"{entity_id}: {said}", flush=True)
+            raise
+        except Exception as exc:                # noqa: BLE001 -- said plainly in the inspector
+            import services
+            _entity_errors[entity_id] = "Home Assistant didn't give it: " + services.plain(health.describe(exc))
+            raise
+        _entity_errors.pop(entity_id, None)
+        return items
+
+    return await runtime.LIVE.read(("fills", kind, ENTITY + entity_id), fetch, ENTITY_EVERY)

@@ -485,7 +485,8 @@ async def api_widget_data(request):
     if shape is None:
         raise web.HTTPBadRequest(text="It doesn't read anything from outside.")
     own = shapes.own_source(el)
-    src = next((x for x in load_sources() if isinstance(x, dict) and x.get("id") == own), None) if own else None
+    entity = own[len(shapes.ENTITY):] if own.startswith(shapes.ENTITY) else ""
+    src = next((x for x in load_sources() if isinstance(x, dict) and x.get("id") == own), None) if own and not entity else None
     with live_data.waiting_for_fresh():                   # someone is looking at it
         try:
             value = await widgets.fetch(runtime.SESSION, el, widgets.Ctx(home_tz=await get_home_timezone(runtime.SESSION)))
@@ -495,7 +496,8 @@ async def api_widget_data(request):
     return web.json_response({
         "shape": shape.kind,
         "source": ({"id": own, "name": services.source_name(src), "missing": False} if src
-                   else {"id": own, "name": "", "missing": True}) if own else None,
+                   else {"id": own, "name": "", "missing": True}) if own and not entity else None,
+        "entity": {"id": entity, "problem": shapes.problem(own)} if entity else None,
         "services": [s.name for s in services.SERVICES if s.uses and s.uses(el)],
         "fields": [{"label": label, "value": str(v)} for label, v in shape.shown(value)] if value else [],
     })
