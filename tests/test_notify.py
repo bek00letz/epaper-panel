@@ -288,6 +288,196 @@ class TestWithdrawal(NotifyCase):
         self.assertEqual(self.t.messages[f"homeassistant/binary_sensor/epaper_panel/epaper_page_{NID}/config"], "")
 
 
+class SetUpCase(NotifyCase):
+    def setUp(self):
+        super().setUp()
+        self.eid = "binary_sensor.epaper_alert_bins_out"
+        self.hass.registry += [
+            {"entity_id": self.eid, "platform": "mqtt", "unique_id": f"epaper_studio_epaper_page_{NID}"},
+            *({"entity_id": f"binary_sensor.epaper_alert_{n}", "platform": "mqtt",
+               "unique_id": f"epaper_studio_epaper_page_{n}"} for n in ("other00", "other01")),
+            {"entity_id": "notify.mac", "platform": "mobile_app"},
+            {"entity_id": "notify.iphone", "platform": "mobile_app"},
+            {"entity_id": "notify.family_chat", "platform": "telegram_bot"}]
+        self.hass.states["notify.iphone"] = {"state": "unknown", "attributes": {"friendly_name": "iPhone"}}
+        self.hass.states["notify.mac"] = {"state": "unknown", "attributes": {"friendly_name": "Mac"}}
+        patcher = mock.patch.object(notify.config, "HA_TOKEN", "token")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def set_up(self, targets=("notify.iphone",), page="bins_out", nid=NID):
+        return run(notify.set_up(self.hass, nid=nid, design=self.design, page=page,
+                                 page_def={"tier": "alert"}, targets=list(targets)))
+
+
+class TestSetUp(SetUpCase):
+    def test_makes_the_sensor_installs_the_blueprint_and_an_automation_from_it(self):
+        made = self.set_up(("notify.iphone", "notify.mac"))
+        self.assertEqual(made["entity"], self.eid)
+        self.assertEqual(self.hass.blueprints[notify.BLUEPRINT_PATH], notify.blueprint_text())
+        cfg = self.hass.automations[made["automation"]["id"]]
+        self.assertEqual(cfg["alias"], "Notify iPhone and Mac about Bins out")
+        self.assertEqual(cfg["use_blueprint"], {"path": notify.BLUEPRINT_PATH, "input": {
+            "alert": self.eid, "notify": ["notify.iphone", "notify.mac"]}})
+        self.assertIn(f"epaper_page_{NID}", self.pub.desired)
+
+    def test_the_blueprint_is_saved_again_only_when_ours_changed(self):
+        self.set_up()
+        saves = [c for c in self.hass.calls if c == ("ws", "blueprint/save")]
+        self.set_up(nid="other00")
+        self.assertEqual([c for c in self.hass.calls if c == ("ws", "blueprint/save")], saves, "same version: left alone")
+        with mock.patch.object(notify, "blueprint_text", return_value=notify.blueprint_text() + "\n# newer\n"):
+            self.set_up(nid="other01")
+        self.assertEqual(len([c for c in self.hass.calls if c == ("ws", "blueprint/save")]), len(saves) + 1)
+
+    def test_says_what_to_do_without_a_broker_or_a_phone(self):
+        with self.assertRaises(notify.SetupError) as no_phone:
+            self.set_up(targets=())
+        self.assertEqual(str(no_phone.exception), "Pick a phone to notify.")
+        runtime.PUBLISHER = None
+        with self.assertRaises(notify.SetupError) as no_broker:
+            self.set_up()
+        self.assertIn("Mosquitto broker", str(no_broker.exception))
+        self.assertEqual(self.hass.automations, {}, "nothing half-made")
+        self.assertFalse(run(notify.status(self.hass, NID))["ready"])
+
+    def test_phones_first(self):
+        found = run(notify.targets(self.hass))
+        self.assertEqual([t["entity_id"] for t in found], ["notify.iphone", "notify.mac", "notify.family_chat"])
+
+    def test_status_names_what_uses_it(self):
+        self.set_up()
+        self.hass.use(self.eid, "42", ours=False, name="My own automation")
+        got = run(notify.status(self.hass, NID))
+        self.assertEqual(got["entity"], self.eid)
+        self.assertEqual(sorted((a["name"], a["ours"]) for a in got["automations"]),
+                         [("My own automation", False), ("Notify iPhone about Bins out", True)])
+
+
+class TestStop(SetUpCase):
+    def setUp(self):
+        super().setUp()
+        self.made = self.set_up()
+        run(self.pub.sync())
+
+    def test_deletes_our_automation_and_withdraws_the_sensor(self):
+        left = run(notify.stop(self.hass, NID, [self.made["automation"]["id"]]))
+        self.assertEqual(left["kept"], [])
+        self.assertEqual(self.hass.automations, {})
+        run(self.pub.sync())
+        self.assertEqual(self.t.messages[f"homeassistant/binary_sensor/epaper_panel/epaper_page_{NID}/config"], "")
+        self.assertNotIn(NID, notify.requested(), "stopped, though the sent page still carries its id")
+
+    def test_keeping_the_automation_keeps_the_sensor(self):
+        left = run(notify.stop(self.hass, NID, []))
+        self.assertEqual([a["name"] for a in left["kept"]], ["Notify iPhone about Bins out"])
+        self.assertIn(self.made["automation"]["id"], self.hass.automations)
+        self.publish()
+        self.assertTrue(self.config(NID), "an automation uses it: kept")
+        self.assertTrue(self.pub.desired[f"epaper_page_{NID}"]["attrs"]["page_removed"])
+
+    def test_never_deletes_an_automation_it_didnt_make(self):
+        self.hass.use(self.eid, "42", ours=False, name="My own automation")
+        left = run(notify.stop(self.hass, NID, ["42", self.made["automation"]["id"]]))
+        self.assertIn("42", self.hass.automations)
+        self.assertEqual([a["name"] for a in left["kept"]], ["My own automation"])
+        run(self.pub.sync())
+        self.assertTrue(self.config(NID), "still used: not withdrawn")
+
+    def test_setting_it_up_again_undoes_the_stop(self):
+        run(notify.stop(self.hass, NID, [self.made["automation"]["id"]]))
+        self.set_up()
+        self.assertIn(NID, notify.requested())
+
+    def test_says_so_when_home_assistant_cant_answer(self):
+        self.hass.down = True
+        with self.assertRaises(notify.SetupError):
+            run(notify.stop(self.hass, NID, [self.made["automation"]["id"]]))
+
+
+class TestEndpoints(SetUpCase):
+    """The editor's API: what it accepts, and a refusal in words the editor shows."""
+
+    def call(self, handler, body, method="POST"):
+        import web
+        from aiohttp.test_utils import make_mocked_request
+        req = make_mocked_request(method, "/api/notify")
+        req.json = mock.AsyncMock(return_value=body)
+        with mock.patch.object(runtime, "HASS", self.hass):
+            try:
+                res = run(handler(req))
+            except Exception as exc:                  # aiohttp's HTTP errors are raised
+                return getattr(exc, "status", 500), getattr(exc, "text", "")
+        return res.status, json.loads(res.text)
+
+    def test_set_up_and_stop(self):
+        import web
+        status, made = self.call(web.api_notify_post, {"page": "bins_out", "id": NID, "tier": "alert",
+                                                       "targets": ["notify.iphone", "light.kitchen", "notify.x y"]})
+        self.assertEqual(status, 200)
+        self.assertEqual(made["automation"]["targets"], ["notify.iphone"], "only notify entities are taken")
+        status, left = self.call(web.api_notify_stop, {"id": NID, "delete": [made["automation"]["id"]]})
+        self.assertEqual((status, left["kept"]), (200, []))
+
+    def test_refusals_say_why(self):
+        import web
+        status, said = self.call(web.api_notify_post, {"page": "bins_out", "id": NID, "targets": []})
+        self.assertEqual((status, said["error"]), (409, "Pick a phone to notify."))
+        status, _ = self.call(web.api_notify_post, {"page": "bins_out", "id": "../x", "targets": ["notify.iphone"]})
+        self.assertEqual(status, 400)
+
+
+class TestBlueprint(unittest.TestCase):
+    """The shipped blueprint, read as text (the tests have no YAML library). Home Assistant's
+    own check runs too when EPAPER_HA_PYTHON names a Python with Home Assistant installed."""
+
+    def setUp(self):
+        self.text = notify.blueprint_text()
+        block = self.text.split("\n  input:\n", 1)[1].split("\n\n", 1)[0]
+        self.inputs, current = {}, None
+        for line in block.splitlines():
+            if m := __import__("re").match(r"^    ([a-z_]+):$", line):
+                current = self.inputs[m.group(1)] = []
+            elif current is not None:
+                current.append(line)
+
+    def test_every_input_is_declared_and_used(self):
+        used = set(__import__("re").findall(r"!input (\w+)", self.text))
+        self.assertEqual(used, set(self.inputs))
+
+    def test_the_add_on_fills_exactly_the_inputs_without_a_default(self):
+        required = {k for k, lines in self.inputs.items() if not any(l.strip().startswith("default:") for l in lines)}
+        self.assertEqual(required, {"alert", "notify"})
+
+    def test_fires_on_off_to_on_only(self):
+        self.assertIn('from: "off"\n    to: "on"', self.text, "a restart (unavailable, then on) isn't an alert")
+        self.assertIn("domain: automation", self.text)
+        self.assertIn("action: notify.send_message", self.text)
+
+    def test_its_source_is_this_file(self):
+        url = __import__("re").search(r"source_url: (\S+)", self.text).group(1)
+        self.assertTrue(url.endswith("/addon/app/blueprints/notify.yaml"))
+        self.assertTrue((support.APP / "blueprints" / "notify.yaml").exists())
+
+    @unittest.skipUnless(__import__("os").environ.get("EPAPER_HA_PYTHON"), "set EPAPER_HA_PYTHON to check with Home Assistant")
+    def test_home_assistant_takes_it(self):
+        import os
+        import subprocess
+        cfg = support.temp_dir()
+        (cfg / "blueprints" / "automation" / "epaper_panel").mkdir(parents=True)
+        (cfg / "blueprints" / "automation" / "epaper_panel" / "notify.yaml").write_text(self.text)
+        (cfg / "configuration.yaml").write_text("homeassistant:\n  name: check\nautomation: !include automations.yaml\n")
+        (cfg / "automations.yaml").write_text(
+            '- id: "1"\n  alias: Notify iPhone about Bins out\n  use_blueprint:\n'
+            '    path: epaper_panel/notify.yaml\n    input:\n'
+            '      alert: binary_sensor.epaper_alert_bins_out\n      notify: [notify.iphone]\n')
+        hass = Path(os.environ["EPAPER_HA_PYTHON"]).with_name("hass")
+        out = subprocess.run([str(hass), "--script", "check_config", "-c", str(cfg)],
+                             capture_output=True, text=True, timeout=300)
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertNotIn("Failed to generate automation", out.stdout + out.stderr)
+
+
 class TestAlertState(unittest.IsolatedAsyncioTestCase):
     """What frames keeps for notify.py: every alert that holds, and the "Only when" pages whose condition holds."""
 

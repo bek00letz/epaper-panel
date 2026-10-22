@@ -56,6 +56,7 @@ Where things live in `addon/app/`:
 | `reach.py` / `companion.py` / `companion/epaper_panel/` | Reaching home: how screens away from home get in, and the Home Assistant integration that passes them on |
 | `frames.py` | Per design: which pages are live, their values, alerts. Per device: quiet hours, then its kind renders it |
 | `entities.py` / `mqtt_bridge.py` | The add-on's own values, and mirroring them into Home Assistant |
+| `notify.py` / `blueprints/notify.yaml` | Phone notifications for a page: its sensor, the shipped blueprint, the automation made from it |
 | `sources/` | Outside data (flights, sports, racing, weather, calendars, to-do lists), always through `live_data.py` |
 | `panel_link.py` / `panel_ops.py` | Finding a panel and asking it to refresh or step |
 | `panel_setup.py` / `firmware_gen.py` / `firmware/panel.yaml` | Panel setup, and the one source of the firmware YAML |
@@ -333,6 +334,31 @@ render) live in one record inside the add-on, `runtime.PUBLISHED`.
   `_2`. That path is switched off (`PUBLISH_VIA_STATES_API`). A one-time step
   removes the directly written states and restores each entity's intended ID.
   It only touches IDs Home Assistant suffixed itself (`<id>_<n>`).
+
+### Phone notifications
+
+The add-on never sends a notification; Home Assistant's automations do, so
+automations have one home (the user's call, 22 Oct). `notify.py`:
+
+- **A sensor only for a page that asks.** "Also notify my phone…" gives the
+  page a `notify` id. That page alone gets a binary sensor: on while its
+  alert holds (`binary_sensor.epaper_alert_<page>`, from
+  `frames.check_alerts`'s `active`), or while its "Only when" condition holds
+  (`binary_sensor.epaper_showing_<page>`, `runtime.showing`). Its unique_id is
+  the notify id, so renaming the page keeps the entity. A change alert that
+  fires again while it's on goes off and on again: "turns on" is the one
+  thing to watch. A page in an unsent draft has its sensor already (off).
+- **The blueprint ships with the add-on** (`blueprints/notify.yaml`, installed
+  with `blueprint/save` when a notification is first set up, again only when
+  ours changed). It triggers on off → on only, so a restart isn't an alert.
+- **The automation is Home Assistant's.** The add-on makes it from the
+  blueprint with the phones picked in the editor (config API), then only
+  reads what uses the sensor (`search/related`) to show it.
+- **Nothing an automation uses is withdrawn.** A sensor no page asks for is
+  withdrawn at once, unless an automation or script still uses it or Home
+  Assistant can't say: then it stays, off (`page_removed`), until nothing
+  does. "Stop notifying" deletes only automations made from our blueprint,
+  and only the ones the person chose.
 
 ## Outside data
 

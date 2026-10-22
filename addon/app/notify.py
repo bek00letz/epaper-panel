@@ -22,6 +22,7 @@ them (the user's call, 22 Oct). The add-on's part:
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import re
 import time
@@ -36,12 +37,16 @@ import runtime
 from hass import HassError
 from layouts_store import load_draft
 
+BLUEPRINT_FILE = Path(__file__).resolve().parent / "blueprints" / "notify.yaml"
 BLUEPRINT_PATH = "epaper_panel/notify.yaml"          # under Home Assistant's blueprints/automation/
 NOTIFY_ID = re.compile(r"^[a-z0-9]{6,16}$")
 SIGNAL_UID = mqtt_bridge.UID_PREFIX + mqtt_bridge.SIGNAL_PREFIX
 KINDS = {"alert": ("alert", "mdi:bell-ring-outline"), "when": ("showing", "mdi:eye-outline")}
 PENDING_FOR = 900.0          # a sensor just set up, before the page carrying its id is saved
 USAGE_FOR = 600.0            # how long "an automation uses it" is trusted before asking again
+NO_BROKER = ("Phone notifications need the Mosquitto broker app in Home Assistant. "
+             "Install it, then try again.")
+NO_HA = "The add-on can't reach Home Assistant right now. Try again in a moment."
 
 # Set up from the editor, not yet in a saved draft or the panel's pages: id -> {design, page, kind, at}.
 PENDING: dict[str, dict] = {}
@@ -188,6 +193,15 @@ async def publish(hass) -> None:
 
 # ---------------------------------------------------------------- Home Assistant
 
+def _can_make_entities() -> str:
+    """Why a sensor can't be made now, or ""."""
+    if not config.HA_TOKEN:
+        return NO_HA
+    if runtime.PUBLISHER is None or runtime.PUBLISHER.transport is None:
+        return NO_BROKER
+    return ""
+
+
 async def usage(hass, entity_id: str, fresh: bool = False) -> list | None:
     """Automations and scripts using an entity: [{id, entity_id, name, ours, targets, kind}],
     or None when Home Assistant couldn't say (then it counts as used)."""
@@ -229,8 +243,9 @@ async def _describe(hass, kind: str, eid: str) -> dict:
 
 
 async def entity_of(hass, nid: str, wait: float = 0.0) -> str | None:
-    """The entity ID Home Assistant gave a page's sensor, waiting up to `wait` seconds for
-    it to appear (discovery takes a moment)."""
+    """The entity ID Home Assistant gave a page's sensor, or None when it has none, waiting up
+    to `wait` seconds for it to appear (discovery takes a moment). Raises HassError when Home
+    Assistant can't say."""
     uid = SIGNAL_UID + nid
     until = time.monotonic() + wait
     while True:
@@ -238,8 +253,146 @@ async def entity_of(hass, nid: str, wait: float = 0.0) -> str | None:
             for e in await hass.ws({"type": "config/entity_registry/list"}) or []:
                 if e.get("platform") == "mqtt" and e.get("unique_id") == uid:
                     return e.get("entity_id")
-        except HassError:
-            pass
+            failed = None
+        except HassError as exc:
+            failed = exc
         if time.monotonic() >= until:
+            if failed is not None:
+                raise failed
             return None
         await asyncio.sleep(0.5)
+
+
+def blueprint_text() -> str:
+    return BLUEPRINT_FILE.read_text()
+
+
+async def install_blueprint(hass) -> None:
+    """Put the shipped blueprint into Home Assistant, or this version over an older one of ours."""
+    text = blueprint_text()
+    digest = hashlib.sha256(text.encode()).hexdigest()[:16]
+    mark = config.DATA_DIR / "notify_blueprint.txt"
+    try:
+        listed = await hass.ws({"type": "blueprint/list", "domain": "automation"}) or {}
+    except HassError:
+        listed = {}
+    try:
+        installed = mark.read_text().strip()
+    except OSError:
+        installed = ""
+    if BLUEPRINT_PATH in listed and installed == digest:
+        return
+    await hass.ws({"type": "blueprint/save", "domain": "automation", "path": BLUEPRINT_PATH,
+                   "yaml": text, "allow_override": True})
+    try:
+        mark.write_text(digest)
+    except OSError:
+        pass
+
+
+def _names(hass_states: dict, targets: list[str]) -> str:
+    names = [hass_states.get(t) or t for t in targets]
+    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " and " + names[-1]
+
+
+async def set_up(hass, *, nid: str, design: str, page: str, page_def: dict, targets: list[str]) -> dict:
+    """"Also notify my phone…": the sensor, the blueprint, then an automation from it.
+    Returns {entity, automation}; raises SetupError with words for the person."""
+    if why := _can_make_entities():
+        raise SetupError(why)
+    if not targets:
+        raise SetupError("Pick a phone to notify.")
+    stopped = _load_stopped()
+    if stopped.pop(nid, None) is not None:
+        _save_stopped(stopped)
+    PENDING[nid] = {"design": design, "page": page, "page_def": page_def, "at": time.time()}
+    on, attrs = signal(nid, {"design": design, "page": page, "page_def": page_def, "sent": False})
+    runtime.PUBLISHER.set_signal(nid, on, attrs)
+    runtime.PUBLISHER.request_sync()
+    try:
+        await install_blueprint(hass)
+    except HassError as exc:
+        raise SetupError(f"Home Assistant didn't take the notification blueprint: {exc}") from exc
+    try:
+        entity = await entity_of(hass, nid, wait=8.0)
+    except HassError as exc:
+        raise SetupError(NO_HA) from exc
+    if entity is None:
+        raise SetupError("Home Assistant hasn't made the page's sensor yet. Check that the Mosquitto "
+                         "broker app is running, then try again.")
+    names = {}
+    for t in targets:
+        try:
+            names[t] = ((await hass.rest("GET", f"/states/{t}")) or {}).get("attributes", {}).get("friendly_name")
+        except HassError:
+            names[t] = None
+    auto_id = str(int(time.time() * 1000))
+    body = {"id": auto_id, "alias": f"Notify {_names(names, targets)} about {page_title(page)}",
+            "description": "Made by the E-paper panel add-on. Yours to change: the add-on only reads it.",
+            "use_blueprint": {"path": BLUEPRINT_PATH, "input": {"alert": entity, "notify": list(targets)}}}
+    try:
+        await hass.rest("POST", f"/config/automation/config/{auto_id}", json=body)
+    except HassError as exc:
+        raise SetupError(f"Home Assistant didn't take the automation: {exc}") from exc
+    _USAGE.pop(entity, None)
+    return {"entity": entity, "automation": {"id": auto_id, "name": body["alias"], "ours": True,
+                                             "targets": list(targets), "kind": "automation"}}
+
+
+async def stop(hass, nid: str, delete: list[str]) -> dict:
+    """Stop notifying: delete the automations asked (ours only), then withdraw the sensor
+    unless something still uses it. Returns {entity, kept: [what still uses it]}."""
+    try:
+        entity = await entity_of(hass, nid)
+    except HassError as exc:
+        raise SetupError(NO_HA) from exc
+    users = await usage(hass, entity, fresh=True) if entity else []
+    if users is None:
+        raise SetupError(NO_HA)
+    for item in users:
+        if item["kind"] == "automation" and item["ours"] and item["id"] in delete:
+            try:
+                await hass.rest("DELETE", f"/config/automation/config/{item['id']}")
+            except HassError as exc:
+                raise SetupError(f"Home Assistant didn't delete “{item['name']}”: {exc}") from exc
+    left = (await usage(hass, entity, fresh=True) if entity else []) if delete else users
+    if left is None:
+        left = users
+    stopped = _load_stopped()
+    stopped[nid] = time.time()
+    _save_stopped(stopped)
+    PENDING.pop(nid, None)
+    pub = runtime.PUBLISHER
+    obj = mqtt_bridge.SIGNAL_PREFIX + nid
+    if pub is not None and left == [] and obj in pub.last_seen:
+        pub.retire(f"binary_sensor.{obj}")
+        pub.request_sync()
+    return {"entity": entity, "kept": left or []}
+
+
+async def status(hass, nid: str) -> dict:
+    """What the editor shows next to a page: its sensor and what uses it."""
+    if why := _can_make_entities():
+        return {"ready": False, "problem": why, "entity": None, "automations": []}
+    try:
+        entity = await entity_of(hass, nid) if nid else None
+    except HassError:
+        return {"ready": True, "problem": NO_HA, "entity": None, "automations": []}
+    users = await usage(hass, entity) if entity else []
+    return {"ready": True, "problem": "" if users is not None else NO_HA, "entity": entity,
+            "automations": users or []}
+
+
+async def targets(hass) -> list[dict]:
+    """What can be notified: Home Assistant's notify entities, phones (the companion app) first."""
+    try:
+        reg = await hass.ws({"type": "config/entity_registry/list"}) or []
+    except HassError:
+        return []
+    out = [{"entity_id": e["entity_id"], "phone": e.get("platform") == "mobile_app"}
+           for e in reg if str(e.get("entity_id", "")).startswith("notify.") and not e.get("disabled_by")]
+    return sorted(out, key=lambda t: (not t["phone"], t["entity_id"]))
+
+
+class SetupError(Exception):
+    """Something the person can act on, in their words."""
