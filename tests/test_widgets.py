@@ -689,7 +689,9 @@ class TestTimeFormat(unittest.TestCase):
         self.assertEqual(todo.due_label({"due": at.isoformat()}, at.replace(hour=9))[0], "Today 2:05 PM")
         self.assertEqual(binding.now_text({"show": "now"}, at), "2:05 PM")
         self.assertIn("%-I:%M %p", binding.template_for({"entity": "sensor.door", "show": "last_changed", "format": "time"}))
-        self.assertEqual(sports._parse_espn_event({"date": at.isoformat(), "competitions": [{"status": {"type": {"state": "pre"}}}]},
+        # A kick-off says "Kick-off" only on the day itself: today's, whatever day the tests run.
+        today = datetime.now(TZ).replace(hour=14, minute=5, second=0, microsecond=0)
+        self.assertEqual(sports._parse_espn_event({"date": today.isoformat(), "competitions": [{"status": {"type": {"state": "pre"}}}]},
                                                   "", tz_name="Europe/Bucharest", league="soccer/eng.1")["clock"], "Kick-off 2:05 PM")
         clock.use(False)
         self.assertEqual(clock.hm(at), "14:05")
