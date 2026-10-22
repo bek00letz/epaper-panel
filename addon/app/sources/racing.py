@@ -256,23 +256,29 @@ async def _read_calendar(session, cal: Calendar, url: str, missing_ok: bool) -> 
     """One calendar's races; [] when it isn't published (yet), None when it couldn't be read."""
     try:
         async with session.get(url, headers=HEADERS, timeout=TIMEOUT,
-                               trace_request_ctx=health.MISSING_OK if missing_ok else None) as r:
+                               trace_request_ctx=health.Ask(missing_ok=missing_ok, judged=True)) as r:
             if r.status == 404 and missing_ok:
                 return []
             if r.status != 200:
                 return None             # health's trace has said so
-            if cal.reader == "events":
-                races = _read_events(await r.text())
-                if not races:           # the page is there but no longer says its season: say so
-                    health.fail(_service(url), "its calendar page has no races in it")
-                    return None
-                return races
-            return _read_sessions(await r.json(content_type=None))
+            body = await (r.text() if cal.reader == "events" else r.json(content_type=None))
     except ValueError as exc:           # an answer that isn't the calendar it was
         health.fail(_service(url), exc)
         return None
     except Exception:
         return None                     # unreachable: health's trace has said so
+    # Read apart from the network: a calendar whose form changed is a problem to say, whatever
+    # Python calls it (a list where a mapping was), never ignored like a network that's down.
+    try:
+        races = _read_events(body) if cal.reader == "events" else _read_sessions(body)
+    except (ValueError, TypeError, AttributeError, KeyError) as exc:
+        health.fail(_service(url), f"its calendar isn't in the form the add-on reads ({type(exc).__name__})")
+        return None
+    if not races and cal.reader == "events":    # the page is there but no longer says its season: say so
+        health.fail(_service(url), "its calendar page has no races in it")
+        return None
+    health.ok(_service(url))
+    return races
 
 
 def _service(url: str) -> str:

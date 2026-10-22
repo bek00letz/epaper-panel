@@ -323,6 +323,7 @@ class TestMissingIsAnAnswer(unittest.IsolatedAsyncioTestCase):
         health.reset()
         app = web.Application()
         app.router.add_get("/missing.json", lambda r: web.Response(status=404))
+        app.router.add_get("/odd.json", lambda r: web.json_response({"races": {"name": "a mapping, not a list"}}))
         self.server = web.AppRunner(app)
         await self.server.setup()
         site = web.TCPSite(self.server, "127.0.0.1", 0)
@@ -338,6 +339,27 @@ class TestMissingIsAnAnswer(unittest.IsolatedAsyncioTestCase):
         async with aiohttp.ClientSession(trace_configs=[health.trace_config()]) as s:
             async with s.get(f"http://127.0.0.1:{self.port}/missing.json", **kw) as r:
                 return r.status
+
+    async def test_a_calendar_in_another_shape_stays_a_problem(self):
+        # The trace said "answering" at every download, before the calendar was read, so a
+        # calendar whose form changed flipped back to fine every ten minutes and its problem
+        # sensor (on after five minutes of failing) hardly ever showed.
+        from sources import racing
+        url = f"http://127.0.0.1:{self.port}/odd.json"
+        cal = racing.Calendar("sessions", url)
+        now = [1000.0]
+        old_clock, health.clock = health.clock, lambda: now[0]
+        try:
+            async with aiohttp.ClientSession(trace_configs=[health.trace_config()]) as s:
+                with contextlib.redirect_stdout(io.StringIO()):
+                    self.assertIsNone(await racing._read_calendar(s, cal, url, missing_ok=False))
+                    now[0] += racing.RETRY_EVERY
+                    self.assertIsNone(await racing._read_calendar(s, cal, url, missing_ok=False))
+            entry = next(e for e in health.status() if e["name"] == "Test calendar")
+            self.assertEqual(entry["failing_since"], 1000.0, "failing since the first read, not reset by the second")
+            self.assertTrue(entry["problem"], "so its problem sensor is on")
+        finally:
+            health.clock = old_clock
 
     async def test_a_404_marked_missing_ok_is_not_a_failure(self):
         with contextlib.redirect_stdout(io.StringIO()) as out:

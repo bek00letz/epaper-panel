@@ -257,6 +257,27 @@ class TestBetweenSeasons(unittest.IsolatedAsyncioTestCase):
         self.assertIsNotNone(entry["failing_since"])
         self.assertIn("no races", entry["error"])
 
+    async def test_a_calendar_in_another_shape_is_a_problem_and_keeps_its_last_season(self):
+        # It was ignored silently: a shape error isn't a ValueError, and the catch-all assumed
+        # health's trace had already said so, which it only does for the network.
+        import health
+        health.reset()
+        url_part = f"/_db/f1/{NOW.year}.json"
+        good = {url_part: sessions_file(("Las Vegas Grand Prix", "Las Vegas", NOW + timedelta(days=2)))}
+        first = await racing.fetch_racing_data.direct(FakeWeb(good), "f1", tz_name="UTC")
+        for c in racing._calendar_cache.values():
+            c["at"] -= racing.CALENDAR_EVERY
+        for odd in ({"races": [{"name": "x", "sessions": ["2099-01-01T12:00:00Z"]}]},
+                    {"races": ["Las Vegas"]},
+                    {"races": {"name": "x"}}):
+            web = FakeWeb({url_part: odd, "site.api.espn.com": {"events": []}})
+            again = await racing.fetch_racing_data.direct(web, "f1", tz_name="UTC")
+            self.assertEqual(again["event_name"], first["event_name"], f"kept its last season with {odd}")
+            entry = next((e for e in health.status() if e["name"] == "Racing calendar"), None)
+            self.assertIsNotNone(entry and entry["failing_since"], f"said so with {odd}")
+            for c in racing._calendar_cache.values():
+                c["at"] -= racing.CALENDAR_EVERY
+
 
 if __name__ == "__main__":
     unittest.main()

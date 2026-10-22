@@ -26,6 +26,10 @@
   downloaded them all again (about 2.7 MB) every five minutes. It now waits
   longer after each failure, up to four hours, and tries at once when Home
   Assistant updates.
+- **Fixed:** a racing calendar whose format changed was ignored without a
+  word, and one that said it had no races turned its problem sensor on and
+  off every ten minutes. Both now keep the problem sensor on until the
+  calendar reads again, and the page keeps the last season it read.
 
 ## 0.20.0
 Add-on only; no firmware change, so nothing to reinstall on the panel.
