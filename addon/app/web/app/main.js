@@ -518,7 +518,7 @@ class App {
     const doc = this.doc, el = makeElement(t, this.geometry());
     if (t === "box") { doc.els().unshift(el); doc.sel = [0]; }                 // cards go behind what they frame
     else { doc.els().push(el); doc.sel = [doc.els().length - 1]; }
-    if (doc.page().tier === "when" && t === "dynamic_grid") syncDynamicGridShowIf(doc.page(), el);
+    if (t === "dynamic_grid") syncDynamicGridShowIf(doc.page(), el);         // "Only when", or an alert that follows it
     doc.commit();
     this.say(`Added ${TYPES[t].name}`);
     this.openInspectorOnPhone();
@@ -603,6 +603,7 @@ class App {
     if (v === "alert") doc.spec.rotation = doc.spec.rotation.filter((n) => n !== doc.cur);
     else if (!doc.spec.rotation.includes(doc.cur)) doc.spec.rotation.push(doc.cur);
     if (v === "when") { syncDynamicGridShowIf(p); syncWidgetShowIf(p); }
+    if (v === "alert") syncDynamicGridShowIf(p);                 // an alert with no condition yet takes its grid's
     this.rawCondition = this.rawUntil = false;
     doc.commit();
   }

@@ -3,6 +3,8 @@ page's threshold (or its own), lowest first, with Home Assistant's glyph for its
 level itself large. The user's call (22 Oct): built on Dynamic status, one threshold for the page
 that any battery can override, picked batteries, one direction per page."""
 import json
+import shutil
+import subprocess
 import unittest
 from unittest import mock
 
@@ -110,6 +112,48 @@ class TestTheTemplateAndTheExamples(unittest.TestCase):
         got = {r["entity"]: (r["state"], r["unit"], r["device_class"]) for r in json.loads(vals[0])}
         self.assertEqual(got["sensor.smoke_alarm_battery"], ("8", "%", "battery"))
         self.assertEqual(len(got), 4)
+
+
+APP_JS = support.APP / "web" / "app"
+
+
+def node(js):
+    src = (APP_JS / "conditions.js").as_uri()
+    out = subprocess.run(["node", "--input-type=module", "-e", f"import * as C from {json.dumps(src)};\n{js}"],
+                         capture_output=True, text=True, check=True).stdout
+    return json.loads(out)
+
+
+@unittest.skipUnless(shutil.which("node"), "no node to read the editor")
+class TestThePageShowsWhileOneDoes(unittest.TestCase):
+    GRID = """{ type: "dynamic_grid", filter_rule: "below", filter_value: 40,
+                items: [{ entity: "sensor.a" }, { entity: "sensor.b", threshold: 15 }, { entity: "" }] }"""
+
+    def test_the_condition_is_guarded_and_takes_each_ones_own(self):
+        got = node(f"console.log(JSON.stringify(C.gridShowIf({self.GRID})))")
+        self.assertEqual(got, "{{ (has_value('sensor.a') and states('sensor.a') | float(0) < 40) or "
+                              "(has_value('sensor.b') and states('sensor.b') | float(0) < 15) }}")
+        got = node("""console.log(JSON.stringify(C.gridShowIf({ filter_rule: "at_least", filter_value: 90, items: [{ entity: "sensor.a" }] })))""")
+        self.assertEqual(got, "{{ (has_value('sensor.a') and states('sensor.a') | float(0) >= 90) }}")
+
+    def test_a_state_grid_writes_what_it_wrote_before(self):
+        got = node("""console.log(JSON.stringify(C.gridShowIf({ filter_state: "on", items: [{ entity: "switch.x" }, { entity: "switch.y" }] })))""")
+        self.assertEqual(got, "{{ is_state('switch.x','on') or is_state('switch.y','on') }}")
+
+    def test_an_alert_follows_its_grid_but_keeps_your_own_condition(self):
+        got = node(f"""const g = {self.GRID};
+          const fresh = {{ tier: "alert", elements: [g] }}; C.syncDynamicGridShowIf(fresh);
+          const yours = {{ tier: "alert", show_if: "{{{{ is_state('person.x','home') }}}}", elements: [g] }}; C.syncDynamicGridShowIf(yours);
+          g.items.splice(0, 1); C.syncDynamicGridShowIf(fresh);
+          console.log(JSON.stringify([fresh.show_if, yours.show_if]))""")
+        self.assertEqual(got[0], "{{ (has_value('sensor.b') and states('sensor.b') | float(0) < 15) }}", "and keeps following after a removal")
+        self.assertEqual(got[1], "{{ is_state('person.x','home') }}")
+
+    def test_the_inspector_offers_the_rule(self):
+        js = (APP_JS / "inspector.js").read_text()
+        self.assertIn('field("Shows each", select(GRID_RULES, gridRule(el)', js)
+        self.assertIn("field(`Its own ${cmp.toLowerCase()}`, number(it.threshold", js)
+        self.assertIn('if (v === "alert") syncDynamicGridShowIf(p);', (APP_JS / "main.js").read_text())
 
 
 if __name__ == "__main__":
