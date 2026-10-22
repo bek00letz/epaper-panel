@@ -31,7 +31,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta
 
-from . import hero
+from . import clock, hero
 from .todo import now_in
 
 ICONS = {"date": "mdi:calendar-clock", "bins": "mdi:trash-can"}
@@ -196,7 +196,7 @@ def describe(el: dict, now: datetime) -> hero.Fact | tuple[hero.Fact, hero.Fact]
         big = "Now" if mins < 1 else f"In {mins} min" if mins < 60 else f"In {round(mins / 60)} hours" if mins >= 90 else "In 1 hour"
     else:
         big = _days_words(days, False)
-    aside = _date_words(when.date(), today) + (f", {when:%H:%M}" if timed else "")
+    aside = _date_words(when.date(), today) + (f", {clock.hm(when)}" if timed else "")
     return hero.Fact(big, name, icon), hero.Fact(aside)
 
 

@@ -79,6 +79,14 @@ class TestDate(unittest.TestCase):
         self.assertEqual(says(self.HOLIDAY, "2026-12-24 14:20")[0], "In 4 hours")
         self.assertEqual(says(self.HOLIDAY, "2026-12-24 17:30")[0], "In 30 min")
 
+    def test_its_time_follows_the_12_hour_setting(self):
+        from render import clock
+        clock.use(True)
+        try:
+            self.assertEqual(says(self.HOLIDAY, "2026-12-20 10:00")[2], "Thursday 24 December, 6:00 PM")
+        finally:
+            clock.use(False)
+
     def test_a_whole_day_is_today_until_it_ends(self):
         el = {**self.HOLIDAY, "at": "2026-12-24"}
         self.assertEqual(says(el, "2026-12-24 23:30")[0], "Today")

@@ -90,18 +90,37 @@ def status() -> list[dict]:
     return [{**e, "problem": problem(e)} for e in sorted(_services.values(), key=lambda e: e["name"])]
 
 
-# The outside services the add-on's own widgets use, by host. Every request
-# through the shared session reports here (trace_config), so a new fetcher is
-# covered without any code of its own. Hosts not listed (your data sources,
-# Home Assistant itself) are tracked elsewhere or not at all.
+# The outside services the add-on uses, by address: a host, or a host and the start of a path
+# where one host serves several (GitHub's raw files are both the racing calendars and Iconify).
+# Every request through the shared session reports here (trace_config), so a new fetcher is
+# covered without any code of its own. Addresses not listed (your data sources, Home Assistant
+# itself) are tracked elsewhere or not at all.
 SERVICES = {
     "site.api.espn.com": "ESPN",
     "data-cloud.flightradar24.com": "Flightradar24",
     "opensky-network.org": "OpenSky",
-    "raw.githubusercontent.com": "Racing calendar",
+    "raw.githubusercontent.com/sportstimes/": "Racing calendar",
+    "raw.githubusercontent.com/iconify/": "Iconify",
+    "api.iconify.design": "Iconify",
     "formulaecal.com": "Formula E calendar",
     "www.fiaformulae.com": "Formula E",
 }
+
+
+def service_for(url) -> str | None:
+    """The service an address belongs to (SERVICES: the longest match), or None."""
+    if hasattr(url, "host"):
+        host, path = url.host or "", url.path or "/"
+    else:
+        from urllib.parse import urlsplit
+        parts = urlsplit(str(url))
+        host, path = parts.hostname or "", parts.path or "/"
+    best = None
+    for key, name in SERVICES.items():
+        h, slash, prefix = key.partition("/")
+        if h == host and (not slash or path.startswith("/" + prefix)) and (best is None or len(key) > len(best[0])):
+            best = (key, name)
+    return best[1] if best else None
 
 
 # Passed as a request's trace_request_ctx: "not found" here is a normal answer.
@@ -113,7 +132,7 @@ def trace_config():
     import aiohttp
 
     async def on_end(session, ctx, params):
-        name = SERVICES.get(params.url.host or "")
+        name = service_for(params.url)
         if name is None:
             return
         # A request may say a 404 is an answer, not a failure: something looked up that may
@@ -125,7 +144,7 @@ def trace_config():
             fail(name, f"HTTP {params.response.status} from {params.url.host}")
 
     async def on_exception(session, ctx, params):
-        name = SERVICES.get(params.url.host or "")
+        name = service_for(params.url)
         if name is not None:
             fail(name, params.exception)
 

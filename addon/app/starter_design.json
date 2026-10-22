@@ -29,10 +29,8 @@
         },
         {
           "id": "s_sun",
-          "type": "text",
-          "value": "{% set up = is_state('sun.sun', 'above_horizon') %}{% set t = state_attr('sun.sun', 'next_setting' if up else 'next_rising') %}{{ ('Sunset ' if up else 'Sunrise ') ~ (as_timestamp(t) | timestamp_custom('%H:%M') if t else '') }}",
-          "bold": false,
-          "align": "left",
+          "type": "sun_times",
+          "style": "next",
           "x": 200,
           "y": 144,
           "w": 360,

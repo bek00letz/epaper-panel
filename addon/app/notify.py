@@ -195,6 +195,9 @@ async def publish(hass) -> None:
         if eid is None:
             continue              # not connected yet, or Home Assistant never had it: no decision
         users = await usage(hass, eid)
+        if users == []:
+            # Withdrawing can't be undone: never on a remembered answer (an automation made since).
+            users = await usage(hass, eid, fresh=True)
         if users is None or users:
             was = (pub.desired.get(obj) or {}).get("attrs") or {}
             pub.set_signal(nid, False, {**was, "fired_at": was.get("fired_at"), "page_removed": True})

@@ -110,6 +110,7 @@ class IconTest(unittest.TestCase):
         support.fresh_data_dir()
         self._sets = dict(icons._sets)
         icons._sets.clear()
+        iconsets._ha_failed.clear()
 
     def tearDown(self):
         icons._sets.clear()
@@ -273,11 +274,32 @@ class TestCopyingHomeAssistantsSet(IconTest):
         with self.assertRaises(ValueError):
             self.copy(fe)
         self.assertIs(icons.set_for("mdi"), icons.shipped())
+        iconsets._ha_failed.clear()                     # not waiting for the retry: another way to fail
         fe = FakeFrontend(icons_by_part=[dict(icons.shipped()["icons"]), {"cat-outline": "M1 nonsense"}])
         with self.assertRaises(ValueError):
             self.copy(fe)
         self.assertFalse(layout.can_draw_icon("mdi:cat-outline"))
         self.assertFalse((iconsets.icon_dir() / "mdi.json.gz").exists())
+
+    def test_a_failed_copy_waits_longer_each_time(self):
+        # It used to fetch every chunk again (2.7 MB, every outline checked) every 5 minutes.
+        now = [1000.0]
+        broken = FakeFrontend(broken={1})
+        with mock.patch.object(iconsets, "_now", lambda: now[0]):
+            waits = []
+            for _ in range(8):
+                with self.assertRaises(ValueError):
+                    self.copy(broken)
+                asked = len(broken.asked)
+                self.assertEqual(self.copy(broken), "waiting", "not fetched again straight away")
+                self.assertEqual(len(broken.asked), asked)
+                waits.append(iconsets._ha_failed["wait"])
+                now[0] += waits[-1]
+            self.assertEqual(waits[:3], [iconsets.RETRY_FIRST, iconsets.RETRY_FIRST * 2, iconsets.RETRY_FIRST * 4])
+            self.assertEqual(waits[-1], iconsets.RETRY_MOST, "never longer than a few hours")
+            self.assertIn("copied", self.copy(FakeFrontend(), FakeHass("2026.12.0")),
+                          "a new Home Assistant is tried at once")
+            self.assertEqual(iconsets._ha_failed, {}, "and working, it starts afresh")
 
     def test_too_few_icons_is_not_a_set(self):
         with self.assertRaises(ValueError):
@@ -381,6 +403,11 @@ class TestCustomSets(IconTest):
         self.assertIsNone(iconsets.svg_record(f"<svg {ns} viewBox='0 0 1e309 24'><path d='M0 0H9V9Z'/></svg>"))
         self.assertIsNone(iconsets.svg_record(f"<svg {ns} width='1e309' height='5'><path d='M0 0H9V9Z'/></svg>"))
         self.assertIsNone(iconsets.svg_record(f"<svg {ns} viewBox='0 0 24 24'><path stroke='black' stroke-width='1e309' d='M0 0L9 9'/></svg>"))
+        # Finite but absurd: accepted, it raised OverflowError when drawn and its page was left out.
+        huge = iconsets.svg_record(f"<svg {ns} viewBox='0 0 24 24'><path stroke='black' stroke-width='1e300' d='M0 0L9 9'/></svg>")
+        self.assertIsNone(huge)
+        self.assertFalse(vector.check({"s": [[SQUARE, 1e300]], "v": [0, 0, 24, 24]}))
+        self.assertTrue(vector.check({"s": [[SQUARE, 3]], "v": [0, 0, 24, 24]}), "a real stroke still draws")
         self.assertFalse(vector.check({"d": SQUARE, "v": [0, 0, float("nan"), 24]}))
         self.assertFalse(vector.check({"s": [[SQUARE, float("inf")]]}))
         write(self.cfg / "custom_icons" / "deep.svg", deep)

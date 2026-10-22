@@ -57,6 +57,8 @@ from render import icons, vector
 HEALTH = "Icons from Home Assistant"
 FRONTEND = (os.environ.get("HA_FRONTEND") or "http://homeassistant:8123").rstrip("/")
 CHECK_EVERY = 300                   # seconds between looking for a new Home Assistant or changed files
+RETRY_FIRST = 300                   # a copy of Home Assistant's set that failed: tried again after this,
+RETRY_MOST = 4 * 3600               # doubling to this, until it works or Home Assistant's version changes
 MAX_SVG = 512 * 1024                # bytes; an icon is a few kB
 MAX_SCRIPT = 32 * 1024 * 1024
 MAX_ICONS = 60000                   # per set
@@ -165,6 +167,30 @@ async def copy_home_assistant(session, hass, *, ha_version: str = "") -> str:
         ha_version = str(cfg.get("version") or "")
     if ha_version and state.get("ha_version") == ha_version:
         return "unchanged"
+    # A copy that failed isn't fetched again every few minutes (2.7 MB and every outline checked):
+    # it waits, longer each time, until it works or Home Assistant's version changes.
+    failed = _ha_failed if _ha_failed.get("ha_version") == ha_version else {}
+    if failed and _now() < failed["at"]:
+        return "waiting"
+    try:
+        said = await _copy_home_assistant(session, state)
+    except Exception:
+        wait = min(RETRY_MOST, failed["wait"] * 2) if failed else RETRY_FIRST
+        _ha_failed.clear()
+        _ha_failed.update(ha_version=ha_version, wait=wait, at=_now() + wait)
+        raise
+    _ha_failed.clear()
+    state.update(ha_version=ha_version)
+    _write_json(_state_path(), state)
+    return said
+
+
+# The last failed copy of Home Assistant's set: {ha_version, wait, at} (monotonic seconds), or {}.
+_ha_failed: dict = {}
+_now = time.monotonic
+
+
+async def _copy_home_assistant(session, state: dict) -> str:
     meta = await _get_json(session, "/static/mdi/iconMetadata.json")
     version = str((meta or {}).get("version") or "")
     chunks = [p.get("file") for p in (meta or {}).get("parts") or [] if isinstance(p, dict)]
@@ -191,8 +217,7 @@ async def copy_home_assistant(session, hass, *, ha_version: str = "") -> str:
         await loop.run_in_executor(None, lambda: _write_json(icon_dir() / "mdi.json.gz", data, compress=True))
         icons.install(icons.DEFAULT, data)
         said = f"copied {len(data['icons'])} icons ({version})"
-    state.update(ha_version=ha_version, mdi_version=version)
-    _write_json(_state_path(), state)
+    state.update(mdi_version=version)
     return said
 
 
@@ -1081,9 +1106,12 @@ async def keep_in_step(session, hass) -> None:
         if hass is not None and hass.available:
             try:
                 said = await copy_home_assistant(session, hass)
-                if said != "unchanged":
-                    print(f"icons: Home Assistant's set: {said}", flush=True)
-                health.ok(HEALTH)
+                if said == "waiting":
+                    pass                            # still failing as far as anyone knows: health unchanged
+                else:
+                    if said != "unchanged":
+                        print(f"icons: Home Assistant's set: {said}", flush=True)
+                    health.ok(HEALTH)
             except Exception as exc:                # noqa: BLE001
                 health.fail(HEALTH, exc)
         await asyncio.sleep(CHECK_EVERY)

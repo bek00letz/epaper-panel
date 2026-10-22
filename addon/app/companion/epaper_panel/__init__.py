@@ -33,7 +33,8 @@ DROP_REQUEST = {"authorization", "cookie", "host", "connection", "keep-alive", "
                 "proxy-connection", "te", "trailer", "transfer-encoding", "upgrade", "content-length",
                 "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto", "x-forwarded-prefix"}
 KEEP_RESPONSE = {"content-type", "etag", "last-modified", "cache-control", "retry-after", "x-epf-version",
-                 "x-epf-sleep"}               # how long a panel that sleeps between updates sleeps
+                 "x-epf-sleep",               # how long a panel that sleeps between updates sleeps
+                 "x-epf-next"}                # when an always-on panel fetches next (clock alignment)
 TIMEOUT = aiohttp.ClientTimeout(total=30)
 
 
