@@ -391,6 +391,8 @@ async def api_entities(request):
                 }
                 if s.get("state") in ("unavailable", "unknown"):
                     by_id[eid]["changed"] = s.get("last_changed") or ""      # how long it's been quiet
+                if attrs.get("restored"):
+                    by_id[eid]["restored"] = True        # its integration no longer provides it: a leftover
 
     # Always merge live E-Paper Studio published entities so newly added widgets appear immediately
     for eid, info in runtime.PUBLISHED.items():

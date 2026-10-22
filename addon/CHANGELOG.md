@@ -10,9 +10,10 @@
   battery that has been unavailable for 12 hours now shows after the low
   ones, as "No answer since Tue 14:02", and the page shows for it. When all
   of one integration's batteries stop answering together, it's one line,
-  such as "Salus: 3 not answering". Change the wait, or turn it off with
+  such as "Matter: 4 not answering". Change the wait, or turn it off with
   Never, in the page's Batteries settings. A Home Assistant restart starts
-  the wait again, so it can show later than it should, never early.
+  the wait again, so it can show later than it should, never early. A
+  sensor its integration no longer provides is left out: it's no battery.
 - **A page's widget and your own condition count together.** On a page
   set to "Only when" or "As an alert", the page's Shows section now has two
   parts: "Something on it to show", a switch for its widget (a low battery,

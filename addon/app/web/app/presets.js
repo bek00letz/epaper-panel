@@ -584,8 +584,10 @@ const levelOf = (e) => { if (isLowSensor(e)) return e.state === "on" ? 0 : null;
 /* Home Assistant's batteries: sensors of device class battery in %, and "battery low" binary sensors
    (on is low), the emptiest first (a low one counts as empty while on). */
 export const isLowSensor = (e) => String(e?.entity_id || "").startsWith("binary_sensor.") && e.device_class === "battery";
+/* One its integration no longer provides (Home Assistant keeps it, restored) is a leftover, never a
+   battery: the editor's mirror of sources/batteries.leftover. */
 export function batterySensors(ents) {
-  return (ents || []).filter((e) => e.device_class === "battery" && ((String(e.unit || "").trim() === "%" && String(e.entity_id).startsWith("sensor.")) || isLowSensor(e)))
+  return (ents || []).filter((e) => !e.restored && e.device_class === "battery" && ((String(e.unit || "").trim() === "%" && String(e.entity_id).startsWith("sensor.")) || isLowSensor(e)))
     .map((e, k) => ({ e, k, v: levelOf(e) }))
     .sort((a, b) => (a.v == null) - (b.v == null) || (a.v ?? 0) - (b.v ?? 0) || a.k - b.k)
     .map(({ e }) => e);

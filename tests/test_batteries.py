@@ -470,9 +470,9 @@ def at(hours_ago):
     return datetime.fromtimestamp(NOW - hours_ago * 3600, timezone.utc).isoformat()
 
 
-SALUS = [{"entity_id": f"binary_sensor.{r}_thermostat_battery_problem", "platform": "salus", "config_entry_id": "S1",
+SALUS = [{"entity_id": f"binary_sensor.{r}_thermostat_battery_low", "platform": "matter", "config_entry_id": "M1",
           "original_device_class": "battery"} for r in ("bedroom", "hallway", "office")]
-ENTRIES = [{"entry_id": "S1", "domain": "salus", "title": "Salus"}]
+ENTRIES = [{"entry_id": "M1", "domain": "matter", "title": "Matter"}]
 
 
 def quiet(eid, hours_ago, **attrs):
@@ -509,14 +509,29 @@ class TestABatteryThatStoppedAnswering(unittest.TestCase):
     def test_one_integration_all_quiet_together_is_one_line(self):
         rows = batteries.shown(self.el, batteries.chosen(self.el, self.every()), NOW)
         group = [b for b in rows if b.get("no_answer_count")]
-        self.assertEqual([(g["name"], g["no_answer_count"]) for g in group], [("Salus", 3)])
+        self.assertEqual([(g["name"], g["no_answer_count"]) for g in group], [("Matter", 3)])
         self.assertFalse([b for b in rows if "thermostat" in b["entity"]], "not each as well")
         # Gone quiet hours apart: each its own line.
         rows = batteries.shown(self.el, batteries.chosen(self.el, self.every(salus=(13, 20, 30))), NOW)
         self.assertEqual(len([b for b in rows if "thermostat" in b["entity"] and b.get("no_answer")]), 3)
 
     def test_its_class_comes_from_the_registry_while_it_says_nothing(self):
-        self.assertIn("binary_sensor.office_thermostat_battery_problem", [b["entity"] for b in self.every()])
+        self.assertIn("binary_sensor.office_thermostat_battery_low", [b["entity"] for b in self.every()])
+
+    def test_a_leftover_is_no_battery_at_all(self):
+        """The user's Home Assistant, 22 Oct: Salus stopped providing its four battery sensors; Home
+        Assistant keeps them, restored and unavailable. Leftovers, not batteries that stopped answering."""
+        gone = [{"entity_id": f"binary_sensor.{r}_thermostat_battery_problem", "platform": "salus", "config_entry_id": "S1",
+                 "original_device_class": "battery"} for r in ("bedroom", "hallway")]
+        states = STATES + [quiet(r["entity_id"], 30, restored=True, device_class="battery", friendly_name="Old") for r in gone]
+        states += [quiet("sensor.old_remote_battery", 30, restored=True, device_class="battery", unit_of_measurement="%")]
+        every = batteries.every_battery(REGISTRY + gone, states, [{"entry_id": "S1", "domain": "salus", "title": "Salus"}])
+        self.assertFalse([b for b in every if "thermostat" in b["entity"] or "old_remote" in b["entity"]])
+        self.assertNotIn("sensor.old_remote_battery", batteries.charged_by_you(REGISTRY, states))
+        happy = {**self.el, "filter_value": 5, "except": ["binary_sensor.remote_battery_low"]}
+        self.assertFalse(batteries.needs_you(happy, batteries.chosen(happy, every), NOW), "nothing to show for them")
+        import web
+        self.assertIn('by_id[eid]["restored"] = True', open(web.__file__).read())
 
     def test_it_says_since_when_in_the_panels_time_after_the_low_ones(self):
         from datetime import datetime, timezone
@@ -537,7 +552,7 @@ class TestABatteryThatStoppedAnswering(unittest.TestCase):
         order = [t for t in texts if t in ("12%", "Low", "3 not answering") or t.startswith("No answer")]
         self.assertEqual(order[:2], ["Low", "12%"])
         self.assertEqual(sorted(order[2:]), sorted([layout._no_answer_text({"no_answer": at(13)}), "3 not answering"]))
-        self.assertIn("Salus", texts)
+        self.assertIn("Matter", texts)
         self.assertIn("mdi:battery-unknown", icons)
 
     def test_the_widget_and_its_gate_use_it(self):
@@ -574,6 +589,14 @@ const ids = new Set(ents.map((e) => e.entity_id));
 console.log(JSON.stringify([P.batteriesPast(ents, ids, "below", 20, 12, now), P.batteriesPast(ents, ids, "below", 20, 24, now),
   P.batteriesPast(ents, ids, "at_least", 50, 12, now), P.batteriesPast(ents, ids, "below", 20, null, now)]));""")
         self.assertEqual(got, [1, 0, 1, 0])
+
+    def test_the_editor_leaves_a_leftover_out(self):
+        got = editor("""
+const ents = [{ entity_id: "binary_sensor.office_thermostat_battery_problem", state: "unavailable", device_class: "battery", restored: true },
+              { entity_id: "sensor.old_remote_battery", state: "unavailable", device_class: "battery", unit: "%", restored: true },
+              { entity_id: "sensor.door_battery", state: "60", device_class: "battery", unit: "%" }];
+console.log(JSON.stringify([P.batterySensors(ents).map((e) => e.entity_id), P.preselectBatteries(ents, "below", {})]));""")
+        self.assertEqual(got, [["sensor.door_battery"], ["sensor.door_battery"]])
 
     def test_the_inspector_offers_the_wait(self):
         self.assertIn("Count one that hasn't answered for", (APP_JS / "inspector.js").read_text())

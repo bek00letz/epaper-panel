@@ -29,9 +29,16 @@ def says_charging(st: dict) -> bool:
     return bool(said & CHARGING_WORDS) and "charging" in " ".join(said)
 
 
+def leftover(st: dict) -> bool:
+    """One its integration no longer provides: Home Assistant keeps it, restored from before, until
+    it's removed (attributes.restored). A leftover, not a battery that stopped answering: never one
+    (seen on the user's Home Assistant, 22 Oct: Salus's old battery sensors)."""
+    return bool((st.get("attributes") or {}).get("restored"))
+
+
 def is_battery(st: dict) -> bool:
     attrs = st.get("attributes") or {}
-    return (str(st.get("entity_id", "")).startswith("sensor.") and attrs.get("device_class") == "battery"
+    return (not leftover(st) and str(st.get("entity_id", "")).startswith("sensor.") and attrs.get("device_class") == "battery"
             and str(attrs.get("unit_of_measurement") or "").strip() == "%")
 
 
@@ -73,7 +80,7 @@ KINDS = ("swap", "charge")
 def is_battery_low_sensor(st: dict) -> bool:
     """A binary sensor of device class battery: on means low (Zigbee and Z-Wave devices)."""
     attrs = st.get("attributes") or {}
-    return str(st.get("entity_id", "")).startswith("binary_sensor.") and attrs.get("device_class") == "battery"
+    return not leftover(st) and str(st.get("entity_id", "")).startswith("binary_sensor.") and attrs.get("device_class") == "battery"
 
 
 def _by_name(eid: str, ids: set) -> bool:
@@ -91,8 +98,8 @@ def _by_name(eid: str, ids: set) -> bool:
 def every_battery(registry: list, states: list, entries: list | None = None) -> list[dict]:
     """Every battery Home Assistant has, a level in % or a low sensor: [{"entity", "state", "name",
     "unit", "device_class", "changed", "kind", "entry", "source"}], `kind` swap or charge; `entry` its
-    integration's config entry and `source` that integration's name (its entry's title), for "Salus:
-    4 not answering" when one integration stops answering for all of them."""
+    integration's config entry and `source` that integration's name (its entry's title), for "Matter:
+    4 not answering" when one integration stops answering for all of them. A leftover isn't one."""
     device_of = {e.get("entity_id"): e.get("device_id") for e in registry or [] if isinstance(e, dict)}
     reg = {e.get("entity_id"): e for e in registry or [] if isinstance(e, dict)}
     title_of = {c.get("entry_id"): c.get("title") or c.get("domain") or "" for c in entries or [] if isinstance(c, dict)}
