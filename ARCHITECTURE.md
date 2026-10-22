@@ -56,7 +56,7 @@ Where things live in `addon/app/`:
 | `reach.py` / `companion.py` / `companion/epaper_panel/` | Reaching home: how screens away from home get in, and the Home Assistant integration that passes them on |
 | `frames.py` | Per design: which pages are live, their values, alerts. Per device: quiet hours, then its kind renders it |
 | `entities.py` / `mqtt_bridge.py` | The add-on's own values, and mirroring them into Home Assistant |
-| `sources/` | Outside data (flights, sports, racing, weather, calendars, to-do lists), always through `live_data.py` |
+| `sources/` | Outside data (flights, sports, racing, weather, calendars, to-do lists, Home Assistant's notifications, updates and Repairs), always through `live_data.py` |
 | `panel_link.py` / `panel_ops.py` | Finding a panel and asking it to refresh or step |
 | `panel_setup.py` / `firmware_gen.py` / `firmware/panel.yaml` | Panel setup, and the one source of the firmware YAML |
 | `web.py` | The device port (shared routes; each kind adds its own) and the Ingress-only editor API |
@@ -336,14 +336,15 @@ render) live in one record inside the add-on, `runtime.PUBLISHED`.
 
 ## Outside data
 
-`live_data.py`. Flights, sports, racing, weather, calendars and to-do lists are fetched in
-the background; a render only reads what's already there and never waits on
+`live_data.py`. Flights, sports, racing, weather, calendars, to-do lists and
+what needs you in Home Assistant (`sources/needs_you.py`: its notifications,
+updates waiting and Repairs) are fetched in the background; a render only reads what's already there and never waits on
 an outside service. The first read of something new returns at once, using the
 caller's fallback, and schedules the fetch. When it lands, the render loop
 wakes, so a new widget fills in within seconds. A failed fetch keeps the last
 good value, unless it has a `stale_after` age (an aircraft list older than five
 minutes is dropped). Your data sources (`feeds/`) go through the same store,
-each on its own interval. The eight fetchers in `sources/` are decorated `@runtime.live(seconds)`;
+each on its own interval. The fetchers in `sources/` are decorated `@runtime.live(seconds)`;
 their own caches still stop them hitting a service more often than it allows.
 The editor's preview (and its aircraft list) wait for fresh data, because
 there a person asked.
