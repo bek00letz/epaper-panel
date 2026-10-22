@@ -46,8 +46,8 @@ Merged worktrees kept until the user OKs removing them: `release-next`,
 ## Framework review
 
 Last review: e8e65c2 to v0.20.0 (22 Oct; framework-review-2.md in the
-coordinator's notes). 8 findings: 1 and 2 go into 0.20.1. For 0.21 (not
-started, user's call): units followed rather than copied (3), page gating from
+coordinator's notes). 8 findings: 1 and 2 go into 0.20.1. For 0.20.2 (the user,
+22 Oct; a worker proposed, waiting to be started): units followed rather than copied (3), page gating from
 widget descriptors (4), Batteries as a rule (5; the user chose a rule: every
 battery of its kind below the threshold, minus the unticked, binary
 battery-low sensors included), "changed" stored structured (6), phones grouped
