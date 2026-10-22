@@ -289,6 +289,15 @@ class TestWithdrawal(NotifyCase):
         run(notify.publish(self.hass))
         self.assertNotEqual(self.pub.last_seen.get(f"epaper_page_{NID}"), 0.0, "not retired")
 
+    def test_never_withdrawn_on_an_old_answer(self):
+        """Asked a few minutes ago (the editor's notification panel), nothing used it; since then
+        the person made an automation by hand. Deleting the page must not withdraw it."""
+        self.assertEqual(run(notify.usage(self.hass, self.eid)), [])
+        self.hass.use(self.eid, automation_id="1700000000001", ours=False, name="My own")
+        self.remove_the_page()
+        self.publish()
+        self.assertTrue(self.config(NID), "not withdrawn: an automation uses it")
+
     def test_kept_when_home_assistant_cant_say(self):
         self.hass.down = True
         self.remove_the_page()

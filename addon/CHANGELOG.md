@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed:** deleting a page that notified your phone could withdraw its
+  sensor while an automation you had made by hand in the last ten minutes
+  still used it. The add-on now asks Home Assistant again just before it
+  withdraws one.
+
 ## 0.20.0
 Add-on only; no firmware change, so nothing to reinstall on the panel.
 
