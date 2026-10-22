@@ -123,8 +123,17 @@ def service_for(url) -> str | None:
     return best[1] if best else None
 
 
-# Passed as a request's trace_request_ctx: "not found" here is a normal answer.
-MISSING_OK = object()
+class Ask:
+    """What a request tells the trace, as its trace_request_ctx. `missing_ok`: "not found" is a
+    normal answer (next year's racing calendar). `judged`: an answer that arrives isn't yet a
+    success; the caller reads it and says ok() or fail() itself, so a calendar whose form changed
+    stays a problem instead of turning fine at every download."""
+
+    def __init__(self, *, missing_ok: bool = False, judged: bool = False):
+        self.missing_ok, self.judged = missing_ok, judged
+
+
+MISSING_OK = Ask(missing_ok=True)
 
 
 def trace_config():
@@ -137,9 +146,15 @@ def trace_config():
             return
         # A request may say a 404 is an answer, not a failure: something looked up that may
         # not exist yet (next year's racing calendar), passed as trace_request_ctx=MISSING_OK.
-        missing_ok = getattr(ctx, "trace_request_ctx", None) is MISSING_OK and params.response.status == 404
-        if params.response.status < 400 or missing_ok:
-            ok(name)
+        ask = getattr(ctx, "trace_request_ctx", None)
+        ask = ask if isinstance(ask, Ask) else Ask()
+        if params.response.status < 400:
+            if not ask.judged:
+                ok(name)
+        elif ask.missing_ok and params.response.status == 404:
+            # Not there yet, as expected: no news either way. Never "answering" (it would clear a
+            # failure of the same service elsewhere, this year's calendar), never a failure.
+            _entry(name, "service")
         else:
             fail(name, f"HTTP {params.response.status} from {params.url.host}")
 
