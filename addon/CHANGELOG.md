@@ -22,6 +22,10 @@
   on the first page a new device shows. That line is now the Sunrise and
   sunset widget, which also works before Home Assistant answers. A test now
   fails on any time of day that skips the setting.
+- **Fixed:** when copying Home Assistant's own icons failed, the add-on
+  downloaded them all again (about 2.7 MB) every five minutes. It now waits
+  longer after each failure, up to four hours, and tries at once when Home
+  Assistant updates.
 
 ## 0.20.0
 Add-on only; no firmware change, so nothing to reinstall on the panel.
