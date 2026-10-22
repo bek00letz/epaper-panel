@@ -14,7 +14,7 @@ import { dateEditor, binsEditor, ready as countsReady } from "./countdown.js";
 import { zonesEditor } from "./zones.js";
 import { busyNote } from "./busyday.js";
 import { sleepsBetweenUpdates, lookOf, asksOf, needsOf, pageFor, examplePage, rankSensors, groupName, sensorOf, freeSourceName, energyRoles, staleNote, presetChangesEvery,
-  batterySensors, preselectBatteries, batteriesPast, BATTERY_DEFAULT } from "./presets.js";
+  batterySensors, preselectBatteries, batteriesPast, BATTERY_DEFAULT, batteryRule, chargedByYou, isLowSensor } from "./presets.js";
 
 const WHAT = { calendar: "Which calendar should it show?", todo: "Which list should it show?", weather: "Which weather should it show?",
   binary_sensor: "Which sensor should it show?", sensor: "Which sensor should it show?", jellyfin: "Whose Jellyfin should it show?" };
@@ -461,7 +461,10 @@ function batteriesSetup({ app, changed }) {
     if (!touched) chosen = new Set(preselectBatteries(app.ents, rule, byDevice));
     drawList(); say(); changed();
   });
-  const levelText = (e) => { const v = parseFloat(e.state); return Number.isFinite(v) ? `${Math.round(v)}%` : "No level"; };
+  const levelText = (e) => {
+    if (isLowSensor(e)) return e.state === "on" ? "Low" : "OK";
+    const v = parseFloat(e.state); return Number.isFinite(v) ? `${Math.round(v)}%` : "No level";
+  };
   const nameOf = (e) => String(e.name || e.entity_id).replace(/\s+battery(\s+level)?$/i, "") || e.name;
   const node = h("div", { class: "stepsec" });
   const hint = h("p", { class: "fnote", role: "status", "aria-live": "polite" });
@@ -473,7 +476,7 @@ function batteriesSetup({ app, changed }) {
     if (!byDevice && !touched) return;                                     // until the ticks are in
     const n = batteriesPast(app.ents, chosen, rule, value);
     hint.textContent = !chosen.size ? "Tick the batteries it watches."
-      : `${n === 0 ? "None would show" : n === 1 ? "1 would show" : `${n} would show`} now, of the ${chosen.size} ticked.`;
+      : `${n === 0 ? "None would show" : n === 1 ? "1 would show" : `${n} would show`} now, of the ${chosen.size} ticked. One you add to Home Assistant later shows too.`;
   }
   function drawList() {
     list.replaceChildren(...all.map((e) => h("button", { class: "opt", role: "checkbox", "aria-checked": String(chosen.has(e.entity_id)),
@@ -481,7 +484,7 @@ function batteriesSetup({ app, changed }) {
       h("span", { class: "ock", "aria-hidden": "true" }, chosen.has(e.entity_id) ? icon("check", "sm") : null),
       h("span", { class: "otext" }, h("span", { class: "o1", text: nameOf(e) }), h("span", { class: "o2", text: e.entity_id })),
       h("span", { class: "ov", text: levelText(e) }))));
-    if (!all.length) list.append(h("p", { class: "empty-note", text: "No batteries in Home Assistant yet: none of its sensors is a battery level in %. Any you add later can be picked in the inspector." }));
+    if (!all.length) list.append(h("p", { class: "empty-note", text: "No batteries in Home Assistant yet: none of its sensors is a battery level in % or a battery-low sensor. Any you add later shows here on its own." }));
   }
   function draw() {
     const cmp = rule === "below" ? "Below" : "At least";
@@ -507,7 +510,11 @@ function batteriesSetup({ app, changed }) {
     drawList(); say();
   }
   draw();
-  const extra = () => ({ rule, value: value === "" ? BATTERY_DEFAULT[rule] : value, items: all.map((e) => e.entity_id).filter((id) => chosen.has(id)), tier });
+  // A rule, not today's list (review 2 #5): every battery of this way's kind, minus the unticked, plus
+  // any of the other kind ticked; one added later shows too.
+  const ids = new Set((app.ents || []).map((e) => e.entity_id));
+  const kindOf = (e) => (chargedByYou(e, ids, byDevice || {}) ? "charge" : "swap");
+  const extra = () => ({ rule, value: value === "" ? BATTERY_DEFAULT[rule] : value, ...batteryRule(all, chosen, rule, kindOf), tier });
   return {
     node,
     ready: () => chosen.size > 0,

@@ -9,7 +9,7 @@ import { OPS, CHANGED_MINUTES, parseShowIf, compileShowIf, valueChoices, evaluat
 import { explodeWidget, getWidgetSensorId, suggestIconForEntity } from "./legacy.js";
 import { dateEditor, binsEditor } from "./countdown.js";
 import { zonesEditor } from "./zones.js";
-import { staleNote, changesEvery, pageChangesEvery, sleepsBetweenUpdates } from "./presets.js";
+import { staleNote, changesEvery, pageChangesEvery, sleepsBetweenUpdates, batterySensors, ruleTicks, isLowSensor } from "./presets.js";
 import { busyNote, leftOutNote } from "./busyday.js";
 import { notifyRows } from "./notify.js";
 import { widget, leagueOptions, seriesOptions, sportWord, stateWords } from "./catalog.js";
@@ -588,6 +588,7 @@ function gridSections(app, el, set) {
       else { p.tier = "rotate"; delete p.show_if; }
       app.doc.commit();
     }, "Sets when the whole page shows"));
+  if (el.batteries) return [top, batteriesSection(app, el, cmp, resync)];
   const spots = section(`Spots (${el.items.length})`);
   el.items.forEach((it, k) => {
     const card = h("div", { class: "spot" },
@@ -615,6 +616,48 @@ function gridSections(app, el, set) {
   });
   spots.append(h("button", { class: "btn tinted", onclick: () => { el.items.push({ entity: "", name: `Spot ${el.items.length + 1}`, icon: "mdi:radiator" }); resync(); app.doc.commit(); } }, icon("plus", "sm"), "Add a spot"));
   return [top, spots];
+}
+
+/* Batteries by rule (review 2 #5): every battery Home Assistant has, ticked as the rule picks it (its
+   kind, minus the unticked, plus the other kind's ticked). A tick changes `except` or `also`, never a
+   list of today's batteries, so one added later shows on its own. Each ticked one can have its own
+   number (`items` are each battery's own settings). Kinds are the add-on's (GET /api/batteries). */
+let batteryKinds = null;
+function batteriesSection(app, el, cmp, resync) {
+  const all = batterySensors(app.ents);
+  const box = section(`Batteries (${all.length})`);
+  const kindOf = (e) => (batteryKinds?.[e.entity_id] || "swap");
+  const own = (id) => (el.items || []).find((it) => it.entity === id);
+  function toggle(e) {
+    const id = e.entity_id, mine = kindOf(e) === el.batteries;
+    const listKey = mine ? "except" : "also", list = new Set(el[listKey] || []);
+    list.has(id) ? list.delete(id) : list.add(id);
+    el[listKey] = [...list];
+    resync(); app.doc.commit();
+  }
+  function draw() {
+    const ticks = ruleTicks(all, el, kindOf);
+    box.replaceChildren(h("h3", { class: "slab", text: `Batteries (${all.length})` }),
+      h("p", { class: "fnote", text: el.batteries === "charge"
+        ? "Every battery you charge, and any you tick. One you add to Home Assistant later shows too."
+        : "Every battery you swap, and any you tick. One you add to Home Assistant later shows too." }),
+      ...all.map((e) => {
+        const on = ticks.has(e.entity_id), it = own(e.entity_id);
+        return h("div", { class: "spot" },
+          h("button", { class: "opt", role: "checkbox", "aria-checked": String(on), onclick: () => { toggle(e); draw(); } },
+            h("span", { class: "ock", "aria-hidden": "true" }, on ? icon("check", "sm") : null),
+            h("span", { class: "otext" }, h("span", { class: "o1", text: e.name || e.entity_id }), h("span", { class: "o2", text: e.entity_id }))),
+          on && !isLowSensor(e) ? field(`Its own ${cmp.toLowerCase()}`, number(it?.threshold ?? "", (v) => {
+            const items = (el.items || []).filter((x) => x.entity !== e.entity_id);
+            if (v !== "") items.push({ ...(it || { entity: e.entity_id, name: "", icon: "" }), threshold: v });
+            el.items = items; resync(); app.doc.commit();
+          }, { step: "any", placeholder: String(el.filter_value ?? ""), "aria-label": `${e.name || e.entity_id}: its own number, or empty for the page's`, style: { width: "6em" } })) : null);
+      }));
+    if (!all.length) box.append(h("p", { class: "empty-note", text: "No batteries in Home Assistant yet. Any you add later shows here on its own." }));
+  }
+  draw();
+  if (!batteryKinds) api("api/batteries").then((r) => { batteryKinds = r.body?.kinds || {}; draw(); }, () => {});
+  return box;
 }
 
 /* ---------- several selected ---------- */

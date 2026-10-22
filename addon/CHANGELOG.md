@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **Batteries follows a rule, not the batteries you had that day.** A
+  Batteries page shows every battery of its kind (the ones you swap, or the
+  ones you charge) that's past its number, minus the ones you untick. A
+  door sensor added next month shows on its own, and "battery low" sensors
+  (common on Zigbee and Z-Wave devices) count too, as low whenever they're
+  on. Batteries pages you already have keep showing what they show today,
+  then follow the rule; nothing to do.
+
 - **Planes overhead pages say "only when" the same way as every other
   count**, so a page you set to show while a plane is near reads like one
   set by Notifications or a to-do list. Nothing changes in when it shows.

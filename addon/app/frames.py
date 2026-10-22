@@ -26,7 +26,7 @@ from entities import publish_category_sensors, publish_computed, publish_entity,
 from ha import curve_series, ha_json, resolve_templates
 from panel_ops import push_panel_update
 from sources.geo import get_home_locale, get_home_timezone
-from sources import changes, energy
+from sources import batteries, changes, energy
 from runtime import Frames
 
 
@@ -359,22 +359,31 @@ async def check_alerts(session, spec, state: dict):
     """
     now = time.time()
     defs = spec.get("pages", {})
+    # An alert whose widget decides it (a Batteries page by rule: widgets.py's gate) is asked of the widget.
+    gated = {n: g for n, p in defs.items() if p.get("tier") == "alert" and (g := widgets.gate_of(p))}
     alerts = {n: p for n, p in defs.items()
-              if p.get("tier") == "alert" and p.get("show_if")}
+              if p.get("tier") == "alert" and (p.get("show_if") or n in gated)}
     active = state.setdefault("active", {})
     if not alerts:
         state["name"], state["until"] = None, 0.0
         active.clear()
         return None
 
-    asks = {n: conditions.guarded(p["show_if"]) for n, p in alerts.items()}
+    asks = {n: conditions.guarded(p["show_if"]) for n, p in alerts.items() if n not in gated}
     ends = {n: until for n, p in alerts.items() if (until := conditions.ending(p))}
     asks.update({f"{n}:until": conditions.guarded(until) for n, until in ends.items()})
     # One that fires when something changes holds from the change, as long as
     # it holds (or at most, ending when something happens): its window is that.
-    changing = {n: ch for n, p in alerts.items() if (ch := conditions.changed(p["show_if"]))}
+    changing = {n: ch for n, p in alerts.items() if (ch := conditions.changed(p.get("show_if") or ""))}
     holds = {n: conditions.hold_minutes(alerts[n]) for n in changing}
     states = await resolve_conditions(session, asks, holds)
+    home_tz = await get_home_timezone(session) if gated else None
+    for n, (el, gate) in gated.items():
+        try:
+            states[n] = "True" if await gate.check(session, el, home_tz) else "False"
+        except Exception as exc:
+            print(f"alert {n}: its widget couldn't say ({health.describe(exc)})", flush=True)
+            states[n] = "False"
     truthy = {n for n in alerts if conditions.is_true(states.get(n, ""))
               and not (n in ends and conditions.is_true(states.get(f"{n}:until", "")))}
     # Each change is its own episode: a new one fires again while the last still holds.
@@ -582,8 +591,37 @@ async def refresh_frames(session) -> dict[str, Frames]:
             cadence.note_render(time.monotonic() - began)     # when devices should ask (cadence.py)
 
 
+async def follow_battery_rules(session) -> list[str]:
+    """Batteries pages made before the rule follow it, once Home Assistant's batteries are known
+    (sources/batteries.migrate; the user's call, 22 Oct): every saved design and every unsent draft,
+    so they keep showing what they showed and then whatever battery is added. Returns what changed."""
+    from layouts_store import load_draft, save_draft
+    every = await batteries.fetch_every(session)
+    if not every:
+        return []                                    # not known yet: next render
+    done = []
+    for design_id in sorted(devices.designs_in_use()):
+        found = devices.design(design_id)
+        changed = batteries.migrate(found.get("pages") or {}, every)
+        if changed:
+            devices._save_design(design_id, found)
+            done += [f"{design_id}:{n}" for n in changed]
+    for dev in devices.all_devices():
+        draft = load_draft(dev["id"])
+        if not draft:
+            continue
+        mine = batteries.migrate((draft.get("spec") or {}).get("pages") or {}, every)
+        mine += batteries.migrate((draft.get("base") or {}).get("pages") or {}, every)
+        if mine:
+            save_draft(draft, dev["id"])
+    if done:
+        print(f"batteries: {', '.join(done)} now follow the rule (every battery of its kind)", flush=True)
+    return done
+
+
 async def _refresh_all(session) -> dict[str, Frames]:
     timeformat.apply(*await get_home_locale(session))          # 12- or 24-hour, for every device
+    await follow_battery_rules(session)
     await publish_computed(session)
     # Devices of a kind that's switched off aren't drawn (kinds.shown).
     views = [(dev, spec) for dev, spec in devices.all_views() if kinds.shown(dev)]

@@ -630,13 +630,17 @@ async def api_energy(request):
 
 async def api_batteries(request):
     """Which battery sensors you charge yourself, by their device (sources.batteries):
-    {"batteries": {entity: true|false|null}}; null for one with no device, {} offline."""
+    {"batteries": {entity: true|false|null}} (null for one with no device, {} offline), and "kinds":
+    {entity: "swap"|"charge"} for every battery a Batteries page's rule can pick, battery-low sensors
+    included: the one answer the add-on resolves its rule by (batteries.every_battery)."""
     from sources import batteries
     try:
         got = await batteries.fetch(runtime.SESSION)
+        with live_data.waiting_for_fresh():
+            every = await batteries.fetch_every(runtime.SESSION) or []
     except Exception as exc:
         return web.json_response({"error": health.describe(exc)}, status=502)
-    return web.json_response({"batteries": got})
+    return web.json_response({"batteries": got, "kinds": {b["entity"]: b["kind"] for b in every}})
 
 
 async def api_changed(request):

@@ -169,8 +169,9 @@ def page_values(page: dict, now: datetime | None = None) -> tuple[dict, dict]:
             continue
         import widgets                              # widgets.py describes each widget with its example
         w = widgets.get(t)
-        if w and w.example:
-            vals[i] = w.example(el, now)
+        got = w.example(el, now) if w and w.example else None
+        if got is not None:                         # None: the fixture's answer stands (a Devices grid of states)
+            vals[i] = got
     return vals, series
 
 

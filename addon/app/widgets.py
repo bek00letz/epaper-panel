@@ -26,7 +26,7 @@ from typing import Any, Awaitable, Callable
 
 import examples
 from render import arrange, layout, sport, subitems
-from sources import energy, flights, ha_services, home, needs_you, racing, sports, station
+from sources import batteries, energy, flights, ha_services, home, needs_you, racing, sports, station
 
 # A default box: "fill" takes the content area less `inset` (from `y`); otherwise each size is clamped to it.
 FILL = {"fill": True, "y": 14, "inset": 20}
@@ -169,7 +169,32 @@ async def _planes_near(session, el, home_tz):
     return len(await flights.fetch_overhead_aircraft(session, radius_km=radius, lat=lat, lon=lon) or []) > 0
 
 
+def _is_batteries(el: dict) -> bool:
+    return bool(el.get("batteries"))
+
+
+async def _batteries_past(session, el, home_tz):
+    """A Batteries page shows while one of the batteries its rule picks is past its number."""
+    every = await batteries.fetch_every(session)
+    return any(batteries.past(b, el) for b in batteries.chosen(el, every or []))
+
+
 # ---------------------------------------------------------------- fetches
+
+async def _grid(session, el, ctx):
+    """A Devices grid of batteries by rule: the batteries it picks, now (sources/batteries.chosen).
+    A grid of its own entities is answered by its template (render/layout.collect_templates)."""
+    if not _is_batteries(el):
+        return None
+    every = await batteries.fetch_every(session)
+    return None if every is None else batteries.chosen(el, every)
+
+
+def _grid_example(el, now):
+    """Batteries by rule: the offline examples it picks; a grid of states: the fixture answers (None)."""
+    if not _is_batteries(el):
+        return None
+    return batteries.chosen(el, batteries.offline())
 
 def _num(value, default: int) -> int:
     try:
@@ -387,7 +412,10 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
            fields=[sel("counts", "Counts", [["updates", "Updates"], ["notifications", "Notifications"],
                                             ["repairs", "Repairs"], ["all", "All of these"]], "updates"),
                    {"kind": "note", "text": "It's hidden while the count is zero, so it may not show on the canvas right now."}]),
-    Widget("dynamic_grid", "Devices", "grid", None, None, box={"fill": True, "y": 16, "inset": 24},
+    Widget("dynamic_grid", "Devices", "grid", _grid, _grid_example,
+           # A Batteries page shows while one its rule picks is past its number (review 2 #5).
+           gate=Gate(check=_batteries_past, applies=_is_batteries),
+           box={"fill": True, "y": 16, "inset": 24},
            defaults={"header_icon": "mdi:lightning-bolt", "header_title": "On now", "filter_state": "on", "layout_mode": "grid",
                      "show_labels": "both", "icon_size": "auto", "secondary_mode": "runtime",
                      "items": [{"entity": "", "name": "Spot 1", "icon": "mdi:radiator"}, {"entity": "", "name": "Spot 2", "icon": "mdi:radiator"}]},

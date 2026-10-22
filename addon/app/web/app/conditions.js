@@ -173,6 +173,12 @@ export function gridShowIf(gridEl) {
 // A condition this grid wrote, and nobody changed: only the parts a grid writes, joined by "or", at
 // least one on its sensors (a sensor just taken off the grid is still in the condition it wrote).
 const GRID_PART = /^(?:is_state\('([^']+)','[^']*'\)|\(has_value\('([^']+)'\) and states\('\2'\) \| float\(0\) (?:<|>=) -?\d+(?:\.\d+)?\))$/;
+// What a grid by a number wrote over its list: only "(has_value('x') and states('x') | float(0) < 20)" parts.
+const NUMBER_PART = /^\(has_value\('([^']+)'\) and states\('\1'\) \| float\(0\) (?:<|>=) -?\d+(?:\.\d+)?\)$/;
+const gridShaped = (expr) => {
+  const s = String(expr || "").trim();
+  return s.startsWith("{{") && s.endsWith("}}") && s.slice(2, -2).trim().split(/\s+or\s+(?=\(has_value)/).every((part) => NUMBER_PART.test(part.trim()));
+};
 export function gridWrote(expr, gridEl) {
   const s = String(expr || "").trim();
   if (!s.startsWith("{{") || !s.endsWith("}}")) return false;
@@ -187,6 +193,12 @@ export function syncDynamicGridShowIf(page, gridEl) {
   if (!page || (page.tier !== "when" && page.tier !== "alert")) return;
   gridEl = gridEl || (page.elements || []).find((x) => x.type === "dynamic_grid");
   if (!gridEl) return;
+  if (gridEl.batteries) {
+    // Batteries by rule: the add-on decides when the page shows (its widget's gate), with whatever
+    // batteries Home Assistant has then; a condition a grid wrote over a list goes, yours stays.
+    if (!page.show_if || gridShaped(page.show_if)) delete page.show_if;
+    return;
+  }
   if (page.tier === "alert" && page.show_if && !gridWrote(page.show_if, gridEl)) return;
   const s = gridShowIf(gridEl);
   if (s) page.show_if = s;
