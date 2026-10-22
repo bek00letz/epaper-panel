@@ -215,6 +215,39 @@ class TestHealth(unittest.TestCase):
         self.assertEqual(health.status(), [])
 
 
+class TestEachServiceHasItsOwnName(unittest.TestCase):
+    """health names a service by its address. Iconify shares GitHub's raw host with the racing
+    calendars: adding an icon set made binary_sensor.epaper_problem_racing_calendar, and a failed
+    download said the racing calendar was failing (framework review 2, #1)."""
+
+    APP = Path(__file__).resolve().parents[1] / "addon" / "app"
+
+    def outside_addresses(self):
+        import re
+        found = {}
+        files = [*(self.APP / "sources").glob("*.py"), *(self.APP / "feeds").glob("*.py"), self.APP / "iconsets.py"]
+        for path in files:
+            for url in re.findall(r"[\"'](https://[a-z0-9.-]+\.[a-z]{2,}[^\"'\s]*)[\"']", path.read_text()):
+                found[url] = path.name
+        return found
+
+    def test_every_outside_address_is_a_known_service(self):
+        found = self.outside_addresses()
+        self.assertGreater(len(found), 6)
+        for url, where in found.items():
+            self.assertIsNotNone(health.service_for(url.replace("{", "").replace("}", "")),
+                                 f"{url} ({where}) reports as no service")
+
+    def test_iconify_is_its_own_service(self):
+        import iconsets
+        from sources import racing
+        self.assertEqual(health.service_for(iconsets.ICONIFY + "/collections.json"), "Iconify")
+        self.assertEqual(health.service_for(iconsets.ICONIFY_API + "/mdi.json?icons=cat"), "Iconify")
+        self.assertEqual(health.service_for(racing._SPORTSTIMES.format(db="f1").format(year=2026)), "Racing calendar")
+        self.assertEqual(racing._service(racing._SPORTSTIMES.format(db="fe").format(year=2027)), "Racing calendar")
+        self.assertIsNone(health.service_for("https://raw.githubusercontent.com/someone/else/x.json"))
+
+
 class TestNoSecretsInErrors(unittest.IsolatedAsyncioTestCase):
     async def test_failures_never_print_the_token_or_a_key(self):
         out = io.StringIO()

@@ -13,6 +13,10 @@
   home) never got its clock lined up (0.18): the e-Paper Panel integration
   dropped the add-on's "fetch next at" hint on the way. Restart Home
   Assistant once after updating the add-on so it loads the new integration.
+- **Fixed:** adding an Iconify icon set made a "Racing calendar" problem
+  sensor in Home Assistant, and a failed download said the racing calendar
+  was failing. Iconify is now a service of its own, with its own problem
+  sensor once you use it.
 
 ## 0.20.0
 Add-on only; no firmware change, so nothing to reinstall on the panel.

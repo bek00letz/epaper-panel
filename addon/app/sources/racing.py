@@ -277,8 +277,7 @@ async def _read_calendar(session, cal: Calendar, url: str, missing_ok: bool) -> 
 
 def _service(url: str) -> str:
     from urllib.parse import urlparse
-    host = urlparse(url).hostname or url
-    return health.SERVICES.get(host, host)
+    return health.service_for(url) or urlparse(url).hostname or url
 
 
 async def _calendar(session, cal: Calendar, ser: Series, now: datetime) -> list[Race] | None:
