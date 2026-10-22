@@ -1,6 +1,15 @@
 # Changelog
 
 ## Unreleased
+- **What needs you in Home Assistant, counted.** While a page uses them, the
+  add-on keeps three sensors: `sensor.epaper_notifications` (Home
+  Assistant's notifications, the bell), `sensor.epaper_updates` (updates
+  waiting, with how many are Home Assistant's own, add-ons, integrations and
+  devices; a version you skipped isn't counted) and `sensor.epaper_repairs`
+  (open Repairs issues, not the ones you ignored). A page's "Only when" or an
+  alert can use them, for example an alert when a notification arrives
+  ("changed in the last 10 minutes"). Only the counts leave the add-on, never
+  what a notification says.
 - **Your own icons and icon sets, without Custom Icons.** A new **Settings ›
   Icons** (also **More icons…** in the icon picker) holds both:
   - **Your own icons:** **Add icons** takes SVG files, or drop them on the
