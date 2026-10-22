@@ -309,12 +309,21 @@ kbd { font: 12px var(--font); background: var(--surface); border-radius: 5px; pa
 .insp-body { overflow-y: auto; flex: 1; padding-bottom: max(24px, env(safe-area-inset-bottom)); overscroll-behavior: contain; }
 .isec { padding: 12px 16px; border-top: 0.5px solid var(--sep); display: flex; flex-direction: column; gap: 8px; }
 .isec > .slab, .slab { font-size: 12px; font-weight: 600; color: var(--fg-2); margin: 0; }
-.field { display: grid; grid-template-columns: 92px minmax(0, 1fr); align-items: center; gap: 4px 8px; }
-.field > label, .field > .lab { color: var(--fg-2); font-size: 12.5px; }
-.field.wide, .field.stack { grid-template-columns: 1fr; }
-.field .fnote { grid-column: 1 / -1; }
+/* Rows: a label and its control side by side, or the control under the label, full width, when
+   they don't fit on one line, so a label never wraps past two lines and a control is never
+   squeezed (the user's call, 21 Oct). One rule for every row, the inspector's (.field) and the
+   grouped ones in Settings, New page and the countdown (.gr): a wrapping flex row where the
+   label keeps its width and each control asks for what it needs (--need: a menu its longest
+   choice, a date its own width, a segmented control its choices, ui.segNeed). Notes stay under
+   the label. */
+.field { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+.field > * { flex: 1 1 var(--need, 8em); min-width: 0; }
+.field > label, .field > .lab { flex: 0 0 92px; color: var(--fg-2); font-size: 12.5px; }
+.field > :is(select, input[type="date"], input[type="time"], input[type="datetime-local"]) { --need: max-content; }
+.field.wide > *, .field.stack > *, .field.long > *, .field > .fnote { flex-basis: 100%; }
 .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.pair .field { grid-template-columns: 1fr; gap: 2px; }
+.pair .field { gap: 2px; }
+.pair .field > * { flex-basis: 100%; }
 .fnote { font-size: 12px; color: var(--fg-2); margin: 0; line-height: 1.4; }
 .fnote.bad { color: var(--red); }
 .fnote.pad { padding: 6px 10px 4px; }
@@ -611,13 +620,16 @@ button.uopen:focus-visible { outline: 2px solid var(--accent); outline-offset: -
 .setpane textarea.inp:has(+ .btnrow), .setpane p.note:has(+ p.note) { margin-bottom: 8px; }
 .group { background: var(--surface-2); border-radius: var(--r-card); padding: 0 14px; margin: 0 0 12px; box-shadow: 0 0 0 0.5px var(--sep); transition: opacity var(--t-fast); }
 .group.off { opacity: 0.5; }
-.gr { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 8px 0; border-bottom: 0.5px solid var(--sep); }
+.gr { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-height: 48px; padding: 8px 0; border-bottom: 0.5px solid var(--sep); }
 .gr:last-child { border-bottom: 0; }
-.gr .gl { flex: 1; min-width: 0; }
-.gr small { display: block; color: var(--fg-2); font-size: 11.5px; margin-top: 1px; }
-.gr .inp { width: auto; max-width: 260px; }
-.gr select.inp { max-width: 260px; }
+/* The label takes the room beside its control (999 to 1), and wraps it under when it would get
+   less than its basis: room for two lines, more with a note under it. */
+.gr .gl { flex: 999 1 9em; min-width: 0; }
+.gr .gl:has(small) { flex-basis: 15em; }
+.gr > :is(input, select, textarea, .inline) { flex: 1 1 var(--need, auto); min-width: 0; max-width: 100%; }
+.gr .inp { width: auto; }
 .gr .inline .inp { width: 200px; }
+.gr small { display: block; color: var(--fg-2); font-size: 11.5px; margin-top: 1px; }
 .steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
 .srccard { background: var(--surface-2); border-radius: var(--r-card); padding: 10px 14px 14px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 0 0 0.5px var(--sep); }
 .srchead { display: flex; align-items: center; gap: 6px; }
@@ -720,8 +732,6 @@ button.uopen:focus-visible { outline: 2px solid var(--accent); outline-offset: -
   .settings { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
   .setnav { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 0.5px solid var(--sep); padding: 4px 12px 8px; }
   .navrow { width: auto; flex: none; }
-  .gr { flex-wrap: wrap; }
-  .gr .inp, .gr select.inp { max-width: 100%; }
   .pop, .pop.picker, .pop.insert, .pop.status { width: calc(100vw - 16px); }
   #toast { bottom: max(calc(88px + env(safe-area-inset-bottom)), calc(var(--sb-room, 0px) + 8px)); }
 }

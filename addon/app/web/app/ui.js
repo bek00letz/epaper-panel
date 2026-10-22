@@ -132,8 +132,12 @@ export function field(label, control, opts = {}) {
   const id = control.id || (control.id = "f" + uid());
   const lab = /INPUT|SELECT|TEXTAREA/.test(control.tagName) ? h("label", { for: id, text: label }) : h("span", { class: "lab", text: label, id: id + "-l" });
   if (!/INPUT|SELECT|TEXTAREA/.test(control.tagName)) control.setAttribute("aria-labelledby", id + "-l");
-  return h("div", { class: "field" + (opts.wide ? " wide" : "") }, lab, control, opts.note ? h("div", { class: "fnote", text: opts.note }) : null);
+  // A label too long for two lines in its column takes the row, its control under it (editor.css, rows).
+  const long = !opts.wide && textWidth(label, `12.5px ${getComputedStyle(document.body).fontFamily}`) > LABEL_TWO_LINES;
+  return h("div", { class: "field" + (opts.wide ? " wide" : long ? " long" : "") }, lab, control, opts.note ? h("div", { class: "fnote", text: opts.note }) : null);
 }
+// What fits in two lines of the inspector's 92 px label column, with room for where words break.
+export const LABEL_TWO_LINES = 156;
 export function input(value, onChange, attrs = {}) {
   const i = h("input", { class: "inp", value: value ?? "", autocomplete: "off", spellcheck: "false", ...attrs });
   let last = i.value;
@@ -157,15 +161,16 @@ export function select(options, value, onChange, attrs = {}) {
   s.addEventListener("change", () => onChange(s.value));
   return s;
 }
-/* A segmented control beside its label (a .field) goes under it, full width, when its choices
-   don't fit there; never cut off (the user's call, 21 Oct). Measured live, so it moves back when
-   there's room. `segFits` is the rule, apart for the tests. */
-export function segFits(widths, room) {
-  // Beside its label the choices share the width equally, so the widest decides; under it, each
-  // takes what its words need (.field.stack). Padding 6 each side, gap 2, frame 2.
-  const need = widths.length * (Math.max(0, ...widths) + 12) + 2 * (widths.length - 1) + 4;
-  return need <= room;
-}
+/* A row never squeezes its control or wraps its label past two lines (the user's call, 21 Oct):
+   every row (.field, .gr) is a wrapping flex row in editor.css, so a control that doesn't fit
+   beside its label goes under it, full width. Each control asks for the width it needs; a
+   segmented control's is its choices at equal widths, the widest deciding (`segNeed`), set
+   as --need when it's made. Padding 6 each side, gap 2, frame 2. */
+export const segNeed = (widths) => widths.length * (Math.max(0, ...widths) + 12) + 2 * (widths.length - 1) + 4;
+export const segFits = (widths, room) => segNeed(widths) <= room;
+// The way back (0.17's): measured live with a ResizeObserver, moving a .field to .stack. Off
+// while the row rule proves itself; turning it on again needs nothing else.
+const SEG_LIVE = false;
 let measurer = null;
 function textWidth(text, font) {
   measurer ||= document.createElement("canvas").getContext("2d");
@@ -188,7 +193,9 @@ const fitting = typeof ResizeObserver === "function" ? new ResizeObserver((entri
 
 export function seg(options, value, onPick, label) {
   const c = segControl(options, value, onPick, label);
-  fitting?.observe(c);
+  if (SEG_LIVE) { fitting?.observe(c); return c; }
+  const font = `600 12.5px ${getComputedStyle(document.body).fontFamily}`;       // the chosen one is bolder
+  c.style.setProperty("--need", segNeed(options.map(([, l, ic]) => (ic ? 16 : textWidth(String(l), font)))) + "px");
   return c;
 }
 function segControl(options, value, onPick, label) {

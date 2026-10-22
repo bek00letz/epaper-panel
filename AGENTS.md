@@ -466,10 +466,14 @@ up to v0.12.0). `app/legacy.js` keeps the pieces of it this one still uses.
   that. The right-click menu keeps the fuller list.
 - **One floating system** (`app/ui.js`): popover, menu, sheet, toast. No
   `prompt()`, `alert()` or `confirm()`; names are edited in place.
-- **A segmented control never cuts a choice off** (the user's call, 21
-  Oct): beside its label it goes under it, full width, when its choices
-  don't fit, measured live (`ui.seg`, `segFits`, `.field.stack`). Don't
-  shorten the words or shrink the text to make one fit.
+- **A row never squeezes its label or its control** (the user's calls,
+  21 Oct): a label wraps to two lines at most and a control gets the width
+  it needs, or it goes under its label, full width, its note staying under
+  the label. One CSS rule for every row, `.field` and `.gr` (editor.css,
+  "Rows"): a wrapping flex row where each control asks for its width
+  (`--need`; a segmented control's from `ui.segNeed`, a long label marked
+  by `ui.field`). A new kind of row uses these classes, never its own
+  layout. Don't shorten the words or shrink the text to make one fit.
 - **Hit targets are 44 pt.** Controls are 32 px with a padded hit area under a
   mouse and 44 px on touch. Don't shrink them to fit more in.
 - **The legibility note sits under the size field** it describes. It is the
