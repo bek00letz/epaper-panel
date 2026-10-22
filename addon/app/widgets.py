@@ -188,6 +188,11 @@ async def _notifications(session, el, ctx):
     return None if got is None else {"items": got, "tz": ctx.home_tz}
 
 
+async def _updates(session, el, ctx):
+    got = await needs_you.fetch_updates(session)
+    return None if got is None else {"items": got}
+
+
 async def _flights(session, el, ctx):
     lat, lon, radius, _ = flights.place_of(el)
     return await flights.fetch_overhead_aircraft(session, radius_km=radius, lat=lat, lon=lon)
@@ -299,6 +304,13 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
                    {"kind": "window", "label": "Only show while there are any"},
                    {"kind": "sensorid", "note": "The add-on counts them as {sensor}. An alert can show by it "
                                                 "(say, when it changed in the last 10 minutes), or your own automations."}]),
+    # Every update waiting, by group as Home Assistant shows them; a skipped version isn't one.
+    Widget("updates", "Updates", "update", _updates, lambda el, now: {"items": examples.updates()},
+           defaults={"title": ""}, window=True, sensor=needs_you.SENSOR["updates"],
+           fields=[text("title", "Title", "Updates"),
+                   {"kind": "window", "label": "Only show while there are any"},
+                   {"kind": "sensorid", "note": "The add-on counts them as {sensor}, with how many are Home Assistant's own, "
+                                                "add-ons, integrations and devices. An alert can show by it, or your own automations."}]),
     Widget("dynamic_grid", "Devices", "grid", None, None, box={"fill": True, "y": 16, "inset": 24},
            defaults={"header_icon": "mdi:lightning-bolt", "header_title": "On now", "filter_state": "on", "layout_mode": "grid",
                      "show_labels": "both", "icon_size": "auto", "secondary_mode": "runtime",

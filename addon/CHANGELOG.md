@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+- **Updates waiting, on a page.** New page › Home › **Updates** lists every
+  update Home Assistant has waiting with its new version, grouped as Home
+  Assistant shows them: Home Assistant itself, add-ons, integrations (HACS)
+  and devices. More than fit end with "and 3 more"; a small screen leaves
+  out the group's column and a version it can't show whole. The page shows
+  only while something's waiting, and a version you skip in Home Assistant
+  drops off it.
 - **Home Assistant's notifications on a page.** New page › Home ›
   **Notifications** lists the notifications behind Home Assistant's bell,
   newest first, with how long ago each came ("12 min", "2 h", "Yesterday").

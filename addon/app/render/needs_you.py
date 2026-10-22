@@ -159,3 +159,52 @@ def draw_notifications(img, d, box, el: dict, data, *, scale: float = 1.0) -> No
             r0 += max(6, row_h // 4)
     if more:
         d.text((text_x, r0 + row_h // 2), f"and {more} more", font=item_f, fill=T.BLACK, anchor="lm")
+
+
+# ------------------------------------------------------------------ updates
+
+def count_words(n: int) -> str:
+    return f"{n} waiting"
+
+
+def draw_updates(img, d, box, el: dict, data, *, scale: float = 1.0) -> None:
+    """Each update waiting, by group (Home Assistant, add-ons, integrations, devices): the group
+    once in a column of its own where there's room for it, then the name, then the new version."""
+    from sources.needs_you import GROUP_NAMES, short_name
+    x, y, w, h = box
+    item_px, head_px = _s(ITEM_PX, scale, 12, 96), _s(HEAD_PX, scale, 11, 64)
+    title = str(el.get("title") or "").strip() or "Updates"
+    if not isinstance(data, dict):
+        _heading(d, x, y, w, title, "", head_px)
+        return
+    items = [u for u in data.get("items") or [] if isinstance(u, dict) and u.get("name")]
+    _heading(d, x, y, w, title, count_words(len(items)) if items else "", head_px)
+    top = y + head_px + max(8, item_px // 3)
+    if not items:
+        _empty(d, x, top, w, y + h, "Everything's up to date", item_px)
+        return
+
+    row_h, pitch = _rows(item_px)
+    item_f = T.font(item_px, bold=False)
+    label_f = T.font(max(10, round(item_px * 0.8)), bold=True)
+    gap = max(16, round(item_px * 0.6))
+    groups = [g for g in GROUP_NAMES if any(u.get("group") == g for u in items)]
+    col = max(T.text_width(GROUP_NAMES[g], label_f) for g in groups) + gap
+    # The group's column only where the names keep most of the row; otherwise each says its full name.
+    by_column = col <= w * 0.34
+    shown, more = _fit(len(items), y + h - top, row_h, pitch)
+    text_x = x + (col if by_column else 0)
+    for k, u in enumerate(items[:shown]):
+        mid = top + k * pitch + row_h // 2
+        if by_column and (k == 0 or items[k - 1].get("group") != u.get("group")):
+            d.text((x, mid), GROUP_NAMES.get(u.get("group"), ""), font=label_f, fill=T.BLACK, anchor="lm")
+        right = x + w
+        version = "Installing" if u.get("installing") else str(u.get("version") or "")
+        # A version is shown whole or not at all ("2026.…" says nothing); the name needs the room more.
+        if version and T.text_width(version, label_f) <= (w - (text_x - x)) * 0.4:
+            d.text((right, mid), version, font=label_f, fill=T.BLACK, anchor="rm")
+            right -= T.text_width(version, label_f) + gap
+        name = short_name(u) if by_column else u["name"]
+        d.text((text_x, mid), hero.shorten(name, item_f, max(1, right - text_x)), font=item_f, fill=T.BLACK, anchor="lm")
+    if more:
+        d.text((text_x, top + shown * pitch + row_h // 2), f"and {more} more", font=item_f, fill=T.BLACK, anchor="lm")

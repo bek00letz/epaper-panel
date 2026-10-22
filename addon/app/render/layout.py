@@ -2208,6 +2208,7 @@ WIDGETS = {
     "tv_week": media.draw_tv_week,
     "world_clock": worldclock.draw,
     "notifications": needs_you.draw_notifications,
+    "updates": needs_you.draw_updates,
 }
 DRAWERS.update({t: _widget(fn) for t, fn in WIDGETS.items()})
 

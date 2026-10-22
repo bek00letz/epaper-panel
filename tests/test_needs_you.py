@@ -289,3 +289,34 @@ console.log(JSON.stringify({ group: p.group, page, fresh: fresh.show_if, own: ow
         self.assertEqual(got["own"], "{{ is_state('input_boolean.x','on') }}", "the person's own condition stays")
         self.assertEqual((got["parsed"]["mode"], got["parsed"]["ent"]), ("simple", "sensor.epaper_notifications"))
         self.assertEqual(got["sensor"], "sensor.epaper_notifications")
+
+
+class TestUpdatesDrawn(Sizes, unittest.TestCase):
+    element = {"type": "updates", "x": 40, "y": 14, "w": 712, "h": 220}
+    value = {"items": examples.updates()}
+
+    def test_groups_in_a_column_where_theres_room_and_full_names_where_not(self):
+        items = needs_you.updates_from(ROWS[:4])
+        wide = render(self.element, {"items": items})
+        narrow = render(self.element, {"items": items}, "crowpanel_290")
+        self.assertGreater(ink(wide), 1000)
+        self.assertGreater(ink(narrow), 300)
+        # The column: the group's name drawn once, in the left part, on the 5.79".
+        self.assertGreater(ink(wide, (40, 40, 200, 80)), 50)
+
+    def test_a_version_whole_or_not_at_all(self):
+        one = [{"group": "home_assistant", "name": "Home Assistant Core", "version": "2026.10.2", "installing": False}]
+        no_version = [{**one[0], "version": ""}]
+        small = lambda v: ink(render(self.element, {"items": v}, "crowpanel_290"))    # noqa: E731
+        self.assertEqual(small(one), small(no_version), "no cut version on the 2.9 inch")
+        self.assertGreater(ink(render(self.element, {"items": one})), ink(render(self.element, {"items": no_version})))
+
+    def test_up_to_date_says_so(self):
+        self.assertGreater(ink(render(self.element, {"items": []})), ink(render(self.element, None)) + 300)
+
+    def test_its_page_shows_by_the_add_ons_count(self):
+        self.assertEqual(widgets.catalog()["updates"]["sensor"], "sensor.epaper_updates")
+        got = run_js("""const p = P.presetById("updates"); console.log(JSON.stringify(P.pageFor(p, p.looks[0], "")));""") \
+            if shutil.which("node") else None
+        if got:
+            self.assertEqual(got["show_if"], "{{ has_value('sensor.epaper_updates') and states('sensor.epaper_updates') | float(0) > 0 }}")

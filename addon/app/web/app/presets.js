@@ -165,6 +165,13 @@ export const PRESETS = [
     looks: [{ id: "notifications", name: "Notifications", tier: "when", widget: true,
       make: () => [{ type: "notifications", x: 40, y: 14, w: 712, h: 220 }] }],
   },
+  {
+    id: "updates", group: "home", title: "Updates", kw: "upgrade firmware add-ons hacs integrations version home assistant",
+    desc: "Every update waiting in Home Assistant, by Home Assistant, add-ons, integrations and devices. Only shows while there are any.",
+    asks: "",
+    looks: [{ id: "updates", name: "Updates", tier: "when", widget: true,
+      make: () => [{ type: "updates", x: 40, y: 14, w: 712, h: 220 }] }],
+  },
 
   /* ---------- energy ---------- */
   {
