@@ -65,6 +65,7 @@ export const ICONS = {
   list: P('<path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/>', ' stroke-width="2"'),
   bell: P('<path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z"/><path d="M10 21h4"/>'),
   update: P('<circle cx="12" cy="12" r="9"/><path d="M12 16.5v-9M8.2 11.2 12 7.5l3.8 3.7"/>'),
+  badge: P('<rect x="3" y="7" width="13" height="13" rx="3.5"/><circle cx="18" cy="6" r="3.2" fill="currentColor" stroke="none"/>'),
   todo: P('<rect x="3" y="4" width="5" height="5" rx="1.2"/><rect x="3" y="15" width="5" height="5" rx="1.2"/><path d="M12 6.5h9M12 17.5h9"/>'),
   grid: P('<rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/>'),
   play: P('<circle cx="12" cy="12" r="9"/><path d="M10 8.6v6.8l5.6-3.4z"/>'),

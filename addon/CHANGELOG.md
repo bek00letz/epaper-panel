@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- **A badge for any page.** Insert › Widgets › **Badge** puts an icon with
+  a number in a solid dot on any page, like an app's icon on a phone: how
+  many updates are waiting, notifications, Repairs issues, or all of these
+  together (**Counts**, Updates to start with). It's not there at all when
+  the number is zero; over 99 it reads 99+.
 - **Updates waiting, on a page.** New page › Home › **Updates** lists every
   update Home Assistant has waiting with its new version, grouped as Home
   Assistant shows them: Home Assistant itself, add-ons, integrations (HACS)

@@ -320,3 +320,46 @@ class TestUpdatesDrawn(Sizes, unittest.TestCase):
             if shutil.which("node") else None
         if got:
             self.assertEqual(got["show_if"], "{{ has_value('sensor.epaper_updates') and states('sensor.epaper_updates') | float(0) > 0 }}")
+
+
+class TestBadgeDrawn(Sizes, unittest.TestCase):
+    element = {"type": "badge", "counts": "updates", "x": 672, "y": 14, "w": 96, "h": 96}
+    value = 2
+
+    def test_nothing_at_all_at_zero_or_before_its_read(self):
+        for value in (0, None, "unknown", -1):
+            self.assertEqual(ink(render(self.element, value)), 0, value)
+
+    def test_the_number_in_a_dot_that_grows_into_a_pill(self):
+        self.assertEqual([drawn.badge_text(n) for n in (1, 42, 99, 100)], ["1", "42", "99", "99+"])
+        one, many = render(self.element, 1), render(self.element, 120)
+        self.assertGreater(ink(many), ink(one))
+        # The dot is solid, at the top right of the box, with the number in white inside it.
+        dot = one.crop((672 + 60, 14, 672 + 92, 14 + 30)).histogram()
+        self.assertGreater(dot[0], dot[-1])
+
+    def test_each_count_has_its_own_icon(self):
+        drawn_icons = {c: ink(render({**self.element, "counts": c}, 3)) for c in needs_you.COUNTS}
+        self.assertEqual(len(set(drawn_icons.values())), len(needs_you.COUNTS))
+        from render import layout
+        self.assertTrue(all(layout.can_draw_icon(i) for i in drawn.BADGE_ICONS.values()))
+        self.assertEqual(set(drawn.BADGE_ICONS), set(needs_you.COUNTS))
+
+    def test_counts_what_its_set_to(self):
+        async def ups(session):
+            return [{}, {}]
+
+        async def notes(session):
+            return [{}]
+
+        async def reps(session):
+            return 4
+        with unittest.mock.patch.object(needs_you, "fetch_updates", ups), \
+             unittest.mock.patch.object(needs_you, "fetch_notifications", notes), \
+             unittest.mock.patch.object(needs_you, "fetch_repairs", reps):
+            got = {c: asyncio.run(widgets.fetch(None, {"type": "badge", "counts": c}, widgets.Ctx())) for c in needs_you.COUNTS}
+        self.assertEqual(got, {"updates": 2, "notifications": 1, "repairs": 4, "all": 7})
+        field = next(f for f in widgets.catalog()["badge"]["fields"] if f["key"] == "counts")
+        self.assertEqual([o[0] for o in field["options"]], list(needs_you.COUNTS), "the inspector offers what it counts")
+        self.assertEqual(field["def"], "updates")
+        self.assertEqual(examples.badge("all"), 8)

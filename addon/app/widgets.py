@@ -193,6 +193,11 @@ async def _updates(session, el, ctx):
     return None if got is None else {"items": got}
 
 
+async def _badge(session, el, ctx):
+    counts = needs_you.badge_counts(el)
+    return (await needs_you.counts(session, (counts,))).get(counts)
+
+
 async def _flights(session, el, ctx):
     lat, lon, radius, _ = flights.place_of(el)
     return await flights.fetch_overhead_aircraft(session, radius_km=radius, lat=lat, lon=lon)
@@ -311,6 +316,11 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
                    {"kind": "window", "label": "Only show while there are any"},
                    {"kind": "sensorid", "note": "The add-on counts them as {sensor}, with how many are Home Assistant's own, "
                                                 "add-ons, integrations and devices. An alert can show by it, or your own automations."}]),
+    # A number on an icon, as on an app's icon, for a corner of any page; nothing at all at zero.
+    Widget("badge", "Badge", "badge", _badge, lambda el, now: examples.badge(needs_you.badge_counts(el)),
+           box={"x": 672, "y": 14, "w": 96, "h": 96}, defaults={"counts": "updates"},
+           fields=[sel("counts", "Counts", [["updates", "Updates"], ["notifications", "Notifications"],
+                                            ["repairs", "Repairs"], ["all", "All of these"]], "updates")]),
     Widget("dynamic_grid", "Devices", "grid", None, None, box={"fill": True, "y": 16, "inset": 24},
            defaults={"header_icon": "mdi:lightning-bolt", "header_title": "On now", "filter_state": "on", "layout_mode": "grid",
                      "show_labels": "both", "icon_size": "auto", "secondary_mode": "runtime",

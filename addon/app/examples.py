@@ -199,3 +199,9 @@ def updates() -> list[dict]:
 
 
 REPAIRS = 1
+
+
+def badge(counts: str) -> int:
+    """What a badge counts, from the samples above: 4 updates, 3 notifications, 1 repair, 8 in all."""
+    n = {"updates": len(updates()), "notifications": len(notifications()), "repairs": REPAIRS}
+    return sum(n.values()) if counts == "all" else n.get(counts, n["updates"])
