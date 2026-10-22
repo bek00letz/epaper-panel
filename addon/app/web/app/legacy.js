@@ -306,15 +306,32 @@ export function reflowPageElements(p, toPortrait, disp, times = []) {
 
 // The sensor a widget's page shows by: a league's or series' own, from the add-on's catalog
 // (sources/sports.LEAGUES, sources/racing.SERIES; aliases included), never a copy of its own.
+// How a widget's page shows "only when" is its descriptor's gate (widgets.py Gate, through the
+// catalog): never a branch per widget here.
+export const gateOf = (el) => (el ? widget(el.type)?.gate || null : null);
 export function getWidgetSensorId(el) {
-  if (!el) return "";
-  if (el.type === "sports_match") return leagueOf(el.league)?.sensor || "";
-  if (el.type === "sports_racing") return seriesOf(el.series)?.sensor || "";
-  if (el.type === "flight_tracker") {
-    return "sensor.epaper_flights_overhead";
-  }
-  if (el.type === "todo_list") return todoDueSensor(el.entity);
-  return widget(el.type)?.sensor || "";              // a count of the add-on's own (widgets.py "sensor")
+  const g = gateOf(el);
+  if (!g) return "";
+  if (g.sensor) return g.sensor;
+  if (g.sensor_of === "league") return leagueOf(el.league)?.sensor || "";
+  if (g.sensor_of === "series") return seriesOf(el.series)?.sensor || "";
+  if (g.sensor_of === "todo") return todoDueSensor(el.entity);
+  return "";
+}
+/* The condition a widget's page shows by, from its gate: its sensor "active", or above 0 (a to-do
+   list by its own count or its due count). "" for a gate the add-on answers on its own. */
+export function gateShowIf(el) {
+  const g = gateOf(el);
+  if (!g || !g.rule) return "";
+  if (g.sensor_of === "todo") return todoShowIf(el.entity, el.show);
+  const sid = getWidgetSensorId(el);
+  if (!sid) return "";
+  return g.rule === "active" ? `{{ is_state('${sid}','active') }}` : countShowIf(sid);
+}
+/* Whether a page's condition is the widget's own (empty, or naming one of its gate's sensors). */
+export function gateWrote(showIf, el) {
+  const cur = String(showIf || "").trim();
+  return !cur || (gateOf(el)?.markers || []).some((m) => cur.includes(m));
 }
 
 export function suggestIconForEntity(entityId, friendlyName = "") {

@@ -2,8 +2,8 @@
 // the same Home Assistant template 0.9 wrote, and reads it back. Anything the
 // form can't express stays a custom template, untouched.
 
-import { countShowIf, getWidgetSensorId, todoShowIf } from "./legacy.js";
-import { widget, stateWords } from "./catalog.js";
+import { gateOf, gateShowIf, gateWrote } from "./legacy.js";
+import { stateWords } from "./catalog.js";
 
 const NO_VALUE = ["unavailable", "unknown"];
 
@@ -135,35 +135,15 @@ export function changedLine(parsed, got, { minutes, alert = "" } = {}) {
   return { holds: false, text: `Hidden now: no change${to} in the last ${minutesInWords(n)}.`, note };
 }
 
-/* Widgets that bring their own "when" (from 0.9, unchanged in effect). */
-const BUILTIN_MARKERS = ["sensor.epaper_sports_", "sensor.sports_", "sensor.epaper_racing_", "sensor.f1_status", "sensor.formula_e_status", "sensor.epaper_flights_overhead", "sensor.overhead_aircraft_count"];
+/* A widget's page shows "only when" by its descriptor's gate (widgets.py Gate, review 2 #4): the
+   condition is rewritten only while it's still the widget's own (empty, or naming one of its gate's
+   sensors), so one you wrote yourself stays. */
 export function syncWidgetShowIf(page, widgetEl) {
   if (!page || page.tier !== "when") return;
-  const list = widgetEl?.type === "todo_list" ? widgetEl : !widgetEl && (page.elements || []).find((x) => x.type === "todo_list");
-  if (list) {
-    // Ours to rewrite only while it's still a to-do list's own condition.
-    const cur = parseShowIf(page.show_if);
-    if (page.show_if && !(cur.mode === "simple" && /^(todo\.|sensor\.epaper_todo_)/.test(cur.ent))) return;
-    const c = todoShowIf(list.entity, list.show);
-    if (c) page.show_if = c; else delete page.show_if;
-    return;
-  }
-  // A widget whose page shows while a count of the add-on's is above 0 names it in its descriptor ("sensor").
-  const counted = widgetEl ? (widget(widgetEl.type)?.sensor ? widgetEl : null) : (page.elements || []).find((x) => widget(x.type)?.sensor);
-  if (counted) {
-    const sid = widget(counted.type).sensor, cur = parseShowIf(page.show_if);
-    if (page.show_if && !(cur.mode === "simple" && cur.ent === sid)) return;   // the person's own condition stays
-    page.show_if = countShowIf(sid);
-    return;
-  }
-  // A widget that shows only around its events says so in its descriptor ("window": the add-on's).
-  widgetEl = widgetEl || (page.elements || []).find((x) => x.type !== "todo_list" && widget(x.type)?.window);
-  if (!widgetEl) return;
-  const cur = String(page.show_if || "").trim();
-  if (cur && !BUILTIN_MARKERS.some((m) => cur.includes(m))) return;
-  const sid = getWidgetSensorId(widgetEl);
-  if (widgetEl.type === "flight_tracker") page.show_if = `{{ states('${sid}') | int(0) > 0 }}`;
-  else if (sid) page.show_if = `{{ is_state('${sid}','active') }}`;
+  widgetEl = widgetEl || (page.elements || []).find((x) => gateOf(x)?.rule);
+  if (!widgetEl || !gateOf(widgetEl)?.rule || !gateWrote(page.show_if, widgetEl)) return;
+  const c = gateShowIf(widgetEl);
+  if (c) page.show_if = c; else delete page.show_if;
 }
 /* What a Dynamic status grid shows by (render/layout._draw_dynamic_grid): a state, or a number,
    "below" a value or "at_least" one; an item may have its own `threshold`. */

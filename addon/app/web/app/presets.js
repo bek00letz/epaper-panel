@@ -16,8 +16,8 @@
 //   was      its old name, so search still finds it and the card can say so.
 // No imports from util.js: the tests read this file under node.
 
-import { countShowIf, getWidgetSensorId, todoShowIf } from "./legacy.js";
-import { leagues, series, widget, widgetChangesEvery, stateWords } from "./catalog.js";
+import { gateShowIf, todoShowIf } from "./legacy.js";
+import { leagues, series, widgetChangesEvery, stateWords } from "./catalog.js";
 
 export const GROUPS = [
   ["day", "Your day"],
@@ -444,9 +444,8 @@ export function pageFor(p, look, ent, extra, unitOf = () => "") {
   const showIf = look.showIf || p.showIf;
   if (showIf) { const s = showIf(ent, extra); if (s) page.show_if = s; }
   if (look.widget) {
-    const w = page.elements[0], sid = getWidgetSensorId(w);
-    page.show_if = widget(w.type)?.sensor ? countShowIf(sid)
-      : w.type === "flight_tracker" ? `{{ states('${sid}') | int(0) > 0 }}` : `{{ is_state('${sid}','active') }}`;
+    const c = gateShowIf(page.elements[0]);          // the widget's own, from its descriptor's gate
+    if (c) page.show_if = c;
   }
   return page;
 }

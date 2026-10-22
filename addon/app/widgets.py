@@ -62,6 +62,35 @@ class Ctx:
     prev: Any = None
 
 
+@dataclass(frozen=True)
+class Gate:
+    """How a widget's page shows "only when" (review 2 #4), said once and read by the render cycle
+    (frames.eligible_pages), the editor (the page's condition and "Its sensor", from the catalog) and
+    entities.publish_computed:
+
+    - `rule`: what the editor writes as the page's condition: "active" (its sensor is active), "count"
+      (its sensor above 0), or "" (none: the add-on answers `check` itself);
+    - `sensor`: that sensor, or `sensor_of` to find it per element ("league", "series", "todo");
+    - `check`: the add-on answers it from the element's own settings, so changing a league or a
+      radius in the inspector takes effect at once (async (session, el, home_tz) -> bool);
+    - `markers`: sensor names a page's condition may say for it, older ones included: a condition
+      naming one is the widget's own, so `check` answers it and the editor may rewrite it;
+    - `applies`: only for elements it says yes to (a Devices grid only when it lists batteries by rule);
+    - `publish`: which of entities.py's publishers keeps its sensors.
+    """
+    rule: str = ""
+    sensor: str = ""
+    sensor_of: str = ""
+    check: Callable[[Any, dict, str | None], Awaitable[bool]] | None = None
+    markers: tuple = ()
+    applies: Callable[[dict], bool] | None = None
+    publish: str = ""
+
+    def describe(self) -> dict:
+        return {"rule": self.rule, "sensor": self.sensor, "sensor_of": self.sensor_of,
+                "markers": list(self.markers), "checked": self.check is not None}
+
+
 @dataclass
 class Widget:
     type: str
@@ -81,10 +110,7 @@ class Widget:
     items: tuple[int | None, str] | None = None
     busiest: Callable[[dict], int] | None = None    # with no cap: the most items an element can have at once
     items_word: Callable[[dict], str] | None = None  # what its items are called: "planes", a sport's "games"
-    window: bool = False                        # its page can show only around its events (a sensor of ours)
-    # The add-on's own count its page shows by, while above 0 (sources/needs_you.SENSOR): the editor writes
-    # the page's "only when" from it, and its "Its sensor" note names it.
-    sensor: str = ""
+    gate: Gate | None = None                    # how its page shows "only when" (Gate)
     keeps_size: bool = False                    # its box keeps its real size on a smaller screen (arrange.KEEP_SIZE)
     breakable: bool = False                     # the editor can break it into plain elements
 
@@ -103,8 +129,44 @@ class Widget:
         return {"name": self.name, "icon": self.icon, "box": self.box, "defaults": self.defaults,
                 "fields": self.fields, "changes_every": self.changes_every(),
                 **({"changes_when": list(self.live_when)} if self.live_when else {}),
-                "sub_items": self.items is not None, "window": self.window, "breakable": self.breakable,
-                **({"sensor": self.sensor} if self.sensor else {})}
+                "sub_items": self.items is not None, "breakable": self.breakable,
+                **({"gate": self.gate.describe()} if self.gate else {})}
+
+    def gates(self, el: dict) -> Gate | None:
+        """Its gate, if it applies to this element."""
+        g = self.gate
+        return g if g and (g.applies is None or g.applies(el)) else None
+
+
+# ---------------------------------------------------------------- gates: answered from the element itself
+
+def _hours(el: dict, key: str) -> float:
+    try:
+        return float(el.get(key)) if el.get(key) is not None else 2.0
+    except (TypeError, ValueError):
+        return 2.0
+
+
+async def _match_on(session, el, home_tz):
+    win = await sports.compute_sports_active_window(session, el.get("league") or "soccer/eng.1",
+                                                    pre_buffer_hours=_hours(el, "pre_buffer_hours"),
+                                                    post_buffer_hours=_hours(el, "post_buffer_hours"),
+                                                    tz_name=el.get("timezone") or home_tz, team=el.get("team"))
+    return bool((win or {}).get("is_active"))               # None: not fetched yet
+
+
+async def _race_on(session, el, home_tz):
+    win = await racing.compute_racing_active_window(session, el.get("series") or "f1",
+                                                    pre_buffer_hours=_hours(el, "pre_buffer_hours"),
+                                                    post_buffer_hours=_hours(el, "post_buffer_hours"),
+                                                    window_mode=el.get("window_mode") or "session",
+                                                    tz_name=el.get("timezone") or home_tz)
+    return bool((win or {}).get("is_active"))
+
+
+async def _planes_near(session, el, home_tz):
+    lat, lon, radius, _ = flights.place_of(el)
+    return len(await flights.fetch_overhead_aircraft(session, radius_km=radius, lat=lat, lon=lon) or []) > 0
 
 
 # ---------------------------------------------------------------- fetches
@@ -291,7 +353,7 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
     Widget("todo_list", "To-do list", "todo", _todo,
            lambda el, now: (lambda got: {**got, "tz": None} if got else None)(
                examples.fixture_todo(str(el.get("entity") or "todo.chores")) or examples.fixture_todo("todo.chores")),
-           defaults={"entity": ""}, window=True,
+           defaults={"entity": ""}, gate=Gate("count", sensor_of="todo", markers=("todo.", "sensor.epaper_todo_")),
            fields=[entity("entity", "List", ["todo"]),
                    sel("show", "Shows", [["open", "Everything to do"], ["due", "Due today or overdue"]], "open"),
                    # render/todo.STYLES but "plain" (kept as the way back, not offered).
@@ -305,14 +367,16 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
     # Home Assistant's notifications (the bell), newest first; dismissing one there clears it at the next update.
     Widget("notifications", "Notifications", "bell", _notifications,
            lambda el, now: {"items": examples.notifications(now), "tz": None},
-           defaults={"title": ""}, window=True, sensor=needs_you.SENSOR["notifications"],
+           defaults={"title": ""},
+           gate=Gate("count", sensor=needs_you.SENSOR["notifications"], markers=(needs_you.SENSOR["notifications"],)),
            fields=[text("title", "Title", "Notifications"),
                    {"kind": "window", "label": "Only show while there are any"},
                    {"kind": "sensorid", "note": "The add-on counts them as {sensor}, its own value: a page's "
                                                 "\"Only when\" or an alert can show by it."}]),
     # Every update waiting, by group as Home Assistant shows them; a skipped version isn't one.
     Widget("updates", "Updates", "update", _updates, lambda el, now: {"items": examples.updates()},
-           defaults={"title": ""}, window=True, sensor=needs_you.SENSOR["updates"],
+           defaults={"title": ""},
+           gate=Gate("count", sensor=needs_you.SENSOR["updates"], markers=(needs_you.SENSOR["updates"],)),
            fields=[text("title", "Title", "Updates"),
                    {"kind": "window", "label": "Only show while there are any"},
                    {"kind": "sensorid", "note": "The add-on counts them as {sensor}, its own value: a page's "
@@ -330,14 +394,19 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
            fields=[{"kind": "grid"}]),
     Widget("flight_tracker", "Flights", "plane", _flights, lambda el, now: list(examples.AIRCRAFT),
            live=(flights.fetch_overhead_aircraft,), items=(5, "flight"), items_word=lambda el: "planes",
-           window=True, breakable=True,
+           breakable=True,
+           gate=Gate("count", sensor="sensor.epaper_flights_overhead", check=_planes_near, publish="flights",
+                     markers=("sensor.epaper_flights_overhead", "sensor.overhead_aircraft_count")),
            defaults={"radius": 35, "style": "card", "show_border": True},
            fields=[sel("style", "Style", [["card", "Details"], ["split", "Radar and details"], ["radar", "Radar"]], "card"),
                    {"kind": "place"}, num("radius", "Radius, km", "35", 5, 250),
                    {"kind": "window", "label": "Only show while a plane is near"},
                    toggle("show_sub_metrics", "Second units", True), BORDER, {"kind": "sensorid"}]),
     Widget("sports_racing", "Racing", "flag", _racing, lambda el, now: examples.race(el.get("series") or "f1"),
-           live=(racing.fetch_racing_data,), window=True, breakable=True,
+           live=(racing.fetch_racing_data,), breakable=True,
+           # sensor.f1_status and sensor.formula_e_status: what 0.9 pages say.
+           gate=Gate("active", sensor_of="series", check=_race_on, publish="racing",
+                     markers=("sensor.epaper_racing_", "sensor.f1_status", "sensor.formula_e_status")),
            defaults={"series": "f1", "entity": "", "show_border": True},
            fields=[sel("series", "Series", "series", "f1"), entity("entity", "Sensor, if you have one"),
                    sel("max_drivers", "Leaderboard", [["6", "Top 6, extra large"], ["8", "Top 8, large"], ["10", "Top 10"]], "10"),
@@ -349,7 +418,9 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
     Widget("sports_match", "Scores", "ball", _match,
            lambda el, now: examples.match(el.get("league") or el.get("entity") or "soccer/eng.1"),
            # Every game of the day (the user's call, 21 Oct); the way back is items=(6, "sports").
-           live=(sports.fetch_sports_match,), items=(None, "sports"), window=True, breakable=True,
+           live=(sports.fetch_sports_match,), items=(None, "sports"), breakable=True,
+           gate=Gate("active", sensor_of="league", check=_match_on, publish="sports",
+                     markers=("sensor.epaper_sports_", "sensor.sports_")),
            # A Team Tracker sensor is one game; a league, its busiest day.
            busiest=lambda el: 1 if str(el.get("entity") or "").strip() else sports.busiest_day(el.get("league")),
            items_word=lambda el: sport.words(sports.path_of(el.get("league"))).events,
@@ -382,6 +453,21 @@ def sensor_changes_every(attributes: dict) -> int | None:
     a = attributes or {}
     if a.get("state_class") == "measurement" and a.get("device_class") in FAST_CLASSES:
         return 60
+    return None
+
+
+def gate_of(page: dict) -> tuple[dict, Gate] | None:
+    """The element whose own gate decides when its page shows, with that gate: one the add-on answers
+    itself (`check`), while the page's condition is empty, the widget's own (it names one of the gate's
+    markers), or the element says auto_window. None: the page goes by its own condition."""
+    show_if = str(page.get("show_if") or "").strip()
+    for el in page.get("elements") or []:
+        w = get(el.get("type")) if isinstance(el, dict) else None
+        g = w.gates(el) if w else None
+        if g is None or g.check is None:
+            continue
+        if not show_if or el.get("auto_window") or any(m in show_if for m in g.markers):
+            return el, g
     return None
 
 

@@ -25,11 +25,8 @@ from config import HA_TOKEN, SLEEP_PAGE, valid_entity_id
 from entities import publish_category_sensors, publish_computed, publish_entity, sync_entities
 from ha import curve_series, ha_json, resolve_templates
 from panel_ops import push_panel_update
-from sources.flights import fetch_overhead_aircraft, place_of
 from sources.geo import get_home_locale, get_home_timezone
 from sources import changes, energy
-from sources.racing import compute_racing_active_window
-from sources.sports import compute_sports_active_window
 from runtime import Frames
 
 
@@ -262,61 +259,6 @@ async def gather_values(session, spec, names):
     return out
 
 
-def _is_builtin_widget_gate(page: dict) -> dict | None:
-    """Return the composite element that drives this page's active window if applicable."""
-    els = page.get("elements") or []
-    widget = next((e for e in els if isinstance(e, dict) and e.get("type") in ("sports_match", "sports_racing", "flight_tracker")), None)
-    if not widget:
-        return None
-    show_if = str(page.get("show_if") or "").strip()
-    if not show_if or widget.get("auto_window"):
-        return widget
-    # Also intercept any show_if that points to our built-in sports/racing/flight sensors
-    # so switching leagues or series in the widget inspector always evaluates the widget's live config!
-    builtin_patterns = (
-        "sensor.epaper_sports_",
-        "sensor.sports_",
-        "sensor.epaper_racing_",
-        "sensor.f1_status",
-        "sensor.formula_e_status",
-        "sensor.epaper_flights_overhead",
-        "sensor.overhead_aircraft_count",
-    )
-    if any(pat in show_if for pat in builtin_patterns):
-        return widget
-    return None
-
-
-async def _evaluate_widget_gate(session, widget: dict, home_tz: str) -> bool:
-    """Directly evaluate the active window for a sports_match, sports_racing, or flight_tracker widget."""
-    wtype = widget.get("type")
-    el_tz = widget.get("timezone") or home_tz
-    try:
-        pre_b = float(widget.get("pre_buffer_hours")) if widget.get("pre_buffer_hours") is not None else 2.0
-    except (ValueError, TypeError):
-        pre_b = 2.0
-    try:
-        post_b = float(widget.get("post_buffer_hours")) if widget.get("post_buffer_hours") is not None else 2.0
-    except (ValueError, TypeError):
-        post_b = 2.0
-
-    if wtype == "sports_match":
-        lg = widget.get("league") or "soccer/eng.1"
-        team = widget.get("team")
-        win = await compute_sports_active_window(session, lg, pre_buffer_hours=pre_b, post_buffer_hours=post_b, tz_name=el_tz, team=team)
-        return bool((win or {}).get("is_active"))                # None: not fetched yet
-    if wtype == "sports_racing":
-        series = widget.get("series") or "f1"
-        w_mode = widget.get("window_mode") or "session"
-        win = await compute_racing_active_window(session, series, pre_buffer_hours=pre_b, post_buffer_hours=post_b, window_mode=w_mode, tz_name=el_tz)
-        return bool((win or {}).get("is_active"))
-    if wtype == "flight_tracker":
-        custom_lat, custom_lon, radius, _ = place_of(widget)
-        aircraft = await fetch_overhead_aircraft(session, radius_km=radius, lat=custom_lat, lon=custom_lon)
-        return len(aircraft or []) > 0
-    return True
-
-
 async def resolve_conditions(session, conds: dict, minutes: dict | None = None) -> dict:
     """Conditions' values: those on the add-on's own values answered here
     (conditions.local), "changed" ones from the sensor's history (sources.changes;
@@ -347,14 +289,14 @@ async def eligible_pages(session, spec, linger, shown: set | None = None):
     defs = spec.get("pages", {})
     home_tz = await get_home_timezone(session)
 
-    widget_gates: dict[str, dict] = {}
+    widget_gates: dict[str, tuple] = {}
     template_gates: dict[str, str] = {}
 
     for n in set(rotation):
         p = defs.get(n)
         if not p or p.get("tier") != "when":
             continue
-        w_gate = _is_builtin_widget_gate(p)
+        w_gate = widgets.gate_of(p)                   # a widget that decides when its page shows (its descriptor)
         if w_gate is not None:
             widget_gates[n] = w_gate
         elif p.get("show_if"):
@@ -362,9 +304,9 @@ async def eligible_pages(session, spec, linger, shown: set | None = None):
 
     passed = await resolve_conditions(session, template_gates) if template_gates else {}
     widget_results: dict[str, bool] = {}
-    for n, w_el in widget_gates.items():
+    for n, (w_el, gate) in widget_gates.items():
         try:
-            is_on = await _evaluate_widget_gate(session, w_el, home_tz)
+            is_on = await gate.check(session, w_el, home_tz)
         except Exception as exc:
             print(f"widget gate eval error for {n}: {health.describe(exc)}", flush=True)
             is_on = False

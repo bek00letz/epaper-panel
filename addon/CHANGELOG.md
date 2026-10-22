@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Planes overhead pages say "only when" the same way as every other
+  count**, so a page you set to show while a plane is near reads like one
+  set by Notifications or a to-do list. Nothing changes in when it shows.
+
 - **Fixed:** a TRMNL could be told to sleep less than a minute after a
   button press, which its firmware doesn't keep. Each kind of device now
   says its own shortest sleep (a TRMNL's is a minute, a CrowPanel's 30

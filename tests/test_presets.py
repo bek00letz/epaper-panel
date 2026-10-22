@@ -198,7 +198,7 @@ class TestCatalogue(unittest.TestCase):
 
     def test_planes_show_while_one_is_near(self):
         for look in self.by_id["planes"]["looks"]:
-            self.assertEqual(look["page"]["show_if"], "{{ states('sensor.epaper_flights_overhead') | int(0) > 0 }}")
+            self.assertEqual(look["page"]["show_if"], "{{ has_value('sensor.epaper_flights_overhead') and states('sensor.epaper_flights_overhead') | float(0) > 0 }}")
         self.assertEqual([l["page"]["elements"][0]["style"] for l in self.by_id["planes"]["looks"]], ["card", "radar", "split"])
 
     def test_no_guessed_entity_ids(self):
