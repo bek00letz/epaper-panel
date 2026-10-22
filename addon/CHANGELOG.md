@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.21.0
+Add-on only; no firmware change, so nothing to reinstall on the panel
+and no Home Assistant restart. Update the add-on.
 
 - **Outside services you can see.** When a service the add-on asks isn't
   answering (ESPN, a racing calendar, Flightradar24, Iconify…), the status
