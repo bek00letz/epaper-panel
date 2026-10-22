@@ -6,6 +6,9 @@
   sensor while an automation you had made by hand in the last ten minutes
   still used it. The add-on now asks Home Assistant again just before it
   withdraws one.
+- **Fixed:** an icon file with an absurdly wide line was accepted, then
+  couldn't be drawn, and the page using it was left out. Such a file is now
+  left out of the set, like any other file no icon is like.
 
 ## 0.20.0
 Add-on only; no firmware change, so nothing to reinstall on the panel.

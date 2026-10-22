@@ -381,6 +381,11 @@ class TestCustomSets(IconTest):
         self.assertIsNone(iconsets.svg_record(f"<svg {ns} viewBox='0 0 1e309 24'><path d='M0 0H9V9Z'/></svg>"))
         self.assertIsNone(iconsets.svg_record(f"<svg {ns} width='1e309' height='5'><path d='M0 0H9V9Z'/></svg>"))
         self.assertIsNone(iconsets.svg_record(f"<svg {ns} viewBox='0 0 24 24'><path stroke='black' stroke-width='1e309' d='M0 0L9 9'/></svg>"))
+        # Finite but absurd: accepted, it raised OverflowError when drawn and its page was left out.
+        huge = iconsets.svg_record(f"<svg {ns} viewBox='0 0 24 24'><path stroke='black' stroke-width='1e300' d='M0 0L9 9'/></svg>")
+        self.assertIsNone(huge)
+        self.assertFalse(vector.check({"s": [[SQUARE, 1e300]], "v": [0, 0, 24, 24]}))
+        self.assertTrue(vector.check({"s": [[SQUARE, 3]], "v": [0, 0, 24, 24]}), "a real stroke still draws")
         self.assertFalse(vector.check({"d": SQUARE, "v": [0, 0, float("nan"), 24]}))
         self.assertFalse(vector.check({"s": [[SQUARE, float("inf")]]}))
         write(self.cfg / "custom_icons" / "deep.svg", deep)

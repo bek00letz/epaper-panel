@@ -302,6 +302,9 @@ def check(record) -> bool:
         # browser reads, and the editor would lose every outline asked for with it.
         if not all(math.isfinite(x) for x in v) or not all(math.isfinite(w) for _, w in strokes):
             return False
+        # A stroke wider than the whole icon isn't a line in it; drawing one overflowed.
+        if any(w > max(v[2], v[3]) for _, w in strokes):
+            return False
         budget(d, e, v, strokes)
         any_ink = any(bool(x) and bool(_subpaths(segments(x), 1.0)) for x in (d, e))
         for sd, w in strokes:
