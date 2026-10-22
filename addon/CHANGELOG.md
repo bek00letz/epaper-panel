@@ -1,6 +1,37 @@
 # Changelog
 
 ## Unreleased
+- **A badge for any page.** Insert › Widgets › **Badge** puts an icon with
+  a number in a solid dot on any page, like an app's icon on a phone: how
+  many updates are waiting, notifications, Repairs issues, or all of these
+  together (**Counts**, Updates to start with). It's not there at all when
+  the number is zero; over 99 it reads 99+. Its size is its box: drag it
+  bigger or smaller, and the note under it says how far away its number
+  reads, from the distance in **Check legibility from**. On a smaller
+  screen it keeps its real size instead of shrinking with the page.
+- **Updates waiting, on a page.** New page › Home › **Updates** lists every
+  update Home Assistant has waiting with its new version, grouped as Home
+  Assistant shows them: Home Assistant itself, add-ons, integrations (HACS)
+  and devices. More than fit end with "and 3 more"; a small screen leaves
+  out the group's column and a version it can't show whole. The page shows
+  only while something's waiting, and a version you skip in Home Assistant
+  drops off it.
+- **Home Assistant's notifications on a page.** New page › Home ›
+  **Notifications** lists the notifications behind Home Assistant's bell,
+  newest first, with how long ago each came ("12 min", "2 h", "Yesterday").
+  With one or two, what they say shows under them when it fits; more than
+  fit end with "and 3 more". The page shows only while there are any, and
+  one you dismiss in Home Assistant is gone at the next update. A device that
+  sleeps between updates shows the time each came instead, so nothing goes
+  stale while it sleeps.
+- **What needs you in Home Assistant, counted.** While a page uses them, the
+  add-on keeps three counts of its own: `sensor.epaper_notifications` (Home
+  Assistant's notifications, the bell), `sensor.epaper_updates` (updates
+  waiting; a version you skipped isn't counted) and `sensor.epaper_repairs`
+  (open Repairs issues, not the ones you ignored). A page's "Only when" or an
+  alert can use them, for example an alert when notifications go from none
+  to some. They aren't added to Home Assistant as entities: it has these
+  numbers already.
 - **Your own icons and icon sets, without Custom Icons.** A new **Settings ›
   Icons** (also **More icons…** in the icon picker) holds both:
   - **Your own icons:** **Add icons** takes SVG files, or drop them on the

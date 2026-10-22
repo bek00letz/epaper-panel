@@ -228,7 +228,10 @@ than a frame does.
 - **Geometry is per size, content is shared.** `arrange.ARRANGE_KEYS` (box,
   text size) may differ between screen sizes; everything else an element has
   is the same on every screen showing the design. Don't add a per-size field
-  anywhere else.
+  anywhere else. A widget whose descriptor says `keeps_size` (the badge) is
+  placed at its real size in mm on a smaller screen instead of shrinking with
+  the page (`arrange.KEEP_SIZE`, `theme.mm_per_px_of_canvas`), from the edges
+  it's nearest to.
 - **Prefer a structured binding over raw Jinja** (`render/binding.py`). An
   element says `{entity, show, format, prefix, suffix, replace}` and the engine
   builds the template. Supports `show: state`, `attribute`, `last_changed`, `last_updated`,
@@ -485,7 +488,11 @@ up to v0.12.0). `app/legacy.js` keeps the pieces of it this one still uses.
   box, settings and inspector fields, how its value is fetched and how often
   it changes, its example and whether it makes items of its page. The render
   cycle, examples, sub-items and the editor (through the catalog) read it. A
-  new widget is a descriptor plus its drawing, nowhere else.
+  new widget is a descriptor plus its drawing, nowhere else. A widget whose
+  page shows while a count of the add-on's is above 0 (Notifications, Updates)
+  names that sensor as its `sensor`: the preset, the inspector's "Only show"
+  switch and "Its sensor" all read it (`legacy.countShowIf`), never a branch
+  for the widget.
 - **The editor keeps no copies of the server's tables.** Leagues, racing
   series, each sport's words, state words, widget descriptors and the time
   format come from `GET /api/catalog`, built from the tables themselves

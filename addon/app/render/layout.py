@@ -29,6 +29,7 @@ from . import theme as T
 from . import binding
 from . import energy
 from . import media
+from . import needs_you
 from . import sport
 from . import sun
 from . import clock
@@ -2192,7 +2193,7 @@ DRAWERS = {
 def _widget(draw):
     """A widget that draws itself from its box and the value the render cycle fetched for it."""
     def drawer(img, d, el, raw_val, display=None):
-        draw(img, d, _clamp_box(el, 712, 200, display=display), el, raw_val, scale=_font_scale(el))
+        return draw(img, d, _clamp_box(el, 712, 200, display=display), el, raw_val, scale=_font_scale(el))
     return drawer
 
 
@@ -2206,6 +2207,9 @@ WIDGETS = {
     "now_playing": media.draw_now_playing,
     "tv_week": media.draw_tv_week,
     "world_clock": worldclock.draw,
+    "notifications": needs_you.draw_notifications,
+    "updates": needs_you.draw_updates,
+    "badge": needs_you.draw_badge,
 }
 DRAWERS.update({t: _widget(fn) for t, fn in WIDGETS.items()})
 
@@ -2336,7 +2340,11 @@ def render_page(page, vals, *, clock="", label="", footer=None, page_no=None, it
                             entry["not_a_number"] = str(raw)[:60]
                     metrics.append(entry)
             elif el["type"] in WIDGETS:
-                drawer(img, d, el, vals.get(i), display=display)
+                size = drawer(img, d, el, vals.get(i), display=display)
+                if isinstance(size, int) and metrics is not None:
+                    # A widget that says how big its text is gets the legibility note (the badge's number).
+                    mm, verdict = legibility(size, distance_m=distance_m, display=display)
+                    metrics.append({"i": i, "size": size, "mm": mm, "verdict": verdict, "lines": 1, "overflow": False})
                 if i in swapped and metrics is not None:
                     # A sleeping device: the editor says what it shows instead. Only a world clock is a widget
                     # that shows the time, and it shows each city's hours ahead or behind, not the date.

@@ -2,7 +2,7 @@
 // the same Home Assistant template 0.9 wrote, and reads it back. Anything the
 // form can't express stays a custom template, untouched.
 
-import { getWidgetSensorId, todoShowIf } from "./legacy.js";
+import { countShowIf, getWidgetSensorId, todoShowIf } from "./legacy.js";
 import { widget, stateWords } from "./catalog.js";
 
 const NO_VALUE = ["unavailable", "unknown"];
@@ -146,6 +146,14 @@ export function syncWidgetShowIf(page, widgetEl) {
     if (page.show_if && !(cur.mode === "simple" && /^(todo\.|sensor\.epaper_todo_)/.test(cur.ent))) return;
     const c = todoShowIf(list.entity, list.show);
     if (c) page.show_if = c; else delete page.show_if;
+    return;
+  }
+  // A widget whose page shows while a count of the add-on's is above 0 names it in its descriptor ("sensor").
+  const counted = widgetEl ? (widget(widgetEl.type)?.sensor ? widgetEl : null) : (page.elements || []).find((x) => widget(x.type)?.sensor);
+  if (counted) {
+    const sid = widget(counted.type).sensor, cur = parseShowIf(page.show_if);
+    if (page.show_if && !(cur.mode === "simple" && cur.ent === sid)) return;   // the person's own condition stays
+    page.show_if = countShowIf(sid);
     return;
   }
   // A widget that shows only around its events says so in its descriptor ("window": the add-on's).

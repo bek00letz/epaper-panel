@@ -16,8 +16,8 @@
 //   was      its old name, so search still finds it and the card can say so.
 // No imports from util.js: the tests read this file under node.
 
-import { getWidgetSensorId, todoShowIf } from "./legacy.js";
-import { leagues, series, widgetChangesEvery, stateWords } from "./catalog.js";
+import { countShowIf, getWidgetSensorId, todoShowIf } from "./legacy.js";
+import { leagues, series, widget, widgetChangesEvery, stateWords } from "./catalog.js";
 
 export const GROUPS = [
   ["day", "Your day"],
@@ -156,6 +156,21 @@ export const PRESETS = [
     id: "guest_wifi", group: "home", title: "Guest Wi-Fi", desc: "A code guests scan with their phone camera to join your Wi-Fi.", kw: "qr code network password",
     asks: "", needs: "wifi",
     looks: [{ id: "guest_wifi", name: "Guest Wi-Fi", make: (_, w = {}) => guestWifi(w) }],
+  },
+  {
+    // Home Assistant's bell. Its page shows by the add-on's own count (widgets.py "sensor").
+    id: "notifications", group: "home", title: "Notifications", kw: "bell alerts messages persistent home assistant",
+    desc: "Home Assistant's notifications, newest first, and how long ago each came. Only shows while there are any.",
+    asks: "",
+    looks: [{ id: "notifications", name: "Notifications", tier: "when", widget: true,
+      make: () => [{ type: "notifications", x: 40, y: 14, w: 712, h: 220 }] }],
+  },
+  {
+    id: "updates", group: "home", title: "Updates", kw: "upgrade firmware add-ons hacs integrations version home assistant",
+    desc: "Every update waiting in Home Assistant, by Home Assistant, add-ons, integrations and devices. Only shows while there are any.",
+    asks: "",
+    looks: [{ id: "updates", name: "Updates", tier: "when", widget: true,
+      make: () => [{ type: "updates", x: 40, y: 14, w: 712, h: 220 }] }],
   },
 
   /* ---------- energy ---------- */
@@ -419,7 +434,8 @@ export function pageFor(p, look, ent, extra, unitOf = () => "") {
   if (showIf) { const s = showIf(ent, extra); if (s) page.show_if = s; }
   if (look.widget) {
     const w = page.elements[0], sid = getWidgetSensorId(w);
-    page.show_if = w.type === "flight_tracker" ? `{{ states('${sid}') | int(0) > 0 }}` : `{{ is_state('${sid}','active') }}`;
+    page.show_if = widget(w.type)?.sensor ? countShowIf(sid)
+      : w.type === "flight_tracker" ? `{{ states('${sid}') | int(0) > 0 }}` : `{{ is_state('${sid}','active') }}`;
   }
   return page;
 }

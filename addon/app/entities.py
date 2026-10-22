@@ -15,6 +15,7 @@ from layouts_store import load_layouts, load_sources
 from sources.flights import fetch_overhead_aircraft, place_of
 from render import sport, todo
 from sources.geo import get_home_timezone
+from sources import needs_you
 from sources.ha_services import fetch_todo_items, todo_list_id
 from sources.racing import SERIES, compute_racing_active_window, fetch_racing_data, series_slug
 from sources.sports import compute_sports_active_window, league_slug
@@ -178,6 +179,37 @@ async def publish_todo_due(session, spec: dict, home_tz) -> set[str]:
             })
         except Exception as exc:
             print(f"publish to-do due sensor failed: {health.describe(exc)}", flush=True)
+    return wanted
+
+
+NEEDS_YOU_NAMES = {"notifications": ("Notifications", "mdi:bell-outline"), "updates": ("Updates", "mdi:package-up"),
+                   "repairs": ("Repairs", "mdi:wrench-outline")}
+
+
+async def publish_needs_you(session, spec: dict) -> set[str]:
+    """How many notifications, updates and Repairs issues Home Assistant has
+    (sensor.epaper_notifications, _updates, _repairs), for a page's "only
+    when" or an alert, answered by the add-on itself (conditions.local).
+
+    They stay the add-on's own values, never entities in Home Assistant: it
+    has these numbers already, and the user's rule (22 Oct) is no entities
+    nobody asked for. Something that asks for one makes it on demand.
+    Returns the entities to keep in Home Assistant: none."""
+    used = needs_you.counts_in(spec)
+    wanted: set[str] = set()
+    try:
+        got = await needs_you.counts(session, used)
+    except Exception as exc:
+        print(f"publish what needs you failed: {health.describe(exc)}", flush=True)
+        return wanted
+    for key in sorted(used):
+        if got.get(key) is None:
+            continue                                      # not read yet
+        name, icon = NEEDS_YOU_NAMES[key]
+        attrs = {"friendly_name": name, "icon": icon}
+        if key == "updates":
+            attrs.update(needs_you.by_group(await needs_you.fetch_updates(session)))
+        await publish_entity(session, needs_you.SENSOR[key], got[key], attrs, register_mqtt=False)
     return wanted
 
 
@@ -354,6 +386,9 @@ async def publish_computed(session):
 
     # 4. To-do lists on pages: how many items are due today or overdue.
     wanted |= await publish_todo_due(session, cur_spec, home_tz)
+
+    # 5. What needs you in Home Assistant, counted, when a page shows it or waits for it.
+    wanted |= await publish_needs_you(session, cur_spec)
 
     wanted |= retired_sensors_in_use(cur_spec)
     wanted |= publish_health()

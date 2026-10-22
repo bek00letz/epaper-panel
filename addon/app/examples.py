@@ -172,3 +172,36 @@ def page_values(page: dict, now: datetime | None = None) -> tuple[dict, dict]:
         if w and w.example:
             vals[i] = w.example(el, now)
     return vals, series
+
+
+# ---------------------------------------------------------------- what needs you (sources/needs_you.py)
+
+def notifications(now: datetime | None = None) -> list[dict]:
+    """Three notifications of the kind Home Assistant sends, newest first."""
+    now = now or datetime.now().astimezone()
+    rows = [("New devices discovered", "Two new devices were found. Set them up in Settings, Devices and services.", 12),
+            ("Backup failed", "The automatic backup couldn't reach its location.", 135),
+            ("Low battery", "The front door sensor is at 8%.", 26 * 60)]
+    return [{"id": f"example_{k}", "title": t, "message": m, "created": (now - timedelta(minutes=ago)).isoformat()}
+            for k, (t, m, ago) in enumerate(rows)]
+
+
+def updates() -> list[dict]:
+    """One update in each group, as needs_you.updates_from gives them."""
+    return [{"entity": "update.home_assistant_core_update", "group": "home_assistant", "name": "Home Assistant Core",
+             "version": "2026.11.0", "installing": False},
+            {"entity": "update.mosquitto_broker_update", "group": "addons", "name": "Mosquitto broker",
+             "version": "7.2.0", "installing": False},
+            {"entity": "update.mushroom_update", "group": "integrations", "name": "Mushroom",
+             "version": "5.3.0", "installing": False},
+            {"entity": "update.kitchen_light_firmware", "group": "devices", "name": "Kitchen light",
+             "version": "1.4.2", "installing": False}]
+
+
+REPAIRS = 1
+
+
+def badge(counts: str) -> int:
+    """What a badge counts, from the samples above: 4 updates, 3 notifications, 1 repair, 8 in all."""
+    n = {"updates": len(updates()), "notifications": len(notifications()), "repairs": REPAIRS}
+    return sum(n.values()) if counts == "all" else n.get(counts, n["updates"])

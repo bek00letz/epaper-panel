@@ -22,6 +22,9 @@ from . import theme as T
 # What may differ between sizes. Everything else is the element's content and style.
 ARRANGE_KEYS = ("x", "y", "w", "h", "size", "font_scale")
 AUTO = "_auto"
+# Element types whose box keeps its real size (in mm) when placed on a smaller screen, rather than
+# shrinking with the page (the badge, the user's call 22 Oct): registered by widgets.py ("keeps_size").
+KEEP_SIZE: set[str] = set()
 
 
 
@@ -99,7 +102,26 @@ def auto_box(el: dict, base: str, target: str) -> dict:
         out["size"] = max(8, round(el["size"] * s))
     if "font_scale" in el:
         out["font_scale"] = el["font_scale"]
+    if el.get("type") in KEEP_SIZE and all(isinstance(out.get(k), (int, float)) for k in ("x", "y", "w", "h")):
+        out.update(_real_size(out, el, base, target))
     return out
+
+
+def _real_size(box: dict, el: dict, base: str, target: str) -> dict:
+    """A box at least as big in mm as it was on `base`: grown from the edges it's nearest to (a badge in
+    the top right corner stays there), kept on the canvas. {} when it needn't grow or a size is unknown."""
+    here, there = T.mm_per_px_of_canvas(base), T.mm_per_px_of_canvas(target)
+    if not here or not there:
+        return {}
+    real = here / there
+    tw, th = parse_canvas(target)
+    ch = content_height(target)
+    w, h = min(tw, round(el["w"] * real)), min(ch, round(el["h"] * real))
+    if w <= box["w"] and h <= box["h"]:
+        return {}
+    x = box["x"] + box["w"] - w if box["x"] + box["w"] / 2 > tw / 2 else box["x"]
+    y = box["y"] + box["h"] - h if box["y"] + box["h"] / 2 > ch / 2 else box["y"]
+    return {"x": max(0, min(tw - w, x)), "y": max(0, min(ch - h, y)), "w": w, "h": h}
 
 
 def base_box(box: dict, base: str, target: str) -> dict:
