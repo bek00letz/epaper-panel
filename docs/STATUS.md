@@ -30,8 +30,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Work | Where | State |
 |---|---|---|
-| Second framework review, e8e65c2 to v0.20.0 (session "framework-review", read-only) | notes: framework-review-2.md | Started 22 Oct |
-| Break-it pass on 0.20.0, small fixes on its own branch (session "break-it") | branch `break-020` from v0.20.0 | Started 22 Oct |
+| 0.20.1: break-it's three fixes (clock alignment through Home Assistant's address; a used notify sensor never withdrawn; absurd SVG strokes refused) plus review 2's findings 1 (Iconify reported as its own service) and 2 (no 24-hour leaks, with a test), and a backoff for a failing icon copy (session "break-it") | branch `break-020` from v0.20.0 | In progress. Approved to release when the full suite passes (user, 22 Oct) |
 
 Worker notes are in the notes folders (`break-it-0.12.0.md`,
 `timers-addon.md`, `firmware-013.md`, `fixes-0131.md`, `editor-polish.md`,
@@ -46,8 +45,13 @@ Merged worktrees kept until the user OKs removing them: `release-next`,
 
 ## Framework review
 
-Second review running (22 Oct, the same session): e8e65c2 to v0.20.0; findings
-to framework-review-2.md in the coordinator's notes.
+Last review: e8e65c2 to v0.20.0 (22 Oct; framework-review-2.md in the
+coordinator's notes). 8 findings: 1 and 2 go into 0.20.1. For 0.21 (not
+started, user's call): units followed rather than copied (3), page gating from
+widget descriptors (4), Batteries as a rule (5; the user chose a rule: every
+battery of its kind below the threshold, minus the unticked, binary
+battery-low sensors included), "changed" stored structured (6), phones grouped
+in YAML (7), a kind's shortest sleep (8).
 
 Last review: v0.12.0 to e8e65c2 (21 Oct); all 14 findings fixed in 0.15.0.
 Next one when a good amount of work has piled up since v0.15.0.
