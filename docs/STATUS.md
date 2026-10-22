@@ -11,6 +11,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Version | Date | What |
 |---|---|---|
+| 0.20.1 | 22 Oct | Clock alignment reaches panels behind Home Assistant's address; Iconify is its own service; no 24-hour leaks (with a test); a used notify sensor is never withdrawn; absurd SVG strokes refused; a failing icon copy backs off. Add-on only; restart Home Assistant once. |
 | 0.20.0 | 22 Oct | Own icons and Iconify sets without Custom Icons; Home Assistant notifications, an Updates page and a count badge (no entities in Home Assistant); a Batteries preset; "Also notify my phone…" via an on-demand entity and a shipped blueprint; Bin day wording; no squeezed inspector rows. Add-on only. |
 | 0.19.0 | 21 Oct | Race pages read each series' own calendar first (Formula E shows season 13) and say so between seasons; Scores says when a busy day won't fit an always-on panel; next year's racing calendar missing isn't a failure. Add-on only. |
 | 0.18.0 | 21 Oct | The panel's clock is right within seconds (draws just after each minute, the panel fetches right after; sleeping devices wake just after a minute); icons from your own Home Assistant, custom sets included; condition suggestions from the add-on's one list. Firmware change. |
@@ -28,9 +29,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 ## In flight
 
-| Work | Where | State |
-|---|---|---|
-| 0.20.1: break-it's three fixes (clock alignment through Home Assistant's address; a used notify sensor never withdrawn; absurd SVG strokes refused) plus review 2's findings 1 (Iconify reported as its own service) and 2 (no 24-hour leaks, with a test), and a backoff for a failing icon copy (session "break-it") | branch `break-020` from v0.20.0 | In progress. Approved to release when the full suite passes (user, 22 Oct) |
+Review 2's bigger findings (3-8) for 0.20.2: a worker is proposed, waiting to be started.
 
 Worker notes are in the notes folders (`break-it-0.12.0.md`,
 `timers-addon.md`, `firmware-013.md`, `fixes-0131.md`, `editor-polish.md`,
