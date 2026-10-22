@@ -29,7 +29,9 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 ## In flight
 
-Review 2's bigger findings (3-8) for 0.20.2: a worker is proposed, waiting to be started.
+| Work | Where | State |
+|---|---|---|
+| Review 2's findings 3-8 for 0.20.2: Batteries as a rule, units followed, page gating from descriptors, "changed" stored structured, phones in YAML groups, a kind's shortest sleep (session "widgets-015", reused) | branch `review2-fixes` from v0.20.1 | Started 22 Oct |
 
 Worker notes are in the notes folders (`break-it-0.12.0.md`,
 `timers-addon.md`, `firmware-013.md`, `fixes-0131.md`, `editor-polish.md`,
@@ -46,7 +48,7 @@ Merged worktrees kept until the user OKs removing them: `release-next`,
 
 Last review: e8e65c2 to v0.20.0 (22 Oct; framework-review-2.md in the
 coordinator's notes). 8 findings: 1 and 2 go into 0.20.1. For 0.20.2 (the user,
-22 Oct; a worker proposed, waiting to be started): units followed rather than copied (3), page gating from
+22 Oct; in progress): units followed rather than copied (3), page gating from
 widget descriptors (4), Batteries as a rule (5; the user chose a rule: every
 battery of its kind below the threshold, minus the unticked, binary
 battery-low sensors included), "changed" stored structured (6), phones grouped
