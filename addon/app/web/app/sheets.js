@@ -133,9 +133,9 @@ export function openStatus(app, anchor) {
     const notes = lines.map((l) => h("p", { class: "fnote", text: l }));
     // What isn't sent comes right under the line that says so.
     pop.append(h("div", { class: "sthead" }, h("span", { class: "led " + tone }), h("span", { text: line1 })), ...notes.slice(0, 1),
-      ...(doc.dirty && doc.saving !== "error" ? [unsentList(app, close)] : []), ...notes.slice(1),
-      // Outside services whose problem sensor is on (the user's call, 22 Oct); nothing when all answer.
-      ...problemLines(app, close, (id) => openSettings(app, "services", id)));
+      ...(doc.dirty && doc.saving !== "error" ? [unsentList(app, close)] : []), ...notes.slice(1));
+    // Outside services whose problem sensor is on (the user's call, 22 Oct); nothing when all answer.
+    pop.append(...problemLines(app, close, (id) => openSettings(app, "services", id)));
 
     const live = s.pages || [];
     pop.append(h("div", { class: "poplab", text: "Rotating" }), h("p", { class: "fnote", text: live.length ? `${live.map(pageTitle).join(", ")}, ${turning(t)}.` : "Nothing at the moment." }));
