@@ -12,6 +12,10 @@ export const OPS = [["eq", "is"], ["ne", "isn't"], ["gt", "is above"], ["lt", "i
 export const CHANGED_MINUTES = 30;
 
 export function parseShowIf(expr) {
+  // "Changed", stored as data (review 2 #6): {changed, minutes, to}. The add-on answers it from history.
+  if (expr && typeof expr === "object" && typeof expr.changed === "string") {
+    return { mode: "simple", ent: expr.changed, op: "changed", val: expr.to ?? "", minutes: Number(expr.minutes) || CHANGED_MINUTES };
+  }
   const s = String(expr || "").trim();
   if (!s) return { mode: "simple", ent: "", op: "eq", val: "" };
   const inner = s.startsWith("{{") && s.endsWith("}}") ? s.slice(2, -2).trim() : s;
@@ -44,14 +48,30 @@ function parseChanged(inner) {
   return { mode: "simple", ent: m[4], op: "changed", val: m[2] ? m[3] : "", minutes: Number(m[5]) };
 }
 
+/* A condition as Home Assistant's template, for the custom condition's text: a structured "changed"
+   written as the template that comes nearest (conditions.as_template). */
+export function asTemplate(expr) {
+  if (expr && typeof expr === "object" && typeof expr.changed === "string") {
+    const which = expr.to ? `is_state('${expr.changed}','${expr.to}')` : `has_value('${expr.changed}')`;
+    return `{{ ${which} and now() - states['${expr.changed}'].last_changed < timedelta(minutes=${Number(expr.minutes) || CHANGED_MINUTES}) }}`;
+  }
+  return String(expr || "");
+}
+/* A custom condition that reads last_changed but isn't the add-on's "changed": Home Assistant answers
+   it, and there a restart counts as a change. */
+export function homeAssistantsChanged(expr) {
+  const s = typeof expr === "string" ? expr : "";
+  return /last_changed/.test(s) && parseShowIf(s).op !== "changed";
+}
+
 export function compileShowIf({ ent, op, val, minutes }) {
   ent = String(ent || "").trim().replace(/'/g, "");
   val = String(val ?? "").trim().replace(/'/g, "");
   if (!ent) return "";
   if (op === "changed") {
+    // Stored as data, never as Home Assistant's template (where a restart is a change): review 2 #6.
     const n = Math.max(1, Math.min(1440, Math.round(Number(minutes)) || CHANGED_MINUTES));
-    const which = val ? `is_state('${ent}','${val}')` : `has_value('${ent}')`;
-    return `{{ ${which} and now() - states['${ent}'].last_changed < timedelta(minutes=${n}) }}`;
+    return val ? { changed: ent, minutes: n, to: val } : { changed: ent, minutes: n };
   }
   if (op === "eq") return `{{ is_state('${ent}','${val}') }}`;
   // A sensor with no value (unavailable, unknown) never meets "isn't" or a

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **"Changed in the last N minutes" can't quietly change meaning.** It's
+  now saved as what it is, not as a Home Assistant template, so the add-on
+  always answers it from the sensor's history (a restart is never a
+  change). If you turn one into a custom condition and change it, the
+  editor says that Home Assistant answers it from then on, and that to it a
+  restart counts as a change. Conditions saved before keep working.
+
 - **A value's unit follows its sensor.** A number or gauge shows its
   sensor's unit as Home Assistant has it now, so switching Home Assistant
   to °F, or giving a sensor a unit of its own, changes the page too. Pages

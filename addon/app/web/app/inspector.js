@@ -5,7 +5,7 @@
 import { h, icon, api, clone, pageTitle, slug, modKey, turning } from "./util.js";
 import { field, input, number, select, seg, textarea, toggle, toggleRow, section, linkButton, toast } from "./ui.js";
 import { TYPES, breakable, isWidget, hasText, elName, normalizeLineParity, GROUP_STYLES, GROUP_PAD } from "./elements.js";
-import { OPS, CHANGED_MINUTES, parseShowIf, compileShowIf, valueChoices, evaluate, describe, changedLine, syncWidgetShowIf, syncDynamicGridShowIf, GRID_RULES, gridRule, gridByNumber, gridWrote } from "./conditions.js";
+import { OPS, CHANGED_MINUTES, parseShowIf, compileShowIf, asTemplate, homeAssistantsChanged, valueChoices, evaluate, describe, changedLine, syncWidgetShowIf, syncDynamicGridShowIf, GRID_RULES, gridRule, gridByNumber, gridWrote } from "./conditions.js";
 import { explodeWidget, getWidgetSensorId, suggestIconForEntity } from "./legacy.js";
 import { dateEditor, binsEditor } from "./countdown.js";
 import { zonesEditor } from "./zones.js";
@@ -866,7 +866,10 @@ function conditionRows(app, p, c = SHOW) {
   }
   // An Until can't be "changed" in the simple form (see opSel); one written by hand stays as written.
   if (parsed.mode === "raw" || app[c.raw] || (c !== SHOW && parsed.op === "changed")) {
-    wrap.append(field(c === SHOW ? "Condition" : "Until", textarea(p[c.key], (v) => { if (v.trim()) p[c.key] = v.trim(); else delete p[c.key]; doc.commit(); }), { wide: true, note: c.rawNote }));
+    wrap.append(field(c === SHOW ? "Condition" : "Until", textarea(asTemplate(p[c.key]), (v) => { if (v.trim()) p[c.key] = v.trim(); else delete p[c.key]; doc.commit(); app.refresh(); }), { wide: true, note: c.rawNote }));
+    // Once it's no longer the add-on's own "changed", Home Assistant answers it: say what that means.
+    if (homeAssistantsChanged(p[c.key])) wrap.append(h("p", { class: "note warn" }, icon("info", "sm"),
+      h("span", { text: "Home Assistant answers this one, and to it a restart counts as a change. Use the simple form's \"changed\" to have the add-on read the sensor's history instead." })));
     const back = parseShowIf(p[c.key]);
     if (back.mode === "simple" && (c === SHOW || back.op !== "changed")) wrap.append(linkButton("Use the simple form", () => { app[c.raw] = false; app.refresh(); }));
     return wrap;

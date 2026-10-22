@@ -229,8 +229,11 @@ class TestTheEditorsForm(unittest.TestCase):
           C.compileShowIf({ent: 'sensor.pawpaw_location', op: 'changed', val: ''}),
           C.compileShowIf({ent: 'sensor.pawpaw_location', op: 'changed', val: '', minutes: 99999}),
         ]))""")
-        self.assertEqual(got[:3], [ANY, OUT, ANY])
+        # Stored as data (review 2 #6), never as Home Assistant's template, where a restart is a change.
+        self.assertEqual(got[:3], [{"changed": CAT, "minutes": 30}, {"changed": CAT, "minutes": 30, "to": "Outdoor Cat"},
+                                   {"changed": CAT, "minutes": 30}])
         self.assertEqual(conditions.changed(got[3]).minutes, 1440)
+        self.assertEqual([conditions.as_template(g) for g in got[:2]], [ANY, OUT], "shown the same as the editor shows it")
 
     def test_reads_it_back(self):
         got = run_js(f"console.log(JSON.stringify([C.parseShowIf({json.dumps(ANY)}), C.parseShowIf({json.dumps(OUT)})]))")
@@ -339,3 +342,47 @@ class TestTheEndpoint(unittest.IsolatedAsyncioTestCase):
 class TestHoldsForSaysEachChange(unittest.TestCase):
     def test_the_note(self):
         self.assertIn("It takes over the panel each time it changes, then gives it back.", INSPECTOR_JS)
+
+
+class TestStoredAsData(unittest.IsolatedAsyncioTestCase):
+    """Review 2 #6: "changed" is stored structured; Home Assistant's template is only for showing it."""
+    COND = {"changed": CAT, "minutes": 30, "to": "Outdoor Cat"}
+
+    def test_the_add_on_reads_both_shapes(self):
+        self.assertEqual(conditions.changed(self.COND), conditions.Changed(CAT, "Outdoor Cat", 30))
+        self.assertEqual(conditions.changed(OUT), conditions.Changed(CAT, "Outdoor Cat", 30), "a template saved before still counts")
+        self.assertIsNone(conditions.structured({"changed": "not an entity"}))
+
+    def test_saved_as_data_page_and_until(self):
+        from layouts_store import sanitize_layouts
+        spec = sanitize_layouts({"rotation": ["cat", "alert"], "pages": {
+            "cat": {"tier": "when", "show_if": self.COND, "elements": []},
+            "alert": {"tier": "alert", "ends": "until", "show_if": {"changed": CAT, "minutes": "15"},
+                      "until_if": {"changed": "binary_sensor.door", "minutes": 5}, "elements": []}}})
+        self.assertEqual(spec["pages"]["cat"]["show_if"], self.COND)
+        self.assertEqual(spec["pages"]["alert"]["show_if"], {"changed": CAT, "minutes": 15})
+        self.assertEqual(spec["pages"]["alert"]["until_if"], {"changed": "binary_sensor.door", "minutes": 5})
+
+    async def test_a_page_shows_by_history_never_by_home_assistants_last_changed(self):
+        seen = {"state": "Outdoor Cat", "at": NOW - 300}
+        spec = {"rotation": ["cat", "plain"], "pages": {"cat": {"tier": "when", "show_if": self.COND, "elements": []},
+                                                        "plain": {"tier": "rotate", "elements": []}}}
+        asked = []
+
+        async def templates(session, conds):
+            asked.append(conds)
+            return {}
+        with mock.patch.object(changes, "fetch_change", mock.AsyncMock(return_value=seen)), \
+             mock.patch.object(frames, "resolve_templates", templates), mock.patch.object(frames.time, "time", return_value=NOW), \
+             mock.patch.object(frames, "get_home_timezone", mock.AsyncMock(return_value="UTC")):
+            live = await frames.eligible_pages(None, spec, runtime.linger("t"))
+        self.assertEqual(live, ["cat", "plain"])
+        self.assertEqual(asked, [], "Home Assistant is never asked")
+
+    def test_the_editor_shows_it_as_a_template_and_warns_when_it_becomes_home_assistants(self):
+        got = run_js(f"""const c = {json.dumps(self.COND)};
+          console.log(JSON.stringify([C.parseShowIf(c), C.asTemplate(c), C.homeAssistantsChanged(C.asTemplate(c)),
+            C.homeAssistantsChanged(C.asTemplate(c).replace(" }}}}", " and is_state('person.x','home') }}}}"))]))""")
+        self.assertEqual(got[0], {"mode": "simple", "ent": CAT, "op": "changed", "val": "Outdoor Cat", "minutes": 30})
+        self.assertEqual(got[1], OUT)
+        self.assertEqual(got[2:], [False, True])
