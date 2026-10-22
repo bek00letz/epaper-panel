@@ -28,7 +28,10 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 ## In flight
 
-Nothing.
+| Work | Where | State |
+|---|---|---|
+| Second framework review, e8e65c2 to v0.20.0 (session "framework-review", read-only) | notes: framework-review-2.md | Started 22 Oct |
+| Break-it pass on 0.20.0, small fixes on its own branch (session "break-it") | branch `break-020` from v0.20.0 | Started 22 Oct |
 
 Worker notes are in the notes folders (`break-it-0.12.0.md`,
 `timers-addon.md`, `firmware-013.md`, `fixes-0131.md`, `editor-polish.md`,
