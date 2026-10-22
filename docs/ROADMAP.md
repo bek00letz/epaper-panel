@@ -86,6 +86,24 @@ Assistant entity that condition needs (nothing by default) and opens a shipped
 blueprint, prefilled, so the notification is an ordinary automation. The add-on
 never sends notifications itself.
 
+## Outside services, visible in the editor (agreed 22 Oct; design pass with the user before building)
+
+Today a failing outside service (icons, racing calendars, scores) shows only in
+the add-on's log and Home Assistant's problem sensors; the editor never shows
+it. The user chose: the status card lists any service whose problem sensor is
+on. They also want the sources visible and, behind an "only touch this if you
+know what you're doing" step, editable. Proposal to design with them:
+- Settings › Services lists every service: what uses it, its last answer, the
+  error, Try again. The status card shows only the failing ones. These two can
+  ship first, on their own.
+- Advanced: "Use another address" per service, for a mirror in the same
+  format. The add-on's own reader checks it before saving and refuses it with
+  the reason otherwise.
+- Show the add-on's own fields per widget (for racing: series, race, session,
+  start, result), not the raw outside formats, and let a user's own data
+  source fill them. That makes swapping a source real without documenting
+  outside formats that change without warning.
+
 ## Later
 
 | Item | You get | Size | Firmware | Depends on |
