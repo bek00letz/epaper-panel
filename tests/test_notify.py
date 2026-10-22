@@ -176,7 +176,6 @@ class TestOnDemand(NotifyCase):
         layouts_store.save_draft({"version": 1, "spec": layouts_store.sanitize_layouts(
             {"pages": pages, "rotation": ["doorbell"]})}, self.dev["id"])
         self.assertIn("dry3r00", notify.requested())
-        self.assertFalse(notify.requested()["dry3r00"]["sent"])
         self.assertIn("epaper_page_dry3r00", notify.kept())
 
     def test_renaming_the_page_keeps_its_unique_id(self):
@@ -231,6 +230,15 @@ class TestFollowsThePage(NotifyCase):
         runtime.showing(self.design).clear()
         self.publish()
         self.assertEqual(self.state(NID2), "OFF")
+
+    def test_set_up_on_a_page_the_panel_has_works_before_it_is_sent(self):
+        """The notify id waits in the draft; the alert is already on the panel."""
+        pages = {**PAGES, "dryer_done": {**PAGES["dryer_done"], "notify": "dry3r00"}}
+        layouts_store.save_draft({"version": 1, "spec": layouts_store.sanitize_layouts(
+            {"pages": pages, "rotation": ["doorbell"]})}, self.dev["id"])
+        runtime.alert(self.design)["active"] = {"dryer_done": {"until": 9e9, "at": 1000.0}}
+        self.publish()
+        self.assertEqual(self.state("dry3r00"), "ON")
 
     def test_a_draft_page_is_off_until_it_is_sent(self):
         layouts_store.save_draft({"version": 1, "spec": layouts_store.sanitize_layouts({"pages": {

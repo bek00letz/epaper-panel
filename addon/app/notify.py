@@ -103,26 +103,36 @@ def _save_stopped(stopped: dict) -> None:
 def requested(now: float | None = None) -> dict[str, dict]:
     """Every page asking for notifications: notify id -> {design, page, page_def, sent}.
 
-    The pages each device shows (sent: its sensor follows the page) and each
-    device's unsent draft (its sensor exists, off until the page is sent), plus
-    one just set up. A stopped one doesn't ask, whatever a page still says,
+    The pages each device shows (sent: its sensor follows the page), each
+    device's unsent draft and one just set up. One asked for in a draft or just
+    set up follows the page the panel has by that name, if it shows the same
+    way (notifications work before the id is sent); a page only in a draft is
+    off until it's sent. A stopped one doesn't ask, whatever a page still says,
     until it's set up again."""
     now = time.time() if now is None else now
     out: dict[str, dict] = {}
-    for design_id in sorted(devices.designs_in_use()):
-        for name, page in (devices.design(design_id).get("pages") or {}).items():
+    saved = {d: devices.design(d).get("pages") or {} for d in sorted(devices.designs_in_use())}
+    for design_id, pages in saved.items():
+        for name, page in pages.items():
             if isinstance(page, dict) and (nid := clean_id(page.get("notify"))):
                 out.setdefault(nid, {"design": design_id, "page": name, "page_def": page, "sent": True})
+
+    def unsent(design_id, name, page):
+        live = saved.get(design_id, {}).get(name)
+        if isinstance(live, dict) and live.get("tier") == page.get("tier"):
+            return {"design": design_id, "page": name, "page_def": live, "sent": True}
+        return {"design": design_id, "page": name, "page_def": page, "sent": False}
+
     for dev in devices.all_devices():
         draft = load_draft(dev["id"]) or {}
         for name, page in ((draft.get("spec") or {}).get("pages") or {}).items():
-            if isinstance(page, dict) and (nid := clean_id(page.get("notify"))):
-                out.setdefault(nid, {"design": dev["design"], "page": name, "page_def": page, "sent": False})
+            if isinstance(page, dict) and (nid := clean_id(page.get("notify"))) and nid not in out:
+                out[nid] = unsent(dev["design"], name, page)
     for nid, p in list(PENDING.items()):
         if now - p["at"] > PENDING_FOR:
             PENDING.pop(nid, None)
-        else:
-            out.setdefault(nid, {"design": p["design"], "page": p["page"], "page_def": p["page_def"], "sent": False})
+        elif nid not in out:
+            out[nid] = unsent(p["design"], p["page"], p["page_def"])
     stopped = _load_stopped()
     return {nid: r for nid, r in out.items() if nid not in stopped}
 

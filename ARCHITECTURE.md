@@ -347,7 +347,8 @@ automations have one home (the user's call, 22 Oct). `notify.py`:
   (`binary_sensor.epaper_showing_<page>`, `runtime.showing`). Its unique_id is
   the notify id, so renaming the page keeps the entity. A change alert that
   fires again while it's on goes off and on again: "turns on" is the one
-  thing to watch. A page in an unsent draft has its sensor already (off).
+  thing to watch. One set up on a page the panel already has works at once,
+  before the id is sent; a page only in an unsent draft has its sensor, off.
 - **The blueprint ships with the add-on** (`blueprints/notify.yaml`, installed
   with `blueprint/save` when a notification is first set up, again only when
   ours changed). It triggers on off → on only, so a restart isn't an alert.
