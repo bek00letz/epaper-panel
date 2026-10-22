@@ -51,6 +51,7 @@ CHECK_EVERY = 300                   # seconds between looking for a new Home Ass
 MAX_SVG = 512 * 1024                # bytes; an icon is a few kB
 MAX_SCRIPT = 32 * 1024 * 1024
 MAX_ICONS = 60000                   # per set
+MAX_DEPTH = 32                      # groups inside groups; a real icon has a handful
 RESERVED = {icons.DEFAULT, icons.BUILT_IN}
 
 
@@ -297,9 +298,9 @@ def svg_record(text: str):
     fill, odd, strokes = [], [], []
     base = {"fill": "black", "stroke": "none", "stroke-width": "1", "fill-rule": "nonzero"}
 
-    def walk(el, matrix, st):
+    def walk(el, matrix, st, depth=0):
         t = tag(el)
-        if t in _SKIP:
+        if t in _SKIP or depth > MAX_DEPTH:
             return
         st = _style(el, st)
         if st.get("display") == "none" or st.get("visibility") == "hidden" or _num(st.get("opacity"), 1.0) <= 0:
@@ -308,7 +309,7 @@ def svg_record(text: str):
             matrix = _mul(matrix, _transform(el.get("transform")))
         if t in ("svg", "g"):
             for child in el:
-                walk(child, matrix, st)
+                walk(child, matrix, st, depth + 1)
             return
         d = _shape_d(t, el)
         if not d:
@@ -326,7 +327,10 @@ def svg_record(text: str):
         if s not in ("none", "") and s not in _WHITE and sw > 0:
             strokes.append([nd, round(sw, 3)])
 
-    walk(root, (1.0, 0.0, 0.0, 1.0, 0.0, 0.0), base)
+    try:
+        walk(root, (1.0, 0.0, 0.0, 1.0, 0.0, 0.0), base)
+    except (RecursionError, ValueError, OverflowError, ZeroDivisionError):
+        return None                     # a file no icon is like: left out, never the set with it
     rec = {"d": "".join(fill), "v": [round(x, 3) for x in vb]}
     if odd:
         rec["e"] = "".join(odd)

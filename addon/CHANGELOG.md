@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+- **Fixed: one odd SVG file could stop all your own icons loading.** A file
+  with thousands of groups inside groups made copying your icon folder fail
+  as a whole; now that one file is left out and the rest load. An icon with
+  sizes too large to be real is left out too: it used to leave other icons
+  blank in the editor's picker.
 - **No row squeezes its label or its control.** In the inspector, Settings
   and New page, a control that doesn't fit beside its label now goes under
   it, full width, with any note kept under the label. "Close to the day" on

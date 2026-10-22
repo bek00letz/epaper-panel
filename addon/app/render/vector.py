@@ -298,6 +298,10 @@ def check(record) -> bool:
         d, e, v, strokes = parts(record)
         if len(v) != 4 or v[2] <= 0 or v[3] <= 0:
             return False
+        # Every number is a real one: an infinite view box or stroke would be written as JSON no
+        # browser reads, and the editor would lose every outline asked for with it.
+        if not all(math.isfinite(x) for x in v) or not all(math.isfinite(w) for _, w in strokes):
+            return False
         budget(d, e, v, strokes)
         any_ink = any(bool(x) and bool(_subpaths(segments(x), 1.0)) for x in (d, e))
         for sd, w in strokes:

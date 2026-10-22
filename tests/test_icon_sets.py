@@ -366,6 +366,21 @@ class TestCustomSets(IconTest):
         self.assertIsNone(iconsets.svg_record("not svg"))
         self.assertIsNone(iconsets.svg_record("<svg>" + "<path d='M0 0H1V1Z'/>" * 40000 + "</svg>"), "too big")
 
+    def test_a_file_no_icon_is_like_is_left_out_not_the_set(self):
+        # Thousands of groups inside groups used to stop the whole folder copying; numbers too big to
+        # be real used to reach the editor as JSON no browser reads.
+        ns = 'xmlns="http://www.w3.org/2000/svg"'
+        deep = f"<svg {ns} viewBox='0 0 24 24'>" + "<g>" * 3000 + "<path d='M0 0H9V9Z'/>" + "</g>" * 3000 + "</svg>"
+        self.assertIsNone(iconsets.svg_record(deep))
+        self.assertIsNone(iconsets.svg_record(f"<svg {ns} viewBox='0 0 1e309 24'><path d='M0 0H9V9Z'/></svg>"))
+        self.assertIsNone(iconsets.svg_record(f"<svg {ns} width='1e309' height='5'><path d='M0 0H9V9Z'/></svg>"))
+        self.assertIsNone(iconsets.svg_record(f"<svg {ns} viewBox='0 0 24 24'><path stroke='black' stroke-width='1e309' d='M0 0L9 9'/></svg>"))
+        self.assertFalse(vector.check({"d": SQUARE, "v": [0, 0, float("nan"), 24]}))
+        self.assertFalse(vector.check({"s": [[SQUARE, float("inf")]]}))
+        write(self.cfg / "custom_icons" / "deep.svg", deep)
+        write(self.cfg / "custom_icons" / "cat-outside.svg", CAT_SVG)
+        self.assertEqual(iconsets.copy_custom(self.cfg, LOCAL), "local: 1")
+
     def test_custom_icons_local_folder(self):
         write(self.cfg / "custom_icons" / "cat-outside.svg", CAT_SVG)
         write(self.cfg / "custom_icons" / "pets" / "Dog.svg", CAT_SVG)
