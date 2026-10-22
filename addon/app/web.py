@@ -573,6 +573,17 @@ async def api_energy(request):
     return web.json_response(got)
 
 
+async def api_batteries(request):
+    """Which battery sensors you charge yourself, by their device (sources.batteries):
+    {"batteries": {entity: true|false|null}}; null for one with no device, {} offline."""
+    from sources import batteries
+    try:
+        got = await batteries.fetch(runtime.SESSION)
+    except Exception as exc:
+        return web.json_response({"error": health.describe(exc)}, status=502)
+    return web.json_response({"batteries": got})
+
+
 async def api_changed(request):
     """When a sensor last really changed, for a "changed" condition's status line:
     {"state", "at", "to", "history", "now"} (sources.changes; epoch seconds, "now"
@@ -1309,6 +1320,7 @@ def make_apps():
         web.get("/api/changed", api_changed),
         web.get("/api/entity_states", api_entity_states),
         web.get("/api/energy", api_energy),
+        web.get("/api/batteries", api_batteries),
         web.get("/api/catalog", api_catalog),
         web.get("/api/timezones", api_timezones),
         web.post("/api/shows-time", api_shows_time),

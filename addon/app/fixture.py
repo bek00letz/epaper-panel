@@ -79,6 +79,8 @@ def eval_fixture_template(tpl: str, own: bool = True) -> str:
                     "entity": eid,
                     "state": str(cur_state),
                     "name": fname,
+                    "unit": st.get("unit") or "",
+                    "device_class": st.get("device_class") or "",
                     "changed": "25m ago"
                 })
         return json.dumps(res)

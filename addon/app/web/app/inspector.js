@@ -5,7 +5,7 @@
 import { h, icon, api, clone, pageTitle, slug, modKey, turning } from "./util.js";
 import { field, input, number, select, seg, textarea, toggle, toggleRow, section, linkButton, toast } from "./ui.js";
 import { TYPES, breakable, isWidget, hasText, elName, normalizeLineParity, GROUP_STYLES, GROUP_PAD } from "./elements.js";
-import { OPS, CHANGED_MINUTES, parseShowIf, compileShowIf, valueChoices, evaluate, describe, changedLine, syncWidgetShowIf, syncDynamicGridShowIf } from "./conditions.js";
+import { OPS, CHANGED_MINUTES, parseShowIf, compileShowIf, valueChoices, evaluate, describe, changedLine, syncWidgetShowIf, syncDynamicGridShowIf, GRID_RULES, gridRule, gridByNumber, gridWrote } from "./conditions.js";
 import { explodeWidget, getWidgetSensorId, suggestIconForEntity } from "./legacy.js";
 import { dateEditor, binsEditor } from "./countdown.js";
 import { zonesEditor } from "./zones.js";
@@ -564,15 +564,25 @@ function gridSections(app, el, set) {
   if (!Array.isArray(el.items)) el.items = [];
   const p = app.doc.page();
   const resync = () => { syncDynamicGridShowIf(p, el); };
+  // A number rule (a battery below 40 %): each shows while past the page's number, or its own.
+  const byNumber = gridByNumber(el), cmp = el.filter_rule === "below" ? "Below" : "At least";
   const top = section("Devices",
     field("Title", input(el.header_title, (v) => set("header_title", v), { placeholder: "On now" })),
     field("Title icon", iconButton(app, el.header_icon, (ic) => set("header_icon", ic), "Title icon")),
-    field("Counts as on", select([["on", "On"], ["off", "Off"], ["*", "Any state"]], el.filter_state || "on", (v) => { el.filter_state = v; resync(); app.doc.commit(); })),
-    field("Layout", select([["grid", "Grid"], ["columns", "One row"]], el.layout_mode || (el.layout_4 === "columns" ? "columns" : "grid"), (v) => set("layout_mode", v))),
+    field("Shows each", select(GRID_RULES, gridRule(el), (v) => {
+      if (v === "below" || v === "at_least") {
+        el.filter_rule = v;
+        if (el.filter_value === undefined || el.filter_value === "") el.filter_value = v === "below" ? 20 : 90;
+      } else { delete el.filter_rule; el.filter_state = v; }
+      resync(); app.doc.commit();
+    }, { "aria-label": "Shows each" })),
+    byNumber ? field(cmp, number(el.filter_value, (v) => { el.filter_value = v; resync(); app.doc.commit(); }, { step: "any", "aria-label": `${cmp} this number`, style: { width: "6em" } })) : null,
+    field("Layout", select([["grid", "Grid"], ["columns", "One row"], ["list", "List"]], el.layout_mode || (el.layout_4 === "columns" ? "columns" : "grid"), (v) => set("layout_mode", v))),
     field("Shows", select([["both", "Icon, name and detail"], ["name_only", "Icon and name"], ["icons_only", "Icons only, large"]], el.show_labels || "both", (v) => set("show_labels", v))),
     field("Icon size", select([["auto", "Fit"], ["medium", "Medium"], ["large", "Large"], ["huge", "Huge"]], el.icon_size || "auto", (v) => set("icon_size", v))),
-    field("Detail", select([["runtime", "How long it's been on"], ["state", "Its state"], ["none", "Nothing"]], el.secondary_mode || "runtime", (v) => set("secondary_mode", v))),
-    toggleRow("Hide the page when nothing's on", p.tier === "when", (v) => {
+    // By a number, the detail is its level (render/layout); a state can say how long, or itself.
+    byNumber ? null : field("Detail", select([["runtime", "How long it's been on"], ["state", "Its state"], ["none", "Nothing"]], el.secondary_mode || "runtime", (v) => set("secondary_mode", v))),
+    toggleRow(byNumber ? "Hide the page when nothing shows" : "Hide the page when nothing's on", p.tier === "when", (v) => {
       if (v) { p.tier = "when"; resync(); if (!app.doc.spec.rotation.includes(app.doc.cur)) app.doc.spec.rotation.push(app.doc.cur); }
       else { p.tier = "rotate"; delete p.show_if; }
       app.doc.commit();
@@ -591,8 +601,15 @@ function gridSections(app, el, set) {
       }),
       field("Name", input(it.name, (v) => { it.name = v; app.doc.commit(); }, { placeholder: "Its name in Home Assistant" })),
       toggleRow("Icon only", !!it.hide_name, (v) => { it.hide_name = v; app.doc.commit(); }),
-      field("When on", iconButton(app, it.icon, (ic) => { it.icon = ic; app.doc.commit(); }, "Icon when on")),
-      field("When off", iconButton(app, it.icon_off, (ic) => { it.icon_off = ic; app.doc.commit(); }, "Icon when off")));
+      ...(byNumber ? [
+        field(`Its own ${cmp.toLowerCase()}`, number(it.threshold ?? "", (v) => { if (v === "") delete it.threshold; else it.threshold = v; resync(); app.doc.commit(); },
+          { step: "any", placeholder: String(el.filter_value ?? ""), "aria-label": `${it.name || "This one"}: its own number, or empty for the page's`, style: { width: "6em" } })),
+        field("Icon", iconButton(app, it.icon, (ic) => { it.icon = ic; app.doc.commit(); }, "Icon")),
+        h("p", { class: "fnote", text: "With no icon, a battery shows its level, as in Home Assistant." }),
+      ] : [
+        field("When on", iconButton(app, it.icon, (ic) => { it.icon = ic; app.doc.commit(); }, "Icon when on")),
+        field("When off", iconButton(app, it.icon_off, (ic) => { it.icon_off = ic; app.doc.commit(); }, "Icon when off")),
+      ]));
     spots.append(card);
   });
   spots.append(h("button", { class: "btn tinted", onclick: () => { el.items.push({ entity: "", name: `Spot ${el.items.length + 1}`, icon: "mdi:radiator" }); resync(); app.doc.commit(); } }, icon("plus", "sm"), "Add a spot"));
@@ -780,6 +797,14 @@ function conditionRows(app, p, c = SHOW) {
   const doc = app.doc;
   const parsed = parseShowIf(p[c.key]);
   const wrap = h("div", { class: "cond" });
+  // A condition its Dynamic status grid wrote (and keeps in step): said in words, not as its template.
+  const grid = c === SHOW && !app[c.raw] && (p.elements || []).find((x) => x.type === "dynamic_grid");
+  if (grid && gridWrote(p[c.key], grid)) {
+    const rule = gridRule(grid), what = rule === "below" ? "is below its number" : rule === "at_least" ? "has reached its number" : `is ${rule}`;
+    wrap.append(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: `While one on its list ${what}. It follows the list as you change it.` })),
+      linkButton("Write my own condition", () => { app[c.raw] = true; app.refresh(); }));
+    return wrap;
+  }
   // An Until can't be "changed" in the simple form (see opSel); one written by hand stays as written.
   if (parsed.mode === "raw" || app[c.raw] || (c !== SHOW && parsed.op === "changed")) {
     wrap.append(field(c === SHOW ? "Condition" : "Until", textarea(p[c.key], (v) => { if (v.trim()) p[c.key] = v.trim(); else delete p[c.key]; doc.commit(); }), { wide: true, note: c.rawNote }));

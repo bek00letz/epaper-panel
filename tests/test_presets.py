@@ -379,7 +379,7 @@ class TestWorldClock(unittest.TestCase):
 
     def test_its_step_is_the_cities(self):
         js = (APP_JS / "setup.js").read_text()
-        self.assertIn("zones: zonesSetup };", js)
+        self.assertIn("zones: zonesSetup", js)
         self.assertIn("zonesEditor(el, changed, { live: true })", js)
         self.assertIn('const extra = () => ({ zones: el.zones.map((z) => ({ tz: z.tz || "", label: String(z.label || "").trim() })) });', js)
 

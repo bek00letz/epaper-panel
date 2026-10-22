@@ -153,6 +153,16 @@ export const PRESETS = [
     }] }],
   },
   {
+    // Dynamic status by a number (the user's call, 22 Oct): each battery shows while it's below the
+    // page's number (or its own), the page only while one does; or, the other way, the charged ones.
+    id: "batteries", group: "home", title: "Batteries", kw: "battery batteries low charge charged level remote sensor phone alert",
+    desc: "The batteries that need charging, emptiest first, or the ones that are charged. Shows only while one does.",
+    asks: "", needs: "batteries", name: (_, x = {}) => (x.rule === "at_least" ? "Charged" : "Low batteries"),
+    looks: [{ id: "batteries", name: "Batteries", tier: (x = {}) => (x.tier === "alert" ? "alert" : "when"),
+      exampleExtra: () => ({ rule: "below", value: 40, items: ["sensor.smoke_alarm_battery", "sensor.door_sensor_battery", "sensor.remote_battery", "sensor.thermostat_battery"] }),
+      make: (_, x = {}) => [batteryGrid(x)] }],
+  },
+  {
     id: "guest_wifi", group: "home", title: "Guest Wi-Fi", desc: "A code guests scan with their phone camera to join your Wi-Fi.", kw: "qr code network password",
     asks: "", needs: "wifi",
     looks: [{ id: "guest_wifi", name: "Guest Wi-Fi", make: (_, w = {}) => guestWifi(w) }],
@@ -429,7 +439,8 @@ export const needsOf = (p, look) => (look.needs !== undefined ? look.needs : p.n
    condition comes from the widget (conditions.syncWidgetShowIf), so a league
    or series always shows by its own sensor. */
 export function pageFor(p, look, ent, extra, unitOf = () => "") {
-  const page = { tier: look.tier || p.tier || "rotate", elements: withUnits(look.make(ent, extra), unitOf) };
+  const tier = typeof look.tier === "function" ? look.tier(extra) : look.tier;    // a look may ask its step (Batteries: an alert)
+  const page = { tier: tier || p.tier || "rotate", elements: withUnits(look.make(ent, extra), unitOf) };
   const showIf = look.showIf || p.showIf;
   if (showIf) { const s = showIf(ent, extra); if (s) page.show_if = s; }
   if (look.widget) {
@@ -533,6 +544,52 @@ export function rankSensors(p, ents, energy = {}) {
     .map((e, k) => ({ e, k, s: score(e) }))
     .sort((a, b) => a.s - b.s || a.k - b.k)
     .map(({ e, s }) => ({ e, tag: s === 0 ? "From your Energy dashboard" : "" }));
+}
+
+/* Batteries (the preset): a Dynamic status grid by a number. Low: below the number, emptiest first;
+   charged: at least it, fullest first (render/layout._draw_dynamic_grid). With no icon of its own,
+   each shows Home Assistant's glyph for its level. */
+export const BATTERY_DEFAULT = { below: 20, at_least: 90 };
+export function batteryGrid(x = {}) {
+  const low = x.rule !== "at_least";
+  return {
+    type: "dynamic_grid", x: 20, y: 16, w: 752, h: 214,
+    header_icon: low ? "mdi:battery-alert-variant-outline" : "mdi:battery-check", header_title: low ? "Low batteries" : "Charged",
+    filter_rule: low ? "below" : "at_least", filter_value: Number.isFinite(Number(x.value)) && x.value !== "" ? Number(x.value) : BATTERY_DEFAULT[low ? "below" : "at_least"],
+    layout_mode: "list", show_labels: "both", icon_size: "auto",          // a row each, so every name reads (the user's call)
+    items: (x.items || []).map((e) => ({ entity: e, name: "", icon: "" })),
+  };
+}
+const levelOf = (e) => { const v = parseFloat(e?.state); return Number.isFinite(v) ? v : null; };
+/* Home Assistant's batteries: sensors of device class battery, in %, the emptiest first. */
+export function batterySensors(ents) {
+  return (ents || []).filter((e) => e.device_class === "battery" && String(e.unit || "").trim() === "%" && String(e.entity_id).startsWith("sensor."))
+    .map((e, k) => ({ e, k, v: levelOf(e) }))
+    .sort((a, b) => (a.v == null) - (b.v == null) || (a.v ?? 0) - (b.v ?? 0) || a.k - b.k)
+    .map(({ e }) => e);
+}
+/* Something you charge yourself (a phone, a watch, a laptop, a car, a home battery) says whether
+   it's charging; a battery you swap (a remote, a door sensor) doesn't. `byDevice` is the add-on's
+   answer from Home Assistant's registry (GET /api/batteries, sources/batteries.py): its device
+   has a charging-state entity, or not. Only a battery with no device (null, or no answer) goes
+   by its name: a charging-state sensor named beside it, as the mobile app names them. */
+export function chargedByYou(e, ids, byDevice = {}) {
+  const said = byDevice[e.entity_id];
+  if (said === true || said === false) return said;
+  const base = String(e.entity_id).replace(/^sensor\./, "").replace(/_battery(_level)?$/, "");
+  return [`sensor.${base}_battery_state`, `sensor.${base}_charging`, `binary_sensor.${base}_charging`, `binary_sensor.${base}_battery_charging`].some((x) => ids.has(x));
+}
+/* The ones ticked to start with: for Low, every battery with a level that you swap; for Charged,
+   the ones you charge. You change the ticks; nothing here is about one home. */
+export function preselectBatteries(ents, rule, byDevice = {}) {
+  const ids = new Set((ents || []).map((e) => e.entity_id));
+  return batterySensors(ents).filter((e) => levelOf(e) != null && chargedByYou(e, ids, byDevice) === (rule === "at_least")).map((e) => e.entity_id);
+}
+/* How many would show now, as the step says it. */
+export function batteriesPast(ents, chosen, rule, value) {
+  const by = new Map((ents || []).map((e) => [e.entity_id, e])), t = Number(value);
+  if (!Number.isFinite(t)) return 0;
+  return [...chosen].filter((id) => { const v = levelOf(by.get(id)); return v != null && (rule === "at_least" ? v >= t : v < t); }).length;
 }
 
 /* The Energy dashboard, asked once per editor session (GET /api/energy:

@@ -32,6 +32,19 @@
   alert can use them, for example an alert when notifications go from none
   to some. They aren't added to Home Assistant as entities: it has these
   numbers already.
+- **Batteries, as a page or an alert.** New page › Batteries shows the
+  batteries that need charging, emptiest first, each with its level and
+  Home Assistant's battery glyph for it; or, the other way, the ones that
+  are charged. Pick which batteries it watches (the ones you swap start
+  ticked for Low, the ones you charge for Charged) and the level: 20% to
+  start with, and any battery can have its own in the inspector. The page
+  shows only while one is past it, with the other pages or as an alert. A
+  row each, so names read on every size; what doesn't fit says "and 3 more".
+- **Dynamic status can go by a number.** Besides On, Off and Any state,
+  Shows each can be Below a number or At least a number, so a heater
+  shows while above 25 °C, say. It has a List layout too, a row each. A
+  Dynamic status page that shows only while something on it does now says
+  so in words under Shows, instead of showing its template.
 - **Your own icons and icon sets, without Custom Icons.** A new **Settings ›
   Icons** (also **More icons…** in the icon picker) holds both:
   - **Your own icons:** **Add icons** takes SVG files, or drop them on the

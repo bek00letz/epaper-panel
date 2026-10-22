@@ -132,3 +132,17 @@ def offered(entity_id: str, device_class: str = "", options=(), seen=(), drawabl
 def catalog() -> dict:
     """The table as the editor reads it: {"<domain>[.<class>]": {state: {"word", "icon"}}}."""
     return {k: {st: {"word": w, "icon": i} for st, (w, i) in v.items()} for k, v in STATES.items()}
+
+
+def battery_icon(level) -> str:
+    """Home Assistant's own icon for a battery at a level (its frontend's batteryLevelIcon): the
+    glyph fills in tens, full at 100, and an alert outline when it's all but empty."""
+    try:
+        tens = round(float(level) / 10) * 10
+    except (TypeError, ValueError):
+        return "mdi:battery-unknown"
+    if tens >= 100:
+        return "mdi:battery"
+    if tens <= 0:
+        return "mdi:battery-alert-variant-outline"
+    return f"mdi:battery-{tens}"
