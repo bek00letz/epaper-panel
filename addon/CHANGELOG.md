@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.20.1
+Add-on only; no firmware change. **Restart Home Assistant once** after
+updating, so it loads the updated e-Paper Panel integration (it carries the
+clock fix for panels that reach home through Home Assistant's address).
+
 
 - **Fixed:** deleting a page that notified your phone could withdraw its
   sensor while an automation you had made by hand in the last ten minutes
