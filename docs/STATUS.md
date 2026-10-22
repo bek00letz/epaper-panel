@@ -43,6 +43,9 @@ Merged worktrees kept until the user OKs removing them: `release-next`,
 
 ## Framework review
 
+Second review running (22 Oct, the same session): e8e65c2 to v0.20.0; findings
+to framework-review-2.md in the coordinator's notes.
+
 Last review: v0.12.0 to e8e65c2 (21 Oct); all 14 findings fixed in 0.15.0.
 Next one when a good amount of work has piled up since v0.15.0.
 
