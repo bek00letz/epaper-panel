@@ -486,6 +486,36 @@ class TestBlueprint(unittest.TestCase):
         self.assertNotIn("Failed to generate automation", out.stdout + out.stderr)
 
 
+class TestEditor(unittest.TestCase):
+    """The editor's part, pinned by its source (its logic is plain DOM code)."""
+    WEB = support.APP / "web" / "app"
+
+    def src(self, name):
+        return (self.WEB / name).read_text()
+
+    def test_the_inspector_shows_it_under_shows(self):
+        insp = self.src("inspector.js")
+        self.assertIn('import { notifyRows } from "./notify.js";', insp)
+        self.assertIn('if (tier !== "rotate" || p.notify) when.append(notifyRows(app, p, cur));', insp)
+
+    def test_a_copy_doesnt_share_the_originals_notifications(self):
+        main = self.src("main.js")
+        dup = main[main.index("  duplicatePage("):main.index("  deletePage(")]
+        self.assertIn("delete doc.spec.pages[n].notify;", dup)
+
+    def test_deleting_a_page_asks_about_its_automation_first(self):
+        main = self.src("main.js")
+        self.assertIn("deleteNotifying(this, name, (said) => this.removePage(name, said));", main)
+
+    def test_text_goes_in_as_text_and_links_open_home_assistant(self):
+        js = self.src("notify.js")
+        self.assertNotIn("innerHTML", js)
+        self.assertIn('"/config/automation/edit/" + encodeURIComponent(a.id)', js)
+        self.assertIn('target: "_top"', js)
+        self.assertNotIn("prompt(", js)
+        self.assertNotIn("confirm(", js)
+
+
 class TestAlertState(unittest.IsolatedAsyncioTestCase):
     """What frames keeps for notify.py: every alert that holds, and the "Only when" pages whose condition holds."""
 

@@ -868,3 +868,12 @@ button.uopen:focus-visible { outline: 2px solid var(--accent); outline-offset: -
 .note.waiting .led { background: var(--fg-3); }
 .note.fresh { animation: fadein var(--t) var(--spring); }
 .cmprow .cmpword { color: var(--fg-2); font-size: 13px; flex: 0 0 auto; }
+
+/* Phone notifications under Shows (app/notify.js). */
+.notify { display: grid; gap: 6px; }
+.notify:empty { display: none; }
+.note.nrow { flex-wrap: wrap; }
+.note.nrow > span:not(.ic) { flex: 1; min-width: 10em; }
+.sheet-foot.wrap { flex-wrap: wrap; }
+.notifysheet .optlist { border-radius: var(--r-card); background: var(--surface-2); box-shadow: 0 0 0 0.5px var(--sep); padding: 4px; max-height: 312px; overflow-y: auto; overscroll-behavior: contain; }
+.notifysheet .sheet-body { display: grid; gap: 12px; }

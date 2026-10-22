@@ -1,6 +1,18 @@
 # Changelog
 
 ## Unreleased
+- **An alert can notify your phone.** On an alert or an "Only when" page,
+  **Also notify my phone…** lets you pick your phone (or several), and Home
+  Assistant sends a notification when the alert takes over the panel or the
+  page starts showing. It's a normal automation in Home Assistant, made from
+  a blueprint the add-on installs ("When an e-paper alert fires, notify"):
+  change the message, add a title or keep it quiet for a while there, with
+  **Edit in Home Assistant** next to the page. Only a page you ask for gets
+  a sensor in Home Assistant (`binary_sensor.epaper_alert_<page>` or
+  `binary_sensor.epaper_showing_<page>`), and it keeps its ID if you rename
+  the page. **Stop notifying**, or deleting the page, offers to delete the
+  automation too; a sensor an automation still uses is never removed.
+  Needs the Mosquitto broker app. Add-on only, no firmware change.
 - **Your own icons and icon sets, without Custom Icons.** A new **Settings ›
   Icons** (also **More icons…** in the icon picker) holds both:
   - **Your own icons:** **Add icons** takes SVG files, or drop them on the

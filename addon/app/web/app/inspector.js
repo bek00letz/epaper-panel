@@ -11,6 +11,7 @@ import { dateEditor, binsEditor } from "./countdown.js";
 import { zonesEditor } from "./zones.js";
 import { staleNote, changesEvery, pageChangesEvery, sleepsBetweenUpdates } from "./presets.js";
 import { busyNote, leftOutNote } from "./busyday.js";
+import { notifyRows } from "./notify.js";
 import { widget, leagueOptions, seriesOptions, sportWord, stateWords } from "./catalog.js";
 import { FROM, CLOCK_FORMATS, sourceOf, switchSource, isTemplate } from "./shows.js";
 import { isFollowing, startFollowing, stopFollowing, setEntity, addState, removeState, setStateIcon, setStateLook, suggestions, wordFor,
@@ -682,6 +683,7 @@ function page(app, head, body) {
   const when = section("Shows", seg([["rotate", "Always"], ["when", "Only when"], ["alert", "As an alert"]], tier, (v) => app.setTier(v), "When this page shows"));
   if (tier !== "rotate") when.append(conditionRows(app, p));
   if (tier === "alert") when.append(...endRows(app, p));
+  if (tier !== "rotate" || p.notify) when.append(notifyRows(app, p, cur));   // its phone notifications (notify.js)
   body.append(when);
 
   if (tier !== "alert") {
