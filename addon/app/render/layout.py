@@ -752,6 +752,20 @@ def _level_text(level, unit):
 # its name and, on the right, its level or detail; two columns when wide; "and 3 more" when they
 # don't all fit. Rows never get smaller than reads on e-ink.
 LIST_ROW_MIN, LIST_ROW_MAX, LIST_GAP = 30, 60, 4
+LIST_TEXT_MIN = 14                      # the smallest a name gets on e-ink before it's shortened
+
+
+def _fit_middle(text, max_w, f):
+    """`text` as it fits in max_w: whole, or its start and its end around an ellipsis."""
+    if T.text_width(text, f) <= max_w:
+        return text
+    for keep in range(len(text) - 1, 1, -1):
+        head = text[:(keep + 1) // 2]
+        tail = text[len(text) - keep // 2:] if keep // 2 else ""
+        out = f"{head}…{tail}"
+        if T.text_width(out, f) <= max_w:
+            return out
+    return text[:1] + "…"
 
 
 def _draw_grid_list(d, x, y, w, h, items, detail, by_number, fscale=1.0, icons_only=False, icon_px=None):
@@ -793,7 +807,7 @@ def _draw_grid_list(d, x, y, w, h, items, detail, by_number, fscale=1.0, icons_o
         avail = max(20, cx + cw - rw - 12 - tx)
         name = it["name"]
         f = name_f
-        for px in range(text_px, max(16, int(text_px * 0.6)) - 1, -1):    # smaller before it's cut
+        for px in range(text_px, LIST_TEXT_MIN - 1, -1):                  # smaller, down to what still reads, before it's cut
             f = T.font(px, bold=True)
             if T.text_width(name, f) <= avail:
                 break
@@ -803,6 +817,9 @@ def _draw_grid_list(d, x, y, w, h, items, detail, by_number, fscale=1.0, icons_o
             cut = min(range(1, len(words)), key=lambda j: max(T.text_width(" ".join(words[:j]), f), T.text_width(" ".join(words[j:]), f)))
             for line, dy in ((" ".join(words[:cut]), -0.55), (" ".join(words[cut:]), 0.55)):
                 d.text((tx, mid + int(dy * f.size)), _fit_text(line, avail, f), font=f, fill=T.BLACK, anchor="lm")
+        elif len(words) == 1:
+            # One word that won't fit even at the smallest: its start and its end ("Ther…stat"), never cut mid-letter.
+            d.text((tx, mid), _fit_middle(name, avail, f), font=f, fill=T.BLACK, anchor="lm")
         else:
             d.text((tx, mid), _fit_text(name, avail, f), font=f, fill=T.BLACK, anchor="lm")
 

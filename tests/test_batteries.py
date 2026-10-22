@@ -120,6 +120,14 @@ class TestTheList(unittest.TestCase):
                 with self.subTest(size=size, batteries=n):
                     self.assertFalse([t for t in self.listed(w, h, n) if "…" in t])
 
+    def test_one_word_keeps_its_ends(self):
+        """The coordinator's call: on the 2.9" upright, a word too long even at the smallest keeps its start
+        and its end around an ellipsis."""
+        texts = self.listed(110, 260, 5)
+        self.assertIn("Ther…stat", texts)
+        self.assertEqual(layout._fit_middle("Thermostat", 1000, layout.T.font(14)), "Thermostat")
+        self.assertEqual(layout.LIST_TEXT_MIN, 14)
+
     def test_what_doesnt_fit_is_counted(self):
         texts = self.listed(752, 214, 12)
         self.assertIn("and 3 more", texts)
