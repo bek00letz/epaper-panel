@@ -36,7 +36,9 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 | Bin day's long "Close to the day" menu becomes two plain choices, "Bin day ends" and "Says" (session "icon-follows", asked by the user directly) | branch `close-to-wording` | Done 22 Oct; combined in `release-next` |
 
 The next release (0.20.0) is put together in `release-next`: 883 tests pass, no
-firmware change. Held by the user to add more (22 Oct).
+firmware change. Held by the user to add more (22 Oct). The user approved merging and pushing it
+once notify-blueprint is in and the full suite passes ("when happy, merge and
+push", 22 Oct).
 
 Until it ships: keep Custom Icons installed, and don't press its "Download
 Iconify icons" button.
