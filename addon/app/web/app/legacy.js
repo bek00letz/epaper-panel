@@ -1,4 +1,4 @@
-import { leagueOf, seriesOf } from "./catalog.js";
+import { leagueOf, seriesOf, widget } from "./catalog.js";
 
 // Pieces of the 0.9 editor that the editor still uses, kept as they were: page reflow
 // between orientations, breaking a widget apart, the widgets' own sensors,
@@ -314,7 +314,7 @@ export function getWidgetSensorId(el) {
     return "sensor.epaper_flights_overhead";
   }
   if (el.type === "todo_list") return todoDueSensor(el.entity);
-  return "";
+  return widget(el.type)?.sensor || "";              // a count of the add-on's own (widgets.py "sensor")
 }
 
 export function suggestIconForEntity(entityId, friendlyName = "") {
@@ -452,7 +452,11 @@ export function todoDueSensor(ent) {
 }
 export function todoShowIf(ent, show = "open") {
   ent = String(ent || "").trim().replace(/'/g, "");
-  const by = show === "due" ? todoDueSensor(ent) : ent;
+  return countShowIf(show === "due" ? todoDueSensor(ent) : ent);
+}
+// A page that shows while a count is above 0 (a to-do list's, or a widget's own: widgets.py "sensor").
+export function countShowIf(by) {
+  by = String(by || "").trim().replace(/'/g, "");
   return by ? `{{ has_value('${by}') and states('${by}') | float(0) > 0 }}` : "";
 }
 

@@ -9,11 +9,12 @@
 // Settings › Data sources shows, so a second page reuses it).
 
 import { h, icon, api } from "./util.js";
-import { select, linkButton } from "./ui.js";
+import { select, linkButton, seg } from "./ui.js";
 import { dateEditor, binsEditor, ready as countsReady } from "./countdown.js";
 import { zonesEditor } from "./zones.js";
 import { busyNote } from "./busyday.js";
-import { sleepsBetweenUpdates, lookOf, asksOf, needsOf, pageFor, examplePage, rankSensors, groupName, sensorOf, freeSourceName, energyRoles, staleNote, presetChangesEvery } from "./presets.js";
+import { sleepsBetweenUpdates, lookOf, asksOf, needsOf, pageFor, examplePage, rankSensors, groupName, sensorOf, freeSourceName, energyRoles, staleNote, presetChangesEvery,
+  batterySensors, preselectBatteries, batteriesPast, BATTERY_DEFAULT } from "./presets.js";
 
 const WHAT = { calendar: "Which calendar should it show?", todo: "Which list should it show?", weather: "Which weather should it show?",
   binary_sensor: "Which sensor should it show?", sensor: "Which sensor should it show?", jellyfin: "Whose Jellyfin should it show?" };
@@ -163,7 +164,7 @@ export function setupStep(app, p, { thumb, add, foot, initialLook = 0, rememberL
 }
 
 /* ---------- what presets set up in place ---------- */
-const SETUPS = { wifi: wifiSetup, jellyfin: jellyfinSetup, energy: energySetup, players: playersSetup, date: countSetup("date"), bins: countSetup("bins"), parts: partsSetup, zones: zonesSetup };
+const SETUPS = { wifi: wifiSetup, jellyfin: jellyfinSetup, energy: energySetup, players: playersSetup, date: countSetup("date"), bins: countSetup("bins"), parts: partsSetup, zones: zonesSetup, batteries: batteriesSetup };
 
 /* Guest Wi-Fi: the network goes into the code, so it's asked for. */
 function wifiSetup({ changed }) {
@@ -372,7 +373,7 @@ function playersSetup({ app, changed }) {
 function countSetup(to) {
   return ({ changed }) => {
     const el = { to, ...(to === "bins" ? { bins: [], today_until: "noon" } : { name: "", at: "", yearly: false }) };
-    const extra = () => ({ show_before: el.show_before || 0, ...(to === "bins" ? { bins: el.bins.filter((b) => b.from).map((b) => ({ ...b, name: b.name.trim() })), today_until: el.today_until }
+    const extra = () => ({ show_before: el.show_before || 0, ...(to === "bins" ? { bins: el.bins.filter((b) => b.from).map((b) => ({ ...b, name: b.name.trim() })), today_until: el.today_until, ...(el.numbers ? { numbers: true } : {}) }
       : { name: el.name.trim(), at: el.at, yearly: !!el.yearly }) });
     const editor = to === "bins" ? binsEditor(el, changed, { live: true }) : dateEditor(el, changed, { live: true });
     return {
@@ -435,6 +436,82 @@ function zonesSetup({ changed }) {
       h("p", { class: "fnote", text: "Here is Home Assistant's own time zone. The cities share the page alike: one fills it, four make a grid." })),
     ready: () => el.zones.length > 0,
     shows: () => ({ mine: true, extra: extra(), caption: "With your cities." }),
+    commit: async () => ({ extra: extra() }),
+  };
+}
+
+// Which batteries you charge, by device (GET /api/batteries), asked once per editor session.
+let batteriesAsked = null;
+function batteryDevices() {
+  if (!batteriesAsked) batteriesAsked = api("api/batteries").then((r) => r.body?.batteries || {}, () => { batteriesAsked = null; return {}; });
+  return batteriesAsked;
+}
+
+/* Batteries: which way (low, to charge; or charged, to unplug), the page's number, and which
+   batteries, ticked to start with by what they are (presets.preselectBatteries). Each can have
+   its own number later, in the inspector. */
+function batteriesSetup({ app, changed }) {
+  const all = batterySensors(app.ents);
+  let rule = "below", value = BATTERY_DEFAULT.below, tier = "when", touched = false;
+  // Ticked once the add-on says which you charge, by their devices; by name if it can't say.
+  let byDevice = null, chosen = new Set();
+  const looking = setTimeout(() => { if (!byDevice) { hint.textContent = "Looking at your batteries…"; } }, 300);
+  batteryDevices().then((got) => {
+    clearTimeout(looking); byDevice = got;
+    if (!touched) chosen = new Set(preselectBatteries(app.ents, rule, byDevice));
+    drawList(); say(); changed();
+  });
+  const levelText = (e) => { const v = parseFloat(e.state); return Number.isFinite(v) ? `${Math.round(v)}%` : "No level"; };
+  const nameOf = (e) => String(e.name || e.entity_id).replace(/\s+battery(\s+level)?$/i, "") || e.name;
+  const node = h("div", { class: "stepsec" });
+  const hint = h("p", { class: "fnote", role: "status", "aria-live": "polite" });
+  const list = h("div", { class: "optlist batlist", role: "group", "aria-label": "Which batteries" });
+  const num = h("input", { class: "inp", type: "number", inputmode: "numeric", min: "1", max: "100", step: "1", value: String(value), style: { width: "5em" } });
+  num.addEventListener("input", () => { value = num.value === "" ? "" : Number(num.value); say(); changed(); });
+
+  function say() {
+    if (!byDevice && !touched) return;                                     // until the ticks are in
+    const n = batteriesPast(app.ents, chosen, rule, value);
+    hint.textContent = !chosen.size ? "Tick the batteries it watches."
+      : `${n === 0 ? "None would show" : n === 1 ? "1 would show" : `${n} would show`} now, of the ${chosen.size} ticked.`;
+  }
+  function drawList() {
+    list.replaceChildren(...all.map((e) => h("button", { class: "opt", role: "checkbox", "aria-checked": String(chosen.has(e.entity_id)),
+      onclick: () => { touched = true; chosen.has(e.entity_id) ? chosen.delete(e.entity_id) : chosen.add(e.entity_id); drawList(); say(); changed(); } },
+      h("span", { class: "ock", "aria-hidden": "true" }, chosen.has(e.entity_id) ? icon("check", "sm") : null),
+      h("span", { class: "otext" }, h("span", { class: "o1", text: nameOf(e) }), h("span", { class: "o2", text: e.entity_id })),
+      h("span", { class: "ov", text: levelText(e) }))));
+    if (!all.length) list.append(h("p", { class: "empty-note", text: "No batteries in Home Assistant yet: none of its sensors is a battery level in %. Any you add later can be picked in the inspector." }));
+  }
+  function draw() {
+    const cmp = rule === "below" ? "Below" : "At least";
+    num.setAttribute("aria-label", `${cmp}, in percent`);
+    // replaceChildren() takes nodes only: a null would show as the word "null".
+    node.replaceChildren(...[
+      h("h3", { class: "slab", text: "Which ones show" }),
+      h("div", { class: "group" },
+        h("div", { class: "gr" }, h("span", { class: "gl", text: "Shows" }), seg([["below", "Low, to charge"], ["at_least", "Charged, to unplug"]], rule, (v) => {
+          if (v === rule) return;
+          rule = v; value = BATTERY_DEFAULT[v]; num.value = String(value);
+          if (!touched && byDevice) chosen = new Set(preselectBatteries(app.ents, rule, byDevice));   // what fits this way, until you've picked
+          draw(); changed();
+        }, "Which batteries show")),
+        h("label", { class: "gr" }, h("span", { class: "gl" }, cmp, h("small", { text: "Each can have its own in the inspector" })), h("span", { class: "inline" }, num, h("span", { class: "unit", text: "%" })))),
+      h("h3", { class: "slab", text: `Batteries (${all.length})` }),
+      all.length ? h("div", { class: "btnrow" },
+        linkButton("Tick all", () => { touched = true; chosen = new Set(all.map((e) => e.entity_id)); drawList(); say(); changed(); }),
+        linkButton("Untick all", () => { touched = true; chosen = new Set(); drawList(); say(); changed(); })) : null,
+      list, hint,
+      h("div", { class: "group" }, h("div", { class: "gr" }, h("span", { class: "gl" }, "On the device", h("small", { text: tier === "alert" ? "Comes up over the other pages when one is past it" : "Joins the rotation while one is past it" })),
+        seg([["when", "With the pages"], ["alert", "As an alert"]], tier, (v) => { tier = v; draw(); changed(); }, "On the device")))].filter(Boolean));
+    drawList(); say();
+  }
+  draw();
+  const extra = () => ({ rule, value: value === "" ? BATTERY_DEFAULT[rule] : value, items: all.map((e) => e.entity_id).filter((id) => chosen.has(id)), tier });
+  return {
+    node,
+    ready: () => chosen.size > 0,
+    shows: () => (chosen.size ? { mine: true, extra: extra(), caption: "With your batteries." } : { mine: false }),
     commit: async () => ({ extra: extra() }),
   };
 }

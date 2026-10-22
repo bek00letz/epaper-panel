@@ -2,7 +2,7 @@
 // the same Home Assistant template 0.9 wrote, and reads it back. Anything the
 // form can't express stays a custom template, untouched.
 
-import { getWidgetSensorId, todoShowIf } from "./legacy.js";
+import { countShowIf, getWidgetSensorId, todoShowIf } from "./legacy.js";
 import { widget, stateWords } from "./catalog.js";
 
 const NO_VALUE = ["unavailable", "unknown"];
@@ -148,6 +148,14 @@ export function syncWidgetShowIf(page, widgetEl) {
     if (c) page.show_if = c; else delete page.show_if;
     return;
   }
+  // A widget whose page shows while a count of the add-on's is above 0 names it in its descriptor ("sensor").
+  const counted = widgetEl ? (widget(widgetEl.type)?.sensor ? widgetEl : null) : (page.elements || []).find((x) => widget(x.type)?.sensor);
+  if (counted) {
+    const sid = widget(counted.type).sensor, cur = parseShowIf(page.show_if);
+    if (page.show_if && !(cur.mode === "simple" && cur.ent === sid)) return;   // the person's own condition stays
+    page.show_if = countShowIf(sid);
+    return;
+  }
   // A widget that shows only around its events says so in its descriptor ("window": the add-on's).
   widgetEl = widgetEl || (page.elements || []).find((x) => x.type !== "todo_list" && widget(x.type)?.window);
   if (!widgetEl) return;
@@ -157,12 +165,50 @@ export function syncWidgetShowIf(page, widgetEl) {
   if (widgetEl.type === "flight_tracker") page.show_if = `{{ states('${sid}') | int(0) > 0 }}`;
   else if (sid) page.show_if = `{{ is_state('${sid}','active') }}`;
 }
+/* What a Dynamic status grid shows by (render/layout._draw_dynamic_grid): a state, or a number,
+   "below" a value or "at_least" one; an item may have its own `threshold`. */
+export const GRID_RULES = [["on", "On"], ["off", "Off"], ["*", "Any state"], ["below", "Below a number"], ["at_least", "At least a number"]];
+export const gridByNumber = (el) => el?.filter_rule === "below" || el?.filter_rule === "at_least";
+export const gridRule = (el) => (gridByNumber(el) ? el.filter_rule : String(el?.filter_state || "on").toLowerCase());
+
+/* The page's condition a grid writes: any item in its state, or past its number. A number is
+   guarded as compileShowIf guards one, so a sensor with no value never counts as 0. "" when the
+   grid shows something whatever happens (any state), or has nothing to watch. */
+export function gridShowIf(gridEl) {
+  const items = (gridEl?.items || []).filter((x) => String(x.entity || "").trim());
+  if (!items.length) return "";
+  if (gridByNumber(gridEl)) {
+    const sym = gridEl.filter_rule === "below" ? "<" : ">=";
+    const parts = items.map((x) => {
+      const e = String(x.entity).trim().replace(/'/g, ""), own = x.threshold;
+      const t = Number(own !== undefined && own !== null && own !== "" ? own : gridEl.filter_value);
+      return isNaN(t) ? "" : `(has_value('${e}') and states('${e}') | float(0) ${sym} ${t})`;
+    }).filter(Boolean);
+    return parts.length ? "{{ " + parts.join(" or ") + " }}" : "";
+  }
+  const st = String(gridEl.filter_state || "on").toLowerCase();
+  if (st === "*") return "";
+  return "{{ " + items.map((x) => `is_state('${String(x.entity).trim()}','${st}')`).join(" or ") + " }}";
+}
+// A condition this grid wrote, and nobody changed: only the parts a grid writes, joined by "or", at
+// least one on its sensors (a sensor just taken off the grid is still in the condition it wrote).
+const GRID_PART = /^(?:is_state\('([^']+)','[^']*'\)|\(has_value\('([^']+)'\) and states\('\2'\) \| float\(0\) (?:<|>=) -?\d+(?:\.\d+)?\))$/;
+export function gridWrote(expr, gridEl) {
+  const s = String(expr || "").trim();
+  if (!s.startsWith("{{") || !s.endsWith("}}")) return false;
+  const mine = new Set((gridEl?.items || []).map((x) => String(x.entity || "").trim()).filter(Boolean));
+  const parts = s.slice(2, -2).trim().split(/\s+or\s+(?=is_state|\(has_value)/).map((part) => part.trim().match(GRID_PART));
+  return parts.every(Boolean) && parts.some((m) => mine.has(m[1] || m[2]));
+}
+
+/* The page shows while its grid shows something: "Only when" always follows the grid; an alert
+   follows it while its condition is the grid's own (or empty), so one you wrote yourself stays. */
 export function syncDynamicGridShowIf(page, gridEl) {
-  if (!page || page.tier !== "when") return;
+  if (!page || (page.tier !== "when" && page.tier !== "alert")) return;
   gridEl = gridEl || (page.elements || []).find((x) => x.type === "dynamic_grid");
   if (!gridEl) return;
-  const ents = (gridEl.items || []).map((x) => (x.entity || "").trim()).filter(Boolean);
-  const st = (gridEl.filter_state || "on").toLowerCase();
-  if (!ents.length || st === "*") delete page.show_if;
-  else page.show_if = "{{ " + ents.map((e) => `is_state('${e}','${st}')`).join(" or ") + " }}";
+  if (page.tier === "alert" && page.show_if && !gridWrote(page.show_if, gridEl)) return;
+  const s = gridShowIf(gridEl);
+  if (s) page.show_if = s;
+  else if (page.tier === "when") delete page.show_if;
 }

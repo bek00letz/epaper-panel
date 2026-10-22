@@ -228,7 +228,10 @@ than a frame does.
 - **Geometry is per size, content is shared.** `arrange.ARRANGE_KEYS` (box,
   text size) may differ between screen sizes; everything else an element has
   is the same on every screen showing the design. Don't add a per-size field
-  anywhere else.
+  anywhere else. A widget whose descriptor says `keeps_size` (the badge) is
+  placed at its real size in mm on a smaller screen instead of shrinking with
+  the page (`arrange.KEEP_SIZE`, `theme.mm_per_px_of_canvas`), from the edges
+  it's nearest to.
 - **Prefer a structured binding over raw Jinja** (`render/binding.py`). An
   element says `{entity, show, format, prefix, suffix, replace}` and the engine
   builds the template. Supports `show: state`, `attribute`, `last_changed`, `last_updated`,
@@ -485,7 +488,11 @@ up to v0.12.0). `app/legacy.js` keeps the pieces of it this one still uses.
   box, settings and inspector fields, how its value is fetched and how often
   it changes, its example and whether it makes items of its page. The render
   cycle, examples, sub-items and the editor (through the catalog) read it. A
-  new widget is a descriptor plus its drawing, nowhere else.
+  new widget is a descriptor plus its drawing, nowhere else. A widget whose
+  page shows while a count of the add-on's is above 0 (Notifications, Updates)
+  names that sensor as its `sensor`: the preset, the inspector's "Only show"
+  switch and "Its sensor" all read it (`legacy.countShowIf`), never a branch
+  for the widget.
 - **The editor keeps no copies of the server's tables.** Leagues, racing
   series, each sport's words, state words, widget descriptors and the time
   format come from `GET /api/catalog`, built from the tables themselves
@@ -525,6 +532,13 @@ When touching display code, `it.image()` at a negative offset is a trap: see
   its next update. A CrowPanel away from home can't be woken either (that goes
   through Home Assistant's ESPHome connection, which is home only).
 
+- **Phone notifications are Home Assistant automations** (the user's call,
+  22 Oct; `notify.py`, ARCHITECTURE.md › Phone notifications). The add-on
+  never sends one and keeps no notification settings of its own: a page that
+  asks gets one sensor, and the shipped blueprint makes a normal automation
+  from it. Never withdraw a sensor an automation still uses, and delete only
+  automations made from our blueprint, only when the person chooses to.
+
 - **Never guess an entity ID or an action name** from a device name. Find the
   panel through `panel_link.PanelLink` (service list, registry unique_ids).
 - **Never write entities with `POST /api/states`.** The add-on's values go
@@ -549,9 +563,18 @@ When touching display code, `it.image()` at a negative offset is a trap: see
   the panel blank. Actions always need a key.
 - **Never read Home Assistant's own storage folder** (`.storage` in its
   configuration): it holds every integration's credentials. Ask Home
-  Assistant through its API instead (as `iconsets.collections_on` asks
-  Custom Icons which collections are on); `tests/test_icon_sets.py` fails
-  if any code names it.
+  Assistant through its API instead (as the way back,
+  `iconsets.collections_on`, asks Custom Icons which collections are on);
+  `tests/test_icon_sets.py` fails if any code names it.
+- **Icons never depend on another integration.** Your own SVGs and Iconify
+  sets are the add-on's own (`iconsets.py`, Settings › Icons). Don't send
+  users to Custom Icons (thomasloven/hass-custom_icons): its "Download
+  Iconify icons" replaces `aiohttp.ClientSession` for the whole Home
+  Assistant process, which broke other integrations (Eufy cameras) until a
+  restart (issue #37, our fix PR #38, unmerged). Its folder and zip are only
+  read, so existing setups keep working.
+- **An Iconify download happens only when the user asks**, never in the
+  background loop, and only from `iconsets.ICONIFY` / `ICONIFY_API`.
 - **No built-in location or timezone.** Home Assistant's settings are the
   source; a default would be someone's real home.
 

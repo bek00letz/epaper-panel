@@ -25,8 +25,8 @@ from datetime import datetime
 from typing import Any, Awaitable, Callable
 
 import examples
-from render import layout, sport, subitems
-from sources import energy, flights, ha_services, home, racing, sports, station
+from render import arrange, layout, sport, subitems
+from sources import energy, flights, ha_services, home, needs_you, racing, sports, station
 
 # A default box: "fill" takes the content area less `inset` (from `y`); otherwise each size is clamped to it.
 FILL = {"fill": True, "y": 14, "inset": 20}
@@ -82,6 +82,10 @@ class Widget:
     busiest: Callable[[dict], int] | None = None    # with no cap: the most items an element can have at once
     items_word: Callable[[dict], str] | None = None  # what its items are called: "planes", a sport's "games"
     window: bool = False                        # its page can show only around its events (a sensor of ours)
+    # The add-on's own count its page shows by, while above 0 (sources/needs_you.SENSOR): the editor writes
+    # the page's "only when" from it, and its "Its sensor" note names it.
+    sensor: str = ""
+    keeps_size: bool = False                    # its box keeps its real size on a smaller screen (arrange.KEEP_SIZE)
     breakable: bool = False                     # the editor can break it into plain elements
 
     def changes_every(self, el: dict | None = None) -> int | None:
@@ -99,7 +103,8 @@ class Widget:
         return {"name": self.name, "icon": self.icon, "box": self.box, "defaults": self.defaults,
                 "fields": self.fields, "changes_every": self.changes_every(),
                 **({"changes_when": list(self.live_when)} if self.live_when else {}),
-                "sub_items": self.items is not None, "window": self.window, "breakable": self.breakable}
+                "sub_items": self.items is not None, "window": self.window, "breakable": self.breakable,
+                **({"sensor": self.sensor} if self.sensor else {})}
 
 
 # ---------------------------------------------------------------- fetches
@@ -177,6 +182,21 @@ async def _tv(session, el, ctx):
         return None
     events = await home.episodes(session, str(el["entity"]), days=_num(el.get("days"), 7))
     return None if events is None else {"events": events, "tz": ctx.home_tz}
+
+
+async def _notifications(session, el, ctx):
+    got = await needs_you.fetch_notifications(session)
+    return None if got is None else {"items": got, "tz": ctx.home_tz}
+
+
+async def _updates(session, el, ctx):
+    got = await needs_you.fetch_updates(session)
+    return None if got is None else {"items": got}
+
+
+async def _badge(session, el, ctx):
+    counts = needs_you.badge_counts(el)
+    return (await needs_you.counts(session, (counts,))).get(counts)
 
 
 async def _flights(session, el, ctx):
@@ -279,7 +299,30 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
                    text("title", "Title", "The list's name"),
                    {"kind": "window", "label": {"show": {"due": "Only show when something's due"},
                                                 "else": "Only show when there's something to do"}},
-                   {"kind": "sensorid"}]),
+                   {"kind": "sensorid", "note": "The add-on counts what's due today or overdue as {sensor}. "
+                                                "An alert can show by it, or your own automations.",
+                    "none": "sensor.epaper_todo_…_due"}]),
+    # Home Assistant's notifications (the bell), newest first; dismissing one there clears it at the next update.
+    Widget("notifications", "Notifications", "bell", _notifications,
+           lambda el, now: {"items": examples.notifications(now), "tz": None},
+           defaults={"title": ""}, window=True, sensor=needs_you.SENSOR["notifications"],
+           fields=[text("title", "Title", "Notifications"),
+                   {"kind": "window", "label": "Only show while there are any"},
+                   {"kind": "sensorid", "note": "The add-on counts them as {sensor}, its own value: a page's "
+                                                "\"Only when\" or an alert can show by it."}]),
+    # Every update waiting, by group as Home Assistant shows them; a skipped version isn't one.
+    Widget("updates", "Updates", "update", _updates, lambda el, now: {"items": examples.updates()},
+           defaults={"title": ""}, window=True, sensor=needs_you.SENSOR["updates"],
+           fields=[text("title", "Title", "Updates"),
+                   {"kind": "window", "label": "Only show while there are any"},
+                   {"kind": "sensorid", "note": "The add-on counts them as {sensor}, its own value: a page's "
+                                                "\"Only when\" or an alert can show by it."}]),
+    # A number on an icon, as on an app's icon, for a corner of any page; nothing at all at zero.
+    Widget("badge", "Badge", "badge", _badge, lambda el, now: examples.badge(needs_you.badge_counts(el)),
+           box={"x": 672, "y": 14, "w": 96, "h": 96}, defaults={"counts": "updates"}, keeps_size=True,
+           fields=[sel("counts", "Counts", [["updates", "Updates"], ["notifications", "Notifications"],
+                                            ["repairs", "Repairs"], ["all", "All of these"]], "updates"),
+                   {"kind": "note", "text": "It's hidden while the count is zero, so it may not show on the canvas right now."}]),
     Widget("dynamic_grid", "Devices", "grid", None, None, box={"fill": True, "y": 16, "inset": 24},
            defaults={"header_icon": "mdi:lightning-bolt", "header_title": "On now", "filter_state": "on", "layout_mode": "grid",
                      "show_labels": "both", "icon_size": "auto", "secondary_mode": "runtime",
@@ -324,6 +367,7 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
 subitems.WIDGET_ITEMS.update({t: w.items for t, w in WIDGETS.items() if w.items})
 subitems.WIDGET_BUSIEST.update({t: w.busiest for t, w in WIDGETS.items() if w.busiest})
 subitems.WIDGET_WORDS.update({t: w.items_word for t, w in WIDGETS.items() if w.items_word})
+arrange.KEEP_SIZE.update(t for t, w in WIDGETS.items() if w.keeps_size)
 
 
 # A plain sensor whose value changes all the time (power, wind...), as Home Assistant describes it.

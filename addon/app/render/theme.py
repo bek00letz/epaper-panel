@@ -168,6 +168,18 @@ def _made_display(key):
             "reports_size": True, "sized": True}
 
 
+def mm_per_px_of_canvas(key: str) -> float | None:
+    """How big a pixel is, in mm, on the screens that have this canvas ("400x300", either way up), or None
+    for a canvas no profile has. Screens offered first; ones sharing a canvas are alike."""
+    try:
+        w, h = (int(v) for v in str(key).lower().split("x"))
+    except ValueError:
+        return None
+    found = [d for d in DISPLAYS.values() if {d["w"], d["h"]} == {w, h} and (d["w"], d["h"]) in ((w, h), (h, w))]
+    found.sort(key=lambda d: d.get("offered") is False)
+    return found[0]["mm_w"] / found[0]["w"] if found else None
+
+
 def get_display(key=None):
     """Retrieve display profile by model key; defaults to CrowPanel 5.79\"."""
     k = str(key or "").lower()

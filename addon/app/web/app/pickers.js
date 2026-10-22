@@ -6,6 +6,7 @@ import { popover, sheet, seg } from "./ui.js";
 import { LOOKS } from "./follows.js";
 import { TYPES, INSERT_GROUPS } from "./elements.js";
 import { fullName, prefixOf, shortName } from "./glyphs.js";
+import { openSettings } from "./sheets.js";
 
 const DOMAIN_NAMES = { sensor: "Sensors", binary_sensor: "On or off", calendar: "Calendars", weather: "Weather", climate: "Climate", person: "People",
   switch: "Switches", light: "Lights", timer: "Timers", lock: "Locks", input_number: "Numbers", input_text: "Texts", input_boolean: "Toggles" };
@@ -128,7 +129,9 @@ export function openIconPicker(app, current, onPick, look) {
       grid.dataset.look = look.value;
     };
     if (look) drawLook();
-    node.append(h("div", { class: "sheet-body" }, lookRow, h("div", { class: "search" }, icon("search", "sm"), q), setRow, catRow, meta, grid));
+    // More sets, and your own icons, are added in Settings › Icons.
+    const more = h("button", { class: "linkbtn", onclick: () => { close(); openSettings(app, "icons"); } }, "More icons…");
+    node.append(h("div", { class: "sheet-body" }, lookRow, h("div", { class: "search" }, icon("search", "sm"), q), setRow, catRow, h("div", { class: "pickmeta" }, meta, more), grid));
     draw();
   }, { cls: "wide tall", focus: "input" });
 }

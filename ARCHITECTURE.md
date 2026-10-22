@@ -56,7 +56,8 @@ Where things live in `addon/app/`:
 | `reach.py` / `companion.py` / `companion/epaper_panel/` | Reaching home: how screens away from home get in, and the Home Assistant integration that passes them on |
 | `frames.py` | Per design: which pages are live, their values, alerts. Per device: quiet hours, then its kind renders it |
 | `entities.py` / `mqtt_bridge.py` | The add-on's own values, and mirroring them into Home Assistant |
-| `sources/` | Outside data (flights, sports, racing, weather, calendars, to-do lists), always through `live_data.py` |
+| `notify.py` / `blueprints/notify.yaml` | Phone notifications for a page: its sensor, the shipped blueprint, the automation made from it |
+| `sources/` | Outside data (flights, sports, racing, weather, calendars, to-do lists, Home Assistant's notifications, updates and Repairs), always through `live_data.py` |
 | `panel_link.py` / `panel_ops.py` | Finding a panel and asking it to refresh or step |
 | `panel_setup.py` / `firmware_gen.py` / `firmware/panel.yaml` | Panel setup, and the one source of the firmware YAML |
 | `web.py` | The device port (shared routes; each kind adds its own) and the Ingress-only editor API |
@@ -334,16 +335,43 @@ render) live in one record inside the add-on, `runtime.PUBLISHED`.
   removes the directly written states and restores each entity's intended ID.
   It only touches IDs Home Assistant suffixed itself (`<id>_<n>`).
 
+### Phone notifications
+
+The add-on never sends a notification; Home Assistant's automations do, so
+automations have one home (the user's call, 22 Oct). `notify.py`:
+
+- **A sensor only for a page that asks.** "Also notify my phone…" gives the
+  page a `notify` id. That page alone gets a binary sensor: on while its
+  alert holds (`binary_sensor.epaper_alert_<page>`, from
+  `frames.check_alerts`'s `active`), or while its "Only when" condition holds
+  (`binary_sensor.epaper_showing_<page>`, `runtime.showing`). Its unique_id is
+  the notify id, so renaming the page keeps the entity. A change alert that
+  fires again while it's on goes off and on again: "turns on" is the one
+  thing to watch. One set up on a page the panel already has works at once,
+  before the id is sent; a page only in an unsent draft has its sensor, off.
+- **The blueprint ships with the add-on** (`blueprints/notify.yaml`, installed
+  with `blueprint/save` when a notification is first set up, again only when
+  ours changed). It triggers on off → on only, so a restart isn't an alert.
+- **The automation is Home Assistant's.** The add-on makes it from the
+  blueprint with the phones picked in the editor (config API), then only
+  reads what uses the sensor (`search/related`) to show it.
+- **Nothing an automation uses is withdrawn.** A sensor no page asks for is
+  withdrawn at once, unless an automation or script still uses it or Home
+  Assistant can't say: then it stays, off (`page_removed`), until nothing
+  does. "Stop notifying" deletes only automations made from our blueprint,
+  and only the ones the person chose.
+
 ## Outside data
 
-`live_data.py`. Flights, sports, racing, weather, calendars and to-do lists are fetched in
-the background; a render only reads what's already there and never waits on
+`live_data.py`. Flights, sports, racing, weather, calendars, to-do lists and
+what needs you in Home Assistant (`sources/needs_you.py`: its notifications,
+updates waiting and Repairs) are fetched in the background; a render only reads what's already there and never waits on
 an outside service. The first read of something new returns at once, using the
 caller's fallback, and schedules the fetch. When it lands, the render loop
 wakes, so a new widget fills in within seconds. A failed fetch keeps the last
 good value, unless it has a `stale_after` age (an aircraft list older than five
 minutes is dropped). Your data sources (`feeds/`) go through the same store,
-each on its own interval. The eight fetchers in `sources/` are decorated `@runtime.live(seconds)`;
+each on its own interval. The fetchers in `sources/` are decorated `@runtime.live(seconds)`;
 their own caches still stop them hitting a service more often than it allows.
 The editor's preview (and its aircraft list) wait for fresh data, because
 there a person asked.
@@ -368,13 +396,42 @@ all read it, so nothing offers an icon that draws as nothing.
   isn't the shipped one; every chunk, every outline checked, or nothing.
   Kept in `/data/icons/` and used from the next start before anything draws.
 - **Custom sets are copied whole when their files change**
-  (`iconsets.copy_custom`), from the mapped configuration folder: Custom
-  Icons' SVG folder (`local:`) and Iconify sets, the ones switched on in its
-  settings (asked of Home Assistant: `custom_icons/activesets`; the last
-  answer, else Custom Icons' own defaults, while it can't say); and script sets HACS installs (custom-brand-icons' `phu:` and
-  those written like it). A custom SVG becomes outlines only: shapes,
-  groups, transforms, fill and stroke; scripts, links, pictures and text are
-  never kept, and nothing of the file is shown as it is.
+  (`iconsets.copy_custom`), and nothing else needs installing (the user's
+  call, 22 Oct: e-paper doesn't depend on Custom Icons, whose Iconify
+  download replaces `aiohttp.ClientSession` for every integration):
+  - **Your own icons** (`local:`): SVGs in `<config>/epaper/icons`
+    (`iconsets.OWN_FOLDER`), and in Custom Icons' old folder
+    `<config>/custom_icons`, still read; the own folder wins a name both
+    have. The editor's Add icons (`POST /api/icons/own`) saves a cleaned
+    copy (`iconsets.clean_svg`: the outline only) into the own folder.
+  - **Iconify sets** the user chooses in Settings › Icons (`/data/icons/
+    chosen.json`). Each is downloaded on its own, only when asked (Add, Try
+    again, Check for updates with its ETag), from Iconify's published files
+    (`iconsets.ICONIFY`) through the add-on's own session: one host, checked
+    HTTPS, no redirects, 32 MB at most, read in pieces. Kept as downloaded
+    and converted once (`/data/icons/iconify/<prefix>.raw.json.gz` and
+    `.json.gz`), so a change to your own icons never converts a big set
+    again. Only single-color sets are offered. A chosen set Custom Icons'
+    download has (`custom_icons/iconify-icon-sets-master.zip`) is taken
+    from there, without the internet. Add a set's previews are each set's
+    sample icons from Iconify's API (`ICONIFY_API`), asked for only for rows
+    on screen, converted the same way and kept. The background loop never
+    downloads.
+  - **Upgrading from 0.19**: the first start keeps every Iconify set it drew
+    from Custom Icons (`iconsets._migrate`, from the old `custom.json.gz`),
+    so they draw on after Custom Icons and its download are gone.
+  - **Script sets** HACS installs (custom-brand-icons' `phu:` and those
+    written like it).
+  - The way back: `iconsets.ASK_CUSTOM_ICONS = True` asks Home Assistant
+    which collections Custom Icons has on (`custom_icons/activesets`; the
+    last answer, else its defaults) and uses that instead of the editor's
+    choice, as 0.18 and 0.19 did. Off until the own sets have proven
+    themselves.
+
+  A custom SVG becomes outlines only: shapes, groups (at most 32 deep),
+  transforms, fill and stroke; scripts, links, pictures, styles and text are
+  never kept, nothing of the file is shown as it is, and a file the reader
+  can't take is left out on its own, never the set with it.
 - A render never waits on any of this: the copy runs in the background and
   swaps a whole set in when it's ready (`icons.install`).
 - One icon can't cost more than about twice the largest real one

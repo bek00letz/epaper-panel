@@ -53,6 +53,11 @@ STALE_AFTER = 3600.0
 # binary sensors; everything else is a sensor.
 PROBLEM_PREFIX = "epaper_problem_"
 
+# A page's "is it on" sensor (notify.py): a binary sensor made only when someone
+# asks to be notified about that page. Keyed by the page's notify id, so renaming
+# the page never changes its unique_id; its entity ID is given by the attributes.
+SIGNAL_PREFIX = "epaper_page_"
+
 # What the add-on before 0.8.27 left retained and no longer owns: a "Last render" sensor
 # on a topic of its own, whose naive timestamp Home Assistant refuses at every start.
 # Its replacement is sensor.epaper_panel_last_render. Cleared at every connect.
@@ -60,7 +65,7 @@ LEGACY_TOPICS = (f"{DISCOVERY_PREFIX}/sensor/{NODE}/last_render/config",
                  f"{DISCOVERY_PREFIX}/{NODE}/last_render")
 
 # Attributes that are entity metadata, not data.
-META_ATTRS = ("friendly_name", "icon", "unit_of_measurement", "device_class", "source")
+META_ATTRS = ("friendly_name", "icon", "unit_of_measurement", "device_class", "source", "default_entity_id")
 
 
 def with_zone(state: str) -> str:
@@ -77,7 +82,7 @@ def object_id(entity_id: str) -> str:
 
 
 def component_of(obj: str) -> str:
-    return "binary_sensor" if obj.startswith(PROBLEM_PREFIX) else "sensor"
+    return "binary_sensor" if obj.startswith((PROBLEM_PREFIX, SIGNAL_PREFIX)) else "sensor"
 
 
 def entity_name(attrs: dict, obj: str) -> str:
@@ -113,6 +118,7 @@ class EntityPublisher:
         self._sync_task: asyncio.Task | None = None
         self._sync_again = False
         self._kept: set[str] = set()                  # object_ids the configuration still wants
+        self._pulse: set[str] = set()                 # signals that fired again while on: off, then on
         self.last_seen: dict[str, float] = self._load(self._state_path)
         self.problem = "" if transport is not None else (
             "No MQTT broker, so these values aren't in Home Assistant. "
@@ -139,6 +145,21 @@ class EntityPublisher:
         self.desired[obj] = {"state": "ON" if on else "OFF",
                              "attrs": {"friendly_name": name, "device_class": "problem", **attrs}}
         self.last_seen[obj] = self._clock()
+
+    def set_signal(self, key: str, on: bool, attrs: dict) -> None:
+        """A page's on/off sensor (notify.py). One that fires again while it's on (a change
+        alert held by the last change) goes off and on again, so "turns on" means "fired"."""
+        obj = f"{SIGNAL_PREFIX}{key}"
+        state = "ON" if on else "OFF"
+        was = self.desired.get(obj)
+        if on and was and was["state"] == "ON" and was["attrs"].get("fired_at") != attrs.get("fired_at"):
+            self._pulse.add(obj)
+        self.desired[obj] = {"state": state, "attrs": dict(attrs)}
+        self.last_seen[obj] = self._clock()
+
+    def entity_of(self, obj: str) -> str | None:
+        """The entity ID Home Assistant gave one of ours, as far as this connection knows."""
+        return self._registered.get(f"{UID_PREFIX}{obj}")
 
     def keep(self, entity_ids) -> None:
         """Entities the configuration still produces, answering or not: never withdrawn."""
@@ -233,7 +254,7 @@ class EntityPublisher:
             # A retired value Home Assistant no longer has needs no withdrawing.
             for obj, seen in list(self.last_seen.items()):
                 if seen == 0.0 and f"{UID_PREFIX}{obj}" not in self._registered \
-                        and f"sensor.{obj}" not in self._all_registered:
+                        and f"{component_of(obj)}.{obj}" not in self._all_registered:
                     self.last_seen.pop(obj)
         await self._announce_button()
         self._ready = True
@@ -259,7 +280,7 @@ class EntityPublisher:
         cfg = {
             "name": entity_name(attrs, obj),
             "unique_id": f"{UID_PREFIX}{obj}",
-            "default_entity_id": f"{component}.{obj}",
+            "default_entity_id": attrs.get("default_entity_id") or f"{component}.{obj}",
             "state_topic": f"{BASE}/{obj}/state",
             "json_attributes_topic": f"{BASE}/{obj}/attributes",
             "availability_topic": AVAILABILITY,
@@ -270,7 +291,7 @@ class EntityPublisher:
                          ("unit_of_measurement", "unit_of_measurement")):
             if attrs.get(src):
                 cfg[dst] = attrs[src]
-        if component == "binary_sensor":
+        if obj.startswith(PROBLEM_PREFIX):
             cfg["entity_category"] = "diagnostic"
         return cfg
 
@@ -289,13 +310,19 @@ class EntityPublisher:
             self._sent_config[obj] = payload
             self._sent_state.pop(obj, None)
             # From here on Home Assistant owns this ID: never clear its state again.
-            self._registered.setdefault(f"{UID_PREFIX}{obj}", f"{component}.{obj}")
-            self._all_registered.add(f"{component}.{obj}")
+            eid = json.loads(payload)["default_entity_id"]
+            self._registered.setdefault(f"{UID_PREFIX}{obj}", eid)
+            self._all_registered.add(eid)
 
     async def _send_state(self, obj: str, want: dict):
         attrs = {k: v for k, v in want["attrs"].items() if k not in META_ATTRS}
         attrs_json = json.dumps(attrs, sort_keys=True, default=str)
         key = (want["state"], attrs_json)
+        if obj in self._pulse:
+            self._pulse.discard(obj)
+            if (self._sent_state.get(obj) or ("",))[0] == "ON" and want["state"] == "ON":
+                await self.transport.publish(f"{BASE}/{obj}/state", "OFF")
+                self._sent_state.pop(obj, None)
         if self._sent_state.get(obj) == key:
             return
         ok_a = await self.transport.publish(f"{BASE}/{obj}/attributes", attrs_json)
@@ -308,7 +335,7 @@ class EntityPublisher:
         for topic in (f"{DISCOVERY_PREFIX}/{component}/{NODE}/{obj}/config",
                       f"{BASE}/{obj}/state", f"{BASE}/{obj}/attributes"):
             await self.transport.publish(topic, "")
-        eid = f"{component}.{obj}"
+        eid = self._registered.get(f"{UID_PREFIX}{obj}") or f"{component}.{obj}"
         if eid not in self._all_registered:                # a leftover directly written state
             try:
                 await self.hass.rest("DELETE", f"/states/{eid}")
@@ -318,7 +345,12 @@ class EntityPublisher:
         self.last_seen.pop(obj, None)
         self._sent_config.pop(obj, None)
         self._sent_state.pop(obj, None)
+        self._registered.pop(f"{UID_PREFIX}{obj}", None)
         print(f"mqtt: withdrew {eid}", flush=True)
+
+    def _default_id(self, obj: str) -> str:
+        want = self.desired.get(obj)
+        return (want and want["attrs"].get("default_entity_id")) or f"{component_of(obj)}.{obj}"
 
     async def _announce_button(self, force: bool = False):
         """A Refresh button per screen; the first keeps the one 0.8.x made. A screen that's gone loses its button."""
@@ -368,7 +400,7 @@ class EntityPublisher:
         `sensor.<id>_2`. Only an unregistered state is removed, never an entity
         something else owns.
         """
-        eid = f"{component_of(obj)}.{obj}"
+        eid = self._default_id(obj)
         if f"{UID_PREFIX}{obj}" in self._registered or eid in self._all_registered:
             return
         try:

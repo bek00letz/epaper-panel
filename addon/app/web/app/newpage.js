@@ -187,7 +187,7 @@ export function openPresets(app) {
   async function add(p, look, ent, extra) {
     const page = pageFor(p, look, ent, extra, (id) => app.entMap.get(id) || "");
     page.elements = await fitToDevice(app, page);
-    if (page.tier === "when") syncDynamicGridShowIf(page);
+    syncDynamicGridShowIf(page);                                  // "Only when" or an alert: its grid's condition
     const entName = ent ? app.entMap.get(ent)?.name : "";
     app.addPage(slug(pageName(p, look, ent, entName, extra)) || p.id, page);
   }

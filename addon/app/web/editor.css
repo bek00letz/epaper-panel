@@ -626,10 +626,25 @@ button.uopen:focus-visible { outline: 2px solid var(--accent); outline-offset: -
    less than its basis: room for two lines, more with a note under it. */
 .gr .gl { flex: 999 1 9em; min-width: 0; }
 .gr .gl:has(small) { flex-basis: 15em; }
-.gr > :is(input, select, textarea, .inline) { flex: 1 1 var(--need, auto); min-width: 0; max-width: 100%; }
+.gr > :is(input, select, textarea, .inline, .segc) { flex: 1 1 var(--need, auto); min-width: 0; max-width: 100%; }
 .gr .inp { width: auto; }
 .gr .inline .inp { width: 200px; }
 .gr small { display: block; color: var(--fg-2); font-size: 11.5px; margin-top: 1px; }
+/* Settings › Icons: a row's buttons keep together at its end; a group takes dropped files. */
+.rowbtns { display: flex; gap: 6px; flex: 0 0 auto; margin-left: auto; }
+.gr small.bad { color: var(--red); }
+/* Shown only when it takes a while: a quick answer never flashes it. */
+.gr small.waiting, .fnote.waiting { animation: fadein var(--t) var(--spring) 0.4s both; }
+.group.dropping { box-shadow: 0 0 0 2px var(--accent); }
+.subhead { display: flex; align-items: center; gap: 4px; margin: 0 0 8px -8px; }
+.subhead h4 { margin: 0; font: 600 15px var(--font-display); }
+.added { display: inline-flex; align-items: center; gap: 4px; min-height: var(--ctl); padding: 0 8px; color: var(--fg-2); font-size: 12.5px; }
+/* Add a set's previews: squares from the start (nothing moves), each icon fading in as it comes. */
+.samples { display: flex; gap: 10px; margin-top: 6px; color: var(--fg); }
+.samples svg { width: 20px; height: 20px; flex: none; fill: currentColor; overflow: visible; border-radius: 5px; background: var(--fill); transition: background-color var(--t-fast); }
+.samples svg.drawn { background: none; animation: fadein var(--t) var(--spring); }
+.pickmeta { display: flex; align-items: baseline; gap: 12px; }
+.pickmeta .fnote { flex: 1; }
 .steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
 .srccard { background: var(--surface-2); border-radius: var(--r-card); padding: 10px 14px 14px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 8px; box-shadow: 0 0 0 0.5px var(--sep); }
 .srchead { display: flex; align-items: center; gap: 6px; }
@@ -845,6 +860,10 @@ button.uopen:focus-visible { outline: 2px solid var(--accent); outline-offset: -
 .zgrip { cursor: grab; touch-action: none; color: var(--fg-2); }
 .zrow.lifted { position: relative; z-index: 2; background: var(--surface); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18); border-radius: var(--r-ctl); transition: none; }
 .zpick .optlist { max-height: 260px; overflow-y: auto; overscroll-behavior: contain; }
+/* Batteries: a long list scrolls in place; the number keeps its size beside its "%". */
+.batlist { max-height: 320px; overflow-y: auto; overscroll-behavior: contain; }
+.stepsec .inline > .inp[type="number"] { flex: 0 0 auto; }
+.stepsec .inline > .unit { color: var(--fg-2); }
 
 /* A "changed" condition's status line (inspector.changedRows): its space is kept
    while the add-on answers, "checking" only shows if that takes a while. */
@@ -853,3 +872,12 @@ button.uopen:focus-visible { outline: 2px solid var(--accent); outline-offset: -
 .note.waiting .led { background: var(--fg-3); }
 .note.fresh { animation: fadein var(--t) var(--spring); }
 .cmprow .cmpword { color: var(--fg-2); font-size: 13px; flex: 0 0 auto; }
+
+/* Phone notifications under Shows (app/notify.js). */
+.notify { display: grid; gap: 6px; }
+.notify:empty { display: none; }
+.note.nrow { flex-wrap: wrap; }
+.note.nrow > span:not(.ic) { flex: 1; min-width: 10em; }
+.sheet-foot.wrap { flex-wrap: wrap; }
+.notifysheet .optlist { border-radius: var(--r-card); background: var(--surface-2); box-shadow: 0 0 0 0.5px var(--sep); padding: 4px; max-height: 312px; overflow-y: auto; overscroll-behavior: contain; }
+.notifysheet .sheet-body { display: grid; gap: 12px; }

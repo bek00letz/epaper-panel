@@ -19,6 +19,7 @@ import { unitsRows } from "./units.js";
 import { Glyphs } from "./glyphs.js";
 import { renderScreenBar } from "./screenbar.js";
 import { refreshLeftOut } from "./busyday.js";
+import { deleteNotifying } from "./notify.js";
 
 const ZOOM_STEPS = [0.75, 1, 1.25, 1.5, 2];
 const ZOOM_MIN = 0.5, ZOOM_MAX = 3;                  // a pinch can go a little past the steps
@@ -518,7 +519,7 @@ class App {
     const doc = this.doc, el = makeElement(t, this.geometry());
     if (t === "box") { doc.els().unshift(el); doc.sel = [0]; }                 // cards go behind what they frame
     else { doc.els().push(el); doc.sel = [doc.els().length - 1]; }
-    if (doc.page().tier === "when" && t === "dynamic_grid") syncDynamicGridShowIf(doc.page(), el);
+    if (t === "dynamic_grid") syncDynamicGridShowIf(doc.page(), el);         // "Only when", or an alert that follows it
     doc.commit();
     this.say(`Added ${TYPES[t].name}`);
     this.openInspectorOnPhone();
@@ -558,18 +559,24 @@ class App {
   duplicatePage(name = this.doc.cur) {
     const doc = this.doc, n = this.uniqueName(name + "_copy");
     doc.spec.pages[n] = clone(doc.spec.pages[name]);
+    delete doc.spec.pages[n].notify;                  // its notifications are the original's (notify.js)
     if ((doc.spec.pages[n].tier || "rotate") !== "alert") doc.spec.rotation.push(n);
     doc.cur = n; doc.sel = [];
     doc.commit(); doc.emit("page");
     toast(`Duplicated as ${pageTitle(n)}. Rename it in the inspector.`, { label: "Undo", run: () => doc.undo() });
   }
   deletePage(name = this.doc.cur) {
+    // A page that notifies your phone asks whether its automation goes too (notify.js).
+    deleteNotifying(this, name, (said) => this.removePage(name, said));
+  }
+  removePage(name, said) {
     const doc = this.doc;
+    if (!doc.spec.pages[name]) return;
     delete doc.spec.pages[name];
     doc.spec.rotation = doc.spec.rotation.filter((n) => n !== name);
     if (doc.cur === name) { doc.cur = doc.firstPage(); doc.sel = []; }
     doc.commit(); doc.emit("page");
-    toast(`Deleted ${pageTitle(name)}.`, { label: "Undo", run: () => doc.undo() });
+    toast(said || `Deleted ${pageTitle(name)}.`, { label: "Undo", run: () => doc.undo() });
     if (!Object.keys(doc.spec.pages).length) this.firstRun();
   }
   /* A page from "Not sent yet": opened, with what differs from the panel outlined on the canvas. */
@@ -603,6 +610,7 @@ class App {
     if (v === "alert") doc.spec.rotation = doc.spec.rotation.filter((n) => n !== doc.cur);
     else if (!doc.spec.rotation.includes(doc.cur)) doc.spec.rotation.push(doc.cur);
     if (v === "when") { syncDynamicGridShowIf(p); syncWidgetShowIf(p); }
+    if (v === "alert") syncDynamicGridShowIf(p);                 // an alert with no condition yet takes its grid's
     this.rawCondition = this.rawUntil = false;
     doc.commit();
   }

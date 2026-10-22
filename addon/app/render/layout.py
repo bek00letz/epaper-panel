@@ -20,6 +20,7 @@ import calendar
 from datetime import datetime, date
 import json
 import math
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -29,6 +30,7 @@ from . import theme as T
 from . import binding
 from . import energy
 from . import media
+from . import needs_you
 from . import sport
 from . import sun
 from . import clock
@@ -37,6 +39,7 @@ from . import countdown
 from . import todo
 from . import units
 from . import worldclock
+from . import states as state_words
 from . import icons
 from . import vector
 from .binding import template_for
@@ -721,6 +724,107 @@ def _compute_grid_boxes(x, y, w, h, n, cols, rows, gap=10):
     return boxes
 
 
+def _number_or_none(state):
+    try:
+        v = float(str(state).strip())
+    except (TypeError, ValueError):
+        return None
+    return v if math.isfinite(v) else None
+
+
+def _past(level, rule, own, page_value):
+    """Whether a level is past its threshold: an item's own, else the grid's. "below" is strictly
+    below (Home Assistant's numeric_state); "at_least" includes it, so 100 % reads charged at 100."""
+    t = _number_or_none(own) if own not in (None, "") else _number_or_none(page_value)
+    if t is None:
+        return False
+    return level < t if rule == "below" else level >= t
+
+
+def _level_text(level, unit):
+    if level is None:
+        return ""
+    unit = str(unit or "").strip()
+    num = f"{level:.0f}" if abs(level - round(level)) < 0.05 or unit == "%" else f"{level:.1f}"
+    return f"{num}{unit}" if unit in ("%", "") else f"{num} {unit}"
+
+
+# A list of Dynamic status items (the user's call, 22 Oct, for Batteries): a row each, with its icon,
+# its name and, on the right, its level or detail; two columns when wide; "and 3 more" when they
+# don't all fit. Rows never get smaller than reads on e-ink.
+LIST_ROW_MIN, LIST_ROW_MAX, LIST_GAP = 30, 60, 4
+LIST_TEXT_MIN = 14                      # the smallest a name gets on e-ink before it's shortened
+
+
+def _fit_middle(text, max_w, f):
+    """`text` as it fits in max_w: whole, or its start and its end around an ellipsis."""
+    if T.text_width(text, f) <= max_w:
+        return text
+    for keep in range(len(text) - 1, 1, -1):
+        head = text[:(keep + 1) // 2]
+        tail = text[len(text) - keep // 2:] if keep // 2 else ""
+        out = f"{head}…{tail}"
+        if T.text_width(out, f) <= max_w:
+            return out
+    return text[:1] + "…"
+
+
+def _draw_grid_list(d, x, y, w, h, items, detail, by_number, fscale=1.0, icons_only=False, icon_px=None):
+    n = len(items)
+    cols = 2 if w >= 480 and n >= 4 else 1
+    per_col = max(1, (h + LIST_GAP) // (LIST_ROW_MIN + LIST_GAP))
+    room = per_col * cols
+    shown = items if n <= room else items[:room - 1]
+    more = n - len(shown)
+    slots = len(shown) + (1 if more else 0)
+    rows = max(1, math.ceil(slots / cols))
+    rh = max(LIST_ROW_MIN, min(LIST_ROW_MAX, (h - LIST_GAP * (rows - 1)) // rows))
+    col_gap = 24
+    cw = (w - col_gap * (cols - 1)) // cols
+    text_px = max(14, min(36, int(rh * 0.5 * fscale), cw // 8))
+    name_f, level_f = T.font(text_px, bold=True), T.font(text_px, bold=by_number)
+    isz = 0 if cw < 180 else min(icon_px or int(rh * 0.78), rh)     # a sliver of a column keeps the room for the name
+    pad = 10 if isz else 0
+
+    for k in range(slots):
+        col, row = divmod(k, rows)                      # down the first column, then the next
+        cx, cy = x + col * (cw + col_gap), y + row * (rh + LIST_GAP)
+        mid = cy + rh // 2
+        if k < len(shown) and row < rows - 1 and k + 1 < slots:
+            d.line([(cx, cy + rh + LIST_GAP // 2), (cx + cw, cy + rh + LIST_GAP // 2)], fill=T.BLACK, width=1)
+        if k >= len(shown):
+            d.text((cx + isz + pad, mid), f"and {more} more", font=T.font(text_px, bold=False), fill=T.BLACK, anchor="lm")
+            continue
+        it = shown[k]
+        if isz:
+            _draw_icon_glyph(d, it["icon"], cx + isz // 2, mid, isz)
+        if icons_only:
+            continue
+        right = detail(it)
+        rw = T.text_width(right, level_f) if right else 0
+        if right:
+            d.text((cx + cw, mid), right, font=level_f, fill=T.BLACK, anchor="rm")
+        tx = cx + isz + pad
+        avail = max(20, cx + cw - rw - 12 - tx)
+        name = it["name"]
+        f = name_f
+        for px in range(text_px, LIST_TEXT_MIN - 1, -1):                  # smaller, down to what still reads, before it's cut
+            f = T.font(px, bold=True)
+            if T.text_width(name, f) <= avail:
+                break
+        words = name.split()
+        if T.text_width(name, f) > avail and len(words) > 1 and rh >= f.size * 2.3:
+            # Still too long, and the row has room: two lines, split where both fit best.
+            cut = min(range(1, len(words)), key=lambda j: max(T.text_width(" ".join(words[:j]), f), T.text_width(" ".join(words[j:]), f)))
+            for line, dy in ((" ".join(words[:cut]), -0.55), (" ".join(words[cut:]), 0.55)):
+                d.text((tx, mid + int(dy * f.size)), _fit_text(line, avail, f), font=f, fill=T.BLACK, anchor="lm")
+        elif len(words) == 1:
+            # One word that won't fit even at the smallest: its start and its end ("Ther…stat"), never cut mid-letter.
+            d.text((tx, mid), _fit_middle(name, avail, f), font=f, fill=T.BLACK, anchor="lm")
+        else:
+            d.text((tx, mid), _fit_text(name, avail, f), font=f, fill=T.BLACK, anchor="lm")
+
+
 def _draw_dynamic_grid(img, d, el, raw_val, display=None):
     x, y, w, h = _clamp_box(el, 752, 214, display=display)
     has_resolved = False
@@ -740,6 +844,10 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
 
     configured_items = el.get("items") or []
     filter_state = str(el.get("filter_state") or "on").strip().lower()
+    # A number rule instead of a state (a battery below 40 %, or charged to at least 90 %): each item
+    # shows while its level is past the grid's value, or its own `threshold`; the level is its second line.
+    rule = str(el.get("filter_rule") or "state")
+    by_number = rule in ("below", "at_least")
 
     active_items = []
     for it in configured_items:
@@ -755,10 +863,20 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
             friendly = res.get("name") or ""
             changed = res.get("changed") or ""
 
-            is_active = (state and state not in ("unavailable", "unknown")) if filter_state in ("*", "any") else (state.lower() == filter_state)
+            level = _number_or_none(state) if by_number else None
+            if by_number:
+                is_active = level is not None and _past(level, rule, it.get("threshold"), el.get("filter_value"))
+            else:
+                is_active = (state and state not in ("unavailable", "unknown")) if filter_state in ("*", "any") else (state.lower() == filter_state)
             if is_active:
                 chosen_icon = _resolve_spot_icon(it, state)
+                if by_number and not it.get("icon") and res.get("device_class") == "battery":
+                    chosen_icon = state_words.battery_icon(level)      # Home Assistant's own glyph for its level
+                if by_number and res.get("device_class") == "battery":
+                    # On a page of batteries, "Door Sensor Battery" is the Door Sensor.
+                    friendly = re.sub(r"\s+battery(\s+level)?$", "", friendly, flags=re.I) or friendly
                 active_items.append({
+                    "level": level, "level_text": _level_text(level, res.get("unit")) if by_number else "",
                     "entity": ent,
                     "name": name or friendly or ent.split(".")[-1].replace("_", " ").title(),
                     "icon": chosen_icon,
@@ -779,6 +897,10 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
                 "hide_name": hide_name,
                 "raw_item": it
             })
+
+    if by_number:
+        # The most urgent first: the emptiest battery when it's "below", the fullest when "at least".
+        active_items.sort(key=lambda it: it.get("level") if it.get("level") is not None else 0, reverse=rule == "at_least")
 
     if not configured_items and not active_items:
         active_items = [{
@@ -809,6 +931,8 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
             return ""
         if sec_mode == "none":
             return ""
+        if by_number:
+            return item.get("level_text", "")
         if sec_mode == "state":
             return item.get("state", "")
         ch = item.get("changed", "").strip()
@@ -832,7 +956,10 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
             f_ht = T.font(18, bold=True)
             d.text((hx, hy + 12), hdr_title, font=f_ht, fill=T.BLACK, anchor="lm")
 
-        badge_str = f"{len(active_items)} / {len(configured_items)} ON" if configured_items else f"{len(active_items)} ACTIVE"
+        if by_number:
+            badge_str = f"{len(active_items)} of {len(configured_items)}"
+        else:
+            badge_str = f"{len(active_items)} / {len(configured_items)} ON" if configured_items else f"{len(active_items)} ACTIVE"
         f_hb = T.font(12, bold=True)
         bw = T.text_width(badge_str, f_hb) + 16
         bx0 = x + w - bw
@@ -861,6 +988,11 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
     except (ValueError, TypeError):
         fscale = 1.0
 
+    if el.get("layout_mode") == "list":
+        _draw_grid_list(d, x, y, w, h, active_items, format_sec, by_number, fscale,
+                        icons_only=show_labels == "icons_only", icon_px=req_icon_sz)
+        return
+
     # 1 Item: Hero Card
     if n == 1:
         it = active_items[0]
@@ -877,16 +1009,25 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
                 tx = x + 24 + isz + 24
                 name_sz = max(18, min(52, int(36 * fscale)))
                 name_f = T.font(name_sz, bold=True)
-                name_txt = _fit_text(it["name"], w - isz - 210, name_f)
+                if by_number and sec:
+                    # One battery alone: its level large on the right, where a state's pill would be.
+                    lvl_f = T.font(max(24, min(72, int(56 * fscale), h - 40)), bold=True)
+                    d.text((x + w - 24, y + h // 2), sec, font=lvl_f, fill=T.BLACK, anchor="rm")
+                    room = x + w - 24 - T.text_width(sec, lvl_f) - 24 - tx
+                    sec = ""
+                else:
+                    room = w - isz - 210
+                name_txt = _fit_text(it["name"], room, name_f)
                 d.text((tx, y + h // 2 - (int(16 * fscale) if sec else 0)), name_txt, font=name_f, fill=T.BLACK, anchor="lm")
                 if sec:
                     sec_f = T.font(max(13, min(32, int(20 * fscale))), bold=False)
                     d.text((tx, y + h // 2 + int(20 * fscale)), sec, font=sec_f, fill=T.BLACK, anchor="lm")
-            bw, bh = 90, 32
-            bx0 = x + w - bw - 24
-            by0 = y + (h - bh) // 2
-            d.rounded_rectangle([(bx0, by0), (bx0 + bw, by0 + bh)], radius=6, fill=T.BLACK)
-            d.text((bx0 + bw // 2, by0 + bh // 2), "ACTIVE", font=T.font(14, bold=True), fill=T.WHITE, anchor="mm")
+            if not by_number:                    # a level says it all; "ACTIVE" is for a state
+                bw, bh = 90, 32
+                bx0 = x + w - bw - 24
+                by0 = y + (h - bh) // 2
+                d.rounded_rectangle([(bx0, by0), (bx0 + bw, by0 + bh)], radius=6, fill=T.BLACK)
+                d.text((bx0 + bw // 2, by0 + bh // 2), "ACTIVE", font=T.font(14, bold=True), fill=T.WHITE, anchor="mm")
         else:
             mid_y = y + h // 2
             if hide_txt:
@@ -901,9 +1042,10 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
                 if sec:
                     sec_f = T.font(max(13, min(28, int(19 * fscale))), bold=False)
                     d.text((x + w // 2, mid_y + 54), sec, font=sec_f, fill=T.BLACK, anchor="mm")
-            pw, ph = 40, 20
-            d.rounded_rectangle([(x + w - pw - 10, y + 10), (x + w - 10, y + 10 + ph)], radius=4, fill=T.BLACK)
-            d.text((x + w - 10 - pw // 2, y + 10 + ph // 2), "ON", font=T.font(11, bold=True), fill=T.WHITE, anchor="mm")
+            if not by_number:
+                pw, ph = 40, 20
+                d.rounded_rectangle([(x + w - pw - 10, y + 10), (x + w - 10, y + 10 + ph)], radius=4, fill=T.BLACK)
+                d.text((x + w - 10 - pw // 2, y + 10 + ph // 2), "ON", font=T.font(11, bold=True), fill=T.WHITE, anchor="mm")
         return
 
     # Multi-card layout mode
@@ -949,19 +1091,21 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
         cx1, cy1 = cx0 + cw_i, cy0 + ch_i
         d.rounded_rectangle([(cx0, cy0), (cx1, cy1)], radius=10, outline=T.BLACK, width=2)
 
-        # State Badge
-        st_txt = str(it.get("state") or "on").upper()
-        if len(st_txt) > 6:
-            st_txt = st_txt[:6]
-        f_badge = T.font(max(9, min(14, int(11 * fscale))), bold=True)
-        bw = max(32, T.text_width(st_txt, f_badge) + 12)
-        ph = max(18, int(19 * fscale))
-        bx0 = cx1 - bw - 6
-        by0 = cy0 + 6
-        d.rounded_rectangle([(bx0, by0), (bx0 + bw, by0 + ph)], radius=4, fill=T.BLACK)
-        d.text((bx0 + bw // 2, by0 + ph // 2), st_txt, font=f_badge, fill=T.WHITE, anchor="mm")
-
         sec = format_sec(it)
+        if by_number:
+            bx0 = cx1 - 6                        # no state badge: the level is drawn large instead
+        else:
+            # State Badge
+            st_txt = str(it.get("state") or "on").upper()
+            if len(st_txt) > 6:
+                st_txt = st_txt[:6]
+            f_badge = T.font(max(9, min(14, int(11 * fscale))), bold=True)
+            bw = max(32, T.text_width(st_txt, f_badge) + 12)
+            ph = max(18, int(19 * fscale))
+            bx0 = cx1 - bw - 6
+            by0 = cy0 + 6
+            d.rounded_rectangle([(bx0, by0), (bx0 + bw, by0 + ph)], radius=4, fill=T.BLACK)
+            d.text((bx0 + bw // 2, by0 + ph // 2), st_txt, font=f_badge, fill=T.WHITE, anchor="mm")
         hide_txt = (show_labels == "icons_only") or it.get("hide_name", False)
 
         if hide_txt:
@@ -987,8 +1131,12 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
                 name_f = T.font(max(13, min(36, int(base_name_sz * fscale))), bold=True)
                 avail_tw = max(30, bx0 - tx - 6)
                 name_txt = _fit_text(it["name"], avail_tw, name_f)
-                d.text((tx, cy0 + ch_i // 2 - (int(11 * fscale) if sec else 0)), name_txt, font=name_f, fill=T.BLACK, anchor="lm")
-                if sec:
+                d.text((tx, cy0 + ch_i // 2 - (int((14 if by_number else 11) * fscale) if sec else 0)), name_txt, font=name_f, fill=T.BLACK, anchor="lm")
+                if sec and by_number:
+                    # The level under the name, bold and a size larger ("21%"), so the name keeps the width.
+                    lvl_f = T.font(max(14, min(40, int(base_name_sz * 1.2 * fscale))), bold=True)
+                    d.text((tx, cy0 + ch_i // 2 + int(17 * fscale)), sec, font=lvl_f, fill=T.BLACK, anchor="lm")
+                elif sec:
                     base_sec_sz = min(16, max(12, cw_i // 16))
                     sec_f = T.font(max(10, min(24, int(base_sec_sz * fscale))), bold=False)
                     d.text((tx, cy0 + ch_i // 2 + int(14 * fscale)), sec, font=sec_f, fill=T.BLACK, anchor="lm")
@@ -1010,6 +1158,8 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
                 if sec:
                     base_sec_sz = min(15, max(11, cw_i // 12))
                     sec_f = T.font(max(10, min(22, int(base_sec_sz * fscale))), bold=False)
+                    if by_number:                    # the level reads as large as the name
+                        sec_f = T.font(max(12, min(32, int(base_name_sz * fscale))), bold=True)
                     d.text((mid_x, cy0 + ch_i * 0.86), sec, font=sec_f, fill=T.BLACK, anchor="mm")
 
 
@@ -2192,7 +2342,7 @@ DRAWERS = {
 def _widget(draw):
     """A widget that draws itself from its box and the value the render cycle fetched for it."""
     def drawer(img, d, el, raw_val, display=None):
-        draw(img, d, _clamp_box(el, 712, 200, display=display), el, raw_val, scale=_font_scale(el))
+        return draw(img, d, _clamp_box(el, 712, 200, display=display), el, raw_val, scale=_font_scale(el))
     return drawer
 
 
@@ -2206,6 +2356,9 @@ WIDGETS = {
     "now_playing": media.draw_now_playing,
     "tv_week": media.draw_tv_week,
     "world_clock": worldclock.draw,
+    "notifications": needs_you.draw_notifications,
+    "updates": needs_you.draw_updates,
+    "badge": needs_you.draw_badge,
 }
 DRAWERS.update({t: _widget(fn) for t, fn in WIDGETS.items()})
 
@@ -2336,7 +2489,11 @@ def render_page(page, vals, *, clock="", label="", footer=None, page_no=None, it
                             entry["not_a_number"] = str(raw)[:60]
                     metrics.append(entry)
             elif el["type"] in WIDGETS:
-                drawer(img, d, el, vals.get(i), display=display)
+                size = drawer(img, d, el, vals.get(i), display=display)
+                if isinstance(size, int) and metrics is not None:
+                    # A widget that says how big its text is gets the legibility note (the badge's number).
+                    mm, verdict = legibility(size, distance_m=distance_m, display=display)
+                    metrics.append({"i": i, "size": size, "mm": mm, "verdict": verdict, "lines": 1, "overflow": False})
                 if i in swapped and metrics is not None:
                     # A sleeping device: the editor says what it shows instead. Only a world clock is a widget
                     # that shows the time, and it shows each city's hours ahead or behind, not the date.
@@ -2392,6 +2549,8 @@ def collect_templates(page):
                     '{"entity": {{ e | to_json }}, '
                     '"state": {{ states(e) | to_json }}, '
                     '"name": {{ (state_attr(e, "friendly_name") or "") | to_json }}, '
+                    '"unit": {{ (state_attr(e, "unit_of_measurement") or "") | to_json }}, '
+                    '"device_class": {{ (state_attr(e, "device_class") or "") | to_json }}, '
                     '"changed": {{ (relative_time(states[e].last_changed) if (states[e] is defined and states[e] is not none and states[e].last_changed is defined) else "") | to_json }}}'
                     "{% if not loop.last %},{% endif %}{% endfor %}]"
                 )

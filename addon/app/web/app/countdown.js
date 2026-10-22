@@ -4,10 +4,11 @@
 // works out "days until", so the canvas and the panel always agree).
 
 import { h, icon } from "./util.js";
-import { select, toggle } from "./ui.js";
+import { select, seg, toggle } from "./ui.js";
 
 const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
-const row = (label, sub, ctl) => h("label", { class: "gr" }, h("span", { class: "gl" }, label, sub ? h("small", { text: sub }) : null), ctl);
+// A row is a <label> for its field; one holding choices isn't, or clicking its words would pick the first.
+const row = (label, sub, ctl) => h(ctl?.classList?.contains("segc") ? "div" : "label", { class: "gr" }, h("span", { class: "gl" }, label, sub ? h("small", { text: sub }) : null), ctl);
 
 /* `live`: answer every keystroke (New page's preview); otherwise on change, so
    the inspector, which redraws on each saved change, doesn't lose the field. */
@@ -39,7 +40,25 @@ export function dateEditor(el, changed, { live = false } = {}) {
 }
 
 export const EVERY = [[1, "Every week"], [2, "Every 2 weeks"], [3, "Every 3 weeks"], [4, "Every 4 weeks"]];
-export const CLOSE_TO = [["noon", "Tomorrow, then Today until noon"], ["midnight", "Tomorrow, then Today until midnight"], ["days", "Numbers only: 1 day, 0 days"]];
+/* Bin day: when it ends (then it counts to the next one) and what it says, two settings (the
+   user's design, 22 Oct; render/countdown.py). `today_until: "days"`, the first shape, is numbers
+   ending at noon: read as that, written in the new shape when either is changed. */
+export const BIN_DAY_ENDS = [["noon", "At noon"], ["midnight", "At midnight"]];
+export const BIN_DAY_SAYS = [["words", "Tomorrow, Today"], ["numbers", "1 day, 0 days"]];
+export const endsOf = (el) => (el.today_until === "midnight" ? "midnight" : "noon");
+export const saysOf = (el) => (el.numbers === true || el.today_until === "days" ? "numbers" : "words");
+export function setBinDay(el, { ends = endsOf(el), says = saysOf(el) } = {}) {
+  el.today_until = ends;
+  if (says === "numbers") el.numbers = true; else delete el.numbers;
+}
+/* A segmented control that shows its own choice at once: New page's step doesn't redraw it. */
+function choice(options, value, onPick, label) {
+  const c = seg(options, value, (v) => {
+    c.querySelectorAll("[role=radio]").forEach((b, k) => b.setAttribute("aria-checked", String(options[k][0] === v)));
+    onPick(v);
+  }, label);
+  return c;
+}
 
 /* Bins: each with its name, its next collection and how often it comes.
    Alternating bins are two bins every 2 weeks, a week apart. */
@@ -58,7 +77,9 @@ export function binsEditor(el, changed, { live = false } = {}) {
       draw(); changed();
       box.querySelector(`[aria-label="Bin ${el.bins.length} name"]`)?.focus();
     } }, icon("plus", "sm"), "Add a bin")),
-    h("div", { class: "group" }, row("Close to the day", null, select(CLOSE_TO, el.today_until || "noon", (v) => { el.today_until = v; changed(); }, { "aria-label": "Close to the day" })),
+    h("div", { class: "group" },
+      row("Bin day ends", null, choice(BIN_DAY_ENDS, endsOf(el), (v) => { setBinDay(el, { ends: v }); changed(); }, "Bin day ends")),
+      row("Says", null, choice(BIN_DAY_SAYS, saysOf(el), (v) => { setBinDay(el, { says: v }); changed(); }, "Says")),
       startsShowing(el, changed, "Before each collection; until then the panel leaves the page out")));
   };
   draw();

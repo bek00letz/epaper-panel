@@ -29,6 +29,8 @@ from . import theme as T
 TIME = re.compile(r"now\(\)[^}]*strftime\(\s*['\"]([^'\"]*%-?[HIklMp][^'\"]*)['\"]")
 FORMAT = re.compile(r"now\(\)[^}]*strftime\(\s*['\"]([^'\"]*)['\"]")
 DAY = re.compile(r"%-?[de]")
+# Widgets that say how long ago something happened, and the time it happened on a device that sleeps.
+AGES = ("notifications",)
 # The other ways people write a clock in Home Assistant.
 IDIOMS = (
     TIME,
@@ -83,12 +85,16 @@ def date_for_time(page: dict, vals: dict, now: datetime) -> tuple[dict, dict, se
     time (the ones the editor notes). Nothing is changed in place: the design keeps its clock."""
     els = page.get("elements") or []
     times = {i for i, el in enumerate(els) if shows_time(el)}
-    if not times:
+    # Notifications say when each came, not how long ago: "12 min" would go stale while it sleeps.
+    ages = {i for i, el in enumerate(els) if isinstance(el, dict) and el.get("type") in AGES}
+    if not times and not ages:
         return page, vals, set()
     # A date beside a clock stops repeating the weekday; a world clock alone changes no date.
     dated = {i for i, el in enumerate(els) if i not in times and el.get("type") == "text" and DAY.search(_format(el))} \
         if any(els[i].get("type") == "text" for i in times) else set()
     out_els, out_vals = [dict(el) for el in els], dict(vals)
+    for i in ages:
+        out_els[i]["asleep"] = True             # render/needs_you.age_label
     for i in times:
         el = out_els[i]
         if el.get("type") == "world_clock":

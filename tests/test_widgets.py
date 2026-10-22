@@ -487,6 +487,7 @@ EVERY_WIDGET = [
     {"type": "tv_week", "entity": "calendar.tv"}, {"type": "weather_forecast", "entity": "weather.forecast_home"},
     {"type": "todo_list", "entity": "todo.chores"}, {"type": "flight_tracker"},
     {"type": "sports_match", "league": "basketball/nba"}, {"type": "sports_racing", "series": "nascar"},
+    {"type": "notifications"}, {"type": "updates"}, {"type": "badge", "counts": "all"},
     {"type": "curve", "entity": "sensor.solar_pv_power"},
 ]
 
@@ -689,7 +690,9 @@ class TestTimeFormat(unittest.TestCase):
         self.assertEqual(todo.due_label({"due": at.isoformat()}, at.replace(hour=9))[0], "Today 2:05 PM")
         self.assertEqual(binding.now_text({"show": "now"}, at), "2:05 PM")
         self.assertIn("%-I:%M %p", binding.template_for({"entity": "sensor.door", "show": "last_changed", "format": "time"}))
-        self.assertEqual(sports._parse_espn_event({"date": at.isoformat(), "competitions": [{"status": {"type": {"state": "pre"}}}]},
+        # A kick-off today reads "Kick-off": today on the real clock, whatever day the tests run.
+        kick = datetime.now(TZ).replace(hour=14, minute=5, second=0, microsecond=0)
+        self.assertEqual(sports._parse_espn_event({"date": kick.isoformat(), "competitions": [{"status": {"type": {"state": "pre"}}}]},
                                                   "", tz_name="Europe/Bucharest", league="soccer/eng.1")["clock"], "Kick-off 2:05 PM")
         clock.use(False)
         self.assertEqual(clock.hm(at), "14:05")

@@ -1,12 +1,103 @@
 # Changelog
 
-## Unreleased
+## 0.20.0
+Add-on only; no firmware change, so nothing to reinstall on the panel.
+
+In short: your own icons and Iconify sets without the Custom Icons
+integration; Home Assistant's notifications, an Updates page and a count
+badge; a Batteries preset that shows what needs charging (or is charged);
+"Also notify my phone…" for alerts, through a normal Home Assistant
+automation; Bin day's wording made plain; no inspector row squeezes its
+label.
+The details:
+- **A badge for any page.** Insert › Widgets › **Badge** puts an icon with
+  a number in a solid dot on any page, like an app's icon on a phone: how
+  many updates are waiting, notifications, Repairs issues, or all of these
+  together (**Counts**, Updates to start with). It's not there at all when
+  the number is zero; over 99 it reads 99+. Its size is its box: drag it
+  bigger or smaller, and the note under it says how far away its number
+  reads, from the distance in **Check legibility from**. On a smaller
+  screen it keeps its real size instead of shrinking with the page.
+- **Updates waiting, on a page.** New page › Home › **Updates** lists every
+  update Home Assistant has waiting with its new version, grouped as Home
+  Assistant shows them: Home Assistant itself, add-ons, integrations (HACS)
+  and devices. More than fit end with "and 3 more"; a small screen leaves
+  out the group's column and a version it can't show whole. The page shows
+  only while something's waiting, and a version you skip in Home Assistant
+  drops off it.
+- **Home Assistant's notifications on a page.** New page › Home ›
+  **Notifications** lists the notifications behind Home Assistant's bell,
+  newest first, with how long ago each came ("12 min", "2 h", "Yesterday").
+  With one or two, what they say shows under them when it fits; more than
+  fit end with "and 3 more". The page shows only while there are any, and
+  one you dismiss in Home Assistant is gone at the next update. A device that
+  sleeps between updates shows the time each came instead, so nothing goes
+  stale while it sleeps.
+- **What needs you in Home Assistant, counted.** While a page uses them, the
+  add-on keeps three counts of its own: `sensor.epaper_notifications` (Home
+  Assistant's notifications, the bell), `sensor.epaper_updates` (updates
+  waiting; a version you skipped isn't counted) and `sensor.epaper_repairs`
+  (open Repairs issues, not the ones you ignored). A page's "Only when" or an
+  alert can use them, for example an alert when notifications go from none
+  to some. They aren't added to Home Assistant as entities: it has these
+  numbers already.
+- **Batteries, as a page or an alert.** New page › Batteries shows the
+  batteries that need charging, emptiest first, each with its level and
+  Home Assistant's battery glyph for it; or, the other way, the ones that
+  are charged. Pick which batteries it watches (the ones you swap start
+  ticked for Low, the ones you charge for Charged) and the level: 20% to
+  start with, and any battery can have its own in the inspector. The page
+  shows only while one is past it, with the other pages or as an alert. A
+  row each, so names read on every size; what doesn't fit says "and 3 more".
+- **Dynamic status can go by a number.** Besides On, Off and Any state,
+  Shows each can be Below a number or At least a number, so a heater
+  shows while above 25 °C, say. It has a List layout too, a row each. A
+  Dynamic status page that shows only while something on it does now says
+  so in words under Shows, instead of showing its template.
+- **An alert can notify your phone.** On an alert or an "Only when" page,
+  **Also notify my phone…** lets you pick your phone (or several), and Home
+  Assistant sends a notification when the alert takes over the panel or the
+  page starts showing. It's a normal automation in Home Assistant, made from
+  a blueprint the add-on installs ("When an e-paper alert fires, notify"):
+  change the message, add a title or keep it quiet for a while there, with
+  **Edit in Home Assistant** next to the page. Only a page you ask for gets
+  a sensor in Home Assistant (`binary_sensor.epaper_alert_<page>` or
+  `binary_sensor.epaper_showing_<page>`), and it keeps its ID if you rename
+  the page. **Stop notifying**, or deleting the page, offers to delete the
+  automation too; a sensor an automation still uses is never removed.
+  Needs the Mosquitto broker app. Add-on only, no firmware change.
+- **Your own icons and icon sets, without Custom Icons.** A new **Settings ›
+  Icons** (also **More icons…** in the icon picker) holds both:
+  - **Your own icons:** **Add icons** takes SVG files, or drop them on the
+    box. They're kept in `epaper/icons` in Home Assistant's configuration
+    folder, and used as `local:name`, as before. Icons in `custom_icons`
+    still work, so nothing has to move.
+  - **Iconify sets:** **Add a set** lists Iconify's single-color sets with a
+    few icons of each, its size and its license. A set is downloaded when you
+    add it, only that set, and works offline from then on. **Check for
+    updates** downloads only the sets that changed. If a download fails, the
+    set says why and offers **Try again**.
+  - **Coming from Custom Icons:** the sets you used keep drawing after this
+    update and after you uninstall Custom Icons, because the add-on keeps its
+    own copy. Its "Download Iconify icons" button breaks other integrations
+    (for example, camera video) until Home Assistant restarts, so you no
+    longer need it.
+- **Fixed: one odd SVG file could stop all your own icons loading.** A file
+  with thousands of groups inside groups made copying your icon folder fail
+  as a whole; now that one file is left out and the rest load. An icon with
+  sizes too large to be real is left out too: it used to leave other icons
+  blank in the editor's picker.
 - **No row squeezes its label or its control.** In the inspector, Settings
   and New page, a control that doesn't fit beside its label now goes under
   it, full width, with any note kept under the label. "Close to the day" on
   a Bin day read "Close / to / the / day" beside its menu, and "Starts
   showing" squeezed its note; a label too long for two lines takes the row
   too. Segmented controls follow the same rule.
+- **Bin day's "Close to the day" is two plain choices.** "Bin day ends: At
+  noon, At midnight" (then it counts to the next collection) and "Says:
+  Tomorrow, Today, or 1 day, 0 days", in place of one long menu. Numbers
+  can now last until midnight too. Bin days you set up before look the
+  same.
 
 ## 0.19.0
 Add-on only; no firmware change, so nothing to reinstall on the panel.

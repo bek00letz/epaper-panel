@@ -21,7 +21,9 @@ import companion
 import config
 import devices
 import frame_token
+import iconsets
 import kinds
+import notify
 import reach
 import runtime
 import timing
@@ -279,6 +281,60 @@ async def api_panel_device_post(request):
     ok, err = await link.set_device_setting(key, value) if link else (False, "the add-on can't reach this device")
     return web.json_response({"ok": ok, "error": err or None}, status=200 if ok or key in
                              ("sleep", "ghost_after", "ghost_mode", "clear_ghosting") else 400)
+
+
+def _notify_id(value) -> str:
+    nid = notify.clean_id(value)
+    if not nid:
+        raise web.HTTPBadRequest(text="That page has no notification to change.")
+    return nid
+
+
+async def api_notify_get(request):
+    """A page's phone notifications: its sensor and the automations that use it (notify.py).
+    ?id= the page's notify id; without one, only whether they can be set up here."""
+    nid = notify.clean_id(request.query.get("id"))
+    return web.json_response(await notify.status(runtime.HASS, nid))
+
+
+async def api_notify_targets(request):
+    """What can be notified (Home Assistant's notify entities), phones first."""
+    return web.json_response({"targets": await notify.targets(runtime.HASS)})
+
+
+async def api_notify_post(request):
+    """"Also notify my phone…": {page, id, tier, targets}. Makes the page's sensor, installs the
+    blueprint and makes an automation from it in Home Assistant."""
+    dev = _device(request)
+    body = await _json(request)
+    if not isinstance(body, dict):
+        raise web.HTTPBadRequest(text="expected {page, id, tier, targets}")
+    nid = _notify_id(body.get("id"))
+    page = str(body.get("page") or "").strip()
+    if not page:
+        raise web.HTTPBadRequest(text="Which page?")
+    targets = [t for t in body.get("targets") or [] if isinstance(t, str) and t.startswith("notify.") and valid_entity_id(t)]
+    tier = body.get("tier") if body.get("tier") in ("when", "alert") else "alert"
+    try:
+        made = await notify.set_up(runtime.HASS, nid=nid, design=dev["design"], page=page,
+                                   page_def={"tier": tier}, targets=targets)
+    except notify.SetupError as exc:
+        return web.json_response({"error": str(exc)}, status=409)
+    return web.json_response(made)
+
+
+async def api_notify_stop(request):
+    """Stop notifying: {id, delete: [automation ids]}. Deletes the automations named (only
+    ones made from our blueprint), then withdraws the sensor unless something still uses it."""
+    body = await _json(request)
+    if not isinstance(body, dict):
+        raise web.HTTPBadRequest(text="expected {id, delete}")
+    nid = _notify_id(body.get("id"))
+    delete = [str(d) for d in body.get("delete") or [] if isinstance(d, (str, int))]
+    try:
+        return web.json_response(await notify.stop(runtime.HASS, nid, delete))
+    except notify.SetupError as exc:
+        return web.json_response({"error": str(exc)}, status=409)
 
 
 async def api_draft_delete(request):
@@ -570,6 +626,17 @@ async def api_energy(request):
     if got is None:
         return web.json_response({"error": "Home Assistant didn't say how its Energy dashboard is set up"}, status=502)
     return web.json_response(got)
+
+
+async def api_batteries(request):
+    """Which battery sensors you charge yourself, by their device (sources.batteries):
+    {"batteries": {entity: true|false|null}}; null for one with no device, {} offline."""
+    from sources import batteries
+    try:
+        got = await batteries.fetch(runtime.SESSION)
+    except Exception as exc:
+        return web.json_response({"error": health.describe(exc)}, status=502)
+    return web.json_response({"batteries": got})
 
 
 async def api_changed(request):
@@ -1180,6 +1247,85 @@ async def api_icon_outlines(request):
     return web.json_response({"icons": out})
 
 
+async def api_iconsets_get(request):
+    """Settings › Icons: your own icons, the chosen Iconify sets and how each is doing
+    (iconsets.status). The editor asks again while one is downloading."""
+    return web.json_response(iconsets.status(), headers={"Cache-Control": "no-store"})
+
+
+async def api_iconsets_available(request):
+    """Add a set: the single-color sets Iconify offers, fetched only now (and kept); ?refresh=1
+    asks Iconify again."""
+    try:
+        got = await iconsets.available(runtime.SESSION, refresh=request.query.get("refresh") == "1")
+    except iconsets.SetError as exc:
+        return web.json_response({"error": str(exc)}, status=502)
+    have = set(iconsets.chosen())
+    return web.json_response({"sets": [{**s, "chosen": s["prefix"] in have} for s in got]})
+
+
+async def api_iconsets_samples(request):
+    """Previews for Add a set: {"prefixes": [...]} (the rows on screen, at most 24) -> {"samples":
+    {prefix: [record, ...]}}, outlines like any other icon's."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+    prefixes = body.get("prefixes") if isinstance(body, dict) else None
+    if not isinstance(prefixes, list) or len(prefixes) > 24 or not all(isinstance(p, str) and icons.PREFIX_RE.match(p) for p in prefixes):
+        return web.json_response({"error": "Ask for up to 24 sets by prefix."}, status=400)
+    return web.json_response({"samples": await iconsets.samples(runtime.SESSION, prefixes)})
+
+
+async def api_iconsets_add(request):
+    """Choose a set, or try one again: {"prefix"}. It downloads in the background."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+    prefix = body.get("prefix") if isinstance(body, dict) else None
+    if not isinstance(prefix, str) or not icons.PREFIX_RE.match(prefix):
+        return web.json_response({"error": "Choose a set from the list."}, status=400)
+    try:
+        await iconsets.add(runtime.SESSION, prefix, wait=1.5)
+    except iconsets.SetError as exc:
+        return web.json_response({"error": str(exc)}, status=502)
+    return web.json_response(iconsets.status())
+
+
+async def api_iconsets_remove(request):
+    prefix = request.match_info["prefix"]
+    if not icons.PREFIX_RE.match(prefix):
+        raise web.HTTPNotFound()
+    await iconsets.remove(prefix)
+    return web.json_response(iconsets.status())
+
+
+async def api_iconsets_check(request):
+    """Check for updates: each chosen set, in the background; the status says how it went."""
+    await iconsets.check_updates(runtime.SESSION)
+    return web.json_response(iconsets.status())
+
+
+async def api_icons_own(request):
+    """Add icons: {"files": [{"name", "svg"}]} (at most 40 at once, and under the editor's 1 MB a
+    request) saved into the own folder as cleaned copies, then used."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = None
+    files = body.get("files") if isinstance(body, dict) else None
+    if not isinstance(files, list) or not files or len(files) > 40 or not all(isinstance(f, dict) for f in files):
+        return web.json_response({"error": "Choose up to 40 SVG files at a time."}, status=400)
+    loop = asyncio.get_running_loop()
+    try:
+        said = await loop.run_in_executor(None, iconsets.save_own, files)
+    except OSError as exc:
+        return web.json_response({"error": f"Couldn't save into {iconsets.OWN_FOLDER.as_posix()}: {health.describe(exc)}"}, status=500)
+    await loop.run_in_executor(None, lambda: iconsets.copy_custom(force=True))
+    return web.json_response({**said, **iconsets.status()})
+
+
 async def api_displays(request):
     """Catalog of supported CrowPanel e-paper hardware models."""
     on = {k.id for k in kinds.enabled_kinds()}
@@ -1217,6 +1363,10 @@ def make_apps():
         web.get("/api/layouts", api_layouts_get),
         web.put("/api/layouts", api_layouts_put),
         web.get("/api/draft", api_draft_get),
+        web.get("/api/notify", api_notify_get),
+        web.get("/api/notify/targets", api_notify_targets),
+        web.post("/api/notify", api_notify_post),
+        web.post("/api/notify/stop", api_notify_stop),
         web.put("/api/draft", api_draft_put),
         web.delete("/api/draft", api_draft_delete),
         web.get("/api/panel-device", api_panel_device_get),
@@ -1229,6 +1379,7 @@ def make_apps():
         web.get("/api/changed", api_changed),
         web.get("/api/entity_states", api_entity_states),
         web.get("/api/energy", api_energy),
+        web.get("/api/batteries", api_batteries),
         web.get("/api/catalog", api_catalog),
         web.get("/api/timezones", api_timezones),
         web.post("/api/shows-time", api_shows_time),
@@ -1261,6 +1412,13 @@ def make_apps():
         web.post("/api/panel-setup/esphome", api_panel_setup_esphome),
         web.get("/api/icons", api_icons),
         web.post("/api/icons/outlines", api_icon_outlines),
+        web.post("/api/icons/own", api_icons_own),
+        web.get("/api/iconsets", api_iconsets_get),
+        web.get("/api/iconsets/available", api_iconsets_available),
+        web.post("/api/iconsets", api_iconsets_add),
+        web.post("/api/iconsets/check", api_iconsets_check),
+        web.post("/api/iconsets/samples", api_iconsets_samples),
+        web.delete("/api/iconsets/{prefix}", api_iconsets_remove),
         web.get("/api/mdi/font", api_mdi_font),
         web.get("/api/mdi/list", api_mdi_list),
         web.get("/api/mdi/all", api_mdi_all),
