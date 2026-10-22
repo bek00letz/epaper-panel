@@ -679,8 +679,8 @@ class FakeIconify:
 
     def get(self, url, headers=None, allow_redirects=True, timeout=None):
         assert not allow_redirects, url
-        if url.startswith(iconsets.ICONIFY_API + "/"):         # a few icons of a set: /ph.json?icons=a,b
-            path, _, query = url[len(iconsets.ICONIFY_API):].partition("?icons=")
+        if url.startswith(iconsets.iconify_api() + "/"):         # a few icons of a set: /ph.json?icons=a,b
+            path, _, query = url[len(iconsets.iconify_api()):].partition("?icons=")
             self.asked.append((path, query))
             if self.down:
                 import aiohttp
@@ -691,8 +691,8 @@ class FakeIconify:
             want = urllib.parse.unquote(query).split(",")
             return FakeIconifyResponse(200, json.dumps({**whole, "icons": {n: i for n, i in whole["icons"].items() if n in want},
                                                          "aliases": {n: a for n, a in whole.get("aliases", {}).items() if n in want}}).encode())
-        assert url.startswith(iconsets.ICONIFY + "/"), url
-        path = url[len(iconsets.ICONIFY):]
+        assert url.startswith(iconsets.iconify_base() + "/"), url
+        path = url[len(iconsets.iconify_base()):]
         self.asked.append((path, (headers or {}).get("If-None-Match", "")))
         if self.down:
             import aiohttp

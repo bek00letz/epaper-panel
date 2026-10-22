@@ -52,6 +52,7 @@ import aiohttp
 
 import config
 import health
+import services
 from render import icons, vector
 
 HEALTH = "Icons from Home Assistant"
@@ -482,8 +483,15 @@ def save_own(files, config_dir: Path | None = None) -> dict:
 # own connection. Kept as downloaded (`<prefix>.raw.json.gz`) and converted once
 # (`<prefix>.json.gz`), so nothing slow happens when other icons change.
 
-ICONIFY = "https://raw.githubusercontent.com/iconify/icon-sets/master"
-ICONIFY_API = "https://api.iconify.design"      # a few icons of a set, for the previews in Add a set
+# Iconify's sets, and a few icons of a set for the previews in Add a set: services.py's "iconify"
+# (its "main" and "api" addresses), so a mirror the person set is asked instead.
+def iconify_base() -> str:
+    return services.url("iconify")
+
+
+def iconify_api() -> str:
+    return services.url("iconify", "api")
+
 SAMPLES = 6                                     # icons a preview shows, as Iconify's own list names them
 MAX_DOWNLOAD = 32 * 1024 * 1024     # the largest single-color set is about 13 MB
 CONVERTER = 1                       # raise when the conversion changes: every set is converted again
@@ -855,13 +863,13 @@ _check: dict = {}                   # the last Check for updates: {"at", "runnin
 UNREACHABLE = "Couldn't reach Iconify. Check that Home Assistant is online, then try again."
 
 
-async def _fetch(session, path: str, etag: str = "", *, base: str = ICONIFY, limit: int = MAX_DOWNLOAD,
+async def _fetch(session, path: str, etag: str = "", *, base: str | None = None, limit: int = MAX_DOWNLOAD,
                  total: float = 180) -> tuple[bytes | None, str]:
     """A file of Iconify's (bytes, its ETag); (None, etag) when it hasn't changed since `etag`.
     Only from Iconify's own addresses, over checked HTTPS, never redirected, never more than `limit`."""
     headers = {"If-None-Match": etag} if etag else {}
     try:
-        async with session.get(base + path, headers=headers, allow_redirects=False,
+        async with session.get((base or iconify_base()) + path, headers=headers, allow_redirects=False,
                                timeout=aiohttp.ClientTimeout(total=total, sock_connect=15, sock_read=30)) as r:
             if r.status == 304 and etag:
                 return None, etag
@@ -960,7 +968,7 @@ async def samples(session, prefixes) -> dict[str, list]:
     async def one(prefix):
         q = urllib.parse.quote(",".join(names[prefix]), safe=",")
         async with gate:
-            raw, _ = await _fetch(session, f"/{prefix}.json?icons={q}", base=ICONIFY_API, limit=256 * 1024, total=15)
+            raw, _ = await _fetch(session, f"/{prefix}.json?icons={q}", base=iconify_api(), limit=256 * 1024, total=15)
         data = json.loads(raw)
         if not isinstance(data, dict) or data.get("prefix") != prefix:
             raise ValueError("not the set asked for")

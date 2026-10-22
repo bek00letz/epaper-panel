@@ -122,6 +122,7 @@ to a path in a source's own format may come later on top.
 | 1.0 | Tested on what it claims, set up in minutes without YAML, in more than one language | – | – | the above |
 | Act from the panel (noted, not convinced) | A page that asks ("Bins out tonight?") and a press that answers, recorded in Home Assistant. The user finds the panel's buttons cumbersome and drives it with a scroll remote; it belongs with touch screens | medium | yes | a touch screen kind, if ever |
 | A first screen made for you (noted, not convinced) | Pages built from what Home Assistant knows for certain on first run. Picking entities for someone is a game of chance (calendars they don't use, an inverter's 185 sensors); the starter page and its guide stay the way in | medium | no | a reliable way to know what matters to someone |
+| A source in its own form (option B of 0.21's services, noted 22 Oct) | Pick, per field, where in a data source's own JSON a widget's field is (like "Value at"), with a live preview, so an API in another form can fill a Racing, Scores or Flights page without reshaping it first. 0.21 reads the add-on's own form from a source or a sensor's attributes; this would sit on top as an adapter (`shapes.read`) | medium | no | – |
 | A guide behind the starter page's QR code | A current guide with worked examples, at an address that won't move. Today the QR code opens the README's three-step "Your first page" | small–medium | no | – |
 
 ## Decided with the user (20 Oct)

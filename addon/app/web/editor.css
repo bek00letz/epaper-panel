@@ -442,6 +442,10 @@ button.uopen:focus-visible { outline: 2px solid var(--accent); outline-offset: -
 .uopen .un { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 3em; }
 .uopen .uw { color: var(--fg-2); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1 1 0; min-width: 0; }
 .urow .btn.small { flex: none; }
+/* An outside service not answering (services.js): its name, then since when and why, wrapped. */
+.uopen.svc { flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; padding: 6px 4px; }
+.uopen.svc .un { display: flex; align-items: center; gap: 6px; max-width: 100%; }
+.uopen.svc .uw { white-space: normal; flex: none; }
 .menu { width: auto; min-width: 220px; padding: 5px; }
 .mi { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 30px; padding: 4px 10px 4px 8px; border: 0; border-radius: var(--r-inner); background: none; text-align: left; cursor: default; font-size: 13px; }
 .mi .ml { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 280px; }
@@ -635,6 +639,26 @@ button.uopen:focus-visible { outline: 2px solid var(--accent); outline-offset: -
 .gr small.bad { color: var(--red); }
 /* Shown only when it takes a while: a quick answer never flashes it. */
 .gr small.waiting, .fnote.waiting { animation: fadein var(--t) var(--spring) 0.4s both; }
+/* Settings › Services (services.js): a service's own words for its error, for whoever reports it;
+   what Try again found; the row the status card opened, marked until the pane is left. */
+.gr small.detail { font: 11px var(--mono); color: var(--fg-3); overflow-wrap: anywhere; }
+.gr small.good { color: var(--green); }
+.gr .addr { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.gr .addr small { flex: 1 1 14em; min-width: 0; margin: 0; }
+.gr .addr code { font: 11px var(--mono); overflow-wrap: anywhere; }
+.gr .addr .addrlab { flex-basis: 100%; font-size: 12px; color: var(--fg-2); }
+.gr .addr .inp { flex: 1 1 16em; min-width: 0; width: auto; }
+.gr .addr .addrsaid { flex-basis: 100%; }
+.group.advanced .trow { min-height: 48px; padding: 8px 0; }
+/* A widget's data (data.js): its fields now, and the add-on's form for a source of yours. */
+dl.fields { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 12px; margin: 4px 0 8px; font-size: 12.5px; }
+dl.fields dt { color: var(--fg-2); }
+dl.fields dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+ul.formlist { margin: 2px 0 6px; padding-left: 18px; font-size: 12px; color: var(--fg-2); line-height: 1.5; }
+ul.formlist code, .datarows code { font: 11.5px var(--mono); color: var(--fg); }
+pre.formex { font: 11px/1.45 var(--mono); background: var(--fill); border-radius: var(--r-inner); padding: 8px 10px; margin: 4px 0 8px; overflow-x: auto; max-height: 220px; white-space: pre; }
+pre.formex:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.gr.svc.focus { box-shadow: inset 3px 0 0 var(--accent); margin-left: -14px; padding-left: 14px; }
 .group.dropping { box-shadow: 0 0 0 2px var(--accent); }
 .subhead { display: flex; align-items: center; gap: 4px; margin: 0 0 8px -8px; }
 .subhead h4 { margin: 0; font: 600 15px var(--font-display); }

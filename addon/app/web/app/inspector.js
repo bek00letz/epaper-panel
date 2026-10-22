@@ -12,6 +12,7 @@ import { zonesEditor } from "./zones.js";
 import { staleNote, changesEvery, pageChangesEvery, sleepsBetweenUpdates, batterySensors, ruleTicks, isLowSensor } from "./presets.js";
 import { busyNote, leftOutNote } from "./busyday.js";
 import { notifyRows } from "./notify.js";
+import { dataRows } from "./data.js";
 import { widget, leagueOptions, seriesOptions, sportWord, stateWords } from "./catalog.js";
 import { FROM, CLOCK_FORMATS, sourceOf, switchSource, isTemplate } from "./shows.js";
 import { isFollowing, startFollowing, stopFollowing, setEntity, addState, removeState, setStateIcon, setStateLook, suggestions, wordFor,
@@ -494,6 +495,7 @@ function typeSections(app, el, set, i) {
         h("p", { class: "fnote" }, before, h("code", { class: "sel", text: getWidgetSensorId(el) || f.none || "" }), after)));
     }
     else if (f.kind === "note") s.append(h("p", { class: "fnote" }, f.text || ""));   // the descriptor's words, as text
+    else if (f.kind === "data") s.append(...dataRows(app, el, (id, onPick) => entityButton(app, id, onPick, { allowNone: true })));   // where it reads from, and its own fields (shapes.py)
     else if (f.kind === "unit") { const r = unitRow(app, el); if (r) s.append(r); }   // follows its sensor (review 2 #3)
     else if (f.kind === "place") s.append(...placeRows(app, el, set));
     else if (f.kind === "countdown") s.append((el.to === "bins" ? binsEditor : dateEditor)(el, () => app.doc.commit()));

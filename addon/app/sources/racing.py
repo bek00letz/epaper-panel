@@ -27,26 +27,30 @@ import aiohttp
 
 import health
 import runtime
+import services
 from render import clock
 from sources.geo import get_home_timezone
 
 
 @dataclass(frozen=True)
 class Calendar:
-    """One place a series' race calendar is published, and how it's read (a key of `_READERS`)."""
+    """One place a series' race calendar is published: the service it's at (services.py, so a mirror
+    the person set is asked instead), the path there, and how it's read ("sessions", "events", "espn")."""
     reader: str
-    url: str                # "{year}": published a year at a time; this year's and next year's are read
+    service: str            # services.py's id
+    path: str = ""          # "{year}": published a year at a time; this year's and next year's are read
 
-
-_SPORTSTIMES = "https://raw.githubusercontent.com/sportstimes/f1/main/_db/{db}/{{year}}.json"
+    @property
+    def url(self) -> str:
+        return services.url(self.service) + self.path
 
 
 def _sportstimes(db: str) -> Calendar:
     """The community session database behind f1calendar.com and its siblings."""
-    return Calendar("sessions", _SPORTSTIMES.format(db=db))
+    return Calendar("sessions", "racing_calendar", f"/{db}/{{year}}.json")
 
 
-ESPN_CALENDAR = Calendar("espn", "")    # the series' ESPN scoreboard (`Series.espn`): its season and this weekend
+ESPN_CALENDAR = Calendar("espn", "espn")    # the series' ESPN scoreboard (`Series.espn`): its season and this weekend
 
 
 @dataclass(frozen=True)
@@ -70,8 +74,8 @@ SERIES = {s.slug: s for s in (
     # Formula E's own calendar page carries the season as schema.org events (dates only).
     Series("fe", "FE", "Formula E", "Formula E World Championship", "ePrix Circuit",
            ("fe", "formula_e", "formula-e", "formulae"), espn=None,
-           calendars=(Calendar("events", "https://www.fiaformulae.com/en/calendar"), _sportstimes("fe"),
-                      Calendar("sessions", "https://formulaecal.com/api/year/{year}")),
+           calendars=(Calendar("events", "formula_e"), _sportstimes("fe"),
+                      Calendar("sessions", "formula_e_calendar", "/{year}")),
            icon="mdi:car-electric"),
     Series("nascar", "NASCAR", "NASCAR", "NASCAR Cup Series", "Speedway",
            ("nascar", "nascar-premier", "nascar_cup"), espn="nascar-premier",
@@ -122,7 +126,7 @@ class Race:
     day: date                   # race day, by which calendars are matched
     sessions: tuple = ()        # ((label, start UTC, hours), ...) by start; () when only the day is known
     season: str = ""            # what its calendar calls the season ("Season 13"), when it says
-
+    result: tuple = ()          # its order, when the calendar knows it ({pos, driver, team, gap}): your own source
     @property
     def start(self) -> datetime:
         return self.sessions[0][1] if self.sessions else datetime.combine(self.day, datetime.min.time(), timezone.utc)
@@ -252,6 +256,12 @@ def _same(a: Race, b: Race) -> bool:
 _calendar_cache: dict[str, dict] = {}
 
 
+def forget_failed() -> None:
+    """Calendars that failed are asked again at the next fetch, not after RETRY_EVERY (Try again)."""
+    for url in [u for u, c in _calendar_cache.items() if not c["ok"]]:
+        del _calendar_cache[url]
+
+
 async def _read_calendar(session, cal: Calendar, url: str, missing_ok: bool) -> list[Race] | None:
     """One calendar's races; [] when it isn't published (yet), None when it couldn't be read."""
     try:
@@ -329,7 +339,7 @@ async def _board(session, ser: Series) -> dict | None:
     t = time.time()
     if cached and t - cached["at"] < (60.0 if cached["live"] else 600.0):
         return cached["data"]
-    url = f"https://site.api.espn.com/apis/site/v2/sports/racing/{ser.espn}/scoreboard"
+    url = f"{services.url('espn')}/racing/{ser.espn}/scoreboard"
     data = None
     try:
         async with session.get(url, headers=HEADERS, timeout=TIMEOUT) as r:
@@ -415,6 +425,9 @@ def _describe(ser: Series, pick: Pick, tz_name: str | None) -> dict:
         data.update(clock="SCHEDULED", detail=f"Race day · {_day(race.day)}")
         return data
     label = session_name(pick.session[0])
+    data["session"], data["session_start"] = label, pick.session[1].isoformat()
+    if race.result and pick.status in ("IN", "POST"):
+        data["standings"] = [dict(r) for r in race.result]
     data["detail"] = f"{label} · {_at(pick.session[1], tz_name)}"
     data["clock"] = {"IN": f"{label} LIVE", "PRE": "SCHEDULED"}.get(pick.status, "FINAL")
     return data
@@ -431,8 +444,19 @@ def _board_event(board, race: Race | None):
     return None
 
 
+async def _races(session, ser: Series, now: datetime, own: str) -> list[Race] | None:
+    """The season a page draws from: your own source's races (shapes.py) when it has one, or every
+    calendar the series is published in, merged."""
+    if own:
+        import shapes
+        return await shapes.read_own(session, own, "racing")
+    return await _season(session, ser, now)
+
+
 @runtime.live(30)
-async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_name=None):
+async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_name=None, own=""):
+    """What a race page draws. `own`: the id of your data source that gives its races in the add-on's
+    own fields, in place of the calendars and ESPN."""
     if not tz_name:
         tz_name = await get_home_timezone(session)
     ser = series_of(str(entity_or_series or "f1").strip().lower())
@@ -464,11 +488,13 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_na
 
     # 2. The season, every calendar merged, and the one rule
     now = datetime.now(timezone.utc)
-    races = await _season(session, ser, now)
+    races = await _races(session, ser, now, own)
     if races is None:
         return None                     # no calendar could be read: nothing yet, never a made-up race
     pick = _pick(races, now)
     data = _describe(ser, pick, tz_name)
+    if own:
+        return data                     # your source says it all: ESPN's isn't asked
 
     # 3. ESPN's scoreboard on this race: its live status, names and standings
     board = await _board(session, ser)
@@ -525,7 +551,7 @@ def series_slug(series) -> tuple[str, str]:
 
 
 @runtime.live(60)
-async def compute_racing_active_window(session, series="f1", pre_buffer_hours=2.0, post_buffer_hours=2.0, window_mode="session", tz_name=None):
+async def compute_racing_active_window(session, series="f1", pre_buffer_hours=2.0, post_buffer_hours=2.0, window_mode="session", tz_name=None, own=""):
     """Compute whether a Motorsport series (F1, Formula E, NASCAR, IndyCar) is in an active session/race-weekend window."""
     if not tz_name:
         tz_name = await get_home_timezone(session)
@@ -533,7 +559,7 @@ async def compute_racing_active_window(session, series="f1", pre_buffer_hours=2.
     slug, series_title = ser.slug, ser.title
 
     w_mode = "weekend" if str(window_mode).strip().lower() == "weekend" else "session"
-    cache_key = f"{slug}:{pre_buffer_hours}:{post_buffer_hours}:{w_mode}:{tz_name}"
+    cache_key = f"{slug}:{pre_buffer_hours}:{post_buffer_hours}:{w_mode}:{tz_name}:{own}"
     now_ts = time.time()
     cached = _racing_window_cache.get(cache_key)
     if cached and (now_ts - cached["at"] < 60.0):
@@ -546,7 +572,7 @@ async def compute_racing_active_window(session, series="f1", pre_buffer_hours=2.
     sessions_list: list[tuple[str, datetime, float]] = []  # (session_label, start_utc, duration_hours)
 
     # The race weekend on now or next, from the same season the page shows
-    races = await _season(session, ser, now_utc)
+    races = await _races(session, ser, now_utc, own)
     if races is None:
         return None                                           # no calendar could be read yet
     race = next((r for r in races if r.end + timedelta(hours=max(post_buffer_hours, AFTER_HOURS)) >= now_utc), None)
@@ -555,7 +581,7 @@ async def compute_racing_active_window(session, series="f1", pre_buffer_hours=2.
         circuit_name = race.location
         # A race known only by its day: the whole day (UTC), until a calendar has its sessions
         sessions_list = list(race.sessions) or [("Race day", race.start, 24.0)]
-        ev = _board_event(await _board(session, ser), race)
+        ev = None if own else _board_event(await _board(session, ser), race)
         if ev is not None and (((ev.get("status") or {}).get("type") or {}).get("state") == "in"
                                or any(((c.get("status") or {}).get("type") or {}).get("state") == "in"
                                       for c in ev.get("competitions") or [])):

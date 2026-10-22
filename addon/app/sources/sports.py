@@ -1,6 +1,7 @@
 """Football and other ESPN leagues: matches and matchday windows."""
 
 import health
+import services
 import json
 import time
 from dataclasses import dataclass
@@ -70,20 +71,57 @@ def busiest_day(raw) -> int:
     return next((lg.busiest_day for lg in LEAGUES if lg.path == path), 1)
 
 
-def _parse_espn_event(ev, league_title="", tz_name=None, league="soccer"):
-    said = sport.words(league)
+def _espn_game(ev) -> dict:
+    """ESPN's event as the add-on's own game fields (shapes.py "scores"): what a source of yours can
+    give in its place, and all `game_view` draws from."""
     comp = (ev.get("competitions") or [{}])[0]
     competitors = comp.get("competitors") or []
     home = next((c for c in competitors if c.get("homeAway") == "home"), competitors[0] if competitors else {})
     away = next((c for c in competitors if c.get("homeAway") == "away"), competitors[1] if len(competitors) > 1 else {})
-
     st_type = comp.get("status", {}).get("type", {})
-    st_state = st_type.get("state") or "pre"
-    st_desc = st_type.get("description") or st_type.get("detail") or "Scheduled"
-    clock_val = comp.get("status", {}).get("displayClock")
+    home_id = str(home.get("team", {}).get("id") or "")
+    scorers = {"home": [], "away": []}
+    for dt in comp.get("details", []):
+        t_txt = dt.get("type", {}).get("text") or ""
+        clk = dt.get("clock", {}).get("displayValue") or ""
+        athletes = dt.get("athletesInvolved") or []
+        p_name = athletes[0].get("displayName") if athletes else ""
+        if p_name and ("Goal" in t_txt or "Point" in t_txt or "Touchdown" in t_txt or "Home Run" in t_txt):
+            side = "home" if str(dt.get("team", {}).get("id") or "") == home_id else "away"
+            scorers[side].append(f"{p_name} ({clk})" if clk else p_name)
+
+    def team(c, fallback):
+        t = c.get("team", {})
+        return t.get("displayName") or t.get("shortDisplayName") or fallback
+
+    def names(c):
+        t = c.get("team") or {}
+        return f"{t.get('displayName', '')} {t.get('shortDisplayName', '')} {t.get('abbreviation', '')}"
+    return {
+        "id": str(ev.get("id") or comp.get("id") or f"{home_id}_{str(away.get('team', {}).get('id') or '')}"),
+        "home": team(home, "HOME"), "away": team(away, "AWAY"),
+        "home_score": home.get("score"), "away_score": away.get("score"),
+        "status": st_type.get("state") or "pre",
+        "status_text": st_type.get("description") or st_type.get("detail") or "",
+        "clock": comp.get("status", {}).get("displayClock") or "",
+        "start": ev.get("date") or comp.get("date") or "",
+        "venue": comp.get("venue", {}).get("fullName") or "",
+        "home_record": (home.get("records") or [{}])[0].get("summary", ""),
+        "away_record": (away.get("records") or [{}])[0].get("summary", ""),
+        "home_scorers": scorers["home"], "away_scorers": scorers["away"],
+        "names": f"{names(home)} {names(away)}",
+    }
+
+
+def game_view(g: dict, league_title="", tz_name=None, league="soccer") -> dict:
+    """A game in the add-on's own fields, as a Scores page draws it: the same for ESPN's and yours."""
+    said = sport.words(league)
+    st_state = g.get("status") or "pre"
+    st_desc = g.get("status_text") or {"pre": "Scheduled", "in": "Live", "post": "Final"}.get(st_state, "Scheduled")
+    clock_val = g.get("clock")
     is_live = (st_state == "in")
 
-    date_str = ev.get("date") or comp.get("date") or ""
+    date_str = g.get("start") or ""
     kickoff_time_str = ""
     kickoff_day_str = ""
     if date_str:
@@ -114,44 +152,44 @@ def _parse_espn_event(ev, league_title="", tz_name=None, league="soccer"):
     else:
         clock_badge = st_desc
 
-    venue_title = comp.get("venue", {}).get("fullName") or ""
-
-    home_id = str(home.get("team", {}).get("id") or "")
-    events_home = []
-    events_away = []
-    for dt in comp.get("details", []):
-        t_txt = dt.get("type", {}).get("text") or ""
-        clk = dt.get("clock", {}).get("displayValue") or ""
-        athletes = dt.get("athletesInvolved") or []
-        p_name = athletes[0].get("displayName") if athletes else ""
-        if p_name and ("Goal" in t_txt or "Point" in t_txt or "Touchdown" in t_txt or "Home Run" in t_txt):
-            entry_str = f"{p_name} ({clk})" if clk else p_name
-            if str(dt.get("team", {}).get("id") or "") == home_id:
-                events_home.append(entry_str)
-            else:
-                events_away.append(entry_str)
-
     return {
-        "id": str(ev.get("id") or comp.get("id") or f"{home_id}_{str(away.get('team', {}).get('id') or '')}"),
-        "league": league_title or said.event.upper(),
-        "venue": venue_title,
+        "id": g.get("id") or "",
+        "league": g.get("league") or league_title or said.event.upper(),
+        "venue": g.get("venue") or "",
         "clock": clock_badge,
         "status": st_state.upper(),
         "is_live": is_live,
         "kickoff_iso": date_str,
         "kickoff_time": kickoff_time_str,
-        "home_team": home.get("team", {}).get("displayName") or home.get("team", {}).get("shortDisplayName") or "HOME",
-        "home_score": home.get("score") if home.get("score") is not None else "-",
-        "home_stats": (home.get("records") or [{}])[0].get("summary", ""),
-        "away_team": away.get("team", {}).get("displayName") or away.get("team", {}).get("shortDisplayName") or "AWAY",
-        "away_score": away.get("score") if away.get("score") is not None else "-",
-        "away_stats": (away.get("records") or [{}])[0].get("summary", ""),
-        "events_home": ", ".join(events_home[:3]),
-        "events_away": ", ".join(events_away[:3])
+        "home_team": g.get("home") or "HOME",
+        "home_score": g.get("home_score") if g.get("home_score") is not None else "-",
+        "home_stats": g.get("home_record") or "",
+        "away_team": g.get("away") or "AWAY",
+        "away_score": g.get("away_score") if g.get("away_score") is not None else "-",
+        "away_stats": g.get("away_record") or "",
+        "events_home": ", ".join((g.get("home_scorers") or [])[:3]),
+        "events_away": ", ".join((g.get("away_scorers") or [])[:3]),
     }
 
 
+def _parse_espn_event(ev, league_title="", tz_name=None, league="soccer"):
+    return game_view(_espn_game(ev), league_title, tz_name, league)
+
+
+async def _own_games(session, own: str) -> list[dict] | None:
+    import shapes
+    return await shapes.read_own(session, own, "scores")
+
+
 _sports_window_cache: dict[str, dict] = {}
+
+
+def _start_of(g: dict) -> datetime | None:
+    try:
+        dt = datetime.fromisoformat(str(g.get("start") or "").replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
 def preferred_teams(team) -> list[str]:
@@ -181,14 +219,14 @@ def league_slug(entity_or_league) -> tuple[str, str]:
 
 
 @runtime.live(60)
-async def compute_sports_active_window(session, entity_or_league="soccer/eng.1", pre_buffer_hours=2.0, post_buffer_hours=2.0, tz_name=None, team=None):
+async def compute_sports_active_window(session, entity_or_league="soccer/eng.1", pre_buffer_hours=2.0, post_buffer_hours=2.0, tz_name=None, team=None, own=""):
     if not tz_name:
         tz_name = await get_home_timezone(session)
     endpoint_path, slug = league_slug(entity_or_league)
     team_q = str(team or "").strip().lower()
     teams_q = preferred_teams(team)
 
-    cache_key = f"{endpoint_path}:{pre_buffer_hours}:{post_buffer_hours}:{tz_name}:{team_q}"
+    cache_key = f"{endpoint_path}:{pre_buffer_hours}:{post_buffer_hours}:{tz_name}:{team_q}:{own}"
     now_ts = time.time()
     cached = _sports_window_cache.get(cache_key)
     if cached and (now_ts - cached["at"] < 60.0):
@@ -205,66 +243,58 @@ async def compute_sports_active_window(session, entity_or_league="soccer/eng.1",
     headers = {"User-Agent": "Crowpanel-Epaper/0.8.27 (HomeAssistant Addon)"}
     timeout = aiohttp.ClientTimeout(total=6)
 
-    today_url = f"https://site.api.espn.com/apis/site/v2/sports/{endpoint_path}/scoreboard?dates={today_str}"
     events = []
     league_title = ""
-    try:
-        async with session.get(today_url, headers=headers, timeout=timeout) as r:
-            if r.status == 200:
-                data = await r.json()
-                events = data.get("events") or []
-                league_title = (data.get("leagues") or [{}])[0].get("name") or ""
-    except Exception as exc:
-        print(f"compute_sports_active_window error: {health.describe(exc)}", flush=True)
-
     yesterday_events = []
-    if not events or now_utc.hour < 12:
-        yest_url = f"https://site.api.espn.com/apis/site/v2/sports/{endpoint_path}/scoreboard?dates={yesterday_str}"
+    if own:
+        games = await _own_games(session, own)
+        if games is None:
+            return None                     # your source hasn't answered yet
+        day = now_utc.date()
+        events = [g for g in games if (_start_of(g) or now_utc).date() == day]
+        yesterday_events = [g for g in games if (_start_of(g) or now_utc).date() == day - timedelta(days=1)]
+        league_title = next((g["league"] for g in games if g.get("league")), "")
+    else:
+        today_url = f"{services.url('espn')}/{endpoint_path}/scoreboard?dates={today_str}"
         try:
-            async with session.get(yest_url, headers=headers, timeout=timeout) as r:
+            async with session.get(today_url, headers=headers, timeout=timeout) as r:
                 if r.status == 200:
-                    ydata = await r.json()
-                    yesterday_events = ydata.get("events") or []
-                    if not events:
-                        league_title = (ydata.get("leagues") or [{}])[0].get("name") or league_title
-        except Exception:
-            pass
+                    data = await r.json()
+                    events = [_espn_game(ev) for ev in data.get("events") or []]
+                    league_title = (data.get("leagues") or [{}])[0].get("name") or ""
+        except Exception as exc:
+            print(f"compute_sports_active_window error: {health.describe(exc)}", flush=True)
 
-    def _matches_team_filter(ev_obj):
-        if not teams_q:
-            return True
-        comp = (ev_obj.get("competitions") or [{}])[0]
-        for c in (comp.get("competitors") or []):
-            t_info = c.get("team") or {}
-            names = f"{t_info.get('displayName', '')} {t_info.get('shortDisplayName', '')} {t_info.get('abbreviation', '')}".lower()
-            if any(t in names for t in teams_q):
-                return True
-        return False
+        if not events or now_utc.hour < 12:
+            yest_url = f"{services.url('espn')}/{endpoint_path}/scoreboard?dates={yesterday_str}"
+            try:
+                async with session.get(yest_url, headers=headers, timeout=timeout) as r:
+                    if r.status == 200:
+                        ydata = await r.json()
+                        yesterday_events = [_espn_game(ev) for ev in ydata.get("events") or []]
+                        if not events:
+                            league_title = (ydata.get("leagues") or [{}])[0].get("name") or league_title
+            except Exception:
+                pass
 
-    filtered_today = [ev for ev in events if _matches_team_filter(ev)]
-    filtered_yesterday = [ev for ev in yesterday_events if _matches_team_filter(ev)]
+    def _matches_team_filter(g):
+        names = str(g.get("names") or f"{g.get('home', '')} {g.get('away', '')}").lower()
+        return not teams_q or any(t in names for t in teams_q)
+
+    filtered_today = [g for g in events if _matches_team_filter(g)]
+    filtered_yesterday = [g for g in yesterday_events if _matches_team_filter(g)]
     all_candidate_events = filtered_today + filtered_yesterday
 
     game_times = []
     is_live = False
-    today_parsed = []
+    today_parsed = [game_view(g, league_title, tz_name=tz_name, league=endpoint_path) for g in filtered_today]
 
-    for ev in filtered_today:
-        parsed = _parse_espn_event(ev, league_title, tz_name=tz_name, league=endpoint_path)
-        today_parsed.append(parsed)
-
-    for ev in all_candidate_events:
-        st_state = ev.get("status", {}).get("type", {}).get("state")
-        if st_state == "in":
+    for g in all_candidate_events:
+        if g.get("status") == "in":
             is_live = True
-        d_str = ev.get("date")
-        if d_str:
-            try:
-                dt = datetime.fromisoformat(d_str.replace("Z", "+00:00"))
-                if ev in filtered_today or st_state == "in":
-                    game_times.append(dt)
-            except Exception:
-                pass
+        dt = _start_of(g)
+        if dt is not None and (g in filtered_today or g.get("status") == "in"):
+            game_times.append(dt)
 
     first_ko = min(game_times) if game_times else None
     last_ko = max(game_times) if game_times else None
@@ -317,9 +347,19 @@ async def compute_sports_active_window(session, entity_or_league="soccer/eng.1",
 
 
 @runtime.live(30)
-async def fetch_sports_match(session, entity_or_league="soccer/eng.1", team=None, fallback=None, tz_name=None):
+async def fetch_sports_match(session, entity_or_league="soccer/eng.1", team=None, fallback=None, tz_name=None, own=""):
+    """What a Scores page draws. `own`: the id of your data source that gives its games in the add-on's
+    own fields, in place of ESPN."""
     if not tz_name:
         tz_name = await get_home_timezone(session)
+    if own:
+        games = await _own_games(session, own)
+        if games is None:
+            return None
+        title = next((g["league"] for g in games if g.get("league")), "")
+        league = path_of(entity_or_league)
+        return sorted((game_view(g, title, tz_name=tz_name, league=league) for g in games),
+                      key=lambda m: match_priority(m, team))
     now = time.time()
     raw_input = str(entity_or_league or "soccer/eng.1").strip()
     cache_key = f"{raw_input}:{str(team or '').lower()}:{tz_name}"
@@ -376,8 +416,8 @@ async def fetch_sports_match(session, entity_or_league="soccer/eng.1", team=None
     now_utc = datetime.now(timezone.utc)
     today_str = now_utc.strftime("%Y%m%d")
 
-    url_today = f"https://site.api.espn.com/apis/site/v2/sports/{endpoint_path}/scoreboard?dates={today_str}"
-    url_default = f"https://site.api.espn.com/apis/site/v2/sports/{endpoint_path}/scoreboard"
+    url_today = f"{services.url('espn')}/{endpoint_path}/scoreboard?dates={today_str}"
+    url_default = f"{services.url('espn')}/{endpoint_path}/scoreboard"
     headers = {"User-Agent": "Crowpanel-Epaper/0.8.27 (HomeAssistant Addon)"}
     timeout = aiohttp.ClientTimeout(total=6)
 

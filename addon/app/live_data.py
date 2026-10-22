@@ -135,6 +135,12 @@ class LiveData:
         finally:
             news.clear()
 
+    def retry_failed(self):
+        """Values whose last fetch failed are fetched again at the next tick (a person's Try again)."""
+        for e in self._entries.values():
+            if e.error is not None:
+                e.attempted_at = float("-inf")
+
     def status(self) -> list[dict]:
         now = self.clock()
         return [{"source": e.name, "has_value": e.has_value, "error": e.error,

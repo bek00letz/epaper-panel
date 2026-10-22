@@ -8,6 +8,7 @@ import urllib.parse
 import devices
 import feeds
 import health
+import shapes
 import notify
 import runtime
 from config import HA_BASE, HA_TOKEN, PUBLISH_VIA_STATES_API, RETIRED_SENSORS, valid_entity_id
@@ -82,8 +83,8 @@ async def publish_category_sensors(session, cur_f):
         print(f"publish category sensors error: {health.describe(exc)}", flush=True)
 
 
-async def publish_flights(session, lat, lon, radius, label, suffix=""):
-    aircraft = await fetch_overhead_aircraft(session, radius_km=radius, lat=lat, lon=lon)
+async def publish_flights(session, lat, lon, radius, label, suffix="", own=""):
+    aircraft = await fetch_overhead_aircraft(session, radius_km=radius, lat=lat, lon=lon, own=own)
     if aircraft is None:
         # No list, or only one too old to trust: unknown, not a stale count.
         await publish_entity(session, f"sensor.epaper_flights_overhead{suffix}", None, None, keep_attrs=True)
@@ -137,8 +138,8 @@ async def publish_sources(session):
     ctx = {"ha_base": HA_BASE, "ha_token": HA_TOKEN, "session": session}
     for src in srcs:
         slug = feeds.clean_slug(src.get("name"))
-        if src.get("type") not in feeds.REGISTRY or not slug:
-            continue
+        if src.get("type") not in feeds.REGISTRY or not slug or feeds.fills(src):
+            continue                    # one that fills a widget isn't a sensor: the widget reads it
         name = f"Source “{slug}”"
 
         async def fetch(src=src, name=name):
@@ -247,20 +248,21 @@ async def publish_computed(session):
     # 1. Aircraft overhead: one pair of sensors per distinct place. The first
     #    place keeps the original names, so existing pages and automations stay
     #    put; others get the place's label (or coordinates) as a suffix.
+    #    A place's planes come from where its first element says: the add-on's feeds, or your source.
     places = []
     for el in flight_elements:
-        p = place_of(el)
+        p = (*place_of(el), shapes.own_source(el))
         if all(p[:3] != q[:3] for q in places):
             places.append(p)
     if not places and ("epaper_flights_overhead" in spec_text or "epaper_closest_aircraft" in spec_text
                        or "overhead_aircraft_count" in spec_text):
-        places.append((None, None, 35.0, ""))
-    for i, (lat, lon, radius, label) in enumerate(places):
+        places.append((None, None, 35.0, "", ""))
+    for i, (lat, lon, radius, label, own) in enumerate(places):
         suffix = "" if i == 0 else "_" + (re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")
                                            or f"{lat:.2f}_{lon:.2f}".replace("-", "m").replace(".", "_"))
         wanted |= {f"sensor.epaper_flights_overhead{suffix}", f"sensor.epaper_closest_aircraft{suffix}"}
         try:
-            await publish_flights(session, lat, lon, radius, label, suffix)
+            await publish_flights(session, lat, lon, radius, label, suffix, own)
         except Exception as exc:
             print(f"publish aircraft sensor failed: {health.describe(exc)}", flush=True)
 
@@ -279,16 +281,16 @@ async def publish_computed(session):
                 post_b = float(el.get("post_buffer_hours")) if el.get("post_buffer_hours") is not None else 2.0
             except (ValueError, TypeError):
                 post_b = 2.0
-            leagues_to_publish.append((lg, pre_b, post_b, el_tz, team))
+            leagues_to_publish.append((lg, pre_b, post_b, el_tz, team, shapes.own_source(el)))
             wanted.add(f"sensor.epaper_sports_{league_slug(lg)[1]}")
 
         seen_leagues = set()
-        for lg, pre_b, post_b, s_tz, team in leagues_to_publish:
+        for lg, pre_b, post_b, s_tz, team, own in leagues_to_publish:
             key = f"{lg}:{team or ''}"
             if key in seen_leagues:
                 continue
             seen_leagues.add(key)
-            win_info = await compute_sports_active_window(session, lg, pre_buffer_hours=pre_b, post_buffer_hours=post_b, tz_name=s_tz, team=team)
+            win_info = await compute_sports_active_window(session, lg, pre_buffer_hours=pre_b, post_buffer_hours=post_b, tz_name=s_tz, team=team, own=own)
             if not win_info:
                 continue                                  # not fetched yet
             slug = win_info["slug"]
@@ -344,20 +346,20 @@ async def publish_computed(session):
                 post_b = float(el.get("post_buffer_hours")) if el.get("post_buffer_hours") is not None else 2.0
             except (ValueError, TypeError):
                 post_b = 2.0
-            series_to_publish.append((ser, pre_b, post_b, w_mode, el_tz))
+            series_to_publish.append((ser, pre_b, post_b, w_mode, el_tz, shapes.own_source(el)))
             wanted.add(f"sensor.epaper_racing_{series_slug(ser)[0]}")
 
         seen_series = set()
-        for ser, pre_b, post_b, w_mode, r_tz in series_to_publish:
+        for ser, pre_b, post_b, w_mode, r_tz, own in series_to_publish:
             if series_slug(ser)[0] in seen_series:       # "irl" and "indycar" are one sensor
                 continue
             seen_series.add(series_slug(ser)[0])
-            win_info = await compute_racing_active_window(session, ser, pre_buffer_hours=pre_b, post_buffer_hours=post_b, window_mode=w_mode, tz_name=r_tz)
+            win_info = await compute_racing_active_window(session, ser, pre_buffer_hours=pre_b, post_buffer_hours=post_b, window_mode=w_mode, tz_name=r_tz, own=own)
             if not win_info:
                 continue                                  # not fetched yet
             slug = win_info["slug"]
             sensor_id = f"sensor.epaper_racing_{slug}"
-            r_data = await fetch_racing_data(session, slug, tz_name=r_tz)
+            r_data = await fetch_racing_data(session, slug, tz_name=r_tz, own=own)
             r_icon = SERIES[slug].icon
             await publish_entity(
                 session, sensor_id, win_info["state"],

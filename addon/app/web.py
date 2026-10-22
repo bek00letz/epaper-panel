@@ -26,6 +26,7 @@ import kinds
 import notify
 import reach
 import runtime
+import services
 import timing
 from config import ADDON_VERSION, FRAME_PORT, HA_BASE, HA_TOKEN, INGRESS_GATEWAY, REFRESH, SLEEP_PAGE, WEB_DIR, valid_entity_id
 from fixture import load_fixture
@@ -158,6 +159,8 @@ async def status(request):
         # Every outside service and data source: last success, and the problem
         # if it is failing (also a problem sensor in Home Assistant).
         "services": health.status(),
+        # The ones whose problem sensor is on, in plain words, for the status card (services.py).
+        "service_problems": services.problems(),
         # How many pages the panel holds, and what was left out to fit: only for a device that keeps its
         # whole rotation in memory (Kind.room), which can run out. One that sleeps gets a page a wake.
         "fit": rt.fit if kinds.of(dev).room(dev) else None,
@@ -467,6 +470,37 @@ def _fit(elements: list, from_canvas: str, display: str, orientation: int) -> li
     if target == from_canvas:
         return elements
     return [{**el, **arrange.auto_box(el, from_canvas, target)} if isinstance(el, dict) else el for el in elements]
+
+
+async def api_widget_data(request):
+    """A widget's Data section in the inspector: where it reads from (the add-on's services, by name, or
+    one of your data sources) and its fields in the add-on's own form, with what they hold now (shapes.py)."""
+    import shapes
+    body = await _json(request)
+    el = body.get("element") if isinstance(body, dict) else None
+    if not isinstance(el, dict):
+        raise web.HTTPBadRequest(text="expected {element}")
+    w = widgets.get(el.get("type"))
+    shape = shapes.get(w.shape) if w else None
+    if shape is None:
+        raise web.HTTPBadRequest(text="It doesn't read anything from outside.")
+    own = shapes.own_source(el)
+    entity = own[len(shapes.ENTITY):] if own.startswith(shapes.ENTITY) else ""
+    src = next((x for x in load_sources() if isinstance(x, dict) and x.get("id") == own), None) if own and not entity else None
+    with live_data.waiting_for_fresh():                   # someone is looking at it
+        try:
+            value = await widgets.fetch(runtime.SESSION, el, widgets.Ctx(home_tz=await get_home_timezone(runtime.SESSION)))
+        except Exception as exc:                          # noqa: BLE001 -- a field list that can't fill is still shown
+            print(f"widget data: {health.describe(exc)}", flush=True)
+            value = None
+    return web.json_response({
+        "shape": shape.kind,
+        "source": ({"id": own, "name": services.source_name(src), "missing": False} if src
+                   else {"id": own, "name": "", "missing": True}) if own and not entity else None,
+        "entity": {"id": entity, "problem": shapes.problem(own)} if entity else None,
+        "services": [s.name for s in services.SERVICES if s.uses and s.uses(el)],
+        "fields": [{"label": label, "value": str(v)} for label, v in shape.shown(value)] if value else [],
+    })
 
 
 async def api_as_template(request):
@@ -975,6 +1009,34 @@ async def api_reach_restart(request):
     return web.json_response({"restarting": ok, "problem": problem or None})
 
 
+async def api_services_get(request):
+    """Settings › Services: every service, what uses it, its state and its addresses (services.py)."""
+    return web.json_response({"services": services.listing()})
+
+
+async def api_services_try(request):
+    """Try again: ask a service now, as the add-on does. Asked by a person, so it may reach the internet."""
+    try:
+        got = await services.try_again(runtime.SESSION, request.match_info["id"])
+    except KeyError:
+        raise web.HTTPNotFound(text="There's no such service.")
+    return web.json_response(got)
+
+
+async def api_services_address(request):
+    """Use another address for a service ({key, address}), checked by the add-on's own reader first;
+    an empty address goes back to the original. Refused with the reason, in plain words."""
+    body = await _body(request)
+    key = str(body.get("key") or "main")
+    try:
+        got = await services.set_address(runtime.SESSION, request.match_info["id"], key, body.get("address"))
+    except KeyError:
+        raise web.HTTPNotFound(text="There's no such address to change.")
+    except services.Refused as exc:
+        return web.json_response({"ok": False, "error": str(exc)}, status=422)
+    return web.json_response({"ok": True, **got, "services": services.listing()})
+
+
 async def api_sources_get(request):
     return web.json_response(feeds.mask_secrets(load_sources()))
 
@@ -995,6 +1057,19 @@ async def api_sources_test(request):
     if not isinstance(src, dict):
         raise web.HTTPBadRequest(text="expected a source object")
     unmasked = feeds.unmask_secrets([src], load_sources())
+    if feeds.fills(unmasked[0]):
+        # One that fills a widget: read by the add-on's own reader for it (shapes.py), and said plainly.
+        import shapes
+        shape = shapes.get(feeds.fills(unmasked[0]))
+        if shape is None:
+            return web.json_response({"published": [], "error": "It fills a kind of page the add-on doesn't have."})
+        try:
+            items = shapes.read(shape.kind, await feeds.fetch_json(unmasked[0], runtime.SESSION))
+        except ValueError as exc:
+            return web.json_response({"published": [], "error": str(exc)})
+        except Exception as exc:                # noqa: BLE001 -- said plainly, never with its headers
+            return web.json_response({"published": [], "error": services.plain(health.describe(exc))})
+        return web.json_response({"published": [], "error": None, "fills": f"Fills {shape.name} pages: {shape.summary(items)}"})
     ctx = {"ha_base": HA_BASE, "ha_token": HA_TOKEN, "session": runtime.SESSION}
     errors: list[str] = []
     rows = await feeds.run_all(unmasked, ctx, errors)
@@ -1394,7 +1469,11 @@ def make_apps():
         web.post("/api/fit", api_fit),
         web.post("/api/busy_day", api_busy_day),
         web.post("/api/as_template", api_as_template),
+        web.post("/api/widget_data", api_widget_data),
         web.post("/api/push", api_push),
+        web.get("/api/services", api_services_get),
+        web.post("/api/services/{id}/try", api_services_try),
+        web.put("/api/services/{id}/address", api_services_address),
         web.get("/api/sources", api_sources_get),
         web.put("/api/sources", api_sources_put),
         web.post("/api/sources/test", api_sources_test),

@@ -90,36 +90,29 @@ def status() -> list[dict]:
     return [{**e, "problem": problem(e)} for e in sorted(_services.values(), key=lambda e: e["name"])]
 
 
-# The outside services the add-on uses, by address: a host, or a host and the start of a path
-# where one host serves several (GitHub's raw files are both the racing calendars and Iconify).
-# Every request through the shared session reports here (trace_config), so a new fetcher is
-# covered without any code of its own. Addresses not listed (your data sources, Home Assistant
-# itself) are tracked elsewhere or not at all.
-SERVICES = {
-    "site.api.espn.com": "ESPN",
-    "data-cloud.flightradar24.com": "Flightradar24",
-    "opensky-network.org": "OpenSky",
-    "raw.githubusercontent.com/sportstimes/": "Racing calendar",
-    "raw.githubusercontent.com/iconify/": "Iconify",
-    "api.iconify.design": "Iconify",
-    "formulaecal.com": "Formula E calendar",
-    "www.fiaformulae.com": "Formula E",
-}
+# Addresses the registry doesn't list that should still report, as {host, or host/path prefix: name}.
+# The add-on's own services are in services.py (the one list); this is for tests and the odd extra.
+SERVICES: dict[str, str] = {}
 
 
 def service_for(url) -> str | None:
-    """The service an address belongs to (SERVICES: the longest match), or None."""
+    """The service an address belongs to: the longest matching address in services.py (the original
+    or the person's own, so a mirror reports as its service), or in SERVICES; None for any other."""
+    import services
     if hasattr(url, "host"):
-        host, path = url.host or "", url.path or "/"
+        host, path = (url.host or "").lower(), url.path or "/"
     else:
         from urllib.parse import urlsplit
         parts = urlsplit(str(url))
-        host, path = parts.hostname or "", parts.path or "/"
-    best = None
+        host, path = (parts.hostname or "").lower(), parts.path or "/"
+    known = list(services.addresses())
     for key, name in SERVICES.items():
         h, slash, prefix = key.partition("/")
-        if h == host and (not slash or path.startswith("/" + prefix)) and (best is None or len(key) > len(best[0])):
-            best = (key, name)
+        known.append((h, ("/" + prefix.rstrip("/")) if slash else "", name))
+    best = None
+    for h, prefix, name in known:
+        if h == host and (not prefix or path == prefix or path.startswith(prefix + "/")) and (best is None or len(prefix) > len(best[0])):
+            best = (prefix, name)
     return best[1] if best else None
 
 
