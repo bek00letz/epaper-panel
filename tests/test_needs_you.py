@@ -189,3 +189,103 @@ class TestSensors(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ---------------------------------------------------------------- drawn
+
+from datetime import datetime, timedelta  # noqa: E402
+from zoneinfo import ZoneInfo  # noqa: E402
+
+import examples  # noqa: E402
+import widgets  # noqa: E402
+from render import clock, clocktime  # noqa: E402
+from render import needs_you as drawn  # noqa: E402
+from test_widgets import Sizes, ink, render  # noqa: E402
+
+TZ = ZoneInfo("Europe/Bucharest")
+
+
+class TestNotificationsDrawn(Sizes, unittest.TestCase):
+    element = {"type": "notifications", "x": 40, "y": 14, "w": 712, "h": 220}
+    value = {"items": examples.notifications(), "tz": None}
+
+    def test_how_long_ago_in_few_letters(self):
+        now = datetime(2026, 10, 22, 15, 0, tzinfo=TZ)
+        ago = lambda **kw: (now - timedelta(**kw)).isoformat()     # noqa: E731
+        self.assertEqual([drawn.age_label(ago(seconds=20), now), drawn.age_label(ago(minutes=12), now),
+                          drawn.age_label(ago(hours=2, minutes=50), now), drawn.age_label(ago(hours=20), now),
+                          drawn.age_label(ago(days=3), now), drawn.age_label(ago(days=30), now)],
+                         ["now", "12 min", "2 h", "Yesterday", "Mon", "22 Sep"])
+        self.assertEqual(drawn.age_label("2026-10-22T09:00:00+00:00", now), "3 h", "Home Assistant's UTC, in its own zone")
+        self.assertEqual(drawn.age_label("garbage", now), "")
+
+    def test_a_sleeping_device_shows_when_it_came(self):
+        now = datetime(2026, 10, 22, 15, 0, tzinfo=TZ)
+        clock.use(False)
+        self.assertEqual(drawn.age_label((now - timedelta(minutes=12)).isoformat(), now, asleep=True), "14:48")
+        self.assertEqual(drawn.age_label((now - timedelta(days=1)).isoformat(), now, asleep=True), "Yesterday")
+        page = {"elements": [{"type": "notifications"}, {"type": "text", "value": "hi"}]}
+        out, _, times = clocktime.date_for_time(page, {}, now)
+        self.assertTrue(out["elements"][0].get("asleep"))
+        self.assertFalse(page["elements"][0].get("asleep"), "the design keeps its own")
+        self.assertEqual(times, set(), "nothing for the editor to say: it isn't a clock")
+
+    def test_the_message_only_when_there_is_room(self):
+        one = [{"title": "Backup failed", "message": "It couldn't reach its location.", "created": ""}]
+        three = [dict(one[0]) for _ in range(3)]
+        bare = [{**one[0], "message": ""}]
+        with_msg, without = render(self.element, {"items": one}), render(self.element, {"items": bare})
+        self.assertGreater(ink(with_msg), ink(without) + 300)
+        no_msgs = [{**i, "message": ""} for i in three]
+        self.assertEqual(ink(render(self.element, {"items": three})), ink(render(self.element, {"items": no_msgs})),
+                         "three get no messages")
+
+    def test_and_more_when_they_dont_fit(self):
+        many = [{"title": f"Notification {k}", "message": "", "created": ""} for k in range(9)]
+        self.assertEqual(drawn._fit(9, 180, 41, 41), (3, 6))
+        self.assertGreater(ink(render(self.element, {"items": many})), ink(render(self.element, {"items": many[:3]})))
+
+    def test_none_says_so_and_not_read_yet_is_only_the_heading(self):
+        empty, unread = render(self.element, {"items": []}), render(self.element, None)
+        self.assertGreater(ink(empty), ink(unread) + 300)
+        self.assertGreater(ink(unread), 100)
+
+    def test_fetched_in_the_render_cycle_with_home_assistants_zone(self):
+        async def notes(session):
+            return [{"title": "x"}]
+        with unittest.mock.patch.object(needs_you, "fetch_notifications", notes):
+            got = asyncio.run(widgets.fetch(None, {"type": "notifications"}, widgets.Ctx(home_tz="Europe/Bucharest")))
+        self.assertEqual(got, {"items": [{"title": "x"}], "tz": "Europe/Bucharest"})
+
+    def test_its_page_shows_by_the_add_ons_count(self):
+        d = widgets.catalog()["notifications"]
+        self.assertEqual((d["sensor"], d["window"]), ("sensor.epaper_notifications", True))
+        note = next(f for f in d["fields"] if f["kind"] == "sensorid")["note"]
+        self.assertIn("{sensor}", note)
+
+
+import asyncio  # noqa: E402
+import shutil  # noqa: E402
+
+from test_presets import run_js  # noqa: E402
+
+
+@unittest.skipUnless(shutil.which("node"), "no node to read the editor")
+class TestNotificationsInTheEditor(unittest.TestCase):
+    def test_the_preset_and_the_inspector_write_the_same_condition(self):
+        got = run_js("""
+import * as C from %s;
+const p = P.presetById("notifications"), page = P.pageFor(p, p.looks[0], "");
+const fresh = { tier: "when", elements: [{ type: "notifications" }] };
+C.syncWidgetShowIf(fresh);
+const own = { tier: "when", show_if: "{{ is_state('input_boolean.x','on') }}", elements: [{ type: "notifications" }] };
+C.syncWidgetShowIf(own);
+console.log(JSON.stringify({ group: p.group, page, fresh: fresh.show_if, own: own.show_if,
+  parsed: C.parseShowIf(page.show_if), sensor: L.getWidgetSensorId({ type: "notifications" }) }));
+""" % json.dumps(str(support.APP / "web" / "app" / "conditions.js")))
+        cond = "{{ has_value('sensor.epaper_notifications') and states('sensor.epaper_notifications') | float(0) > 0 }}"
+        self.assertEqual((got["group"], got["page"]["tier"], got["page"]["show_if"]), ("home", "when", cond))
+        self.assertEqual(got["fresh"], cond)
+        self.assertEqual(got["own"], "{{ is_state('input_boolean.x','on') }}", "the person's own condition stays")
+        self.assertEqual((got["parsed"]["mode"], got["parsed"]["ent"]), ("simple", "sensor.epaper_notifications"))
+        self.assertEqual(got["sensor"], "sensor.epaper_notifications")

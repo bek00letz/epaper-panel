@@ -487,6 +487,7 @@ EVERY_WIDGET = [
     {"type": "tv_week", "entity": "calendar.tv"}, {"type": "weather_forecast", "entity": "weather.forecast_home"},
     {"type": "todo_list", "entity": "todo.chores"}, {"type": "flight_tracker"},
     {"type": "sports_match", "league": "basketball/nba"}, {"type": "sports_racing", "series": "nascar"},
+    {"type": "notifications"},
     {"type": "curve", "entity": "sensor.solar_pv_power"},
 ]
 

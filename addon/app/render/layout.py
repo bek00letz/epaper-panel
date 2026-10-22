@@ -29,6 +29,7 @@ from . import theme as T
 from . import binding
 from . import energy
 from . import media
+from . import needs_you
 from . import sport
 from . import sun
 from . import clock
@@ -2206,6 +2207,7 @@ WIDGETS = {
     "now_playing": media.draw_now_playing,
     "tv_week": media.draw_tv_week,
     "world_clock": worldclock.draw,
+    "notifications": needs_you.draw_notifications,
 }
 DRAWERS.update({t: _widget(fn) for t, fn in WIDGETS.items()})
 

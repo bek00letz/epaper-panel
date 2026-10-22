@@ -1,6 +1,14 @@
 # Changelog
 
 ## Unreleased
+- **Home Assistant's notifications on a page.** New page › Home ›
+  **Notifications** lists the notifications behind Home Assistant's bell,
+  newest first, with how long ago each came ("12 min", "2 h", "Yesterday").
+  With one or two, what they say shows under them when it fits; more than
+  fit end with "and 3 more". The page shows only while there are any, and
+  one you dismiss in Home Assistant is gone at the next update. A device that
+  sleeps between updates shows the time each came instead, so nothing goes
+  stale while it sleeps.
 - **What needs you in Home Assistant, counted.** While a page uses them, the
   add-on keeps three sensors: `sensor.epaper_notifications` (Home
   Assistant's notifications, the bell), `sensor.epaper_updates` (updates

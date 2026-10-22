@@ -473,10 +473,12 @@ function typeSections(app, el, set, i) {
       else { p.tier = "rotate"; delete p.show_if; }
       app.doc.commit();
     }, "Sets when the whole page shows"));
-    else if (f.kind === "sensorid") s.append(h("details", { class: "more" }, h("summary", {}, icon("chev", "sm"), "Its sensor"),
-      el.type === "todo_list"
-        ? h("p", { class: "fnote" }, "The add-on counts what's due today or overdue as ", h("code", { class: "sel", text: getWidgetSensorId(el) || "sensor.epaper_todo_…_due" }), ". An alert can show by it, or your own automations.")
-        : h("p", { class: "fnote" }, "The add-on publishes this widget's state as ", h("code", { class: "sel", text: getWidgetSensorId(el) }), ", for your own automations.")));
+    else if (f.kind === "sensorid") {
+      // Its words are the descriptor's (widgets.py), "{sensor}" where the sensor goes.
+      const [before, after = ""] = (f.note || "The add-on publishes this widget's state as {sensor}, for your own automations.").split("{sensor}");
+      s.append(h("details", { class: "more" }, h("summary", {}, icon("chev", "sm"), "Its sensor"),
+        h("p", { class: "fnote" }, before, h("code", { class: "sel", text: getWidgetSensorId(el) || f.none || "" }), after)));
+    }
     else if (f.kind === "place") s.append(...placeRows(app, el, set));
     else if (f.kind === "countdown") s.append((el.to === "bins" ? binsEditor : dateEditor)(el, () => app.doc.commit()));
     // A world clock's cities: adding, removing or reordering one redraws the canvas at once (each commit does).
