@@ -978,3 +978,20 @@ class TestWorldClock(Sizes, unittest.TestCase):
         self.assertNotIn("US/Eastern", cities)
         self.assertIsNone(widgets.get("world_clock").changes_every(), "a sleeping device shows hours apart instead")
         self.assertTrue(clocktime.shows_time({"type": "world_clock"}))
+
+
+class TestOneNameOneThing(unittest.TestCase):
+    """A module that defines a name twice keeps only the last: 0.20.2's Batteries fetch and the
+    Grid now fetch were both widgets._grid, and the Batteries page asked for the power grid."""
+
+    def test_no_module_defines_a_name_twice(self):
+        import ast
+        import collections
+        twice = {}
+        for path in sorted(support.APP.rglob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            names = collections.Counter(n.name for n in tree.body
+                                        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)))
+            if dup := sorted(k for k, v in names.items() if v > 1):
+                twice[str(path.relative_to(support.APP))] = dup
+        self.assertEqual(twice, {})

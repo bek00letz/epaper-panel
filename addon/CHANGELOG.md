@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed:** a Batteries page showed a placeholder ("Sample Zone") instead of
+  your batteries since 0.20.2: it asked for the power grid's numbers by
+  mistake. It shows every battery its rule picks again. A test now fails
+  if any part of the add-on gives two things the same name.
+
 ## 0.21.0
 Add-on only; no firmware change, so nothing to reinstall on the panel
 and no Home Assistant restart. Update the add-on.

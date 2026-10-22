@@ -188,7 +188,7 @@ async def _batteries_past(session, el, home_tz):
 
 # ---------------------------------------------------------------- fetches
 
-async def _grid(session, el, ctx):
+async def _batteries_list(session, el, ctx):
     """A Devices grid of batteries by rule: the batteries it picks, now (sources/batteries.chosen).
     A grid of its own entities is answered by its template (render/layout.collect_templates)."""
     if not _is_batteries(el):
@@ -197,7 +197,7 @@ async def _grid(session, el, ctx):
     return None if every is None else batteries.chosen(el, every)
 
 
-def _grid_example(el, now):
+def _batteries_example(el, now):
     """Batteries by rule: the offline examples it picks; a grid of states: the fixture answers (None)."""
     if not _is_batteries(el):
         return None
@@ -420,7 +420,7 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
            fields=[sel("counts", "Counts", [["updates", "Updates"], ["notifications", "Notifications"],
                                             ["repairs", "Repairs"], ["all", "All of these"]], "updates"),
                    {"kind": "note", "text": "It's hidden while the count is zero, so it may not show on the canvas right now."}]),
-    Widget("dynamic_grid", "Devices", "grid", _grid, _grid_example,
+    Widget("dynamic_grid", "Devices", "grid", _batteries_list, _batteries_example,
            # A Batteries page shows while one its rule picks is past its number (review 2 #5).
            gate=Gate(check=_batteries_past, applies=_is_batteries),
            box={"fill": True, "y": 16, "inset": 24},

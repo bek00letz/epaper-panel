@@ -431,6 +431,20 @@ class TestThePageShowsByTheRule(unittest.TestCase):
         self.assertEqual(fired, "low")
         self.assertIsNone(widgets.gate_of({"elements": [{"type": "dynamic_grid", "items": []}]}), "a grid of states has its own condition")
 
+    def test_the_widget_fetches_its_batteries_not_the_grid_now(self):
+        """0.20.2 and 0.21.0 shipped a Batteries page that asked for the power grid (two fetches called
+        _grid): it drew the placeholder, never a battery."""
+        el = {"type": "dynamic_grid", "batteries": "swap", "except": [], "also": [], "filter_rule": "below",
+              "filter_value": 20, "items": []}
+        every = batteries.every_battery(REGISTRY, STATES)
+        with mock.patch.object(batteries, "fetch_every", mock.AsyncMock(return_value=every)):
+            got = asyncio.run(widgets.get("dynamic_grid").fetch(None, el, None))
+        self.assertEqual([b["entity"] for b in got], [b["entity"] for b in batteries.chosen(el, every)])
+        self.assertTrue(got, "the rule picks some")
+        texts, _ = drawn(el, got)
+        self.assertNotIn("Sample Zone", texts)
+        self.assertIsNot(widgets.get("dynamic_grid").fetch, widgets.get("grid_now").fetch)
+
 
 @unittest.skipUnless(shutil.which("node"), "no node to run the editor")
 class TestTheEditorLeavesItToTheRule(unittest.TestCase):
