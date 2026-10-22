@@ -5,6 +5,7 @@ import time
 import aiohttp
 
 import runtime
+import services
 from sources.geo import _bearing_calc, _haversine_km, get_home_coordinates
 
 
@@ -75,7 +76,7 @@ async def fetch_overhead_aircraft(session, radius_km=35.0, lat=None, lon=None):
 
     # 1. Primary: Flightradar24 high-speed live feed (rate-limit free, global coverage)
     fr24_url = (
-        f"https://data-cloud.flightradar24.com/zones/fcgi/feed.js"
+        f"{services.url('flightradar24')}"
         f"?bounds={lat + d_lat:.3f},{lat - d_lat:.3f},{lon - d_lon:.3f},{lon + d_lon:.3f}"
         f"&faa=1&satellite=1&mlat=1&flarm=1&adsb=1&gnd=0&air=1&vehicles=0&estimated=1&maxage=14400&gliders=0&stats=0"
     )
@@ -143,7 +144,7 @@ async def fetch_overhead_aircraft(session, radius_km=35.0, lat=None, lon=None):
 
     # 2. Fallback: OpenSky Network
     opensky_url = (
-        f"https://opensky-network.org/api/states/all"
+        f"{services.url('opensky')}"
         f"?lamin={lat - d_lat:.4f}&lamax={lat + d_lat:.4f}"
         f"&lomin={lon - d_lon:.4f}&lomax={lon + d_lon:.4f}"
     )

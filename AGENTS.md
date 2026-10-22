@@ -534,9 +534,18 @@ When touching display code, `it.image()` at a negative offset is a trap: see
   Assistant service goes through `live_data` (`@runtime.live(seconds)`, see
   `sources/`; `entities.publish_sources` for `feeds/`), and callers must cope
   with "no value yet".
-- **A failing service must be visible.** A new service's host goes in
-  `health.SERVICES`; anything else reports with `health.ok()` /
-  `health.fail()`. That's what the problem sensors in Home Assistant show.
+- **Every outside service is in one list, `services.py`** (0.21): its name
+  (also its problem sensor's), its addresses, what uses it, and a `probe`
+  that reads a test answer with the add-on's own reader. A fetcher asks
+  `services.url(id)` for where to go, never an address of its own
+  (`tests/test_sources_health.py` fails on one), so a mirror the person set
+  in Settings › Services is used everywhere and reports as its service
+  (`health.service_for`). A service is asked only by a page or a person's
+  Try again; changing an address is checked by its probe first.
+- **A failing service must be visible.** Requests through the shared session
+  report by themselves; anything else reports with `health.ok()` /
+  `health.fail()`. That's what the problem sensors in Home Assistant, the
+  status card's "Outside services" and Settings › Services show.
 - **Only alerts, quiet hours and people wake the panel early.** Never push on
   a content or shape change: the screen's Update every is the user's. A
   screen that sleeps between updates (a TRMNL; a CrowPanel updating every 2
@@ -586,7 +595,8 @@ When touching display code, `it.image()` at a negative offset is a trap: see
   restart (issue #37, our fix PR #38, unmerged). Its folder and zip are only
   read, so existing setups keep working.
 - **An Iconify download happens only when the user asks**, never in the
-  background loop, and only from `iconsets.ICONIFY` / `ICONIFY_API`.
+  background loop, and only from Iconify's addresses in `services.py` (or
+  the mirror the person set there).
 - **No built-in location or timezone.** Home Assistant's settings are the
   source; a default would be someone's real home.
 

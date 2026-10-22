@@ -26,6 +26,7 @@ import kinds
 import notify
 import reach
 import runtime
+import services
 import timing
 from config import ADDON_VERSION, FRAME_PORT, HA_BASE, HA_TOKEN, INGRESS_GATEWAY, REFRESH, SLEEP_PAGE, WEB_DIR, valid_entity_id
 from fixture import load_fixture
@@ -158,6 +159,8 @@ async def status(request):
         # Every outside service and data source: last success, and the problem
         # if it is failing (also a problem sensor in Home Assistant).
         "services": health.status(),
+        # The ones whose problem sensor is on, in plain words, for the status card (services.py).
+        "service_problems": services.problems(),
         # How many pages the panel holds, and what was left out to fit: only for a device that keeps its
         # whole rotation in memory (Kind.room), which can run out. One that sleeps gets a page a wake.
         "fit": rt.fit if kinds.of(dev).room(dev) else None,
@@ -975,6 +978,34 @@ async def api_reach_restart(request):
     return web.json_response({"restarting": ok, "problem": problem or None})
 
 
+async def api_services_get(request):
+    """Settings › Services: every service, what uses it, its state and its addresses (services.py)."""
+    return web.json_response({"services": services.listing()})
+
+
+async def api_services_try(request):
+    """Try again: ask a service now, as the add-on does. Asked by a person, so it may reach the internet."""
+    try:
+        got = await services.try_again(runtime.SESSION, request.match_info["id"])
+    except KeyError:
+        raise web.HTTPNotFound(text="There's no such service.")
+    return web.json_response(got)
+
+
+async def api_services_address(request):
+    """Use another address for a service ({key, address}), checked by the add-on's own reader first;
+    an empty address goes back to the original. Refused with the reason, in plain words."""
+    body = await _body(request)
+    key = str(body.get("key") or "main")
+    try:
+        got = await services.set_address(runtime.SESSION, request.match_info["id"], key, body.get("address"))
+    except KeyError:
+        raise web.HTTPNotFound(text="There's no such address to change.")
+    except services.Refused as exc:
+        return web.json_response({"ok": False, "error": str(exc)}, status=422)
+    return web.json_response({"ok": True, **got, "services": services.listing()})
+
+
 async def api_sources_get(request):
     return web.json_response(feeds.mask_secrets(load_sources()))
 
@@ -1395,6 +1426,9 @@ def make_apps():
         web.post("/api/busy_day", api_busy_day),
         web.post("/api/as_template", api_as_template),
         web.post("/api/push", api_push),
+        web.get("/api/services", api_services_get),
+        web.post("/api/services/{id}/try", api_services_try),
+        web.put("/api/services/{id}/address", api_services_address),
         web.get("/api/sources", api_sources_get),
         web.put("/api/sources", api_sources_put),
         web.post("/api/sources/test", api_sources_test),

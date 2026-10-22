@@ -231,20 +231,30 @@ class TestEachServiceHasItsOwnName(unittest.TestCase):
                 found[url] = path.name
         return found
 
-    def test_every_outside_address_is_a_known_service(self):
-        found = self.outside_addresses()
+    def test_every_outside_address_is_in_the_one_registry(self):
+        # services.py is the one list of where the add-on asks (so a mirror can replace any of it):
+        # a fetcher names a service, never an address of its own.
+        self.assertEqual(self.outside_addresses(), {}, "an outside address outside services.py")
+
+    def test_every_registered_address_reports_as_its_service(self):
+        import services
+        found = [(a.original, s.name) for s in services.SERVICES for a in s.addresses]
         self.assertGreater(len(found), 6)
-        for url, where in found.items():
-            self.assertIsNotNone(health.service_for(url.replace("{", "").replace("}", "")),
-                                 f"{url} ({where}) reports as no service")
+        for url, name in found:
+            self.assertEqual(health.service_for(url + "/x"), name, url)
+
+    def test_a_service_is_named_as_its_problem_sensor(self):
+        import services
+        for s in services.SERVICES:
+            self.assertEqual(s.id, feeds.clean_slug(s.name), s.name)
 
     def test_iconify_is_its_own_service(self):
         import iconsets
         from sources import racing
-        self.assertEqual(health.service_for(iconsets.ICONIFY + "/collections.json"), "Iconify")
-        self.assertEqual(health.service_for(iconsets.ICONIFY_API + "/mdi.json?icons=cat"), "Iconify")
-        self.assertEqual(health.service_for(racing._SPORTSTIMES.format(db="f1").format(year=2026)), "Racing calendar")
-        self.assertEqual(racing._service(racing._SPORTSTIMES.format(db="fe").format(year=2027)), "Racing calendar")
+        self.assertEqual(health.service_for(iconsets.iconify_base() + "/collections.json"), "Iconify")
+        self.assertEqual(health.service_for(iconsets.iconify_api() + "/mdi.json?icons=cat"), "Iconify")
+        self.assertEqual(health.service_for(racing._sportstimes("f1").url.format(year=2026)), "Racing calendar")
+        self.assertEqual(racing._service(racing._sportstimes("fe").url.format(year=2027)), "Racing calendar")
         self.assertIsNone(health.service_for("https://raw.githubusercontent.com/someone/else/x.json"))
 
 
@@ -346,7 +356,7 @@ class TestMissingIsAnAnswer(unittest.IsolatedAsyncioTestCase):
         # sensor (on after five minutes of failing) hardly ever showed.
         from sources import racing
         url = f"http://127.0.0.1:{self.port}/odd.json"
-        cal = racing.Calendar("sessions", url)
+        cal = racing.Calendar("sessions", "racing_calendar")
         now = [1000.0]
         old_clock, health.clock = health.clock, lambda: now[0]
         try:

@@ -407,14 +407,14 @@ all read it, so nothing offers an icon that draws as nothing.
   - **Iconify sets** the user chooses in Settings › Icons (`/data/icons/
     chosen.json`). Each is downloaded on its own, only when asked (Add, Try
     again, Check for updates with its ETag), from Iconify's published files
-    (`iconsets.ICONIFY`) through the add-on's own session: one host, checked
+    (`services.py`'s "iconify", or a mirror set in Settings › Services) through the add-on's own session: one host, checked
     HTTPS, no redirects, 32 MB at most, read in pieces. Kept as downloaded
     and converted once (`/data/icons/iconify/<prefix>.raw.json.gz` and
     `.json.gz`), so a change to your own icons never converts a big set
     again. Only single-color sets are offered. A chosen set Custom Icons'
     download has (`custom_icons/iconify-icon-sets-master.zip`) is taken
     from there, without the internet. Add a set's previews are each set's
-    sample icons from Iconify's API (`ICONIFY_API`), asked for only for rows
+    sample icons from Iconify's API (its "api" address), asked for only for rows
     on screen, converted the same way and kept. The background loop never
     downloads.
   - **Upgrading from 0.19**: the first start keeps every Iconify set it drew

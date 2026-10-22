@@ -1,6 +1,7 @@
 """Football and other ESPN leagues: matches and matchday windows."""
 
 import health
+import services
 import json
 import time
 from dataclasses import dataclass
@@ -205,7 +206,7 @@ async def compute_sports_active_window(session, entity_or_league="soccer/eng.1",
     headers = {"User-Agent": "Crowpanel-Epaper/0.8.27 (HomeAssistant Addon)"}
     timeout = aiohttp.ClientTimeout(total=6)
 
-    today_url = f"https://site.api.espn.com/apis/site/v2/sports/{endpoint_path}/scoreboard?dates={today_str}"
+    today_url = f"{services.url('espn')}/{endpoint_path}/scoreboard?dates={today_str}"
     events = []
     league_title = ""
     try:
@@ -219,7 +220,7 @@ async def compute_sports_active_window(session, entity_or_league="soccer/eng.1",
 
     yesterday_events = []
     if not events or now_utc.hour < 12:
-        yest_url = f"https://site.api.espn.com/apis/site/v2/sports/{endpoint_path}/scoreboard?dates={yesterday_str}"
+        yest_url = f"{services.url('espn')}/{endpoint_path}/scoreboard?dates={yesterday_str}"
         try:
             async with session.get(yest_url, headers=headers, timeout=timeout) as r:
                 if r.status == 200:
@@ -376,8 +377,8 @@ async def fetch_sports_match(session, entity_or_league="soccer/eng.1", team=None
     now_utc = datetime.now(timezone.utc)
     today_str = now_utc.strftime("%Y%m%d")
 
-    url_today = f"https://site.api.espn.com/apis/site/v2/sports/{endpoint_path}/scoreboard?dates={today_str}"
-    url_default = f"https://site.api.espn.com/apis/site/v2/sports/{endpoint_path}/scoreboard"
+    url_today = f"{services.url('espn')}/{endpoint_path}/scoreboard?dates={today_str}"
+    url_default = f"{services.url('espn')}/{endpoint_path}/scoreboard"
     headers = {"User-Agent": "Crowpanel-Epaper/0.8.27 (HomeAssistant Addon)"}
     timeout = aiohttp.ClientTimeout(total=6)
 

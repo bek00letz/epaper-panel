@@ -442,6 +442,10 @@ button.uopen:focus-visible { outline: 2px solid var(--accent); outline-offset: -
 .uopen .un { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; min-width: 3em; }
 .uopen .uw { color: var(--fg-2); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1 1 0; min-width: 0; }
 .urow .btn.small { flex: none; }
+/* An outside service not answering (services.js): its name, then since when and why, wrapped. */
+.uopen.svc { flex-direction: column; align-items: flex-start; justify-content: center; gap: 1px; padding: 6px 4px; }
+.uopen.svc .un { display: flex; align-items: center; gap: 6px; max-width: 100%; }
+.uopen.svc .uw { white-space: normal; flex: none; }
 .menu { width: auto; min-width: 220px; padding: 5px; }
 .mi { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 30px; padding: 4px 10px 4px 8px; border: 0; border-radius: var(--r-inner); background: none; text-align: left; cursor: default; font-size: 13px; }
 .mi .ml { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 280px; }
@@ -635,6 +639,11 @@ button.uopen:focus-visible { outline: 2px solid var(--accent); outline-offset: -
 .gr small.bad { color: var(--red); }
 /* Shown only when it takes a while: a quick answer never flashes it. */
 .gr small.waiting, .fnote.waiting { animation: fadein var(--t) var(--spring) 0.4s both; }
+/* Settings › Services (services.js): a service's own words for its error, for whoever reports it;
+   what Try again found; the row the status card opened, marked until the pane is left. */
+.gr small.detail { font: 11px var(--mono); color: var(--fg-3); overflow-wrap: anywhere; }
+.gr small.good { color: var(--green); }
+.gr.svc.focus { box-shadow: inset 3px 0 0 var(--accent); margin-left: -14px; padding-left: 14px; }
 .group.dropping { box-shadow: 0 0 0 2px var(--accent); }
 .subhead { display: flex; align-items: center; gap: 4px; margin: 0 0 8px -8px; }
 .subhead h4 { margin: 0; font: 600 15px var(--font-display); }

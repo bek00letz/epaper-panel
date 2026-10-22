@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- **Outside services you can see.** When a service the add-on asks isn't
+  answering (ESPN, a racing calendar, Flightradar24, Iconify…), the status
+  card says so under "Outside services": which one, since when and why, in
+  plain words. Pages that use it keep what they last had. A line opens
+  Settings › Services at it.
+
+- **Settings › Services.** Every service the add-on asks, in one place:
+  outside ones, Home Assistant's own (the Energy dashboard, its
+  notifications, updates and icons) and your data sources. Each says which
+  pages use it, when it last answered, what went wrong if it didn't, and
+  has Try again, which asks it now. Nothing is asked unless a page needs it
+  or you press Try again.
+
 ## 0.20.2
 Add-on only; no firmware change, so nothing to reinstall on the panel
 and no Home Assistant restart. Update the add-on.

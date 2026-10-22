@@ -11,6 +11,7 @@ import { LOOKS as PRESETS, clockPages, dateInstead } from "./presets.js";
 import { thumbnail, statusSummary, forgetThumbnails, unsentWords } from "./strip.js";
 import { SETTING_NAMES } from "./doc.js";
 import { paint } from "./glyphs.js";
+import { problemLines, servicesPane } from "./services.js";
 
 const thumbImg = (app, key, page) => {
   const img = h("img", { class: "thumb", alt: "", "data-thumb": key, draggable: "false" });
@@ -130,7 +131,9 @@ export function openStatus(app, anchor) {
     const notes = lines.map((l) => h("p", { class: "fnote", text: l }));
     // What isn't sent comes right under the line that says so.
     pop.append(h("div", { class: "sthead" }, h("span", { class: "led " + tone }), h("span", { text: line1 })), ...notes.slice(0, 1),
-      ...(doc.dirty && doc.saving !== "error" ? [unsentList(app, close)] : []), ...notes.slice(1));
+      ...(doc.dirty && doc.saving !== "error" ? [unsentList(app, close)] : []), ...notes.slice(1),
+      // Outside services whose problem sensor is on (the user's call, 22 Oct); nothing when all answer.
+      ...problemLines(app, close, (id) => openSettings(app, "services", id)));
 
     const live = s.pages || [];
     pop.append(h("div", { class: "poplab", text: "Rotating" }), h("p", { class: "fnote", text: live.length ? `${live.map(pageTitle).join(", ")}, ${turning(t)}.` : "Nothing at the moment." }));
@@ -415,7 +418,7 @@ const SRC_FIELDS = {
 };
 const SRC_KINDS = { jellyfin: "Jellyfin: new and unwatched", rest: "Any JSON address", statistics: "A long-term statistic" };
 
-export function openSettings(app, sectionName = "panel") {
+export function openSettings(app, sectionName = "panel", focus = null) {
   sheet("Settings", (node) => {
     const nav = h("nav", { class: "setnav", "aria-label": "Settings" });
     const pane = h("div", { class: "setpane" });
@@ -426,6 +429,7 @@ export function openSettings(app, sectionName = "panel") {
       quiet: ["Quiet hours", "moon", () => quietPane(app, pane)],
       reach: ["Reaching home", "globe", () => reachPane(app, pane)],
       sources: ["Data sources", "plug", () => sourcesPane(app, pane)],
+      services: ["Services", "cloud", () => { servicesPane(app, pane, focus); focus = null; }],
       icons: ["Icons", "grid", () => iconsPane(app, pane)],
       time: ["Time and language", "clock", () => timePane(app, pane)],
       editor: ["Editor", "gear", () => editorPane(app, pane)],

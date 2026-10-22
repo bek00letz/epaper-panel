@@ -27,26 +27,30 @@ import aiohttp
 
 import health
 import runtime
+import services
 from render import clock
 from sources.geo import get_home_timezone
 
 
 @dataclass(frozen=True)
 class Calendar:
-    """One place a series' race calendar is published, and how it's read (a key of `_READERS`)."""
+    """One place a series' race calendar is published: the service it's at (services.py, so a mirror
+    the person set is asked instead), the path there, and how it's read ("sessions", "events", "espn")."""
     reader: str
-    url: str                # "{year}": published a year at a time; this year's and next year's are read
+    service: str            # services.py's id
+    path: str = ""          # "{year}": published a year at a time; this year's and next year's are read
 
-
-_SPORTSTIMES = "https://raw.githubusercontent.com/sportstimes/f1/main/_db/{db}/{{year}}.json"
+    @property
+    def url(self) -> str:
+        return services.url(self.service) + self.path
 
 
 def _sportstimes(db: str) -> Calendar:
     """The community session database behind f1calendar.com and its siblings."""
-    return Calendar("sessions", _SPORTSTIMES.format(db=db))
+    return Calendar("sessions", "racing_calendar", f"/{db}/{{year}}.json")
 
 
-ESPN_CALENDAR = Calendar("espn", "")    # the series' ESPN scoreboard (`Series.espn`): its season and this weekend
+ESPN_CALENDAR = Calendar("espn", "espn")    # the series' ESPN scoreboard (`Series.espn`): its season and this weekend
 
 
 @dataclass(frozen=True)
@@ -70,8 +74,8 @@ SERIES = {s.slug: s for s in (
     # Formula E's own calendar page carries the season as schema.org events (dates only).
     Series("fe", "FE", "Formula E", "Formula E World Championship", "ePrix Circuit",
            ("fe", "formula_e", "formula-e", "formulae"), espn=None,
-           calendars=(Calendar("events", "https://www.fiaformulae.com/en/calendar"), _sportstimes("fe"),
-                      Calendar("sessions", "https://formulaecal.com/api/year/{year}")),
+           calendars=(Calendar("events", "formula_e"), _sportstimes("fe"),
+                      Calendar("sessions", "formula_e_calendar", "/{year}")),
            icon="mdi:car-electric"),
     Series("nascar", "NASCAR", "NASCAR", "NASCAR Cup Series", "Speedway",
            ("nascar", "nascar-premier", "nascar_cup"), espn="nascar-premier",
@@ -252,6 +256,12 @@ def _same(a: Race, b: Race) -> bool:
 _calendar_cache: dict[str, dict] = {}
 
 
+def forget_failed() -> None:
+    """Calendars that failed are asked again at the next fetch, not after RETRY_EVERY (Try again)."""
+    for url in [u for u, c in _calendar_cache.items() if not c["ok"]]:
+        del _calendar_cache[url]
+
+
 async def _read_calendar(session, cal: Calendar, url: str, missing_ok: bool) -> list[Race] | None:
     """One calendar's races; [] when it isn't published (yet), None when it couldn't be read."""
     try:
@@ -329,7 +339,7 @@ async def _board(session, ser: Series) -> dict | None:
     t = time.time()
     if cached and t - cached["at"] < (60.0 if cached["live"] else 600.0):
         return cached["data"]
-    url = f"https://site.api.espn.com/apis/site/v2/sports/racing/{ser.espn}/scoreboard"
+    url = f"{services.url('espn')}/racing/{ser.espn}/scoreboard"
     data = None
     try:
         async with session.get(url, headers=HEADERS, timeout=TIMEOUT) as r:
