@@ -228,7 +228,10 @@ than a frame does.
 - **Geometry is per size, content is shared.** `arrange.ARRANGE_KEYS` (box,
   text size) may differ between screen sizes; everything else an element has
   is the same on every screen showing the design. Don't add a per-size field
-  anywhere else.
+  anywhere else. A widget whose descriptor says `keeps_size` (the badge) is
+  placed at its real size in mm on a smaller screen instead of shrinking with
+  the page (`arrange.KEEP_SIZE`, `theme.mm_per_px_of_canvas`), from the edges
+  it's nearest to.
 - **Prefer a structured binding over raw Jinja** (`render/binding.py`). An
   element says `{entity, show, format, prefix, suffix, replace}` and the engine
   builds the template. Supports `show: state`, `attribute`, `last_changed`, `last_updated`,

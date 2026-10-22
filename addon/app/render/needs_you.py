@@ -222,26 +222,28 @@ def badge_text(n: int) -> str:
     return f"{MOST}+" if n > MOST else str(n)
 
 
-def draw_badge(img, d, box, el: dict, data, *, scale: float = 1.0) -> None:
+def draw_badge(img, d, box, el: dict, data, *, scale: float = 1.0) -> int:
     """An icon with a solid dot at its top right holding the number, as on an app's icon. Nothing at all
-    at zero or before it's read: a badge is there only when something needs you."""
+    at zero or before it's read: a badge is there only when something needs you. Returns its number's
+    size in px, drawn or not, for the editor's legibility note: its size is its box (the user's call)."""
     from sources.needs_you import badge_counts
+    x, y, w, h = box
+    side = min(w, h)
+    dot = round(side * 0.42)                                         # centred on the icon's corner, as on a phone
+    # One size for every number, from a digit: the pill grows for more digits, the digits never shrink.
+    num_px = T.fit_size("8", dot, round(dot * 0.95), dot, floor=10, bold=True)
     try:
         n = int(data)
     except (TypeError, ValueError):
-        return
+        return num_px
     if n <= 0:
-        return
-    x, y, w, h = box
-    side = min(w, h)
+        return num_px
     x0, y0 = x + (w - side) // 2, y + (h - side) // 2
     icon = round(side * 0.8)
     hero.icon(img, d, BADGE_ICONS[badge_counts(el)], (x0, y0 + side - icon, icon, icon))
 
     text = badge_text(n)
-    dot = round(side * 0.42)                                         # centred on the icon's corner, as on a phone
-    # One size for every number, from a digit: the pill grows for more digits, the digits never shrink.
-    f = T.font(T.fit_size("8", dot, round(dot * 0.95), dot, floor=10, bold=True), bold=True)
+    f = T.font(num_px, bold=True)
     pill_w = max(dot, T.text_width(text, f) + round(dot * 0.5))     # two digits and more: a pill, growing left
     right, top = x0 + side, y0
     ring = max(3, round(dot / 9))                                    # paper round it, so it never runs into the icon
@@ -251,3 +253,4 @@ def draw_badge(img, d, box, el: dict, data, *, scale: float = 1.0) -> None:
     # Centred by the digits' own ink, not the font's line, so they sit optically in the middle.
     l, t, r, b = d.textbbox((0, 0), text, font=f, anchor="lt")
     d.text((right - pill_w / 2 - (l + r) / 2, top + dot / 2 - (t + b) / 2), text, font=f, fill=T.WHITE, anchor="lt")
+    return num_px

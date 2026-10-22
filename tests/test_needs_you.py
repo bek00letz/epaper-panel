@@ -391,3 +391,44 @@ class TestBadgeDrawn(Sizes, unittest.TestCase):
         self.assertEqual([o[0] for o in field["options"]], list(needs_you.COUNTS), "the inspector offers what it counts")
         self.assertEqual(field["def"], "updates")
         self.assertEqual(examples.badge("all"), 8)
+
+
+class TestBadgeSize(unittest.TestCase):
+    """Its size is its box (the user's call, 22 Oct): it keeps its real size on a smaller screen, and the
+    editor's legibility note says how far its number reads."""
+    BADGE = {"type": "badge", "x": 672, "y": 14, "w": 96, "h": 96}
+
+    def test_it_keeps_its_real_size_in_its_corner(self):
+        from render import arrange, theme as T
+        here = T.mm_per_px_of_canvas("792x272")
+        for disp in ("crowpanel_420", "crowpanel_290", "trmnl_og"):
+            target = arrange.canvas_key(*T.canvas_dims(0, disp))
+            box = arrange.auto_box(self.BADGE, "792x272", target)
+            mm = box["w"] * T.mm_per_px_of_canvas(target)
+            self.assertGreaterEqual(mm, 96 * here - 0.3, disp)
+            plain = arrange.auto_box({**self.BADGE, "type": "icon"}, "792x272", target)
+            self.assertEqual(box["x"] + box["w"], plain["x"] + plain["w"], f"{disp}: its right edge stays")
+            self.assertEqual(box["y"], plain["y"], f"{disp}: its top stays")
+            tw, _ = arrange.parse_canvas(target)
+            self.assertLessEqual(box["x"] + box["w"], tw)
+        small = arrange.auto_box({**self.BADGE, "type": "icon"}, "792x272", "296x128")
+        self.assertLess(small["w"], 50, "anything else still scales with the page")
+
+    def test_a_canvas_says_how_big_its_pixels_are(self):
+        from render import theme as T
+        self.assertAlmostEqual(T.mm_per_px_of_canvas("400x300"), T.mm_per_px_of_canvas("300x400"))
+        self.assertIsNone(T.mm_per_px_of_canvas("123x45"))
+        self.assertIsNone(T.mm_per_px_of_canvas("nonsense"))
+
+    def test_the_editor_gets_its_numbers_size_drawn_or_not(self):
+        from render import layout
+        said = {}
+        for value, dist in ((3, 0.8), (0, 0.8), (3, 3.0)):
+            metrics = []
+            layout.render_page({"elements": [dict(self.BADGE)]}, {0: value}, metrics=metrics, distance_m=dist)
+            m = next(x for x in metrics if x["i"] == 0)
+            self.assertGreater(m["size"], 20)
+            said[(value, dist)] = m["verdict"]
+        self.assertEqual(said[(3, 0.8)], "comfortable", "from a desk")
+        self.assertEqual(said[(0, 0.8)], said[(3, 0.8)], "the same note while it's hidden")
+        self.assertEqual(said[(3, 3.0)], "too small at 3.0m", "from a sofa: make it bigger")

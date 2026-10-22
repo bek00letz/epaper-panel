@@ -2193,7 +2193,7 @@ DRAWERS = {
 def _widget(draw):
     """A widget that draws itself from its box and the value the render cycle fetched for it."""
     def drawer(img, d, el, raw_val, display=None):
-        draw(img, d, _clamp_box(el, 712, 200, display=display), el, raw_val, scale=_font_scale(el))
+        return draw(img, d, _clamp_box(el, 712, 200, display=display), el, raw_val, scale=_font_scale(el))
     return drawer
 
 
@@ -2340,7 +2340,11 @@ def render_page(page, vals, *, clock="", label="", footer=None, page_no=None, it
                             entry["not_a_number"] = str(raw)[:60]
                     metrics.append(entry)
             elif el["type"] in WIDGETS:
-                drawer(img, d, el, vals.get(i), display=display)
+                size = drawer(img, d, el, vals.get(i), display=display)
+                if isinstance(size, int) and metrics is not None:
+                    # A widget that says how big its text is gets the legibility note (the badge's number).
+                    mm, verdict = legibility(size, distance_m=distance_m, display=display)
+                    metrics.append({"i": i, "size": size, "mm": mm, "verdict": verdict, "lines": 1, "overflow": False})
                 if i in swapped and metrics is not None:
                     # A sleeping device: the editor says what it shows instead. Only a world clock is a widget
                     # that shows the time, and it shows each city's hours ahead or behind, not the date.

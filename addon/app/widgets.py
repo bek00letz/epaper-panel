@@ -25,7 +25,7 @@ from datetime import datetime
 from typing import Any, Awaitable, Callable
 
 import examples
-from render import layout, sport, subitems
+from render import arrange, layout, sport, subitems
 from sources import energy, flights, ha_services, home, needs_you, racing, sports, station
 
 # A default box: "fill" takes the content area less `inset` (from `y`); otherwise each size is clamped to it.
@@ -85,6 +85,7 @@ class Widget:
     # The add-on's own count its page shows by, while above 0 (sources/needs_you.SENSOR): the editor writes
     # the page's "only when" from it, and its "Its sensor" note names it.
     sensor: str = ""
+    keeps_size: bool = False                    # its box keeps its real size on a smaller screen (arrange.KEEP_SIZE)
     breakable: bool = False                     # the editor can break it into plain elements
 
     def changes_every(self, el: dict | None = None) -> int | None:
@@ -318,7 +319,7 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
                                                 "\"Only when\" or an alert can show by it."}]),
     # A number on an icon, as on an app's icon, for a corner of any page; nothing at all at zero.
     Widget("badge", "Badge", "badge", _badge, lambda el, now: examples.badge(needs_you.badge_counts(el)),
-           box={"x": 672, "y": 14, "w": 96, "h": 96}, defaults={"counts": "updates"},
+           box={"x": 672, "y": 14, "w": 96, "h": 96}, defaults={"counts": "updates"}, keeps_size=True,
            fields=[sel("counts", "Counts", [["updates", "Updates"], ["notifications", "Notifications"],
                                             ["repairs", "Repairs"], ["all", "All of these"]], "updates"),
                    {"kind": "note", "text": "It's hidden while the count is zero, so it may not show on the canvas right now."}]),
@@ -366,6 +367,7 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
 subitems.WIDGET_ITEMS.update({t: w.items for t, w in WIDGETS.items() if w.items})
 subitems.WIDGET_BUSIEST.update({t: w.busiest for t, w in WIDGETS.items() if w.busiest})
 subitems.WIDGET_WORDS.update({t: w.items_word for t, w in WIDGETS.items() if w.items_word})
+arrange.KEEP_SIZE.update(t for t, w in WIDGETS.items() if w.keeps_size)
 
 
 # A plain sensor whose value changes all the time (power, wind...), as Home Assistant describes it.
