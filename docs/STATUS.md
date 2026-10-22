@@ -11,6 +11,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Version | Date | What |
 |---|---|---|
+| 0.21.0 | 22 Oct | Outside services in the editor: the status card lists failing ones; Settings › Services with Try again; another address behind an Advanced switch, checked by the add-on's own reader; racing, scores and flights can be filled by your own data source or a Home Assistant sensor's attributes. Add-on only. |
 | 0.20.2 | 22 Oct | Review 2's findings 3-8: Batteries as a rule (battery-low sensors count), units follow their sensor, page gating from widget descriptors, "changed" stored as data, notify groups listed, each kind's shortest sleep (TRMNL fix); a racing calendar in the wrong shape keeps its problem sensor on. Add-on only. |
 | 0.20.1 | 22 Oct | Clock alignment reaches panels behind Home Assistant's address; Iconify is its own service; no 24-hour leaks (with a test); a used notify sensor is never withdrawn; absurd SVG strokes refused; a failing icon copy backs off. Add-on only; restart Home Assistant once. |
 | 0.20.0 | 22 Oct | Own icons and Iconify sets without Custom Icons; Home Assistant notifications, an Updates page and a count badge (no entities in Home Assistant); a Batteries preset; "Also notify my phone…" via an on-demand entity and a shipped blueprint; Bin day wording; no squeezed inspector rows. Add-on only. |
@@ -32,7 +33,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Work | Where | State |
 |---|---|---|
-| 0.21: outside services in the editor (status card, Settings › Services, another address, own source filling a widget's fields); design pass with the user first | not started | Agreed 22 Oct |
+| Nothing in flight | | |
 
 Worker notes are in the notes folders (`break-it-0.12.0.md`,
 `timers-addon.md`, `firmware-013.md`, `fixes-0131.md`, `editor-polish.md`,
@@ -44,7 +45,8 @@ Merged worktrees kept until the user OKs removing them: `release-next`,
 `presets-015`, `widgets-015`, `editor-zoom`, `unsent-changes`,
 `changed-condition`, `icon-follows`, `ha-icons`, `clock-align`, `scores-fit`,
 `racing-calendars`, `own-icons`, `close-to-wording`, `ha-notifications`,
-`battery-preset`, `notify-blueprint`, `break-020`, `review2-fixes`.
+`battery-preset`, `notify-blueprint`, `break-020`, `review2-fixes`,
+`services-021`.
 
 ## Framework review
 
