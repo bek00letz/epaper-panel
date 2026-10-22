@@ -11,6 +11,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Version | Date | What |
 |---|---|---|
+| 0.20.0 | 22 Oct | Own icons and Iconify sets without Custom Icons; Home Assistant notifications, an Updates page and a count badge (no entities in Home Assistant); a Batteries preset; "Also notify my phone…" via an on-demand entity and a shipped blueprint; Bin day wording; no squeezed inspector rows. Add-on only. |
 | 0.19.0 | 21 Oct | Race pages read each series' own calendar first (Formula E shows season 13) and say so between seasons; Scores says when a busy day won't fit an always-on panel; next year's racing calendar missing isn't a failure. Add-on only. |
 | 0.18.0 | 21 Oct | The panel's clock is right within seconds (draws just after each minute, the panel fetches right after; sleeping devices wake just after a minute); icons from your own Home Assistant, custom sets included; condition suggestions from the add-on's one list. Firmware change. |
 | 0.17.0 | 21 Oct | Any icon can change with a sensor (an icon and a look per state); From switches between any choices; no inspector switcher cuts off a choice. Add-on only. |
@@ -27,31 +28,14 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 ## In flight
 
-| Work | Where | State |
-|---|---|---|
-| E-paper's own icon folder and prefix, and Iconify downloads of its own, so it stops depending on the Custom Icons integration (whose v1.0.2 "Download Iconify icons" breaks aiohttp for all of Home Assistant; upstream abandoned). Existing local: and Iconify references keep working; the Custom Icons path stays off as the way back (session "epaper-own-icons", started by the Eufy session at the user's request, 22 Oct) | branch `own-icons` | Done 22 Oct: 3 commits, add-on only; combined in `release-next` |
-| Home Assistant's notifications (a widget, a page that shows only while there are any) and a badge counting updates waiting (session "ha-notifications") | branch `ha-notifications` from `release-next` | Done 22 Oct: 8 commits, 919 tests pass; no entities in Home Assistant (counts are the add-on's own values); the badge keeps its real size in mm on smaller screens (user's call) |
-| A battery state preset: several batteries, a threshold each or for the group, shown only while below (charge it) or above (charged), page and alert (session "presets-015", from the user's Quick Settings pane) | branch `battery-preset` from `release-next` | Done 22 Oct: 6 commits; batteries preselected by device (the registry), names only as fallback; names shrink before shortening |
-| "Also notify my phone…" for alerts and when-pages: one Home Assistant entity created only when asked, withdrawn when no longer needed, plus a shipped notify blueprint (session "notify-blueprint") | branch `notify-blueprint` from `release-next` | Started 22 Oct; designs with the user first |
-| Bin day's long "Close to the day" menu becomes two plain choices, "Bin day ends" and "Says" (session "icon-follows", asked by the user directly) | branch `close-to-wording` | Done 22 Oct; combined in `release-next` |
-
-The next release (0.20.0) is put together in `release-next`: 883 tests pass, no
-firmware change. Held by the user to add more (22 Oct). The user approved merging and pushing it
-once notify-blueprint is in and the full suite passes ("when happy, merge and
-push", 22 Oct).
-
-Until it ships: keep Custom Icons installed, and don't press its "Download
-Iconify icons" button.
-
-Merged into local main, not pushed, for the next release
-(user, 22 Oct): every inspector row moves its control under its label when they
-don't fit side by side (the Countdown's squeezed "Close to the day").
+Nothing.
 
 Worker notes are in the notes folders (`break-it-0.12.0.md`,
 `timers-addon.md`, `firmware-013.md`, `fixes-0131.md`, `editor-polish.md`,
 `alerts-todo.md` in the first coordinator's; `widgets-015.md`,
 `presets-015.md`, `framework-review.md`, `checklist-0.15.0.md`,
-`unsent-changes.md`, `icon-follows.md`, `ha-icons.md`, `clock-align.md`, `racing-calendars.md` in this one's).
+`unsent-changes.md`, `icon-follows.md`, `ha-icons.md`, `clock-align.md`, `racing-calendars.md` in this one's; `own-icons.md`, `ha-notifications.md`,
+`notify-blueprint.md` in the first coordinator's).
 Merged worktrees kept until the user OKs removing them: `release-next`,
 `presets-015`, `widgets-015`, `editor-zoom`, `unsent-changes`,
 `changed-condition`, `icon-follows`, `ha-icons`, `clock-align`, `scores-fit`,
