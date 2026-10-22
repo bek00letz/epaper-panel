@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed:** a TRMNL could be told to sleep less than a minute after a
+  button press, which its firmware doesn't keep. Each kind of device now
+  says its own shortest sleep (a TRMNL's is a minute, a CrowPanel's 30
+  seconds).
+
 ## 0.20.1
 Add-on only; no firmware change. **Restart Home Assistant once** after
 updating, so it loads the updated e-Paper Panel integration (it carries the

@@ -36,6 +36,7 @@ from aiohttp import web
 import devices
 import frame_token
 import reach
+import cadence
 import timing
 
 
@@ -51,6 +52,8 @@ class Kind:
     stays_on = True
     # The shortest Update every, in minutes, of a kind that can't stay connected (a TRMNL: 5).
     shortest_update = timing.ASLEEP_FROM
+    # The shortest sleep, in seconds, this kind's firmware takes (cadence.align_sleep).
+    shortest_sleep = cadence.MIN_SLEEP
 
     @property
     def timers(self) -> dict:

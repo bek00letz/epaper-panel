@@ -293,7 +293,7 @@ def quiet_now(ahead: Ahead, now: datetime) -> tuple[bool, str]:
 def sleep_seconds(dev: dict, ahead: Ahead, now: datetime, person: bool) -> int:
     """How long to sleep after this wake: cut to wake a moment after a minute's render
     (cadence.align_sleep), so "updated" and any time shown are right to the minute."""
-    return cadence.align_sleep(_sleep_wanted(dev, ahead, now, person), now.timestamp())
+    return cadence.align_sleep(_sleep_wanted(dev, ahead, now, person), now.timestamp(), _kind(dev).shortest_sleep)
 
 
 def _sleep_wanted(dev: dict, ahead: Ahead, now: datetime, person: bool) -> int:
