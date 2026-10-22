@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Notify a group, not only a phone.** "Also notify my phone…" now lists
+  notifiers that aren't entities too, such as a group written in YAML
+  (notify.family), by their name, and the automation it makes sends to
+  them. On Home Assistant before 2026.5, where the app's phones aren't
+  notify entities yet, phones are listed this way too. The add-on's
+  blueprint in Home Assistant updates itself the next time you set one up.
+
 - **"Changed in the last N minutes" can't quietly change meaning.** It's
   now saved as what it is, not as a Home Assistant template, so the add-on
   always answers it from the sensor's history (a restart is never a

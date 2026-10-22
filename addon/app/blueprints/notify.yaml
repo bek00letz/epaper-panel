@@ -21,11 +21,21 @@ blueprint:
     notify:
       name: Notify
       description: The phones or other devices to send it to.
+      default: []
       selector:
         entity:
           multiple: true
           filter:
             - domain: notify
+    notify_services:
+      name: Also notify these actions
+      description: >-
+        Notify actions that aren't entities, like a group written in YAML
+        (notify.family). Optional.
+      default: []
+      selector:
+        text:
+          multiple: true
     message:
       name: Message
       description: Leave empty to use the page's name.
@@ -64,6 +74,8 @@ triggers:
 
 variables:
   alert_entity: !input alert
+  notify_entities: !input notify
+  notify_actions: !input notify_services
   message_text: !input message
   title_text: !input title
   quiet_minutes: !input quiet_minutes
@@ -81,17 +93,28 @@ conditions:
 actions:
   - if:
       - condition: template
-        value_template: "{{ title_text | trim != '' }}"
+        value_template: "{{ notify_entities | count > 0 }}"
     then:
-      - action: notify.send_message
-        target:
-          entity_id: !input notify
-        data:
-          title: "{{ title_text }}"
-          message: "{{ text }}"
-    else:
-      - action: notify.send_message
-        target:
-          entity_id: !input notify
-        data:
-          message: "{{ text }}"
+      - if:
+          - condition: template
+            value_template: "{{ title_text | trim != '' }}"
+        then:
+          - action: notify.send_message
+            target:
+              entity_id: !input notify
+            data:
+              title: "{{ title_text }}"
+              message: "{{ text }}"
+        else:
+          - action: notify.send_message
+            target:
+              entity_id: !input notify
+            data:
+              message: "{{ text }}"
+  # A notifier that's an action, not an entity (a group in YAML): called as itself.
+  - repeat:
+      for_each: "{{ notify_actions }}"
+      sequence:
+        - action: "{{ repeat.item }}"
+          data: >-
+            {{ {'message': text, 'title': title_text} if title_text | trim != '' else {'message': text} }}
