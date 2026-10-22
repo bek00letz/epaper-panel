@@ -101,6 +101,32 @@ class TestTheGrid(unittest.TestCase):
         self.assertIn("ON", texts)
 
 
+NAMES = ["Smoke Alarm Battery", "Door Sensor Battery", "Remote Battery", "Thermostat Battery", "Kitchen Remote Battery", "Balcony Window Battery",
+         "Hallway Sensor Battery", "Plant Sensor Battery", "Bedroom Remote Battery", "Garage Door Battery", "Office Button Battery", "Attic Smoke Battery"]
+
+
+class TestTheList(unittest.TestCase):
+    """The user's call (22 Oct): a row each, so names read at every size; the cards clipped them."""
+
+    def listed(self, w, h, n):
+        el = {**grid(), "x": 0, "y": 0, "w": w, "h": h, "layout_mode": "list",
+              "items": [{"entity": f"sensor.b{i}", "name": "", "icon": ""} for i in range(n)]}
+        raw = json.dumps([{"entity": f"sensor.b{i}", "state": str(5 + 3 * i), "name": NAMES[i], "unit": "%", "device_class": "battery"} for i in range(n)])
+        return drawn(el, raw)[0]
+
+    def test_no_name_is_cut_at_the_offered_sizes(self):
+        for w, h, size in [(752, 214, '5.79"'), (376, 240, '4.2"'), (280, 100, '2.9"'), (240, 360, '4.2" upright')]:
+            for n in (1, 3, 5, 8, 12):
+                with self.subTest(size=size, batteries=n):
+                    self.assertFalse([t for t in self.listed(w, h, n) if "…" in t])
+
+    def test_what_doesnt_fit_is_counted(self):
+        texts = self.listed(752, 214, 12)
+        self.assertIn("and 3 more", texts)
+        self.assertEqual(len([t for t in texts if t.endswith("%")]), 9)
+        self.assertEqual([t for t in texts if t.endswith("%")][:2], ["5%", "8%"], "emptiest first, down the first column")
+
+
 class TestTheTemplateAndTheExamples(unittest.TestCase):
     def test_the_values_carry_unit_and_kind(self):
         tpl = layout.collect_templates({"elements": [grid()]})[0]
@@ -154,6 +180,76 @@ class TestThePageShowsWhileOneDoes(unittest.TestCase):
         self.assertIn('field("Shows each", select(GRID_RULES, gridRule(el)', js)
         self.assertIn("field(`Its own ${cmp.toLowerCase()}`, number(it.threshold", js)
         self.assertIn('if (v === "alert") syncDynamicGridShowIf(p);', (APP_JS / "main.js").read_text())
+
+
+ENTS = """[
+  { entity_id: "sensor.remote_battery", state: "34", unit: "%", device_class: "battery", name: "Remote Battery" },
+  { entity_id: "sensor.smoke_alarm_battery", state: "8", unit: "%", device_class: "battery", name: "Smoke Alarm Battery" },
+  { entity_id: "sensor.phone_battery_level", state: "95", unit: "%", device_class: "battery", name: "Phone Battery level" },
+  { entity_id: "sensor.phone_battery_state", state: "Charging", unit: "", device_class: "", name: "Phone Battery state" },
+  { entity_id: "sensor.car_battery", state: "62", unit: "%", device_class: "battery", name: "Car Battery" },
+  { entity_id: "binary_sensor.car_charging", state: "off", unit: "", device_class: "battery_charging", name: "Car Charging" },
+  { entity_id: "sensor.gone_battery", state: "unavailable", unit: "%", device_class: "battery", name: "Gone Battery" },
+  { entity_id: "sensor.voltage_battery", state: "2.9", unit: "V", device_class: "voltage", name: "Remote Battery voltage" }]"""
+
+
+@unittest.skipUnless(shutil.which("node"), "no node to read the editor's presets")
+class TestThePreset(unittest.TestCase):
+    def setUp(self):
+        from test_presets import run_js
+        self.js = run_js
+
+    def test_the_batteries_emptiest_first(self):
+        got = self.js(f"console.log(JSON.stringify(P.batterySensors({ENTS}).map((e) => e.entity_id)))")
+        self.assertEqual(got, ["sensor.smoke_alarm_battery", "sensor.remote_battery", "sensor.car_battery", "sensor.phone_battery_level",
+                               "sensor.gone_battery"], "levels in %, no level last; a voltage isn't one")
+
+    def test_ticked_to_start_with_by_what_they_are(self):
+        """Low: what you swap (no charging state beside it), with a level. Charged: what you charge."""
+        got = self.js(f"""console.log(JSON.stringify([P.preselectBatteries({ENTS}, "below"), P.preselectBatteries({ENTS}, "at_least")]))""")
+        self.assertEqual(got[0], ["sensor.smoke_alarm_battery", "sensor.remote_battery"])
+        self.assertEqual(got[1], ["sensor.car_battery", "sensor.phone_battery_level"])
+
+    def test_how_many_would_show(self):
+        got = self.js(f"""const c = new Set(["sensor.smoke_alarm_battery", "sensor.remote_battery", "sensor.gone_battery"]);
+          console.log(JSON.stringify([P.batteriesPast({ENTS}, c, "below", 20), P.batteriesPast({ENTS}, c, "below", 40), P.batteriesPast({ENTS}, c, "at_least", 30)]))""")
+        self.assertEqual(got, [1, 2, 1])
+
+    def test_the_page_it_makes(self):
+        got = self.js("""const p = P.presetById("batteries"), l = p.looks[0];
+          const low = P.pageFor(p, l, "", { rule: "below", value: 30, items: ["sensor.a", "sensor.b"], tier: "when" });
+          const full = P.pageFor(p, l, "", { rule: "at_least", value: 95, items: ["sensor.c"], tier: "alert" });
+          console.log(JSON.stringify({ low, full, names: [P.pageName(p, l, "", "", { rule: "below" }), P.pageName(p, l, "", "", { rule: "at_least" })],
+            group: p.group, needs: p.needs, example: P.examplePage(p, l) }))""")
+        g = got["low"]["elements"][0]
+        self.assertEqual((got["low"]["tier"], g["type"], g["filter_rule"], g["filter_value"], g["header_title"]), ("when", "dynamic_grid", "below", 30, "Low batteries"))
+        self.assertEqual([i["entity"] for i in g["items"]], ["sensor.a", "sensor.b"])
+        self.assertEqual([i["icon"] for i in g["items"]], ["", ""], "Home Assistant's glyph for each level")
+        f = got["full"]["elements"][0]
+        self.assertEqual((got["full"]["tier"], f["filter_rule"], f["filter_value"], f["header_title"]), ("alert", "at_least", 95, "Charged"))
+        self.assertEqual(got["names"], ["Low batteries", "Charged"])
+        self.assertEqual((got["group"], got["needs"]), ("home", "batteries"))
+        self.assertEqual(len(got["example"]["elements"][0]["items"]), 4)
+
+    def test_the_example_thumbnail_shows_three_of_four(self):
+        page = self.js("""const p = P.presetById("batteries"); console.log(JSON.stringify(P.examplePage(p, p.looks[0])))""")
+        vals, _ = examples.page_values(page)
+        texts, icons = drawn(page["elements"][0], vals[0])
+        self.assertEqual([t for t in texts if t.endswith("%")], ["8%", "21%", "34%"])
+        self.assertIn("Smoke Alarm", texts, "\"Battery\" dropped from each name on a page of batteries")
+
+    def test_it_lists_them(self):
+        page = self.js("""const p = P.presetById("batteries"); console.log(JSON.stringify(P.examplePage(p, p.looks[0])))""")
+        self.assertEqual(page["elements"][0]["layout_mode"], "list")
+        self.assertIn('["list", "List"]', (APP_JS / "inspector.js").read_text())
+
+    def test_its_step(self):
+        js = (APP_JS / "setup.js").read_text()
+        self.assertIn("batteries: batteriesSetup };", js)
+        self.assertIn('seg([["below", "Low, to charge"], ["at_least", "Charged, to unplug"]]', js)
+        self.assertIn('seg([["when", "With the pages"], ["alert", "As an alert"]]', js)
+        self.assertIn("if (!touched) chosen = new Set(preselectBatteries(app.ents, rule));", js)
+        self.assertIn("syncDynamicGridShowIf(page);", (APP_JS / "newpage.js").read_text(), "an alert takes its grid's condition")
 
 
 if __name__ == "__main__":

@@ -20,6 +20,7 @@ import calendar
 from datetime import datetime, date
 import json
 import math
+import re
 from functools import lru_cache
 from pathlib import Path
 
@@ -747,6 +748,65 @@ def _level_text(level, unit):
     return f"{num}{unit}" if unit in ("%", "") else f"{num} {unit}"
 
 
+# A list of Dynamic status items (the user's call, 22 Oct, for Batteries): a row each, with its icon,
+# its name and, on the right, its level or detail; two columns when wide; "and 3 more" when they
+# don't all fit. Rows never get smaller than reads on e-ink.
+LIST_ROW_MIN, LIST_ROW_MAX, LIST_GAP = 30, 60, 4
+
+
+def _draw_grid_list(d, x, y, w, h, items, detail, by_number, fscale=1.0, icons_only=False, icon_px=None):
+    n = len(items)
+    cols = 2 if w >= 480 and n >= 4 else 1
+    per_col = max(1, (h + LIST_GAP) // (LIST_ROW_MIN + LIST_GAP))
+    room = per_col * cols
+    shown = items if n <= room else items[:room - 1]
+    more = n - len(shown)
+    slots = len(shown) + (1 if more else 0)
+    rows = max(1, math.ceil(slots / cols))
+    rh = max(LIST_ROW_MIN, min(LIST_ROW_MAX, (h - LIST_GAP * (rows - 1)) // rows))
+    col_gap = 24
+    cw = (w - col_gap * (cols - 1)) // cols
+    text_px = max(14, min(36, int(rh * 0.5 * fscale), cw // 8))
+    name_f, level_f = T.font(text_px, bold=True), T.font(text_px, bold=by_number)
+    isz = 0 if cw < 180 else min(icon_px or int(rh * 0.78), rh)     # a sliver of a column keeps the room for the name
+    pad = 10 if isz else 0
+
+    for k in range(slots):
+        col, row = divmod(k, rows)                      # down the first column, then the next
+        cx, cy = x + col * (cw + col_gap), y + row * (rh + LIST_GAP)
+        mid = cy + rh // 2
+        if k < len(shown) and row < rows - 1 and k + 1 < slots:
+            d.line([(cx, cy + rh + LIST_GAP // 2), (cx + cw, cy + rh + LIST_GAP // 2)], fill=T.BLACK, width=1)
+        if k >= len(shown):
+            d.text((cx + isz + pad, mid), f"and {more} more", font=T.font(text_px, bold=False), fill=T.BLACK, anchor="lm")
+            continue
+        it = shown[k]
+        if isz:
+            _draw_icon_glyph(d, it["icon"], cx + isz // 2, mid, isz)
+        if icons_only:
+            continue
+        right = detail(it)
+        rw = T.text_width(right, level_f) if right else 0
+        if right:
+            d.text((cx + cw, mid), right, font=level_f, fill=T.BLACK, anchor="rm")
+        tx = cx + isz + pad
+        avail = max(20, cx + cw - rw - 12 - tx)
+        name = it["name"]
+        f = name_f
+        for px in range(text_px, max(16, int(text_px * 0.6)) - 1, -1):    # smaller before it's cut
+            f = T.font(px, bold=True)
+            if T.text_width(name, f) <= avail:
+                break
+        words = name.split()
+        if T.text_width(name, f) > avail and len(words) > 1 and rh >= f.size * 2.3:
+            # Still too long, and the row has room: two lines, split where both fit best.
+            cut = min(range(1, len(words)), key=lambda j: max(T.text_width(" ".join(words[:j]), f), T.text_width(" ".join(words[j:]), f)))
+            for line, dy in ((" ".join(words[:cut]), -0.55), (" ".join(words[cut:]), 0.55)):
+                d.text((tx, mid + int(dy * f.size)), _fit_text(line, avail, f), font=f, fill=T.BLACK, anchor="lm")
+        else:
+            d.text((tx, mid), _fit_text(name, avail, f), font=f, fill=T.BLACK, anchor="lm")
+
+
 def _draw_dynamic_grid(img, d, el, raw_val, display=None):
     x, y, w, h = _clamp_box(el, 752, 214, display=display)
     has_resolved = False
@@ -794,6 +854,9 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
                 chosen_icon = _resolve_spot_icon(it, state)
                 if by_number and not it.get("icon") and res.get("device_class") == "battery":
                     chosen_icon = state_words.battery_icon(level)      # Home Assistant's own glyph for its level
+                if by_number and res.get("device_class") == "battery":
+                    # On a page of batteries, "Door Sensor Battery" is the Door Sensor.
+                    friendly = re.sub(r"\s+battery(\s+level)?$", "", friendly, flags=re.I) or friendly
                 active_items.append({
                     "level": level, "level_text": _level_text(level, res.get("unit")) if by_number else "",
                     "entity": ent,
@@ -906,6 +969,11 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
         fscale = max(0.6, min(1.8, float(el.get("font_scale") or el.get("scale") or 1.0)))
     except (ValueError, TypeError):
         fscale = 1.0
+
+    if el.get("layout_mode") == "list":
+        _draw_grid_list(d, x, y, w, h, active_items, format_sec, by_number, fscale,
+                        icons_only=show_labels == "icons_only", icon_px=req_icon_sz)
+        return
 
     # 1 Item: Hero Card
     if n == 1:
@@ -1043,16 +1111,14 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
                 tx = cx0 + 14 + isz + 12
                 base_name_sz = min(26, max(17, cw_i // 11))
                 name_f = T.font(max(13, min(36, int(base_name_sz * fscale))), bold=True)
-                if by_number and sec:
-                    # The level, large and on the right ("21%"); the name takes what's left.
-                    lvl_f = T.font(max(16, min(44, int(base_name_sz * 1.3 * fscale))), bold=True)
-                    d.text((cx1 - 12, cy0 + ch_i // 2), sec, font=lvl_f, fill=T.BLACK, anchor="rm")
-                    bx0 = cx1 - 12 - T.text_width(sec, lvl_f) - 6
-                    sec = ""
                 avail_tw = max(30, bx0 - tx - 6)
                 name_txt = _fit_text(it["name"], avail_tw, name_f)
-                d.text((tx, cy0 + ch_i // 2 - (int(11 * fscale) if sec else 0)), name_txt, font=name_f, fill=T.BLACK, anchor="lm")
-                if sec:
+                d.text((tx, cy0 + ch_i // 2 - (int((14 if by_number else 11) * fscale) if sec else 0)), name_txt, font=name_f, fill=T.BLACK, anchor="lm")
+                if sec and by_number:
+                    # The level under the name, bold and a size larger ("21%"), so the name keeps the width.
+                    lvl_f = T.font(max(14, min(40, int(base_name_sz * 1.2 * fscale))), bold=True)
+                    d.text((tx, cy0 + ch_i // 2 + int(17 * fscale)), sec, font=lvl_f, fill=T.BLACK, anchor="lm")
+                elif sec:
                     base_sec_sz = min(16, max(12, cw_i // 16))
                     sec_f = T.font(max(10, min(24, int(base_sec_sz * fscale))), bold=False)
                     d.text((tx, cy0 + ch_i // 2 + int(14 * fscale)), sec, font=sec_f, fill=T.BLACK, anchor="lm")

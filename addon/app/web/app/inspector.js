@@ -574,7 +574,7 @@ function gridSections(app, el, set) {
       resync(); app.doc.commit();
     }, { "aria-label": "Shows each" })),
     byNumber ? field(cmp, number(el.filter_value, (v) => { el.filter_value = v; resync(); app.doc.commit(); }, { step: "any", "aria-label": `${cmp} this number`, style: { width: "6em" } })) : null,
-    field("Layout", select([["grid", "Grid"], ["columns", "One row"]], el.layout_mode || (el.layout_4 === "columns" ? "columns" : "grid"), (v) => set("layout_mode", v))),
+    field("Layout", select([["grid", "Grid"], ["columns", "One row"], ["list", "List"]], el.layout_mode || (el.layout_4 === "columns" ? "columns" : "grid"), (v) => set("layout_mode", v))),
     field("Shows", select([["both", "Icon, name and detail"], ["name_only", "Icon and name"], ["icons_only", "Icons only, large"]], el.show_labels || "both", (v) => set("show_labels", v))),
     field("Icon size", select([["auto", "Fit"], ["medium", "Medium"], ["large", "Large"], ["huge", "Huge"]], el.icon_size || "auto", (v) => set("icon_size", v))),
     // By a number, the detail is its level (render/layout); a state can say how long, or itself.
