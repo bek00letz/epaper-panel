@@ -2,8 +2,9 @@
 // the same Home Assistant template 0.9 wrote, and reads it back. Anything the
 // form can't express stays a custom template, untouched.
 
-import { gateOf, gateShowIf, gateWrote } from "./legacy.js";
-import { stateWords } from "./catalog.js";
+import { gateOf, gateShowIf, gateWrote, WIDGET_WRITES_CONDITION } from "./legacy.js";
+import { stateWords, sportWord } from "./catalog.js";
+import { NO_ANSWER_HOURS, NO_ANSWER_WAITS } from "./presets.js";
 
 const NO_VALUE = ["unavailable", "unknown"];
 
@@ -159,6 +160,7 @@ export function changedLine(parsed, got, { minutes, alert = "" } = {}) {
    condition is rewritten only while it's still the widget's own (empty, or naming one of its gate's
    sensors), so one you wrote yourself stays. */
 export function syncWidgetShowIf(page, widgetEl) {
+  if (!WIDGET_WRITES_CONDITION) { dropWidgetWritten(page); return; }
   if (!page || page.tier !== "when") return;
   widgetEl = widgetEl || (page.elements || []).find((x) => gateOf(x)?.rule);
   if (!widgetEl || !gateOf(widgetEl)?.rule || !gateWrote(page.show_if, widgetEl)) return;
@@ -210,6 +212,7 @@ export function gridWrote(expr, gridEl) {
 /* The page shows while its grid shows something: "Only when" always follows the grid; an alert
    follows it while its condition is the grid's own (or empty), so one you wrote yourself stays. */
 export function syncDynamicGridShowIf(page, gridEl) {
+  if (!WIDGET_WRITES_CONDITION) { dropWidgetWritten(page); return; }
   if (!page || (page.tier !== "when" && page.tier !== "alert")) return;
   gridEl = gridEl || (page.elements || []).find((x) => x.type === "dynamic_grid");
   if (!gridEl) return;
@@ -223,4 +226,76 @@ export function syncDynamicGridShowIf(page, gridEl) {
   const s = gridShowIf(gridEl);
   if (s) page.show_if = s;
   else if (page.tier === "when") delete page.show_if;
+}
+
+/* ---------- a page's "Shows", in one place (0.21.1) ----------
+   The user's call (22 Oct): a page with a widget that can say whether it has something to show
+   (its gate, widgets.py) shows by two parts together: that ("Something on it to show", a switch,
+   on unless `by_widget: false`) and its own condition, if it has one. Both must hold. The add-on
+   answers the widget's part (frames, widgets.widget_part); the editor only says it. */
+
+/* Whether an element has a part: a gate, and something to wait for (a list chosen, a grid that
+   watches something). The editor's mirror of widgets.widget_part. */
+export function hasPart(el) {
+  const g = gateOf(el);
+  if (!g) return false;
+  if (g.checked && (!g.check_if || el[g.check_if])) return true;
+  return !!(g.own_condition ? gridShowIf(el) : gateShowIf(el));
+}
+export const partEls = (page) => (page?.elements || []).filter((el) => el && hasPart(el));   // switched on or not
+export const partOn = (page) => page?.by_widget !== false && partEls(page).length > 0;
+
+/* A gate's words for an element: a phrase, or {setting: {value: words}, "else": words}, nested. */
+function sayOf(says, el) {
+  for (let k = 0; says && typeof says === "object" && k < 8; k++) {
+    const key = Object.keys(says).find((x) => x !== "else"), by = key ? says[key] : null, v = String(el[key] ?? "");
+    says = by && Object.prototype.hasOwnProperty.call(by, v) ? by[v] : says.else;
+  }
+  return String(says || "").replace("{event}", sportWord(el.league));
+}
+/* One element's part in words: "one of its batteries is low, or hasn't answered for 12 hours". */
+export function partWords(el) {
+  let w = sayOf(gateOf(el)?.says, el);
+  if (el.batteries && el.filter_rule === "below") {
+    const hours = el.no_answer_hours ?? NO_ANSWER_HOURS;
+    if (hours !== "never" && hours !== false && hours !== null)
+      w += `, or hasn't answered for ${(NO_ANSWER_WAITS.find(([v]) => v === Number(hours))?.[1]) || `${hours} hours`}`;
+  }
+  return w;
+}
+/* The page's part in words: any of its widgets with something to show. */
+export const pagePartWords = (page) => [...new Set(partEls(page).map(partWords).filter(Boolean))].join(", or ");
+
+/* The page's own condition as a clause: "Bedroom presence changed to Home in the last 2 minutes". */
+export function clause(showIf, entMap) {
+  const p = parseShowIf(showIf);
+  if (p.mode === "raw") return "its custom condition is true";
+  if (!p.ent) return "";
+  const e = entMap?.get(p.ent), name = e?.name || p.ent;
+  // A state as Home Assistant words it for its kind ("Detected", not "on").
+  const word = (v) => valueChoices(p.ent, e?.device_class).find((c) => c.state.toLowerCase() === String(v).toLowerCase())?.word || v;
+  if (p.op === "changed") return `${name} changed${p.val ? " to " + word(p.val) : ""} in the last ${minutesInWords(p.minutes || CHANGED_MINUTES)}`;
+  const op = OPS.find(([k]) => k === p.op)?.[1] || "is";
+  const unit = e?.unit && OPS.slice(2).some(([k]) => k === p.op) ? " " + e.unit : "";
+  return `${name} ${op} ${unit ? p.val : word(p.val)}${unit}`;
+}
+/* The whole of when a page shows, in words. "" for a page that always shows. */
+export function showsWords(page, entMap) {
+  if (!page || (page.tier !== "when" && page.tier !== "alert")) return "";
+  const parts = [partOn(page) ? pagePartWords(page) : "", page.show_if ? clause(page.show_if, entMap) : ""].filter(Boolean);
+  if (!parts.length) return "Choose when it shows";
+  return `${page.tier === "alert" ? "As an alert when" : "Only when"} ${parts.join(", and ")}`;
+}
+
+/* A condition the editor wrote for the page's widget before 0.21.1: its part says the same now, so it
+   goes (the editor's mirror of widgets.wrote_for_widget, for pages it's handed: a preset, a draft). */
+export function widgetWrote(page) {
+  const s = typeof page?.show_if === "string" ? page.show_if.trim() : "";
+  if (!s || (page.tier !== "when" && page.tier !== "alert") || !partOn(page)) return false;
+  return partEls(page).some((el) => (gateOf(el).own_condition ? gridWrote(s, el) || (!!el.batteries && gridShaped(s)) : s === gateShowIf(el)));
+}
+export function dropWidgetWritten(page) {
+  if (!widgetWrote(page)) return false;
+  delete page.show_if;
+  return true;
 }

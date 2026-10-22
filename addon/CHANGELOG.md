@@ -13,6 +13,20 @@
   such as "Salus: 3 not answering". Change the wait, or turn it off with
   Never, in the page's Batteries settings. A Home Assistant restart starts
   the wait again, so it can show later than it should, never early.
+- **A page's widget and your own condition count together.** On a page
+  set to "Only when" or "As an alert", the page's Shows section now has two
+  parts: "Something on it to show", a switch for its widget (a low battery,
+  a plane near, a game day, something to do), and "And when", your own
+  condition. Both must hold, so a page can show for 2 minutes after you get
+  home, only while a battery is low. The whole thing is said in one
+  sentence. A widget's own "Only show while…" switch now points to the
+  page's Shows section.
+- **Changed:** before, a page went by either its widget or your own
+  condition, and silently left the other out. Your pages show as they did,
+  except where both were set: a page with your own condition and a widget
+  that can say it has something to show (Batteries, Flights, Scores, Racing,
+  To-do, Notifications, Updates, a Devices grid) now waits for both. Turn
+  "Something on it to show" off to go by your condition alone.
 
 ## 0.21.0
 Add-on only; no firmware change, so nothing to reinstall on the panel

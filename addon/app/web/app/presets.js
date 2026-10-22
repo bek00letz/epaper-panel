@@ -16,7 +16,7 @@
 //   was      its old name, so search still finds it and the card can say so.
 // No imports from util.js: the tests read this file under node.
 
-import { gateShowIf, todoShowIf } from "./legacy.js";
+import { gateOf, gateShowIf, todoShowIf, WIDGET_WRITES_CONDITION } from "./legacy.js";
 import { leagues, series, widgetChangesEvery, stateWords } from "./catalog.js";
 
 export const GROUPS = [
@@ -436,18 +436,21 @@ export const lookOf = (p, i = 0) => p.looks[Math.min(Math.max(0, i | 0), p.looks
 export const asksOf = (p, look) => (look.asks !== undefined ? look.asks : p.asks);
 export const needsOf = (p, look) => (look.needs !== undefined ? look.needs : p.needs);
 
-/* What a look's page is: its elements and when it shows. A widget's own
-   condition comes from the widget (conditions.syncWidgetShowIf), so a league
-   or series always shows by its own sensor. */
+/* What a look's page is: its elements and when it shows. Since 0.21.1 a
+   widget's own part is the page's "Something on it to show", answered by the
+   add-on (widgets.widget_part), never written as the page's condition. */
 export function pageFor(p, look, ent, extra, unitOf = () => "") {
   const tier = typeof look.tier === "function" ? look.tier(extra) : look.tier;    // a look may ask its step (Batteries: an alert)
   const page = { tier: tier || p.tier || "rotate", elements: withUnits(look.make(ent, extra), unitOf) };
   const showIf = look.showIf || p.showIf;
   if (showIf) { const s = showIf(ent, extra); if (s) page.show_if = s; }
-  if (look.widget) {
+  if (look.widget && WIDGET_WRITES_CONDITION) {
     const c = gateShowIf(page.elements[0]);          // the widget's own, from its descriptor's gate
     if (c) page.show_if = c;
   }
+  // A look's condition that only says what its widget's part says (a to-do list's count) is the part.
+  if (!WIDGET_WRITES_CONDITION && typeof page.show_if === "string" && page.elements.some((el) => gateOf(el) && page.show_if === gateShowIf(el)))
+    delete page.show_if;
   return page;
 }
 

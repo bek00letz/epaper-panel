@@ -496,15 +496,21 @@ up to v0.12.0). `app/legacy.js` keeps the pieces of it this one still uses.
   box, settings and inspector fields, how its value is fetched and how often
   it changes, its example and whether it makes items of its page. The render
   cycle, examples, sub-items and the editor (through the catalog) read it. A
-  new widget is a descriptor plus its drawing, nowhere else. How its page
-  shows "only when" is its descriptor's `Gate`: the sensor and rule the
-  editor writes as the page's condition (active, or a count above 0), a
-  `check` the add-on answers from the element itself (a league's window,
-  planes near), the sensor names a condition may say for it (older ones
-  included), and which publisher keeps its sensors. `frames.eligible_pages`
-  (`widgets.gate_of`), the editor (`legacy.gateShowIf`, `syncWidgetShowIf`,
-  "Its sensor"), `entities.publish_computed` and `needs_you.counts_in` read
-  it; never a list of types or sensor names.
+  new widget is a descriptor plus its drawing, nowhere else. Whether it has
+  something to show is its descriptor's `Gate`: a `check` the add-on answers
+  from the element itself (a league's window, planes near, the batteries a
+  rule picks), or a condition Home Assistant answers (its sensor active, a
+  count above 0, a grid's own), its words, the sensor names older pages
+  wrote for it, and which publisher keeps its sensors.
+- **A page's "Shows" is one place** (0.21.1, the user's call): a page with
+  a gated widget shows while its widget part ("Something on it to show", a
+  switch, on unless `by_widget: false`) AND its own condition hold, each if
+  it has one; with two gated widgets, any one with something is enough.
+  Never either/or, and the editor never writes a widget's part into
+  `show_if`. `widgets.widget_part`, `frames.eligible_pages` and
+  `check_alerts`, the editor (`conditions.partEls`, `showsWords`, the page
+  panel), `entities.publish_computed` and `needs_you.counts_in` read the
+  gate; never a list of types or sensor names.
 - **The editor keeps no copies of the server's tables.** Leagues, racing
   series, each sport's words, state words, widget descriptors and the time
   format come from `GET /api/catalog`, built from the tables themselves

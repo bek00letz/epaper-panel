@@ -318,6 +318,10 @@ export function getWidgetSensorId(el) {
   if (g.sensor_of === "todo") return todoDueSensor(el.entity);
   return "";
 }
+/* Before 0.21.1 the editor wrote a widget's part into its page's condition (gateShowIf, gridShowIf);
+   since then it's the page's "Something on it to show" switch, ANDed with the page's own condition
+   (the user's call, 22 Oct; widgets.widget_part). The way back: true. */
+export const WIDGET_WRITES_CONDITION = false;
 /* The condition a widget's page shows by, from its gate: its sensor "active", or above 0 (a to-do
    list by its own count or its due count). "" for a gate the add-on answers on its own. */
 export function gateShowIf(el) {

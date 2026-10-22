@@ -152,9 +152,10 @@ APP_JS = support.APP / "web" / "app"
 
 
 def node(js):
-    src = (APP_JS / "conditions.js").as_uri()
-    out = subprocess.run(["node", "--input-type=module", "-e", f"import * as C from {json.dumps(src)};\n{js}"],
-                         capture_output=True, text=True, check=True).stdout
+    from test_presets import catalog_json
+    src, cat = (APP_JS / "conditions.js").as_uri(), (APP_JS / "catalog.js").as_uri()
+    script = f"import * as Cat from {json.dumps(cat)}; import * as C from {json.dumps(src)}; Cat.setCatalog({json.dumps(catalog_json())});\n{js}"
+    out = subprocess.run(["node", "--input-type=module", "-e", script], capture_output=True, text=True, check=True).stdout
     return json.loads(out)
 
 
@@ -174,14 +175,14 @@ class TestThePageShowsWhileOneDoes(unittest.TestCase):
         got = node("""console.log(JSON.stringify(C.gridShowIf({ filter_state: "on", items: [{ entity: "switch.x" }, { entity: "switch.y" }] })))""")
         self.assertEqual(got, "{{ is_state('switch.x','on') or is_state('switch.y','on') }}")
 
-    def test_an_alert_follows_its_grid_but_keeps_your_own_condition(self):
+    def test_an_alert_shows_by_its_grid_and_keeps_your_own_condition(self):
+        """Since 0.21.1 the grid's part is the page's switch: nothing written; what was written before goes."""
         got = node(f"""const g = {self.GRID};
           const fresh = {{ tier: "alert", elements: [g] }}; C.syncDynamicGridShowIf(fresh);
+          const before = {{ tier: "alert", show_if: C.gridShowIf(g), elements: [g] }}; C.syncDynamicGridShowIf(before);
           const yours = {{ tier: "alert", show_if: "{{{{ is_state('person.x','home') }}}}", elements: [g] }}; C.syncDynamicGridShowIf(yours);
-          g.items.splice(0, 1); C.syncDynamicGridShowIf(fresh);
-          console.log(JSON.stringify([fresh.show_if, yours.show_if]))""")
-        self.assertEqual(got[0], "{{ (has_value('sensor.b') and states('sensor.b') | float(0) < 15) }}", "and keeps following after a removal")
-        self.assertEqual(got[1], "{{ is_state('person.x','home') }}")
+          console.log(JSON.stringify([fresh.show_if ?? null, before.show_if ?? null, yours.show_if, C.partEls(fresh).length]))""")
+        self.assertEqual(got, [None, None, "{{ is_state('person.x','home') }}", 1])
 
     def test_its_condition_is_said_in_words(self):
         """Found in the browser check: an alert's grid-written condition showed as a 398-character template."""
@@ -420,7 +421,7 @@ class TestThePageShowsByTheRule(unittest.TestCase):
     def test_the_widgets_gate_answers_for_the_page_and_an_alert(self):
         el = {"type": "dynamic_grid", "batteries": "swap", "except": [], "also": [], "filter_rule": "below", "filter_value": 20}
         page = {"tier": "when", "elements": [el]}
-        got = widgets.gate_of(page)
+        got = widgets.widget_part(page)[0]
         self.assertIs(got[0], el)
         every = batteries.every_battery(REGISTRY, STATES)
         with mock.patch.object(batteries, "fetch_every", mock.AsyncMock(return_value=every)):
@@ -429,7 +430,7 @@ class TestThePageShowsByTheRule(unittest.TestCase):
                 state = {"name": None, "until": 0.0, "fired": {}}
                 fired = asyncio.run(frames.check_alerts(None, {"pages": {"low": {**page, "tier": "alert"}}}, state))
         self.assertEqual(fired, "low")
-        self.assertIsNone(widgets.gate_of({"elements": [{"type": "dynamic_grid", "items": []}]}), "a grid of states has its own condition")
+        self.assertEqual(widgets.widget_part({"elements": [{"type": "dynamic_grid", "items": []}]}), [], "a grid watching nothing has no part")
 
     def test_the_widget_fetches_its_batteries_not_the_grid_now(self):
         """0.20.2 and 0.21.0 shipped a Batteries page that asked for the power grid (two fetches called

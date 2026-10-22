@@ -43,11 +43,11 @@ class TestOneRenderAtATime(Base):
         async with aiohttp.ClientSession() as s:
             real, calls = frames.check_alerts, {"n": 0}
 
-            async def slow_first(session, sp, st):
+            async def slow_first(session, sp, st, *more):
                 calls["n"] += 1
                 if calls["n"] == 1:
                     await asyncio.sleep(0.3)
-                return await real(session, sp, st)
+                return await real(session, sp, st, *more)
             frames.check_alerts = slow_first
             try:
                 loop_render = asyncio.create_task(frames.refresh_frames(s))

@@ -311,11 +311,10 @@ C.syncWidgetShowIf(own);
 console.log(JSON.stringify({ group: p.group, page, fresh: fresh.show_if, own: own.show_if,
   parsed: C.parseShowIf(page.show_if), sensor: L.getWidgetSensorId({ type: "notifications" }) }));
 """ % json.dumps(str(support.APP / "web" / "app" / "conditions.js")))
-        cond = "{{ has_value('sensor.epaper_notifications') and states('sensor.epaper_notifications') | float(0) > 0 }}"
-        self.assertEqual((got["group"], got["page"]["tier"], got["page"]["show_if"]), ("home", "when", cond))
-        self.assertEqual(got["fresh"], cond)
+        # Since 0.21.1 its part is the page's switch: neither the preset nor the inspector writes a condition.
+        self.assertEqual((got["group"], got["page"]["tier"], got["page"].get("show_if")), ("home", "when", None))
+        self.assertIsNone(got.get("fresh"))
         self.assertEqual(got["own"], "{{ is_state('input_boolean.x','on') }}", "the person's own condition stays")
-        self.assertEqual((got["parsed"]["mode"], got["parsed"]["ent"]), ("simple", "sensor.epaper_notifications"))
         self.assertEqual(got["sensor"], "sensor.epaper_notifications")
 
 
@@ -347,7 +346,9 @@ class TestUpdatesDrawn(Sizes, unittest.TestCase):
         got = run_js("""const p = P.presetById("updates"); console.log(JSON.stringify(P.pageFor(p, p.looks[0], "")));""") \
             if shutil.which("node") else None
         if got:
-            self.assertEqual(got["show_if"], "{{ has_value('sensor.epaper_updates') and states('sensor.epaper_updates') | float(0) > 0 }}")
+            self.assertNotIn("show_if", got, "its widget's part (0.21.1)")
+        self.assertEqual(widgets.get("updates").gate.asks({"type": "updates"}),
+                         "{{ has_value('sensor.epaper_updates') and states('sensor.epaper_updates') | float(0) > 0 }}")
 
 
 class TestBadgeDrawn(Sizes, unittest.TestCase):

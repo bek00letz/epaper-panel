@@ -151,6 +151,8 @@ async def status(request):
         "device": {"id": dev["id"], "name": dev.get("name"), "kind": dev.get("kind")},
         "esphome_device": link.preferred_node() if link else None,
         "active_alert": runtime.alert(dev["design"]).get("name"),
+        # Each page's widget part as last answered ("something on it to show"), for the page panel.
+        "parts": runtime.parts(dev["design"]),
         "frame_port": FRAME_PORT,
         "display": spec.get("display", T.DEFAULT_DISPLAY),
         "orientation": int(spec.get("orientation") or 0),
