@@ -33,7 +33,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Work | Where | State |
 |---|---|---|
-| 0.21.1: Batteries page fetched the power grid since 0.20.2 (fixed, branch `batteries-fetch`); batteries not answering count after a wait (default 12 h, one line per integration when they drop together); the page panel says when a Batteries page shows (session "widgets-015", reused) | branches `batteries-fetch`, `batteries-unavailable` | Started 22 Oct |
+| 0.21.1: Batteries page fetched the power grid since 0.20.2 (fixed, branch `batteries-fetch`); batteries not answering count after a wait (default 12 h, one line per integration when they drop together); when a page shows lives in one place: the page's "Shows", where a widget's part ("something on it to show") and your own condition both must hold, the widget toggle moves there (the user chose A, 22 Oct) (session "widgets-015", reused) | branches `batteries-fetch`, `batteries-unavailable` | Started 22 Oct |
 
 Worker notes are in the notes folders (`break-it-0.12.0.md`,
 `timers-addon.md`, `firmware-013.md`, `fixes-0131.md`, `editor-polish.md`,
