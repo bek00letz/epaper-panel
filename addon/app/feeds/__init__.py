@@ -121,10 +121,26 @@ def items_word(entity: str, sources: list[dict]) -> str:
     return ITEM_WORDS.get((src or {}).get("type"), "items")
 
 
+# What a source can give a widget in place of the add-on's services (shapes.py): only a JSON address.
+FILLS_FROM = ("rest",)
+
+
+def fills(src: dict) -> str:
+    """The kind of widget a source gives the add-on's own fields for ("racing"...), or "" for a sensor."""
+    return str(src.get("fills") or "") if src.get("type") in FILLS_FROM else ""
+
+
+async def fetch_json(src: dict, session=None):
+    """A source's answer as JSON (one that fills a widget)."""
+    from . import rest
+    return await rest.fetch_json(src, session)
+
+
 def source_entities(src: dict) -> set[str]:
-    """The entity IDs a configured source publishes, whether or not it is answering."""
+    """The entity IDs a configured source publishes, whether or not it is answering. One that fills a
+    widget publishes none: the widget reads it (shapes.read_own)."""
     slug = clean_slug(src.get("name"))
-    if not slug or src.get("type") not in REGISTRY:
+    if not slug or src.get("type") not in REGISTRY or fills(src):
         return set()
     ids = {f"sensor.epaper_{slug}"}
     if src.get("type") == "jellyfin":
@@ -136,7 +152,7 @@ async def run_one(src, ctx):
     """Fetch one source. Raises when it fails, so the caller can keep the last good value."""
     kind = src.get("type")
     slug = clean_slug(src.get("name"))
-    if kind not in REGISTRY or not slug:
+    if kind not in REGISTRY or not slug or fills(src):
         return []
     mod = importlib.import_module(f".{kind}", __package__)
     return await mod.fetch({**src, "name": slug}, ctx) or []

@@ -542,6 +542,15 @@ When touching display code, `it.image()` at a negative offset is a trap: see
   in Settings › Services is used everywhere and reports as its service
   (`health.service_for`). A service is asked only by a page or a person's
   Try again; changing an address is checked by its probe first.
+- **What a widget shows from outside is in the add-on's own fields**
+  (`shapes.py`, 0.21): every reader of an outside service turns its answer
+  into them (`racing.Race`, `sports.game_view`, `flights.plane_near`), and a
+  widget draws only from them. One of your data sources that gives them
+  (`fills`) can stand in, per element (`el["data"]["source"]`), through the
+  same rule, and then the services aren't asked. A widget that reads outside
+  data says its shape in its descriptor (`Widget.shape`) and lists
+  `{"kind": "data"}` in its fields. Never show or document an outside
+  service's own format.
 - **A failing service must be visible.** Requests through the shared session
   report by themselves; anything else reports with `health.ok()` /
   `health.fail()`. That's what the problem sensors in Home Assistant, the

@@ -126,7 +126,7 @@ class Race:
     day: date                   # race day, by which calendars are matched
     sessions: tuple = ()        # ((label, start UTC, hours), ...) by start; () when only the day is known
     season: str = ""            # what its calendar calls the season ("Season 13"), when it says
-
+    result: tuple = ()          # its order, when the calendar knows it ({pos, driver, team, gap}): your own source
     @property
     def start(self) -> datetime:
         return self.sessions[0][1] if self.sessions else datetime.combine(self.day, datetime.min.time(), timezone.utc)
@@ -425,6 +425,9 @@ def _describe(ser: Series, pick: Pick, tz_name: str | None) -> dict:
         data.update(clock="SCHEDULED", detail=f"Race day · {_day(race.day)}")
         return data
     label = session_name(pick.session[0])
+    data["session"], data["session_start"] = label, pick.session[1].isoformat()
+    if race.result and pick.status in ("IN", "POST"):
+        data["standings"] = [dict(r) for r in race.result]
     data["detail"] = f"{label} · {_at(pick.session[1], tz_name)}"
     data["clock"] = {"IN": f"{label} LIVE", "PRE": "SCHEDULED"}.get(pick.status, "FINAL")
     return data
@@ -441,8 +444,19 @@ def _board_event(board, race: Race | None):
     return None
 
 
+async def _races(session, ser: Series, now: datetime, own: str) -> list[Race] | None:
+    """The season a page draws from: your own source's races (shapes.py) when it has one, or every
+    calendar the series is published in, merged."""
+    if own:
+        import shapes
+        return await shapes.read_own(session, own, "racing")
+    return await _season(session, ser, now)
+
+
 @runtime.live(30)
-async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_name=None):
+async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_name=None, own=""):
+    """What a race page draws. `own`: the id of your data source that gives its races in the add-on's
+    own fields, in place of the calendars and ESPN."""
     if not tz_name:
         tz_name = await get_home_timezone(session)
     ser = series_of(str(entity_or_series or "f1").strip().lower())
@@ -474,11 +488,13 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_na
 
     # 2. The season, every calendar merged, and the one rule
     now = datetime.now(timezone.utc)
-    races = await _season(session, ser, now)
+    races = await _races(session, ser, now, own)
     if races is None:
         return None                     # no calendar could be read: nothing yet, never a made-up race
     pick = _pick(races, now)
     data = _describe(ser, pick, tz_name)
+    if own:
+        return data                     # your source says it all: ESPN's isn't asked
 
     # 3. ESPN's scoreboard on this race: its live status, names and standings
     board = await _board(session, ser)
@@ -535,7 +551,7 @@ def series_slug(series) -> tuple[str, str]:
 
 
 @runtime.live(60)
-async def compute_racing_active_window(session, series="f1", pre_buffer_hours=2.0, post_buffer_hours=2.0, window_mode="session", tz_name=None):
+async def compute_racing_active_window(session, series="f1", pre_buffer_hours=2.0, post_buffer_hours=2.0, window_mode="session", tz_name=None, own=""):
     """Compute whether a Motorsport series (F1, Formula E, NASCAR, IndyCar) is in an active session/race-weekend window."""
     if not tz_name:
         tz_name = await get_home_timezone(session)
@@ -543,7 +559,7 @@ async def compute_racing_active_window(session, series="f1", pre_buffer_hours=2.
     slug, series_title = ser.slug, ser.title
 
     w_mode = "weekend" if str(window_mode).strip().lower() == "weekend" else "session"
-    cache_key = f"{slug}:{pre_buffer_hours}:{post_buffer_hours}:{w_mode}:{tz_name}"
+    cache_key = f"{slug}:{pre_buffer_hours}:{post_buffer_hours}:{w_mode}:{tz_name}:{own}"
     now_ts = time.time()
     cached = _racing_window_cache.get(cache_key)
     if cached and (now_ts - cached["at"] < 60.0):
@@ -556,7 +572,7 @@ async def compute_racing_active_window(session, series="f1", pre_buffer_hours=2.
     sessions_list: list[tuple[str, datetime, float]] = []  # (session_label, start_utc, duration_hours)
 
     # The race weekend on now or next, from the same season the page shows
-    races = await _season(session, ser, now_utc)
+    races = await _races(session, ser, now_utc, own)
     if races is None:
         return None                                           # no calendar could be read yet
     race = next((r for r in races if r.end + timedelta(hours=max(post_buffer_hours, AFTER_HOURS)) >= now_utc), None)
@@ -565,7 +581,7 @@ async def compute_racing_active_window(session, series="f1", pre_buffer_hours=2.
         circuit_name = race.location
         # A race known only by its day: the whole day (UTC), until a calendar has its sessions
         sessions_list = list(race.sessions) or [("Race day", race.start, 24.0)]
-        ev = _board_event(await _board(session, ser), race)
+        ev = None if own else _board_event(await _board(session, ser), race)
         if ev is not None and (((ev.get("status") or {}).get("type") or {}).get("state") == "in"
                                or any(((c.get("status") or {}).get("type") or {}).get("state") == "in"
                                       for c in ev.get("competitions") or [])):

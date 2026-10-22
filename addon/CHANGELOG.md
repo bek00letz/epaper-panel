@@ -15,6 +15,23 @@
   has Try again, which asks it now. Nothing is asked unless a page needs it
   or you press Try again.
 
+- **Use another address for a service.** Under Settings › Services ›
+  Advanced, "Change service addresses" lets you point a service at a mirror
+  that answers in the same form. Only touch it if you know what you're
+  doing: the add-on reads a test answer from the new address with its own
+  reader first, and refuses it with the reason if it can't read it. "Use the
+  original address" takes you back, with an Undo.
+
+- **Your own data for racing, scores and flights.** Each of these widgets
+  now has "Its data" in the inspector: where it reads from and its fields,
+  in the add-on's own form (for racing: series, race, place, session,
+  start, result), with what they hold now. A data source with "Any JSON
+  address" can give a kind of page's data in that form ("Gives" in Settings
+  › Data sources, which shows the form with an example), and a page can
+  read it in place of ESPN, the racing calendars or the flight feeds. Test
+  says whether it reads, or what's wrong. Pages you have keep reading the
+  add-on's services.
+
 ## 0.20.2
 Add-on only; no firmware change, so nothing to reinstall on the panel
 and no Home Assistant restart. Update the add-on.

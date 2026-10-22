@@ -643,6 +643,21 @@ button.uopen:focus-visible { outline: 2px solid var(--accent); outline-offset: -
    what Try again found; the row the status card opened, marked until the pane is left. */
 .gr small.detail { font: 11px var(--mono); color: var(--fg-3); overflow-wrap: anywhere; }
 .gr small.good { color: var(--green); }
+.gr .addr { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.gr .addr small { flex: 1 1 14em; min-width: 0; margin: 0; }
+.gr .addr code { font: 11px var(--mono); overflow-wrap: anywhere; }
+.gr .addr .addrlab { flex-basis: 100%; font-size: 12px; color: var(--fg-2); }
+.gr .addr .inp { flex: 1 1 16em; min-width: 0; width: auto; }
+.gr .addr .addrsaid { flex-basis: 100%; }
+.group.advanced .trow { min-height: 48px; padding: 8px 0; }
+/* A widget's data (data.js): its fields now, and the add-on's form for a source of yours. */
+dl.fields { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 2px 12px; margin: 4px 0 8px; font-size: 12.5px; }
+dl.fields dt { color: var(--fg-2); }
+dl.fields dd { margin: 0; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+ul.formlist { margin: 2px 0 6px; padding-left: 18px; font-size: 12px; color: var(--fg-2); line-height: 1.5; }
+ul.formlist code, .datarows code { font: 11.5px var(--mono); color: var(--fg); }
+pre.formex { font: 11px/1.45 var(--mono); background: var(--fill); border-radius: var(--r-inner); padding: 8px 10px; margin: 4px 0 8px; overflow-x: auto; max-height: 220px; white-space: pre; }
+pre.formex:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 .gr.svc.focus { box-shadow: inset 3px 0 0 var(--accent); margin-left: -14px; padding-left: 14px; }
 .group.dropping { box-shadow: 0 0 0 2px var(--accent); }
 .subhead { display: flex; align-items: center; gap: 4px; margin: 0 0 8px -8px; }

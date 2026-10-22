@@ -472,6 +472,35 @@ def _fit(elements: list, from_canvas: str, display: str, orientation: int) -> li
     return [{**el, **arrange.auto_box(el, from_canvas, target)} if isinstance(el, dict) else el for el in elements]
 
 
+async def api_widget_data(request):
+    """A widget's Data section in the inspector: where it reads from (the add-on's services, by name, or
+    one of your data sources) and its fields in the add-on's own form, with what they hold now (shapes.py)."""
+    import shapes
+    body = await _json(request)
+    el = body.get("element") if isinstance(body, dict) else None
+    if not isinstance(el, dict):
+        raise web.HTTPBadRequest(text="expected {element}")
+    w = widgets.get(el.get("type"))
+    shape = shapes.get(w.shape) if w else None
+    if shape is None:
+        raise web.HTTPBadRequest(text="It doesn't read anything from outside.")
+    own = shapes.own_source(el)
+    src = next((x for x in load_sources() if isinstance(x, dict) and x.get("id") == own), None) if own else None
+    with live_data.waiting_for_fresh():                   # someone is looking at it
+        try:
+            value = await widgets.fetch(runtime.SESSION, el, widgets.Ctx(home_tz=await get_home_timezone(runtime.SESSION)))
+        except Exception as exc:                          # noqa: BLE001 -- a field list that can't fill is still shown
+            print(f"widget data: {health.describe(exc)}", flush=True)
+            value = None
+    return web.json_response({
+        "shape": shape.kind,
+        "source": ({"id": own, "name": services.source_name(src), "missing": False} if src
+                   else {"id": own, "name": "", "missing": True}) if own else None,
+        "services": [s.name for s in services.SERVICES if s.uses and s.uses(el)],
+        "fields": [{"label": label, "value": str(v)} for label, v in shape.shown(value)] if value else [],
+    })
+
+
 async def api_as_template(request):
     """{"template"}: what an element shows, as a template (binding.as_template), for the editor's
     From › Template; the editor keeps no copy of how a binding becomes Jinja."""
@@ -1026,6 +1055,19 @@ async def api_sources_test(request):
     if not isinstance(src, dict):
         raise web.HTTPBadRequest(text="expected a source object")
     unmasked = feeds.unmask_secrets([src], load_sources())
+    if feeds.fills(unmasked[0]):
+        # One that fills a widget: read by the add-on's own reader for it (shapes.py), and said plainly.
+        import shapes
+        shape = shapes.get(feeds.fills(unmasked[0]))
+        if shape is None:
+            return web.json_response({"published": [], "error": "It fills a kind of page the add-on doesn't have."})
+        try:
+            items = shapes.read(shape.kind, await feeds.fetch_json(unmasked[0], runtime.SESSION))
+        except ValueError as exc:
+            return web.json_response({"published": [], "error": str(exc)})
+        except Exception as exc:                # noqa: BLE001 -- said plainly, never with its headers
+            return web.json_response({"published": [], "error": services.plain(health.describe(exc))})
+        return web.json_response({"published": [], "error": None, "fills": f"Fills {shape.name} pages: {shape.summary(items)}"})
     ctx = {"ha_base": HA_BASE, "ha_token": HA_TOKEN, "session": runtime.SESSION}
     errors: list[str] = []
     rows = await feeds.run_all(unmasked, ctx, errors)
@@ -1425,6 +1467,7 @@ def make_apps():
         web.post("/api/fit", api_fit),
         web.post("/api/busy_day", api_busy_day),
         web.post("/api/as_template", api_as_template),
+        web.post("/api/widget_data", api_widget_data),
         web.post("/api/push", api_push),
         web.get("/api/services", api_services_get),
         web.post("/api/services/{id}/try", api_services_try),

@@ -5,6 +5,7 @@
 
 import { h, api, pageTitle } from "./util.js";
 import { catalog } from "./catalog.js";
+import { toggleRow, toast } from "./ui.js";
 
 const GROUPS = [["outside", "Outside services"], ["home", "Home Assistant"], ["source", "Your data sources"]];
 
@@ -24,7 +25,7 @@ export function stateLine(s) {
   if (s.problem) return `Not answering since ${clockAt(s.failing_since)}.`;
   if (s.failing_since) return `Didn't answer at ${clockAt(s.failing_since)}. Trying again.`;
   if (s.ok_at) return `Answered at ${clockAt(s.ok_at)}.`;
-  return s.used_by?.length ? "Not asked yet." : "Not asked: nothing uses it now.";
+  return s.by_pages && !s.used_by?.length ? "Not asked: no page uses it now." : "Not asked yet.";
 }
 
 const listed = (names) => (names.length < 3 ? names.join(" and ") : `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`);
@@ -48,6 +49,10 @@ export async function servicesPane(app, pane, focus) {
   const box = h("div");
   pane.append(h("p", { class: "fnote", text: "What the add-on asks outside your pages' sensors, and how each one is doing. A service is only asked when a page needs it, or when you press Try again." }), box);
   let list = null;
+  // "Change service addresses" (Advanced): off every time Settings opens, so an address field is
+  // only ever in reach after reading what it's for.
+  let changing = false;
+  const marked = focus;
   // The list is the add-on's answer; it fades in only when it's slow (editor.css), so a quick one never flashes.
   box.replaceChildren(h("p", { class: "fnote waiting", text: "Getting the services…" }));
 
@@ -70,8 +75,48 @@ export async function servicesPane(app, pane, focus) {
     const what = h("small", { text: usedBy(s) });
     const tryBtn = s.can_try ? h("button", { class: "btn tinted", "aria-label": `Try ${s.name} again`, onclick: () => tryAgain(s, tryBtn, said) }, "Try again") : null;
     const r = h("div", { class: "gr svc", data: { id: s.id } }, h("span", { class: "gl" }, s.name, what, status, why, detail, said),
-      tryBtn ? h("span", { class: "rowbtns" }, tryBtn) : null);
+      tryBtn ? h("span", { class: "rowbtns" }, tryBtn) : null, ...(s.addresses || []).flatMap((a) => addressRows(s, a)));
     return r;
+  }
+
+  /* An address of a service: when it's the person's own, it says so with the way back, always in
+     reach; with "Change service addresses" on, a field and Check and use. */
+  function addressRows(s, a) {
+    const own = a.current !== a.original;
+    const several = s.addresses.length > 1;
+    const out = [];
+    if (own) out.push(h("div", { class: "addr" },
+      h("small", {}, `${several ? a.label + ": u" : "U"}sing your address `, h("code", { text: a.current })),
+      h("button", { class: "btn tinted", onclick: () => setAddress(s, a, "", a.current) }, "Use the original address")));
+    if (!changing || !a.changeable) return out;
+    const said = h("small", { class: "addrsaid", role: "status", "aria-live": "polite" });
+    const field = h("input", { class: "inp", type: "url", inputmode: "url", autocomplete: "off", spellcheck: "false",
+      "aria-label": `Another address for ${s.name}${several ? `, ${a.label}` : ""}`, placeholder: a.original, value: own ? a.current : "" });
+    const go = h("button", { class: "btn tinted", onclick: () => setAddress(s, a, field.value.trim(), null, go, said) }, "Check and use");
+    field.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); go.click(); } });
+    out.push(h("div", { class: "addr edit" }, h("label", { class: "addrlab", text: several ? a.label : "Address" }), field, go, said));
+    return out;
+  }
+
+  /* Check an address with the add-on's own reader and use it, or say why not. "" is the original;
+     `back` (the address it had) offers Undo. */
+  async function setAddress(s, a, address, back, btn, said) {
+    if (btn) btn.disabled = true;
+    const slow = said && setTimeout(() => { said.className = "addrsaid waiting"; said.textContent = "Checking what it answers…"; }, 400);
+    let got;
+    try { got = (await api(`api/services/${encodeURIComponent(s.id)}/address`, { method: "PUT", body: { key: a.key, address } })).body; }
+    catch (e) { got = { ok: false, error: e.message }; }
+    clearTimeout(slow);
+    if (btn) btn.disabled = false;
+    if (!got.ok) {
+      if (said) { said.className = "addrsaid bad"; said.textContent = `Not used: ${got.error}`; }
+      else toast(`Couldn't change it: ${got.error}`);
+      return;
+    }
+    list = got.services || list;
+    draw();
+    if (address) toast(`${s.name} uses your address now. It answered: ${got.said}.`);
+    else toast(`${s.name} is back on its original address.`, back ? { label: "Undo", run: () => setAddress(s, a, back) } : null);
   }
 
   async function tryAgain(s, btn, said) {
@@ -99,12 +144,17 @@ export async function servicesPane(app, pane, focus) {
       if (!rows.length) continue;
       parts.push(h("h4", { class: "gtitle", text: title }), h("div", { class: "group" }, ...rows.map(row)));
     }
-    box.replaceChildren(...parts);
-    if (focus) {
-      const at = box.querySelector(`.gr.svc[data-id="${CSS.escape(focus)}"]`);
-      if (at) { at.classList.add("focus"); at.scrollIntoView({ block: "center" }); at.querySelector("button")?.focus({ preventScroll: true }); }
-      focus = null;
+    if (list.some((s) => (s.addresses || []).some((a) => a.changeable))) {
+      parts.push(h("h4", { class: "gtitle", text: "Advanced" }), h("div", { class: "group advanced" },
+        toggleRow("Change service addresses", changing, (v) => { changing = v; draw(); box.querySelector(".advanced .switch")?.focus({ preventScroll: true }); },
+          "Only touch this if you know what you're doing. Another address has to answer exactly like the original, as a mirror does. The add-on checks what it answers before using it.")));
     }
+    box.replaceChildren(...parts);
+    // The row the status card opened stays marked while the pane is open; it's scrolled to once.
+    const at = marked && box.querySelector(`.gr.svc[data-id="${CSS.escape(marked)}"]`);
+    if (at) at.classList.add("focus");
+    if (at && focus) { at.scrollIntoView({ block: "center" }); at.querySelector("button")?.focus({ preventScroll: true }); }
+    focus = null;
   }
   await load();
 }

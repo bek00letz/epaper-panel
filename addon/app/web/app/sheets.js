@@ -12,6 +12,8 @@ import { thumbnail, statusSummary, forgetThumbnails, unsentWords } from "./strip
 import { SETTING_NAMES } from "./doc.js";
 import { paint } from "./glyphs.js";
 import { problemLines, servicesPane } from "./services.js";
+import { formNote } from "./data.js";
+import { widgets as widgetDescriptors } from "./catalog.js";
 
 const thumbImg = (app, key, page) => {
   const img = h("img", { class: "thumb", alt: "", "data-thumb": key, draggable: "false" });
@@ -417,6 +419,22 @@ const SRC_FIELDS = {
   statistics: [["name", "Name"], ["entity", "Statistic"], ["period", "Period"], ["unit", "Unit"], ["icon", "Icon"]],
 };
 const SRC_KINDS = { jellyfin: "Jellyfin: new and unwatched", rest: "Any JSON address", statistics: "A long-term statistic" };
+const SENSOR_ONLY = ["unit", "icon"];          // what only a sensor has: not one that fills a page
+// The kinds of page a JSON address can fill in the add-on's own form (shapes.py, from the catalog).
+const pageShapes = () => Object.values(widgetDescriptors()).map((w) => w.shape).filter(Boolean);
+
+/* What a source gives: a sensor (its value), or a kind of page's data in the add-on's own form, which
+   a widget of that kind can read in place of the add-on's services (its inspector's "Its data"). */
+function sourceGives(s, redraw) {
+  const becomes = h("p", { class: "fnote" }, "Becomes ", h("code", { text: `sensor.epaper_${s.name || "name"}` }), s.type === "jellyfin" ? " and its _count" : "");
+  if (s.type !== "rest") return [becomes];
+  const shapes = pageShapes();
+  const shape = shapes.find((x) => x.kind === s.fills);
+  const gives = field("Gives", select([["", "A sensor with its value"], ...shapes.map((x) => [x.kind, `${x.name} pages, in the add-on's form`])], s.fills || "",
+    (v) => { if (v) s.fills = v; else delete s.fills; redraw(); }, { "aria-label": "What it gives" }));
+  if (!shape) return [gives, becomes];
+  return [gives, h("p", { class: "fnote", text: `A ${shape.name} page reads it when its "Its data" says so, in place of the add-on's services. Test checks that it answers in the add-on's form.` }), formNote(shape)];
+}
 
 export function openSettings(app, sectionName = "panel", focus = null) {
   sheet("Settings", (node) => {
@@ -945,12 +963,16 @@ async function sourcesPane(app, pane) {
         h("div", { class: "srchead" }, h("b", { text: SRC_KINDS[s.type] || s.type }), h("span", { class: "spacer" }),
           h("button", { class: "btn tinted", onclick: async () => {
             out.textContent = "Testing…";
-            try { const r = (await api("api/sources/test", { method: "POST", body: s })).body; out.textContent = r.published.length ? r.published.map((p) => `${p.entity_id} = ${p.state}`).join("  ·  ") : "Nothing came back. Check the settings above."; }
+            try {
+              const r = (await api("api/sources/test", { method: "POST", body: s })).body;
+              out.textContent = r.fills ? `It works. ${r.fills}.` : r.error ? `It didn't work: ${r.error}`
+                : r.published.length ? r.published.map((p) => `${p.entity_id} = ${p.state}`).join("  ·  ") : "Nothing came back. Check the settings above.";
+            }
             catch (e) { out.textContent = `It didn't work: ${e.message}`; }
           } }, "Test"),
           h("button", { class: "btn tinted danger", onclick: () => { srcs.splice(i, 1); draw(); } }, "Remove")),
-        h("p", { class: "fnote" }, "Becomes ", h("code", { text: `sensor.epaper_${s.name || "name"}` }), s.type === "jellyfin" ? " and its _count" : ""),
-        ...(SRC_FIELDS[s.type] || []).map(([k, l, t]) => field(l, input(s[k], (v) => { s[k] = t === "number" ? Number(v) || 0 : v; if (k === "name") { s.name = slug(v).replace(/-/g, "_"); draw(); } }, { type: t === "password" ? "password" : t === "number" ? "number" : "text" }))),
+        ...sourceGives(s, draw),
+        ...(SRC_FIELDS[s.type] || []).filter(([k]) => !(s.fills && SENSOR_ONLY.includes(k))).map(([k, l, t]) => field(k === "pick" && s.fills ? "Data at" : l, input(s[k], (v) => { s[k] = t === "number" ? Number(v) || 0 : v; if (k === "name") { s.name = slug(v).replace(/-/g, "_"); draw(); } }, { type: t === "password" ? "password" : t === "number" ? "number" : "text" }))),
         out));
     });
   }

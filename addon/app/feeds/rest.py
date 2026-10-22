@@ -48,15 +48,16 @@ def _parse_headers(raw):
     return out
 
 
-async def fetch(src, ctx):
+async def fetch_json(src, session=None):
+    """The source's answer as JSON, its "pick" applied: what a sensor shows, or what a source that
+    fills a widget gives (shapes.py reads it)."""
     url = (src.get("url") or "").strip()
     if not url or not url.startswith(("http://", "https://")):
-        return []
+        raise ValueError("Its address isn't a web address. It starts with http:// or https://.")
     headers = _parse_headers(src.get("headers"))
     timeout = aiohttp.ClientTimeout(total=15)
-    shared = (ctx or {}).get("session")
-    if shared is not None:
-        async with shared.get(url, headers=headers, timeout=timeout) as r:
+    if session is not None:
+        async with session.get(url, headers=headers, timeout=timeout) as r:
             r.raise_for_status()
             data = await r.json(content_type=None)
     else:
@@ -64,8 +65,14 @@ async def fetch(src, ctx):
             async with s.get(url, headers=headers) as r:
                 r.raise_for_status()
                 data = await r.json(content_type=None)
+    return _pick(data, src.get("pick", ""))
 
-    value = _pick(data, src.get("pick", ""))
+
+async def fetch(src, ctx):
+    url = (src.get("url") or "").strip()
+    if not url or not url.startswith(("http://", "https://")):
+        return []
+    value = await fetch_json(src, (ctx or {}).get("session"))
     attrs = {"friendly_name": src.get("friendly_name") or src["name"]}
     if src.get("unit"):
         attrs["unit_of_measurement"] = src["unit"]

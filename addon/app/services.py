@@ -235,13 +235,23 @@ def _direct(module: str, name: str, words: Callable[[Any], str]):
 
 # ---------------------------------------------------------------- which elements read which service
 
+def _theirs(el) -> bool:
+    """An element reads the add-on's services, not one of your data sources in their place (shapes.py)."""
+    import shapes
+    return not shapes.own_source(el)
+
+
 def _type(*types):
     return lambda el: el.get("type") in types
 
 
+def _outside(*types):
+    return lambda el: el.get("type") in types and _theirs(el)
+
+
 def _racing(test: Callable[[Any], bool]):
     def uses(el):
-        if el.get("type") != "sports_racing":
+        if el.get("type") != "sports_racing" or not _theirs(el):
             return False
         from sources import racing
         return test(racing.series_of(el.get("entity") or el.get("series") or "f1"))      # as widgets._racing asks
@@ -253,7 +263,7 @@ def _on_calendar(service_id: str):
 
 
 def _scores(el) -> bool:
-    return el.get("type") == "sports_match" and not str(el.get("entity") or "").strip()
+    return el.get("type") == "sports_match" and not str(el.get("entity") or "").strip() and _theirs(el)
 
 
 def _counts(*which):
@@ -290,10 +300,10 @@ SERVICES: tuple[Service, ...] = (
             uses=_on_calendar("formula_e_calendar"), forget=_forget_calendars),
     Service("flightradar24", "Flightradar24", "outside", "Planes overhead",
             (Address("main", "Flight feed", "https://data-cloud.flightradar24.com/zones/fcgi/feed.js", _probe_flightradar24),),
-            uses=_type("flight_tracker")),
+            uses=_outside("flight_tracker")),
     Service("opensky", "OpenSky", "outside", "Planes overhead, when Flightradar24 doesn't answer",
             (Address("main", "Flight feed", "https://opensky-network.org/api/states/all", _probe_opensky),),
-            uses=_type("flight_tracker")),
+            uses=_outside("flight_tracker")),
     Service("iconify", "Iconify", "outside", "Icon sets you add in Settings › Icons",
             (Address("main", "Icon sets", "https://raw.githubusercontent.com/iconify/icon-sets/master", _probe_iconify_sets),
              Address("api", "Previews", "https://api.iconify.design", _probe_iconify_api))),
@@ -447,13 +457,21 @@ async def try_again(session, service_id: str) -> dict:
         if src is None:
             raise KeyError(service_id)
         import feeds
+        import shapes
         label = source_name(src)
         try:
-            rows = await feeds.run_one(src, {"ha_base": config.HA_BASE, "ha_token": config.HA_TOKEN, "session": session})
+            if feeds.fills(src):                # one that fills a page: read in the add-on's form for it
+                kind = feeds.fills(src)
+                items = shapes.read(kind, await feeds.fetch_json(src, session))
+                text = f"{shapes.get(kind).name} pages' data, {shapes.get(kind).summary(items)}"
+            else:
+                rows = await feeds.run_one(src, {"ha_base": config.HA_BASE, "ha_token": config.HA_TOKEN, "session": session})
+                text = _many(len(rows), "value")
+        except ValueError as exc:
+            return {"ok": False, "error": plain(health.fail(label, str(exc), kind="source"))}
         except Exception as exc:                # noqa: BLE001
             return {"ok": False, "error": plain(health.fail(label, exc, kind="source"))}
         health.ok(label, kind="source")
-        text = _many(len(rows), "value")
     runtime.LIVE.retry_failed()                 # what failed before is asked again at once
     return {"ok": True, "said": text}
 
@@ -477,9 +495,12 @@ def _source(service_id: str) -> dict | None:
 
 
 def _source_uses(src: dict) -> Callable[[dict], bool]:
+    """A page's element uses a source: it shows one of its sensors, or reads it in place of the
+    add-on's services (shapes.py)."""
     import feeds
+    import shapes
     ids = set(feeds.source_entities(src))
-    return lambda el: any(i in json.dumps(el) for i in ids)
+    return lambda el: (bool(src.get("id")) and shapes.own_source(el) == src.get("id")) or any(i in json.dumps(el) for i in ids)
 
 
 # ---------------------------------------------------------------- what Settings and the status card read
@@ -521,14 +542,14 @@ def listing(pages=None) -> list[dict]:
     known = {e["name"]: e for e in health.status()}
     out = []
     for s in SERVICES:
-        out.append({"id": s.id, "name": s.name, "group": s.group, "gives": s.gives,
+        out.append({"id": s.id, "name": s.name, "group": s.group, "gives": s.gives, "by_pages": s.uses is not None,
                     "used_by": _pages_using(s.uses, pages), "can_try": bool(s.addresses or s.retry),
                     "addresses": [{"key": a.key, "label": a.label, "original": a.original, "current": url(s.id, a.key),
                                    "changeable": a.probe is not None} for a in s.addresses],
                     **_state(s.name, known)})
     for src in _sources():
         label = source_name(src)
-        out.append({"id": feeds.clean_slug(label), "name": label, "group": "source", "gives": "", "source_id": src.get("id"),
+        out.append({"id": feeds.clean_slug(label), "name": label, "group": "source", "gives": "", "source_id": src.get("id"), "by_pages": True,
                     "used_by": _pages_using(_source_uses(src), pages), "can_try": True, "addresses": [],
                     **_state(label, known)})
     listed = {s["name"] for s in out}

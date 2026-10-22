@@ -25,6 +25,7 @@ from datetime import datetime
 from typing import Any, Awaitable, Callable
 
 import examples
+import shapes
 from render import arrange, layout, sport, subitems
 from sources import batteries, energy, flights, ha_services, home, needs_you, racing, sports, station
 
@@ -113,6 +114,9 @@ class Widget:
     gate: Gate | None = None                    # how its page shows "only when" (Gate)
     keeps_size: bool = False                    # its box keeps its real size on a smaller screen (arrange.KEEP_SIZE)
     breakable: bool = False                     # the editor can break it into plain elements
+    # What it shows from outside, in the add-on's own fields (shapes.py): the editor shows them, and one
+    # of your data sources that gives them can stand in for the add-on's services (el["data"]["source"]).
+    shape: str = ""
 
     def changes_every(self, el: dict | None = None) -> int | None:
         """Seconds: how often what it shows changes, for the editor's "changes faster than this device
@@ -130,7 +134,8 @@ class Widget:
                 "fields": self.fields, "changes_every": self.changes_every(),
                 **({"changes_when": list(self.live_when)} if self.live_when else {}),
                 "sub_items": self.items is not None, "breakable": self.breakable,
-                **({"gate": self.gate.describe()} if self.gate else {})}
+                **({"gate": self.gate.describe()} if self.gate else {}),
+                **({"shape": shapes.get(self.shape).describe()} if self.shape else {})}
 
     def gates(self, el: dict) -> Gate | None:
         """Its gate, if it applies to this element."""
@@ -151,7 +156,8 @@ async def _match_on(session, el, home_tz):
     win = await sports.compute_sports_active_window(session, el.get("league") or "soccer/eng.1",
                                                     pre_buffer_hours=_hours(el, "pre_buffer_hours"),
                                                     post_buffer_hours=_hours(el, "post_buffer_hours"),
-                                                    tz_name=el.get("timezone") or home_tz, team=el.get("team"))
+                                                    tz_name=el.get("timezone") or home_tz, team=el.get("team"),
+                                                    own=shapes.own_source(el))
     return bool((win or {}).get("is_active"))               # None: not fetched yet
 
 
@@ -160,13 +166,14 @@ async def _race_on(session, el, home_tz):
                                                     pre_buffer_hours=_hours(el, "pre_buffer_hours"),
                                                     post_buffer_hours=_hours(el, "post_buffer_hours"),
                                                     window_mode=el.get("window_mode") or "session",
-                                                    tz_name=el.get("timezone") or home_tz)
+                                                    tz_name=el.get("timezone") or home_tz, own=shapes.own_source(el))
     return bool((win or {}).get("is_active"))
 
 
 async def _planes_near(session, el, home_tz):
     lat, lon, radius, _ = flights.place_of(el)
-    return len(await flights.fetch_overhead_aircraft(session, radius_km=radius, lat=lat, lon=lon) or []) > 0
+    return len(await flights.fetch_overhead_aircraft(session, radius_km=radius, lat=lat, lon=lon,
+                                                     own=shapes.own_source(el)) or []) > 0
 
 
 def _is_batteries(el: dict) -> bool:
@@ -288,18 +295,19 @@ async def _badge(session, el, ctx):
 
 async def _flights(session, el, ctx):
     lat, lon, radius, _ = flights.place_of(el)
-    return await flights.fetch_overhead_aircraft(session, radius_km=radius, lat=lat, lon=lon)
+    return await flights.fetch_overhead_aircraft(session, radius_km=radius, lat=lat, lon=lon, own=shapes.own_source(el))
 
 
 async def _racing(session, el, ctx):
     got = await racing.fetch_racing_data(session, el.get("entity") or el.get("series") or "f1", fallback=ctx.prev,
-                                         tz_name=el.get("timezone") or ctx.home_tz)
+                                         tz_name=el.get("timezone") or ctx.home_tz, own=shapes.own_source(el))
     return got or None
 
 
 async def _match(session, el, ctx):
     got = await sports.fetch_sports_match(session, el.get("entity") or el.get("league") or "soccer/eng.1",
-                                          team=el.get("team"), fallback=ctx.prev, tz_name=el.get("timezone") or ctx.home_tz)
+                                          team=el.get("team"), fallback=ctx.prev, tz_name=el.get("timezone") or ctx.home_tz,
+                                          own=shapes.own_source(el))
     return got or None
 
 
@@ -422,16 +430,16 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
            fields=[{"kind": "grid"}]),
     Widget("flight_tracker", "Flights", "plane", _flights, lambda el, now: list(examples.AIRCRAFT),
            live=(flights.fetch_overhead_aircraft,), items=(5, "flight"), items_word=lambda el: "planes",
-           breakable=True,
+           breakable=True, shape="flights",
            gate=Gate("count", sensor="sensor.epaper_flights_overhead", check=_planes_near, publish="flights",
                      markers=("sensor.epaper_flights_overhead", "sensor.overhead_aircraft_count")),
            defaults={"radius": 35, "style": "card", "show_border": True},
            fields=[sel("style", "Style", [["card", "Details"], ["split", "Radar and details"], ["radar", "Radar"]], "card"),
                    {"kind": "place"}, num("radius", "Radius, km", "35", 5, 250),
                    {"kind": "window", "label": "Only show while a plane is near"},
-                   toggle("show_sub_metrics", "Second units", True), BORDER, {"kind": "sensorid"}]),
+                   toggle("show_sub_metrics", "Second units", True), BORDER, {"kind": "data"}, {"kind": "sensorid"}]),
     Widget("sports_racing", "Racing", "flag", _racing, lambda el, now: examples.race(el.get("series") or "f1"),
-           live=(racing.fetch_racing_data,), breakable=True,
+           live=(racing.fetch_racing_data,), breakable=True, shape="racing",
            # sensor.f1_status and sensor.formula_e_status: what 0.9 pages say.
            gate=Gate("active", sensor_of="series", check=_race_on, publish="racing",
                      markers=("sensor.epaper_racing_", "sensor.f1_status", "sensor.formula_e_status")),
@@ -442,11 +450,11 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
                    sel("window_mode", "Around", [["session", "Each session"], ["weekend", "The whole weekend"]], "session"),
                    num("pre_buffer_hours", "Hours before", "2", 0, 24, 0.5), num("post_buffer_hours", "Hours after", "2", 0, 24, 0.5),
                    toggle("show_teams", "Team names", True), text("timezone", "Time zone", "Home Assistant's"), BORDER,
-                   {"kind": "sensorid"}]),
+                   {"kind": "data"}, {"kind": "sensorid"}]),
     Widget("sports_match", "Scores", "ball", _match,
            lambda el, now: examples.match(el.get("league") or el.get("entity") or "soccer/eng.1"),
            # Every game of the day (the user's call, 21 Oct); the way back is items=(6, "sports").
-           live=(sports.fetch_sports_match,), items=(None, "sports"), breakable=True,
+           live=(sports.fetch_sports_match,), items=(None, "sports"), breakable=True, shape="scores",
            gate=Gate("active", sensor_of="league", check=_match_on, publish="sports",
                      markers=("sensor.epaper_sports_", "sensor.sports_")),
            # A Team Tracker sensor is one game; a league, its busiest day.
@@ -459,7 +467,7 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
                    {"kind": "window", "label": "Only show on {event} days"},
                    num("pre_buffer_hours", "Hours before", "2", 0, 24, 0.5), num("post_buffer_hours", "Hours after", "2", 0, 24, 0.5),
                    text("timezone", "Time zone", "Home Assistant's"), toggle("show_stats", "Team stats", True),
-                   toggle("show_scorers", "Scorers", True), BORDER, {"kind": "sensorid"}]),
+                   toggle("show_scorers", "Scorers", True), BORDER, {"kind": "data"}, {"kind": "sensorid"}]),
 )}
 
 # Render-side facts come from here: which types take their fetched value, and which make items of a page.
