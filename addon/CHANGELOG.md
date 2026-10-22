@@ -6,6 +6,13 @@
   your batteries since 0.20.2: it asked for the power grid's numbers by
   mistake. It shows every battery its rule picks again. A test now fails
   if any part of the add-on gives two things the same name.
+- **A battery that stops answering shows.** On a Low batteries page, a
+  battery that has been unavailable for 12 hours now shows after the low
+  ones, as "No answer since Tue 14:02", and the page shows for it. When all
+  of one integration's batteries stop answering together, it's one line,
+  such as "Salus: 3 not answering". Change the wait, or turn it off with
+  Never, in the page's Batteries settings. A Home Assistant restart starts
+  the wait again, so it can show later than it should, never early.
 
 ## 0.21.0
 Add-on only; no firmware change, so nothing to reinstall on the panel

@@ -456,3 +456,123 @@ const yours = { tier: "when", show_if: "{{ is_state('person.ada','home') }}", el
 C.syncDynamicGridShowIf(old); C.syncDynamicGridShowIf(yours);
 console.log(JSON.stringify([old.show_if ?? null, yours.show_if]));""")
         self.assertEqual(got, [None, "{{ is_state('person.ada','home') }}"])
+
+
+# A battery that stopped answering (0.21.1, the user's call, 22 Oct): on a Low page it shows after the
+# low ones, "No answer since Tue 14:02", once it's been quiet longer than the page waits (12 hours unless
+# it says; "never" is how it was). One integration's batteries all quiet together are one line.
+NOW = 1_800_000_000.0                       # a Friday
+
+
+def at(hours_ago):
+    from datetime import datetime, timezone
+    return datetime.fromtimestamp(NOW - hours_ago * 3600, timezone.utc).isoformat()
+
+
+SALUS = [{"entity_id": f"binary_sensor.{r}_thermostat_battery_problem", "platform": "salus", "config_entry_id": "S1",
+          "original_device_class": "battery"} for r in ("bedroom", "hallway", "office")]
+ENTRIES = [{"entry_id": "S1", "domain": "salus", "title": "Salus"}]
+
+
+def quiet(eid, hours_ago, **attrs):
+    """Restored as Home Assistant keeps it: unavailable, its class only in the registry for some."""
+    return {"entity_id": eid, "state": "unavailable", "last_changed": at(hours_ago), "attributes": attrs}
+
+
+class TestABatteryThatStoppedAnswering(unittest.TestCase):
+    el = {"type": "dynamic_grid", "batteries": "swap", "except": [], "also": [], "filter_rule": "below", "filter_value": 20}
+
+    def every(self, hours_ago=13, salus=(13, 13, 13)):
+        states = STATES + [quiet("sensor.lock_battery", hours_ago, device_class="battery", unit_of_measurement="%")]
+        states += [quiet(r["entity_id"], h) for r, h in zip(SALUS, salus)]
+        return batteries.every_battery(REGISTRY + SALUS, states, ENTRIES)
+
+    def test_one_quiet_past_its_wait_shows_and_counts(self):
+        picked = batteries.chosen(self.el, self.every())
+        lock = next(b for b in batteries.shown(self.el, picked, NOW) if b["entity"] == "sensor.lock_battery")
+        self.assertEqual(lock["no_answer"], at(13))
+        happy = {**self.el, "filter_value": 5, "except": ["binary_sensor.remote_battery_low"]}   # only the quiet ones need you
+        picked = batteries.chosen(happy, self.every())
+        self.assertTrue(batteries.needs_you(happy, picked, NOW))
+        self.assertFalse(any(batteries.past(b, happy) for b in picked), "the old rule wouldn't have shown it")
+
+    def test_a_short_dropout_a_charged_page_and_never_dont(self):
+        picked = batteries.chosen(self.el, self.every(hours_ago=2, salus=(2, 2, 2)))
+        self.assertFalse([b for b in batteries.shown(self.el, picked, NOW) if b.get("no_answer")])
+        picked = batteries.chosen(self.el, self.every())
+        for el in ({**self.el, "no_answer_hours": "never"}, {**self.el, "filter_rule": "at_least", "batteries": "swap"}):
+            self.assertFalse([b for b in batteries.shown(el, picked, NOW) if b.get("no_answer")], el)
+        self.assertTrue([b for b in batteries.shown({**self.el, "no_answer_hours": 1}, batteries.chosen(self.el, self.every(2, (2, 2, 2))), NOW)
+                         if b.get("no_answer")], "its own wait")
+
+    def test_one_integration_all_quiet_together_is_one_line(self):
+        rows = batteries.shown(self.el, batteries.chosen(self.el, self.every()), NOW)
+        group = [b for b in rows if b.get("no_answer_count")]
+        self.assertEqual([(g["name"], g["no_answer_count"]) for g in group], [("Salus", 3)])
+        self.assertFalse([b for b in rows if "thermostat" in b["entity"]], "not each as well")
+        # Gone quiet hours apart: each its own line.
+        rows = batteries.shown(self.el, batteries.chosen(self.el, self.every(salus=(13, 20, 30))), NOW)
+        self.assertEqual(len([b for b in rows if "thermostat" in b["entity"] and b.get("no_answer")]), 3)
+
+    def test_its_class_comes_from_the_registry_while_it_says_nothing(self):
+        self.assertIn("binary_sensor.office_thermostat_battery_problem", [b["entity"] for b in self.every()])
+
+    def test_it_says_since_when_in_the_panels_time_after_the_low_ones(self):
+        from datetime import datetime, timezone
+        from render import clock
+        tue = datetime(2026, 10, 20, 14, 2, tzinfo=timezone.utc)
+        thu = datetime(2026, 10, 22, 9, 0, tzinfo=timezone.utc)
+        try:
+            self.assertEqual(layout._no_answer_text({"no_answer": tue.isoformat()}, thu), "No answer since Tue 14:02")
+            clock.use(True)
+            self.assertEqual(layout._no_answer_text({"no_answer": tue.isoformat()}, thu), "No answer since Tue 2:02 PM")
+        finally:
+            clock.use(False)
+        self.assertEqual(layout._no_answer_text({"no_answer": "2026-10-02T08:00:00+00:00"}, thu), "No answer since 2 Oct",
+                         "last week's Tuesday would mislead")
+        self.assertEqual(layout._no_answer_text({"no_answer_count": 4}), "4 not answering")
+        rows = batteries.shown(self.el, batteries.chosen(self.el, self.every()), NOW)
+        texts, icons = drawn({**grid("below", 20), **self.el, "layout_mode": "list"}, rows)
+        order = [t for t in texts if t in ("12%", "Low", "3 not answering") or t.startswith("No answer")]
+        self.assertEqual(order[:2], ["Low", "12%"])
+        self.assertEqual(sorted(order[2:]), sorted([layout._no_answer_text({"no_answer": at(13)}), "3 not answering"]))
+        self.assertIn("Salus", texts)
+        self.assertIn("mdi:battery-unknown", icons)
+
+    def test_the_widget_and_its_gate_use_it(self):
+        every = self.every()
+        with mock.patch.object(batteries, "fetch_every", mock.AsyncMock(return_value=every)), \
+             mock.patch.object(widgets._time, "time", return_value=NOW), mock.patch("time.time", return_value=NOW):
+            got = asyncio.run(widgets.get("dynamic_grid").fetch(None, self.el, None))
+            self.assertTrue(asyncio.run(widgets.get("dynamic_grid").gate.check(
+                None, {**self.el, "filter_value": 5, "except": ["binary_sensor.remote_battery_low"]}, "UTC")))
+        self.assertTrue([b for b in got if b.get("no_answer_count") == 3])
+
+    def test_the_example_shows_one_quiet(self):
+        from datetime import datetime
+        rows = widgets.get("dynamic_grid").example({**self.el, "filter_value": 40}, datetime.now())
+        self.assertTrue([b for b in rows if b.get("no_answer")], "the garage remote in the samples")
+
+
+def editor(js):
+    from test_presets import catalog_json
+    script = (f"import * as Cat from {json.dumps((APP_JS / 'catalog.js').as_uri())};"
+              f"import * as P from {json.dumps((APP_JS / 'presets.js').as_uri())};"
+              f"Cat.setCatalog({json.dumps(catalog_json())});\n{js}")
+    return json.loads(subprocess.run(["node", "--input-type=module", "-e", script], capture_output=True, text=True, check=True).stdout)
+
+
+@unittest.skipUnless(shutil.which("node"), "no node to run the editor")
+class TestTheEditorSaysIt(unittest.TestCase):
+    def test_the_setup_count_counts_a_quiet_one(self):
+        got = editor("""
+const now = Date.parse("2026-10-22T12:00:00Z");
+const ents = [{ entity_id: "sensor.lock_battery", state: "unavailable", changed: "2026-10-21T20:00:00Z", device_class: "battery", unit: "%" },
+              { entity_id: "sensor.door_battery", state: "60", device_class: "battery", unit: "%" }];
+const ids = new Set(ents.map((e) => e.entity_id));
+console.log(JSON.stringify([P.batteriesPast(ents, ids, "below", 20, 12, now), P.batteriesPast(ents, ids, "below", 20, 24, now),
+  P.batteriesPast(ents, ids, "at_least", 50, 12, now), P.batteriesPast(ents, ids, "below", 20, null, now)]));""")
+        self.assertEqual(got, [1, 0, 1, 0])
+
+    def test_the_inspector_offers_the_wait(self):
+        self.assertIn("Count one that hasn't answered for", (APP_JS / "inspector.js").read_text())

@@ -462,6 +462,7 @@ function batteriesSetup({ app, changed }) {
     drawList(); say(); changed();
   });
   const levelText = (e) => {
+    if (["unavailable", "unknown"].includes(e.state)) return "No answer";
     if (isLowSensor(e)) return e.state === "on" ? "Low" : "OK";
     const v = parseFloat(e.state); return Number.isFinite(v) ? `${Math.round(v)}%` : "No level";
   };

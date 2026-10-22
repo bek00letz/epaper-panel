@@ -20,6 +20,7 @@ charts, QR) are the editor's own and aren't here.
 """
 from __future__ import annotations
 
+import time as _time
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Awaitable, Callable
@@ -181,9 +182,11 @@ def _is_batteries(el: dict) -> bool:
 
 
 async def _batteries_past(session, el, home_tz):
-    """A Batteries page shows while one of the batteries its rule picks is past its number."""
+    """A Batteries page shows while one of the batteries its rule picks is past its number, or hasn't
+    answered for its wait (sources/batteries.needs_you)."""
+    import time
     every = await batteries.fetch_every(session)
-    return any(batteries.past(b, el) for b in batteries.chosen(el, every or []))
+    return batteries.needs_you(el, batteries.chosen(el, every or []), time.time())
 
 
 # ---------------------------------------------------------------- fetches
@@ -194,14 +197,32 @@ async def _batteries_list(session, el, ctx):
     if not _is_batteries(el):
         return None
     every = await batteries.fetch_every(session)
-    return None if every is None else batteries.chosen(el, every)
+    if every is None:
+        return None
+    return _in_zone(batteries.shown(el, batteries.chosen(el, every), _time.time()), getattr(ctx, "home_tz", None))
+
+
+def _in_zone(rows: list[dict], tz: str | None) -> list[dict]:
+    """A silent battery's since-when in Home Assistant's time zone, so the panel says it as you'd read it."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    out = []
+    for r in rows:
+        if r.get("no_answer"):
+            try:
+                at = datetime.fromisoformat(str(r["no_answer"]).replace("Z", "+00:00"))
+                r = {**r, "no_answer": (at.astimezone(ZoneInfo(tz)) if tz else at.astimezone()).isoformat()}
+            except (TypeError, ValueError, KeyError):
+                pass
+        out.append(r)
+    return out
 
 
 def _batteries_example(el, now):
     """Batteries by rule: the offline examples it picks; a grid of states: the fixture answers (None)."""
     if not _is_batteries(el):
         return None
-    return batteries.chosen(el, batteries.offline())
+    return _in_zone(batteries.shown(el, batteries.chosen(el, batteries.offline()), now.timestamp()), None)
 
 def _num(value, default: int) -> int:
     try:

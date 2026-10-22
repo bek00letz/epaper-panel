@@ -604,11 +604,22 @@ export function preselectBatteries(ents, rule, byDevice = {}) {
   const ids = new Set((ents || []).map((e) => e.entity_id));
   return batterySensors(ents).filter((e) => (levelOf(e) != null || isLowSensor(e)) && chargedByYou(e, ids, byDevice) === (rule === "at_least")).map((e) => e.entity_id);
 }
-/* How many would show now, as the step says it. */
-export function batteriesPast(ents, chosen, rule, value) {
+/* A battery that hasn't answered for a while (unavailable or unknown since `changed`) counts on a Low
+   page, never a Charged one: the editor's mirror of sources/batteries.silent. `hours` is the rule's
+   `no_answer_hours`: 12 when it has none, "never" for none (the way it was before 0.21.1). */
+export const NO_ANSWER_HOURS = 12;
+export const NO_ANSWER_WAITS = [[1, "1 hour"], [3, "3 hours"], [6, "6 hours"], [12, "12 hours"], [24, "1 day"], [48, "2 days"], ["never", "Never"]];
+export function silentBattery(e, rule, hours, now = Date.now()) {
+  if (rule === "at_least" || hours == null || !e || !["unavailable", "unknown"].includes(e.state)) return false;
+  const at = Date.parse(e.changed || "");
+  return Number.isFinite(at) && now - at >= hours * 3600e3;
+}
+/* How many would show now, as the step says it: past the number, or silent past the wait. */
+export function batteriesPast(ents, chosen, rule, value, hours = NO_ANSWER_HOURS, now = Date.now()) {
   const by = new Map((ents || []).map((e) => [e.entity_id, e])), t = Number(value);
   if (!Number.isFinite(t)) return 0;
-  return [...chosen].filter((id) => { const v = levelOf(by.get(id)); return v != null && (rule === "at_least" ? v >= t : v < t); }).length;
+  return [...chosen].filter((id) => { const e = by.get(id), v = levelOf(e);
+    return (v != null && (rule === "at_least" ? v >= t : v < t)) || silentBattery(e, rule, hours, now); }).length;
 }
 
 /* The Energy dashboard, asked once per editor session (GET /api/energy:
