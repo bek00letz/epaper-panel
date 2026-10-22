@@ -32,6 +32,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 | E-paper's own icon folder and prefix, and Iconify downloads of its own, so it stops depending on the Custom Icons integration (whose v1.0.2 "Download Iconify icons" breaks aiohttp for all of Home Assistant; upstream abandoned). Existing local: and Iconify references keep working; the Custom Icons path stays off as the way back (session "epaper-own-icons", started by the Eufy session at the user's request, 22 Oct) | branch `own-icons` | Done 22 Oct: 3 commits, add-on only; combined in `release-next` |
 | Home Assistant's notifications (a widget, a page that shows only while there are any) and a badge counting updates waiting (session "ha-notifications") | branch `ha-notifications` from `release-next` | Started 22 Oct; designs with the user first |
 | A battery state preset: several batteries, a threshold each or for the group, shown only while below (charge it) or above (charged), page and alert (session "presets-015", from the user's Quick Settings pane) | branch `battery-preset` from `release-next` | Asked 22 Oct; designs with the user first |
+| "Also notify my phone…" for alerts and when-pages: one Home Assistant entity created only when asked, withdrawn when no longer needed, plus a shipped notify blueprint (session "notify-blueprint") | branch `notify-blueprint` from `release-next` | Started 22 Oct; designs with the user first |
 | Bin day's long "Close to the day" menu becomes two plain choices, "Bin day ends" and "Says" (session "icon-follows", asked by the user directly) | branch `close-to-wording` | Done 22 Oct; combined in `release-next` |
 
 The next release (0.20.0) is put together in `release-next`: 883 tests pass, no
@@ -133,6 +134,9 @@ settings and 0.14 screen bar were first seen by the user on 21 Oct.
 
 ## Decisions
 
+- **The add-on never sends notifications itself** (22 Oct). Home Assistant stays
+  the one place for automations: an alert can get a Home Assistant entity, made
+  only on demand, and a shipped blueprint does the notifying.
 - **MQTT is the only way the add-on creates entities.** Never `POST
   /api/states`: writing both made every sensor exist twice in 0.8.x.
 - **The server owns overlay geometry.** The frame file carries footer

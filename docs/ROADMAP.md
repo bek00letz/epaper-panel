@@ -79,6 +79,13 @@ Mockup: https://claude.ai/artifact/STc9a9gWKX7fgX511pmdE6 (private).
 | A preset sets up what it needs, in place (a rule for every preset, the user's call: framework, not patch) | A preset that needs a data source asks for it in its own next step: New to watch asks for the Jellyfin address and API key (saying where to find the key), connects, then asks whose unwatched to show; Solar this month sets up its statistic the same way. It saves the same data source Settings > Data sources shows (one store, no second path), and a second Jellyfin page reuses it. With JellyHA installed, the address is filled in from it; the key is still typed, since JellyHA doesn't expose it | small-medium | no | - |
 | Watch and listen through Home Assistant | Now playing (any media player: Spotify, Sonos, Apple TV, Plex, Jellyfin through JellyHA) and On TV this week (any calendar of shows: Sonarr, Trakt through its add-on), beside New to watch. Jellyfin becomes one source among several. JellyHA (checked 21 Oct) gets no Jellyfin-specific path: it offers one latest episode, one latest movie and library-wide counts, not the lists New to watch draws, so the add-on keeps its own Jellyfin source; JellyHA's players already work in Now playing and its sensors in any sensor preset | medium | no | - |
 
+## Alerts beyond the screen (agreed 22 Oct)
+
+"Also notify my phone…" on an alert or a when-page creates just the Home
+Assistant entity that condition needs (nothing by default) and opens a shipped
+blueprint, prefilled, so the notification is an ordinary automation. The add-on
+never sends notifications itself.
+
 ## Later
 
 | Item | You get | Size | Firmware | Depends on |
