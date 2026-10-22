@@ -440,13 +440,27 @@ function zonesSetup({ changed }) {
   };
 }
 
+// Which batteries you charge, by device (GET /api/batteries), asked once per editor session.
+let batteriesAsked = null;
+function batteryDevices() {
+  if (!batteriesAsked) batteriesAsked = api("api/batteries").then((r) => r.body?.batteries || {}, () => { batteriesAsked = null; return {}; });
+  return batteriesAsked;
+}
+
 /* Batteries: which way (low, to charge; or charged, to unplug), the page's number, and which
    batteries, ticked to start with by what they are (presets.preselectBatteries). Each can have
    its own number later, in the inspector. */
 function batteriesSetup({ app, changed }) {
   const all = batterySensors(app.ents);
   let rule = "below", value = BATTERY_DEFAULT.below, tier = "when", touched = false;
-  let chosen = new Set(preselectBatteries(app.ents, rule));
+  // Ticked once the add-on says which you charge, by their devices; by name if it can't say.
+  let byDevice = null, chosen = new Set();
+  const looking = setTimeout(() => { if (!byDevice) { hint.textContent = "Looking at your batteries…"; } }, 300);
+  batteryDevices().then((got) => {
+    clearTimeout(looking); byDevice = got;
+    if (!touched) chosen = new Set(preselectBatteries(app.ents, rule, byDevice));
+    drawList(); say(); changed();
+  });
   const levelText = (e) => { const v = parseFloat(e.state); return Number.isFinite(v) ? `${Math.round(v)}%` : "No level"; };
   const nameOf = (e) => String(e.name || e.entity_id).replace(/\s+battery(\s+level)?$/i, "") || e.name;
   const node = h("div", { class: "stepsec" });
@@ -456,6 +470,7 @@ function batteriesSetup({ app, changed }) {
   num.addEventListener("input", () => { value = num.value === "" ? "" : Number(num.value); say(); changed(); });
 
   function say() {
+    if (!byDevice && !touched) return;                                     // until the ticks are in
     const n = batteriesPast(app.ents, chosen, rule, value);
     hint.textContent = !chosen.size ? "Tick the batteries it watches."
       : `${n === 0 ? "None would show" : n === 1 ? "1 would show" : `${n} would show`} now, of the ${chosen.size} ticked.`;
@@ -478,7 +493,7 @@ function batteriesSetup({ app, changed }) {
         h("div", { class: "gr" }, h("span", { class: "gl", text: "Shows" }), seg([["below", "Low, to charge"], ["at_least", "Charged, to unplug"]], rule, (v) => {
           if (v === rule) return;
           rule = v; value = BATTERY_DEFAULT[v]; num.value = String(value);
-          if (!touched) chosen = new Set(preselectBatteries(app.ents, rule));      // what fits this way, until you've picked
+          if (!touched && byDevice) chosen = new Set(preselectBatteries(app.ents, rule, byDevice));   // what fits this way, until you've picked
           draw(); changed();
         }, "Which batteries show")),
         h("label", { class: "gr" }, h("span", { class: "gl" }, cmp, h("small", { text: "Each can have its own in the inspector" })), h("span", { class: "inline" }, num, h("span", { class: "unit", text: "%" })))),

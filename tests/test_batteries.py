@@ -255,8 +255,60 @@ class TestThePreset(unittest.TestCase):
         self.assertIn("batteries: batteriesSetup };", js)
         self.assertIn('seg([["below", "Low, to charge"], ["at_least", "Charged, to unplug"]]', js)
         self.assertIn('seg([["when", "With the pages"], ["alert", "As an alert"]]', js)
-        self.assertIn("if (!touched) chosen = new Set(preselectBatteries(app.ents, rule));", js)
+        self.assertIn("if (!touched && byDevice) chosen = new Set(preselectBatteries(app.ents, rule, byDevice));", js)
         self.assertIn("syncDynamicGridShowIf(page);", (APP_JS / "newpage.js").read_text(), "an alert takes its grid's condition")
+
+
+class TestChargedByYouByDevice(unittest.TestCase):
+    """The coordinator's call (22 Oct): which batteries you charge is read from their devices, not
+    their names. Two devices named unlike any pattern: one with a charging sensor, one without."""
+    STATES = [
+        {"entity_id": "sensor.alpha_level", "state": "70", "attributes": {"device_class": "battery", "unit_of_measurement": "%"}},
+        {"entity_id": "binary_sensor.plug_detect", "state": "off", "attributes": {"device_class": "battery_charging"}},
+        {"entity_id": "sensor.beta_power_left", "state": "40", "attributes": {"device_class": "battery", "unit_of_measurement": "%"}},
+        {"entity_id": "sensor.beta_signal", "state": "-60", "attributes": {"device_class": "signal_strength"}},
+        {"entity_id": "sensor.gamma_pct", "state": "55", "attributes": {"device_class": "battery", "unit_of_measurement": "%"}},
+        {"entity_id": "sensor.gamma_mode", "state": "Not Charging", "attributes": {}},
+        {"entity_id": "sensor.delta_pct", "state": "88", "attributes": {"device_class": "battery", "unit_of_measurement": "%"}},
+        {"entity_id": "sensor.delta_status", "state": "idle", "attributes": {"device_class": "enum", "options": ["charging", "discharging", "idle"]}},
+        {"entity_id": "sensor.loose_battery", "state": "12", "attributes": {"device_class": "battery", "unit_of_measurement": "%"}},
+        {"entity_id": "sensor.alpha_volts", "state": "3.9", "attributes": {"device_class": "voltage", "unit_of_measurement": "V"}},
+    ]
+    REGISTRY = [{"entity_id": "sensor.alpha_level", "device_id": "d1"}, {"entity_id": "binary_sensor.plug_detect", "device_id": "d1"},
+                {"entity_id": "sensor.alpha_volts", "device_id": "d1"},
+                {"entity_id": "sensor.beta_power_left", "device_id": "d2"}, {"entity_id": "sensor.beta_signal", "device_id": "d2"},
+                {"entity_id": "sensor.gamma_pct", "device_id": "d3"}, {"entity_id": "sensor.gamma_mode", "device_id": "d3"},
+                {"entity_id": "sensor.delta_pct", "device_id": "d4"}, {"entity_id": "sensor.delta_status", "device_id": "d4"},
+                {"entity_id": "sensor.loose_battery", "device_id": None}]
+
+    def test_by_device(self):
+        from sources import batteries
+        self.assertEqual(batteries.charged_by_you(self.REGISTRY, self.STATES),
+                         {"sensor.alpha_level": True, "sensor.beta_power_left": False, "sensor.gamma_pct": True,
+                          "sensor.delta_pct": True, "sensor.loose_battery": None})
+
+    def test_offline_it_says_nothing(self):
+        import asyncio
+        from sources import batteries
+        with mock.patch.object(batteries, "HA_TOKEN", ""):
+            self.assertEqual(asyncio.run(batteries.fetch(None)), {})
+
+    @unittest.skipUnless(shutil.which("node"), "no node to read the editor's presets")
+    def test_the_step_ticks_by_device_then_by_name(self):
+        from test_presets import run_js
+        ents = """[{ entity_id: "sensor.alpha_level", state: "70", unit: "%", device_class: "battery" },
+          { entity_id: "sensor.beta_power_left", state: "40", unit: "%", device_class: "battery" },
+          { entity_id: "sensor.pad_battery", state: "30", unit: "%", device_class: "battery" },
+          { entity_id: "sensor.pad_battery_state", state: "Charging", unit: "", device_class: "" },
+          { entity_id: "sensor.loose_battery", state: "12", unit: "%", device_class: "battery" },
+          { entity_id: "sensor.loose_battery_state", state: "Charging", unit: "", device_class: "" }]"""
+        dev = '{ "sensor.alpha_level": true, "sensor.beta_power_left": false, "sensor.pad_battery": false, "sensor.loose_battery": null }'
+        got = run_js(f"""console.log(JSON.stringify([P.preselectBatteries({ents}, "below", {dev}), P.preselectBatteries({ents}, "at_least", {dev})]))""")
+        # The pad's device has no charging sensor, whatever sits beside it by name; the loose one has no device: its name decides.
+        self.assertEqual(got, [["sensor.pad_battery", "sensor.beta_power_left"], ["sensor.loose_battery", "sensor.alpha_level"]])
+        js = (APP_JS / "setup.js").read_text()
+        self.assertIn('api("api/batteries")', js)
+        self.assertIn("if (!touched) chosen = new Set(preselectBatteries(app.ents, rule, byDevice));", js)
 
 
 if __name__ == "__main__":

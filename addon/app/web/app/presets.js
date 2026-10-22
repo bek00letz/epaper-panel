@@ -553,17 +553,21 @@ export function batterySensors(ents) {
     .map(({ e }) => e);
 }
 /* Something you charge yourself (a phone, a watch, a laptop, a car, a home battery) says whether
-   it's charging: Home Assistant's mobile app and such integrations give it a charging-state
-   sensor beside its level. A battery you swap (a remote, a door sensor) has none. */
-export function chargedByYou(e, ids) {
+   it's charging; a battery you swap (a remote, a door sensor) doesn't. `byDevice` is the add-on's
+   answer from Home Assistant's registry (GET /api/batteries, sources/batteries.py): its device
+   has a charging-state entity, or not. Only a battery with no device (null, or no answer) goes
+   by its name: a charging-state sensor named beside it, as the mobile app names them. */
+export function chargedByYou(e, ids, byDevice = {}) {
+  const said = byDevice[e.entity_id];
+  if (said === true || said === false) return said;
   const base = String(e.entity_id).replace(/^sensor\./, "").replace(/_battery(_level)?$/, "");
   return [`sensor.${base}_battery_state`, `sensor.${base}_charging`, `binary_sensor.${base}_charging`, `binary_sensor.${base}_battery_charging`].some((x) => ids.has(x));
 }
 /* The ones ticked to start with: for Low, every battery with a level that you swap; for Charged,
    the ones you charge. You change the ticks; nothing here is about one home. */
-export function preselectBatteries(ents, rule) {
+export function preselectBatteries(ents, rule, byDevice = {}) {
   const ids = new Set((ents || []).map((e) => e.entity_id));
-  return batterySensors(ents).filter((e) => levelOf(e) != null && chargedByYou(e, ids) === (rule === "at_least")).map((e) => e.entity_id);
+  return batterySensors(ents).filter((e) => levelOf(e) != null && chargedByYou(e, ids, byDevice) === (rule === "at_least")).map((e) => e.entity_id);
 }
 /* How many would show now, as the step says it. */
 export function batteriesPast(ents, chosen, rule, value) {
