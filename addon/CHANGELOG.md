@@ -22,14 +22,13 @@
   sleeps between updates shows the time each came instead, so nothing goes
   stale while it sleeps.
 - **What needs you in Home Assistant, counted.** While a page uses them, the
-  add-on keeps three sensors: `sensor.epaper_notifications` (Home
+  add-on keeps three counts of its own: `sensor.epaper_notifications` (Home
   Assistant's notifications, the bell), `sensor.epaper_updates` (updates
-  waiting, with how many are Home Assistant's own, add-ons, integrations and
-  devices; a version you skipped isn't counted) and `sensor.epaper_repairs`
+  waiting; a version you skipped isn't counted) and `sensor.epaper_repairs`
   (open Repairs issues, not the ones you ignored). A page's "Only when" or an
-  alert can use them, for example an alert when a notification arrives
-  ("changed in the last 10 minutes"). Only the counts leave the add-on, never
-  what a notification says.
+  alert can use them, for example an alert when notifications go from none
+  to some. They aren't added to Home Assistant as entities: it has these
+  numbers already.
 - **Your own icons and icon sets, without Custom Icons.** A new **Settings ›
   Icons** (also **More icons…** in the icon picker) holds both:
   - **Your own icons:** **Add icons** takes SVG files, or drop them on the

@@ -307,15 +307,15 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
            defaults={"title": ""}, window=True, sensor=needs_you.SENSOR["notifications"],
            fields=[text("title", "Title", "Notifications"),
                    {"kind": "window", "label": "Only show while there are any"},
-                   {"kind": "sensorid", "note": "The add-on counts them as {sensor}. An alert can show by it "
-                                                "(say, when it changed in the last 10 minutes), or your own automations."}]),
+                   {"kind": "sensorid", "note": "The add-on counts them as {sensor}, its own value: a page's "
+                                                "\"Only when\" or an alert can show by it."}]),
     # Every update waiting, by group as Home Assistant shows them; a skipped version isn't one.
     Widget("updates", "Updates", "update", _updates, lambda el, now: {"items": examples.updates()},
            defaults={"title": ""}, window=True, sensor=needs_you.SENSOR["updates"],
            fields=[text("title", "Title", "Updates"),
                    {"kind": "window", "label": "Only show while there are any"},
-                   {"kind": "sensorid", "note": "The add-on counts them as {sensor}, with how many are Home Assistant's own, "
-                                                "add-ons, integrations and devices. An alert can show by it, or your own automations."}]),
+                   {"kind": "sensorid", "note": "The add-on counts them as {sensor}, its own value: a page's "
+                                                "\"Only when\" or an alert can show by it."}]),
     # A number on an icon, as on an app's icon, for a corner of any page; nothing at all at zero.
     Widget("badge", "Badge", "badge", _badge, lambda el, now: examples.badge(needs_you.badge_counts(el)),
            box={"x": 672, "y": 14, "w": 96, "h": 96}, defaults={"counts": "updates"},

@@ -189,10 +189,14 @@ NEEDS_YOU_NAMES = {"notifications": ("Notifications", "mdi:bell-outline"), "upda
 async def publish_needs_you(session, spec: dict) -> set[str]:
     """How many notifications, updates and Repairs issues Home Assistant has
     (sensor.epaper_notifications, _updates, _repairs), for a page's "only
-    when" or an alert ("a new notification": it changed in the last minutes).
-    Only the counts, and updates by group: the words stay on the page."""
+    when" or an alert, answered by the add-on itself (conditions.local).
+
+    They stay the add-on's own values, never entities in Home Assistant: it
+    has these numbers already, and the user's rule (22 Oct) is no entities
+    nobody asked for. Something that asks for one makes it on demand.
+    Returns the entities to keep in Home Assistant: none."""
     used = needs_you.counts_in(spec)
-    wanted = {needs_you.SENSOR[k] for k in used}
+    wanted: set[str] = set()
     try:
         got = await needs_you.counts(session, used)
     except Exception as exc:
@@ -205,7 +209,7 @@ async def publish_needs_you(session, spec: dict) -> set[str]:
         attrs = {"friendly_name": name, "icon": icon}
         if key == "updates":
             attrs.update(needs_you.by_group(await needs_you.fetch_updates(session)))
-        await publish_entity(session, needs_you.SENSOR[key], got[key], attrs)
+        await publish_entity(session, needs_you.SENSOR[key], got[key], attrs, register_mqtt=False)
     return wanted
 
 

@@ -164,31 +164,59 @@ class TestFetching(unittest.IsolatedAsyncioTestCase):
 
 
 class TestSensors(unittest.IsolatedAsyncioTestCase):
-    async def test_counts_for_pages_and_alerts_and_only_counts(self):
-        published = {}
+    """The counts are the add-on's own values: pages and alerts read them, Home Assistant gets no entity."""
 
-        async def publish(session, eid, state, attrs=None, **kw):
-            published[eid] = (state, attrs)
+    async def asyncSetUp(self):
+        self.old = runtime.PUBLISHER
+        self.sent = []
+        runtime.PUBLISHER = unittest.mock.Mock(set=lambda *a, **kw: self.sent.append(a))
+        for sensor in needs_you.SENSOR.values():
+            runtime.PUBLISHED.pop(sensor, None)
 
+    async def asyncTearDown(self):
+        runtime.PUBLISHER = self.old
+        for sensor in needs_you.SENSOR.values():
+            runtime.PUBLISHED.pop(sensor, None)
+
+    async def publish(self, spec, notes):
         async def ups(session):
             return needs_you.updates_from(ROWS)
 
-        async def notes(session):
-            return [{"title": "Private words", "message": "more"}]
-        spec = {"pages": {"a": {"elements": [{"type": "notifications"}, {"type": "updates"}]}}}
-        with unittest.mock.patch.object(entities, "publish_entity", publish), \
-             unittest.mock.patch.object(needs_you, "fetch_updates", ups), \
-             unittest.mock.patch.object(needs_you, "fetch_notifications", notes):
-            wanted = await entities.publish_needs_you(None, spec)
-        self.assertEqual(wanted, {"sensor.epaper_notifications", "sensor.epaper_updates"})
-        self.assertEqual(published["sensor.epaper_notifications"][0], 1)
-        self.assertNotIn("Private words", json.dumps(published), "the words stay on the page")
-        self.assertEqual(published["sensor.epaper_updates"][0], 7)
-        self.assertEqual(published["sensor.epaper_updates"][1]["devices"], 3)
+        async def got_notes(session):
+            return notes
 
+        async def reps(session):
+            return 2
+        with unittest.mock.patch.object(needs_you, "fetch_updates", ups), \
+             unittest.mock.patch.object(needs_you, "fetch_notifications", got_notes), \
+             unittest.mock.patch.object(needs_you, "fetch_repairs", reps):
+            return await entities.publish_needs_you(None, spec)
 
-if __name__ == "__main__":
-    unittest.main()
+    async def test_a_fresh_install_makes_no_entities_in_home_assistant(self):
+        spec = {"pages": {"a": {"elements": [{"type": "notifications"}, {"type": "updates"}, {"type": "badge", "counts": "all"}]}}}
+        kept = await self.publish(spec, [{"title": "Private words", "message": "more"}])
+        self.assertEqual(kept, set(), "nothing kept in Home Assistant")
+        self.assertEqual(self.sent, [], "nothing sent to the broker")
+        own = {k: runtime.PUBLISHED[k] for k in needs_you.SENSOR.values()}
+        self.assertEqual({k: v["state"] for k, v in own.items()},
+                         {"sensor.epaper_notifications": "1", "sensor.epaper_updates": "7", "sensor.epaper_repairs": "2"})
+        self.assertFalse(any(v["register_mqtt"] for v in own.values()))
+        self.assertNotIn("Private words", json.dumps(own), "the words stay on the page")
+        self.assertEqual(own["sensor.epaper_updates"]["attributes"]["devices"], 3)
+
+    async def test_nothing_used_nothing_kept(self):
+        self.assertEqual(await self.publish({"pages": {"a": {"elements": [{"type": "text"}]}}}, []), set())
+        self.assertFalse(any(k in runtime.PUBLISHED for k in needs_you.SENSOR.values()))
+
+    async def test_the_page_shows_only_while_there_are_any_without_home_assistant(self):
+        import conditions
+        cond = "{{ has_value('sensor.epaper_notifications') and states('sensor.epaper_notifications') | float(0) > 0 }}"
+        spec = {"pages": {"a": {"tier": "when", "show_if": cond, "elements": [{"type": "notifications"}]}}}
+        await self.publish(spec, [{"title": "x"}])
+        self.assertEqual(conditions.local(cond, runtime.PUBLISHED), "True")
+        await self.publish(spec, [])
+        self.assertEqual(conditions.local(cond, runtime.PUBLISHED), "False")
+        self.assertEqual(self.sent, [])
 
 
 # ---------------------------------------------------------------- drawn
