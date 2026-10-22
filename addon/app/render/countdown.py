@@ -6,13 +6,15 @@ how far off it is when it's drawn, with nothing asked of anyone, so the
 panel, the editor's canvas and New page's thumbnail all say the same.
 
     {"type": "countdown", "to": "date", "name": "Holiday", "at": "2026-12-24" | "2026-12-24T18:00", "yearly": false}
-    {"type": "countdown", "to": "bins", "today_until": "noon" | "midnight" | "days",
+    {"type": "countdown", "to": "bins", "today_until": "noon" | "midnight", "numbers": false,
      "bins": [{"name": "Recycling", "from": "2026-11-03", "every": 2}, ...]}
 
 A bin is collected on its `from` date and every `every` weeks after it, so
 alternating bins are two bins every 2 weeks, a week apart. The evening
-before reads "Tomorrow" and the day "Today" until noon, then the next one
-(`today_until`; "days" keeps numbers). A date without a time reads "Today"
+before reads "Tomorrow" and the day "Today", or "1 day" and "0 days" with
+`numbers`; bin day ends at noon or midnight (`today_until`), then it counts
+to the next one. One setting used to do both: `today_until: "days"`
+still means numbers, ending at noon. A date without a time reads "Today"
 all its day; with a time, "In 3 hours" on the day; once past, a one-off
 date's page hides itself (`passed`) and a yearly one rolls on to next year.
 A passed one stays among your pages, marked Passed, to reuse with another
@@ -33,7 +35,12 @@ from . import hero
 from .todo import now_in
 
 ICONS = {"date": "mdi:calendar-clock", "bins": "mdi:trash-can"}
-TODAY_UNTIL = ("noon", "midnight", "days")
+TODAY_UNTIL = ("noon", "midnight", "days")      # "days": numbers, ending at noon (the first shape)
+
+
+def says_numbers(el: dict) -> bool:
+    """Whether a bin day says "1 day" and "0 days" rather than "Tomorrow" and "Today"."""
+    return el.get("numbers") is True or el.get("today_until") == "days"
 
 
 def _day(raw) -> date | None:
@@ -175,7 +182,7 @@ def describe(el: dict, now: datetime) -> hero.Fact | tuple[hero.Fact, hero.Fact]
             return None
         when, names = got
         days = (when - today).days
-        return (hero.Fact(_days_words(days, el.get("today_until") == "days"), " and ".join(names), icon),
+        return (hero.Fact(_days_words(days, says_numbers(el)), " and ".join(names), icon),
                 hero.Fact(_date_words(when, today)))
     when, timed = target(el, now)
     if when is None:

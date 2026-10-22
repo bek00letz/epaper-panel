@@ -51,6 +51,18 @@ class TestBins(unittest.TestCase):
         numbers = {**BINS, "today_until": "days"}
         self.assertEqual([says(numbers, t)[0] for t in ("2026-11-02 19:00", "2026-11-03 09:00", "2026-10-30 09:00")], ["1 day", "0 days", "4 days"])
 
+    def test_when_bin_day_ends_and_what_it_says_are_two_settings(self):
+        # Bin day ends: At noon | At midnight. Says: Tomorrow, Today | 1 day, 0 days (the user's design, 22 Oct).
+        late_numbers = {**BINS, "today_until": "midnight", "numbers": True}
+        self.assertEqual([says(late_numbers, t)[0] for t in ("2026-11-02 19:00", "2026-11-03 20:00")], ["1 day", "0 days"],
+                         "numbers that end at midnight, which one setting couldn't say")
+        noon_numbers = {**BINS, "numbers": True}
+        self.assertEqual(says(noon_numbers, "2026-11-03 12:30")[0], "7 days", "noon by default")
+        self.assertEqual(says({**BINS, "numbers": False}, "2026-11-03 09:00")[0], "Today")
+        old = {**BINS, "today_until": "days"}
+        self.assertEqual([says(old, t) for t in ("2026-11-03 09:00", "2026-11-03 12:30")],
+                         [says(noon_numbers, t) for t in ("2026-11-03 09:00", "2026-11-03 12:30")], "a page from before draws as it did")
+
     def test_a_first_collection_still_to_come(self):
         self.assertEqual(says(BINS, "2026-10-21 10:00"), ("In 13 days", "Recycling", "Tuesday 3 November"))
 
@@ -171,15 +183,29 @@ class TestThePreset(unittest.TestCase):
         self.assertFalse(old, "one preset, not two")
         self.assertEqual(found, ["countdown", "countdown", "countdown"])
 
+    def test_bin_day_ends_and_says_are_two_choices(self):
+        import json, subprocess
+        cd = (support.APP / "web" / "app" / "countdown.js").as_uri()
+        script = f"""globalThis.navigator ??= {{ platform: '' }}; const C = await import({json.dumps(cd)});
+          const old = {{ today_until: "days" }}, read = [C.endsOf(old), C.saysOf(old)];
+          C.setBinDay(old, {{ ends: "midnight" }}); const a = {{ ...old }};
+          C.setBinDay(old, {{ says: "words" }});
+          console.log(JSON.stringify([read, a, old, C.endsOf({{}}), C.saysOf({{}})]));"""
+        read, a, b, ends, said = json.loads(subprocess.run(["node", "--input-type=module", "-e", script], capture_output=True, text=True, check=True).stdout)
+        self.assertEqual(read, ["noon", "numbers"], "the first shape: numbers, ending at noon")
+        self.assertEqual(a, {"today_until": "midnight", "numbers": True}, "written in the new shape when changed")
+        self.assertEqual(b, {"today_until": "midnight"})
+        self.assertEqual((ends, said), ("noon", "words"))
+
     def test_its_pages_carry_what_they_count_to(self):
         got = self.run_js("""const p = P.presetById("countdown");
-          const bins = { bins: [{ name: "Recycling", from: "2026-11-03", every: 2 }], today_until: "midnight" };
+          const bins = { bins: [{ name: "Recycling", from: "2026-11-03", every: 2 }], today_until: "midnight", numbers: true };
           console.log(JSON.stringify([P.pageFor(p, p.looks[0], "", { name: "Holiday", at: "2026-12-24T18:00", yearly: false }).elements[0],
             P.pageFor(p, p.looks[1], "", bins).elements[0], P.pageName(p, p.looks[1], "", "", bins), P.pageName(p, p.looks[0], "", "", { name: "Holiday" }),
             P.pageFor(p, p.looks[2], "calendar.family").elements.map((e) => e.entity || "")]))""")
         date, bins, bin_name, date_name, calendar = got
         self.assertEqual((date["type"], date["to"], date["at"], date["name"]), ("countdown", "date", "2026-12-24T18:00", "Holiday"))
-        self.assertEqual((bins["to"], bins["today_until"], bins["bins"][0]["every"]), ("bins", "midnight", 2))
+        self.assertEqual((bins["to"], bins["today_until"], bins.get("numbers"), bins["bins"][0]["every"]), ("bins", "midnight", True, 2))
         self.assertEqual((bin_name, date_name), ("Bin day", "Holiday"))
         self.assertEqual(calendar[1:], ["calendar.family"] * 3, "a calendar stays the alternative")
 
@@ -190,7 +216,12 @@ class TestThePreset(unittest.TestCase):
         insp = (APP_JS / "inspector.js").read_text()
         self.assertIn('else if (f.kind === "countdown") s.append((el.to === "bins" ? binsEditor : dateEditor)(el, () => app.doc.commit()));', insp)
         ed = (APP_JS / "countdown.js").read_text()
-        self.assertIn('["noon", "Tomorrow, then Today until noon"]', ed)
+        self.assertIn('export const BIN_DAY_ENDS = [["noon", "At noon"], ["midnight", "At midnight"]];', ed)
+        self.assertIn('export const BIN_DAY_SAYS = [["words", "Tomorrow, Today"], ["numbers", "1 day, 0 days"]];', ed)
+        self.assertIn('row("Bin day ends", null, choice(BIN_DAY_ENDS', ed)
+        self.assertIn('row("Says", null, choice(BIN_DAY_SAYS', ed)
+        self.assertNotIn("Close to the day", ed)
+        self.assertIn('ctl?.classList?.contains("segc") ? "div" : "label"', ed, "clicking a row's words never picks a choice")
         self.assertNotIn("getDate() -", ed, "the editor never counts days itself")
 
 

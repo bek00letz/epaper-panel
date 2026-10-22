@@ -7,6 +7,11 @@
   a Bin day read "Close / to / the / day" beside its menu, and "Starts
   showing" squeezed its note; a label too long for two lines takes the row
   too. Segmented controls follow the same rule.
+- **Bin day's "Close to the day" is two plain choices.** "Bin day ends: At
+  noon, At midnight" (then it counts to the next collection) and "Says:
+  Tomorrow, Today, or 1 day, 0 days", in place of one long menu. Numbers
+  can now last until midnight too. Bin days you set up before look the
+  same.
 
 ## 0.19.0
 Add-on only; no firmware change, so nothing to reinstall on the panel.

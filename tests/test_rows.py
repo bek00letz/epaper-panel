@@ -39,7 +39,7 @@ class TestOneRuleForEveryRow(unittest.TestCase):
     def test_a_control_asks_for_what_it_needs(self):
         self.assertIn("--need: max-content", rule('.field > :is(select, input[type="date"], input[type="time"], input[type="datetime-local"])'),
                       "a menu its longest choice, a date its own width")
-        self.assertIn("flex: 1 1 var(--need, auto)", rule(".gr > :is(input, select, textarea, .inline)"),
+        self.assertIn("flex: 1 1 var(--need, auto)", rule(".gr > :is(input, select, textarea, .inline, .segc)"),
                       "auto: a width the code gives a field (Port's 7em) still counts")
         self.assertIn("width: auto", rule(".gr .inp"))
 
