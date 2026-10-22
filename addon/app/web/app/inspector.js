@@ -5,7 +5,7 @@
 import { h, icon, api, clone, pageTitle, slug, modKey, turning } from "./util.js";
 import { field, input, number, select, seg, textarea, toggle, toggleRow, section, linkButton, toast } from "./ui.js";
 import { TYPES, breakable, isWidget, hasText, elName, normalizeLineParity, GROUP_STYLES, GROUP_PAD } from "./elements.js";
-import { OPS, CHANGED_MINUTES, parseShowIf, compileShowIf, valueChoices, evaluate, describe, changedLine, syncWidgetShowIf, syncDynamicGridShowIf, GRID_RULES, gridRule, gridByNumber } from "./conditions.js";
+import { OPS, CHANGED_MINUTES, parseShowIf, compileShowIf, valueChoices, evaluate, describe, changedLine, syncWidgetShowIf, syncDynamicGridShowIf, GRID_RULES, gridRule, gridByNumber, gridWrote } from "./conditions.js";
 import { explodeWidget, getWidgetSensorId, suggestIconForEntity } from "./legacy.js";
 import { dateEditor, binsEditor } from "./countdown.js";
 import { zonesEditor } from "./zones.js";
@@ -794,6 +794,14 @@ function conditionRows(app, p, c = SHOW) {
   const doc = app.doc;
   const parsed = parseShowIf(p[c.key]);
   const wrap = h("div", { class: "cond" });
+  // A condition its Dynamic status grid wrote (and keeps in step): said in words, not as its template.
+  const grid = c === SHOW && !app[c.raw] && (p.elements || []).find((x) => x.type === "dynamic_grid");
+  if (grid && gridWrote(p[c.key], grid)) {
+    const rule = gridRule(grid), what = rule === "below" ? "is below its number" : rule === "at_least" ? "has reached its number" : `is ${rule}`;
+    wrap.append(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: `While one on its list ${what}. It follows the list as you change it.` })),
+      linkButton("Write my own condition", () => { app[c.raw] = true; app.refresh(); }));
+    return wrap;
+  }
   // An Until can't be "changed" in the simple form (see opSel); one written by hand stays as written.
   if (parsed.mode === "raw" || app[c.raw] || (c !== SHOW && parsed.op === "changed")) {
     wrap.append(field(c === SHOW ? "Condition" : "Until", textarea(p[c.key], (v) => { if (v.trim()) p[c.key] = v.trim(); else delete p[c.key]; doc.commit(); }), { wide: true, note: c.rawNote }));

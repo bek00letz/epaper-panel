@@ -175,6 +175,13 @@ class TestThePageShowsWhileOneDoes(unittest.TestCase):
         self.assertEqual(got[0], "{{ (has_value('sensor.b') and states('sensor.b') | float(0) < 15) }}", "and keeps following after a removal")
         self.assertEqual(got[1], "{{ is_state('person.x','home') }}")
 
+    def test_its_condition_is_said_in_words(self):
+        """Found in the browser check: an alert's grid-written condition showed as a 398-character template."""
+        js = (APP_JS / "inspector.js").read_text()
+        self.assertIn("if (grid && gridWrote(p[c.key], grid)) {", js)
+        self.assertIn("While one on its list ${what}. It follows the list as you change it.", js)
+        self.assertIn('linkButton("Write my own condition", () => { app[c.raw] = true; app.refresh(); })', js)
+
     def test_the_inspector_offers_the_rule(self):
         js = (APP_JS / "inspector.js").read_text()
         self.assertIn('field("Shows each", select(GRID_RULES, gridRule(el)', js)
