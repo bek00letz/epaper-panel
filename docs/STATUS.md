@@ -27,7 +27,14 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 ## In flight
 
-Nothing being built. Merged into local main, not pushed, for the next release
+| Work | Where | State |
+|---|---|---|
+| E-paper's own icon folder and prefix, and Iconify downloads of its own, so it stops depending on the Custom Icons integration (whose v1.0.2 "Download Iconify icons" breaks aiohttp for all of Home Assistant; upstream abandoned). Existing local: and Iconify references keep working; the Custom Icons path stays off as the way back (session "epaper-own-icons", started by the Eufy session at the user's request, 22 Oct) | its own branch | Started 22 Oct; asks the user first |
+
+Until it ships: keep Custom Icons installed, and don't press its "Download
+Iconify icons" button.
+
+Merged into local main, not pushed, for the next release
 (user, 22 Oct): every inspector row moves its control under its label when they
 don't fit side by side (the Countdown's squeezed "Close to the day").
 
