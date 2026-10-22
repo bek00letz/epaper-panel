@@ -191,6 +191,8 @@ def eval_fixture_template(tpl: str, own: bool = True) -> str:
     if m_attr:
         eid, attr = m_attr.group(1), m_attr.group(2)
         raw = (states.get(eid) or {}).get(attr)
+        if raw is None and attr == "unit_of_measurement":
+            raw = (states.get(eid) or {}).get("unit")          # the fixture keeps a sensor's unit as "unit"
         val = "" if raw is None else str(raw)
         if "timestamp_custom" in expr:
             m_fmt = re.search(r"timestamp_custom\(\s*'([^']+)'\s*\)", expr)

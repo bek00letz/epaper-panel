@@ -184,3 +184,15 @@ async def fetch_todo_items(session, entity_id, fallback=None):
              for i in found["items"] if isinstance(i, dict)]
     name = ((st or {}).get("attributes") or {}).get("friendly_name") or eid.split(".", 1)[1].replace("_", " ").capitalize()
     return {"entity": eid, "name": str(name), "items": items}
+
+
+@runtime.live(600)
+async def fetch_units(session) -> dict:
+    """{entity: its unit} for every entity Home Assistant has: what pages made before units followed
+    their sensor are compared with (render/units.follow_units). Offline, the fixture's."""
+    if not HA_TOKEN:
+        from fixture import load_fixture
+        return {eid: info.get("unit") or "" for eid, info in (load_fixture().get("states") or {}).items()}
+    states = await ha_json(session, "/states")
+    return {s["entity_id"]: (s.get("attributes") or {}).get("unit_of_measurement") or ""
+            for s in states or [] if isinstance(s, dict) and s.get("entity_id")}

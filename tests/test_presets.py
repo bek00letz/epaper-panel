@@ -725,13 +725,13 @@ class TestUnitsAreTheSensors(unittest.TestCase):
                 for el in els:
                     if el.get("type") in ("number", "bar") and str(el.get("entity", "")).startswith("sensor.") and el.get("show", "state") == "state":
                         with self.subTest(look=look, unit=unit):
-                            self.assertEqual(el.get("suffix", "").strip(), unit)
+                            # It follows the sensor at every render (review 2 #3), never a copy of today's unit.
+                            self.assertEqual((el.get("unit"), el.get("suffix")), ("entity", None))
 
     def test_none_when_the_sensor_has_none(self):
         for look, els in self.made(""):
             for el in els:
                 self.assertNotIn(el.get("suffix", "").strip(), self.UNITS, look)
-                self.assertNotIn("unit", el, f"{look}: the marker never reaches a page")
 
     def test_no_preset_writes_a_unit_of_its_own(self):
         src = (APP_JS / "presets.js").read_text()
@@ -742,11 +742,12 @@ class TestUnitsAreTheSensors(unittest.TestCase):
 
     def test_changing_a_values_sensor_changes_its_unit(self):
         src = (APP_JS / "inspector.js").read_text()
-        self.assertIn('if (el.type === "number" && (!mine || mine === was)) { if (e?.unit) el.suffix', src, "your own words stay")
+        self.assertIn('if (el.type === "number" && el.unit !== "entity" && (!mine || mine === was)) { el.unit = "entity"; delete el.suffix; }', src,
+                      "it follows the new sensor; your own words stay")
 
     def test_a_power_gauge_follows_its_unit(self):
         got = run_js("""console.log(JSON.stringify(["W", "kW"].map((u) => P.withUnits([{ type: "bar", entity: "sensor.x", unit: "entity", max_val: "power" }], () => u)[0])))""")
-        self.assertEqual([(g["max_val"], g["suffix"]) for g in got], [(5000, " W"), (5, " kW")])
+        self.assertEqual([(g["max_val"], g["unit"]) for g in got], [(5000, "entity"), (5, "entity")])
 
     def test_the_examples_units_are_the_example_sensors(self):
         states = json.loads((support.APP / "render" / "fixture.json").read_text())["states"]

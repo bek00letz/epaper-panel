@@ -405,7 +405,8 @@ export function changesEvery(el, entMap) {
   if (["number", "text", "bar", "curve", "bar_chart"].includes(el.type)) {
     const ent = el.entity && entMap?.get?.(el.entity);
     if (ent && "changes_every" in ent) return ent.changes_every ? Math.max(1, Math.round(ent.changes_every / 60)) : null;
-    const unit = ent?.unit || el.suffix || "";
+    // A unit that follows its sensor is the sensor's (an example's in a thumbnail: EXAMPLE_UNITS).
+    const unit = ent?.unit || (el.unit === "entity" ? EXAMPLE_UNITS[el.entity] || "" : el.suffix) || "";
     if (POWER_UNIT.test(unit)) return 1;
   }
   return null;
@@ -483,8 +484,9 @@ export function withUnits(elements, infoOf = () => "") {
       }
     }
     if (e.total) { if (RUNNING.includes(about.state_class)) e.show = "change_today"; delete e.total; }
-    // No unit is an empty suffix, not a missing one: a gauge with none would add its own "%".
-    if (e.unit === "entity") { delete e.unit; e.suffix = !u ? "" : u === "%" ? "%" : ` ${u}`; }
+    // The unit follows the sensor at every render (review 2 #3): kept as unit "entity", never copied in,
+    // so a unit Home Assistant changes later (°C to °F) changes on the page too (render/units.py).
+    if (e.unit === "entity") delete e.suffix;
     if (e.max_val === "power") { e.max_val = POWER_MAX[u] ?? 5000; if (u === "kW" || u === "MW") e.decimals = 1; }
     return e;
   });

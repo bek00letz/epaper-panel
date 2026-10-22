@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **A value's unit follows its sensor.** A number or gauge shows its
+  sensor's unit as Home Assistant has it now, so switching Home Assistant
+  to °F, or giving a sensor a unit of its own, changes the page too. Pages
+  you already have follow wherever the unit after a value was the
+  sensor's own; one you typed stays yours. In the inspector, "Its unit"
+  says what it is now; switch it off to write your own.
+
 - **Batteries follows a rule, not the batteries you had that day.** A
   Batteries page shows every battery of its kind (the ones you swap, or the
   ones you charge) that's past its number, minus the ones you untick. A

@@ -316,11 +316,10 @@ function shows(app, el, set) {
   } else {
     s.append(entityButton(app, el.entity, (id) => {
       if (!id) return;
-      // The unit follows the sensor when it was the old sensor's own (or none); words you typed stay.
+      // The unit follows the sensor (review 2 #3) when it was the old sensor's own, or none; words you typed stay.
       const was = String(app.entMap.get(el.entity)?.unit || "").trim(), mine = String(el.suffix || "").trim();
       el.entity = id;
-      const e = app.entMap.get(id);
-      if (el.type === "number" && (!mine || mine === was)) { if (e?.unit) el.suffix = e.unit === "%" ? "%" : " " + e.unit; else if (mine) delete el.suffix; }
+      if (el.type === "number" && el.unit !== "entity" && (!mine || mine === was)) { el.unit = "entity"; delete el.suffix; }
       app.doc.commit();
     }, { cls: "shows-sensor" }));
     const show = el.show || "state";
@@ -341,9 +340,10 @@ function shows(app, el, set) {
     if (["last_changed", "last_updated", "date_formatted"].includes(show)) {
       s.append(field("Looks like", select(FORMATS, el.format || (show === "date_formatted" ? "date" : "relative"), (v) => set("format", v))));
     }
+    s.append(unitRow(app, el));
     s.append(h("div", { class: "pair" },
       field("Before", input(el.prefix, (v) => set("prefix", v), { placeholder: "nothing" })),
-      field("After", input(el.suffix, (v) => set("suffix", v), { placeholder: "nothing" }))));
+      el.unit === "entity" ? null : field("After", input(el.suffix, (v) => set("suffix", v), { placeholder: "nothing" }))));
     s.append(h("div", { class: "field" }, h("span", { class: "lab", text: "As" }), seg([["number", "A number"], ["text", "Text"]], el.type, (v) => {
       el.type = v; if (v === "number" && el.decimals === undefined) el.decimals = 1; app.doc.commit();
     }, "Treat the value as")));
@@ -358,6 +358,18 @@ function shows(app, el, set) {
     s.append(replacements(app, el));
   }
   return s;
+}
+
+/* "Its unit": the unit after the value follows the sensor (unit "entity", resolved at every render,
+   render/units.py), saying what it is now; off, the words after it are yours (After). Review 2 #3. */
+function unitRow(app, el) {
+  if (!["number", "bar"].includes(el.type) || !el.entity) return null;
+  const now = String(app.entMap.get(el.entity)?.unit || "").trim();
+  const label = now ? `Its unit (${now})` : "Its unit (none now)";
+  return toggleRow(label, el.unit === "entity", (v) => {
+    if (v) { el.unit = "entity"; delete el.suffix; } else { delete el.unit; el.suffix = now === "%" ? "%" : now ? ` ${now}` : ""; }
+    app.doc.commit();
+  }, "Follows the sensor, so it changes if Home Assistant shows it in another unit");
 }
 
 /* Show the sensor's unit as the word it uses right now (950 W, then kW). */
@@ -409,7 +421,8 @@ const TYPE_FIELDS = {
   box: [F.sel("fill", "Fill", [["outline", "Outline"], ["black", "Black"], ["screen", "Half tone"], ["white", "White"]], "outline"), F.num("radius", "Corners", "12", 0, 120), F.num("thickness", "Border", "3", 1, 20)],
   bar: [F.entity("entity", "Sensor"), F.text("title", "Title", "Battery"), F.sel("bar_style", "Style", [["solid", "Solid"], ["segmented", "Segments"], ["vertical", "Upright"]], "solid"),
     { kind: "num", key: "segments", label: "Segments", ph: "10", min: 2, max: 40, when: (el) => el.bar_style === "segmented" },
-    F.num("min_val", "From", "0"), F.num("max_val", "To", "100"), F.text("suffix", "Unit", "%"), F.num("decimals", "Decimals", "0", 0, 4), F.on("show_label", "Show the value", true)],
+    F.num("min_val", "From", "0"), F.num("max_val", "To", "100"), { kind: "unit" },
+    { kind: "text", key: "suffix", label: "Unit", ph: "%", when: (el) => el.unit !== "entity" }, F.num("decimals", "Decimals", "0", 0, 4), F.on("show_label", "Show the value", true)],
   curve: [F.entity("entity", "Sensor"), F.num("hours", "Hours", "24", 1, 168)],
   bar_chart: [F.entity("entity", "Sensor"), F.text("title", "Title", "Last 24 hours"), F.num("hours", "Hours", "24", 1, 168), F.num("bars", "Bars", "12", 2, 48), F.on("show_labels", "Lowest and highest", true), F.on("show_border", "Border", false)],
 };
@@ -481,6 +494,7 @@ function typeSections(app, el, set, i) {
         h("p", { class: "fnote" }, before, h("code", { class: "sel", text: getWidgetSensorId(el) || f.none || "" }), after)));
     }
     else if (f.kind === "note") s.append(h("p", { class: "fnote" }, f.text || ""));   // the descriptor's words, as text
+    else if (f.kind === "unit") { const r = unitRow(app, el); if (r) s.append(r); }   // follows its sensor (review 2 #3)
     else if (f.kind === "place") s.append(...placeRows(app, el, set));
     else if (f.kind === "countdown") s.append((el.to === "bins" ? binsEditor : dateEditor)(el, () => app.doc.commit()));
     // A world clock's cities: adding, removing or reordering one redraws the canvas at once (each commit does).

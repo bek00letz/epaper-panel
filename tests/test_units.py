@@ -75,3 +75,74 @@ class TestUnitLabels(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestAUnitFollowsItsSensor(unittest.TestCase):
+    """Review 2 #3: a number or gauge keeps unit "entity" and shows its sensor's unit at every render."""
+
+    def setUp(self):
+        from render import layout, theme as T
+        self.layout, self.T = layout, T
+
+    def same_as_typed(self, el, value, unit):
+        """The page drawn with the unit from its sensor is the page with that unit typed after it."""
+        follows = self.layout.render_page({"elements": [el]}, {0: value, "__unit_0": unit})
+        typed = {k: v for k, v in el.items() if k != "unit"}
+        typed["suffix"] = units.suffix_for(unit)
+        return follows.tobytes() == self.layout.render_page({"elements": [typed]}, {0: value}).tobytes()
+
+    def test_the_render_asks_for_the_unit_and_shows_it(self):
+        el = {"type": "number", "entity": "sensor.outside", "unit": "entity", "decimals": 1, "x": 0, "y": 0, "w": 300, "h": 90}
+        tpls = self.layout.collect_templates({"elements": [el]})
+        self.assertEqual(tpls["__unit_0"], "{{ state_attr('sensor.outside', 'unit_of_measurement') or '' }}")
+        self.assertTrue(self.same_as_typed(el, "21.4", "°C"))
+        self.assertTrue(self.same_as_typed(el, "70.5", "°F"), "Home Assistant switched units: so does the page")
+        self.assertEqual(units.suffix_for("%"), "%")
+        self.assertEqual(units.suffix_for(""), "")
+
+    def test_a_gauge_follows_too_and_shows_no_made_up_percent(self):
+        from PIL import Image
+        bar = {"type": "bar", "entity": "sensor.load", "unit": "entity", "min_val": 0, "max_val": 5000, "show_label": True,
+               "decimals": 0, "x": 0, "y": 0, "w": 400, "h": 80}
+        a = self.layout.render_page({"elements": [bar]}, {0: "640", "__unit_0": "W"})
+        b = self.layout.render_page({"elements": [bar]}, {0: "640", "__unit_0": "kW"})
+        self.assertNotEqual(a.tobytes(), b.tobytes())
+
+    def test_offline_the_fixtures_unit(self):
+        import examples
+        el = {"type": "number", "entity": "sensor.indoor_temperature", "unit": "entity"}
+        vals, _ = examples.page_values({"elements": [el]})
+        self.assertEqual(vals["__unit_0"], "°C")
+
+    def test_pages_made_before_follow_when_their_unit_was_the_sensors(self):
+        pages = {"p": {"elements": [
+            {"type": "number", "entity": "sensor.t", "suffix": " °C"},                 # copied in: follows now
+            {"type": "bar", "entity": "sensor.b", "suffix": "%"},
+            {"type": "number", "entity": "sensor.w", "suffix": " watts"},              # your own word: stays
+            {"type": "number", "entity": "sensor.t", "value": "{{ 1 }}", "suffix": " °C"},   # a template: yours
+        ]}}
+        self.assertEqual(units.follow_units(pages, {"sensor.t": "°C", "sensor.b": "%", "sensor.w": "W"}), ["p"])
+        els = pages["p"]["elements"]
+        self.assertEqual([(e.get("unit"), e.get("suffix")) for e in els],
+                         [("entity", None), ("entity", None), (None, " watts"), (None, " °C")])
+        self.assertEqual(units.follow_units(pages, {"sensor.t": "°C"}), [], "once")
+
+
+class TestSavedPagesFollowAtRender(unittest.TestCase):
+    def test_a_saved_design_follows_its_sensors_unit(self):
+        import asyncio
+        from unittest import mock
+        import devices
+        import frames
+        import support as sup
+        from sources import ha_services
+        sup.fresh_data_dir()
+        dev = devices.primary()
+        found = devices.design(dev["design"])
+        found["pages"] = {"temp": {"elements": [{"type": "number", "entity": "sensor.t", "suffix": " °C"}]}}
+        devices._save_design(dev["design"], found)
+        with mock.patch.object(ha_services, "fetch_units", mock.AsyncMock(return_value={"sensor.t": "°C"})):
+            done = asyncio.run(frames.follow_sensor_units(None))
+        self.assertEqual(done, [f"{dev['design']}:temp"])
+        self.assertEqual(devices.design(dev["design"])["pages"]["temp"]["elements"][0]["unit"], "entity")
+        sup.use_test_data_dir()

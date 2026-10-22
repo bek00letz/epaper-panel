@@ -2468,6 +2468,9 @@ def render_page(page, vals, *, clock="", label="", footer=None, page_no=None, it
         # Per-element conditional visibility (show_if)
         if _hidden(vals, i):
             continue
+        if units.follows(el):
+            # The unit after it is its sensor's now, whatever it was when the page was made.
+            el = {**el, "suffix": units.suffix_for((vals or {}).get(f"__unit_{i}"))}
         try:
             if el["type"] == "icon" and isinstance(el.get("state_icons"), dict):
                 # Drawn by its entity's state, with its own icon when no state matches (or none yet).
@@ -2543,6 +2546,8 @@ def collect_templates(page):
             tpl = template_for(el)
             if tpl and "{{" in tpl:
                 out[i] = tpl
+            if units.follows(el):              # its sensor's unit, asked at each render (review 2 #3)
+                out[f"__unit_{i}"] = "{{ state_attr('%s', 'unit_of_measurement') or '' }}" % binding._quote(el["entity"].strip())
         elif el.get("type") == "icon" and isinstance(el.get("state_icons"), dict) and str(el.get("entity") or "").strip():
             # An icon that follows its entity: the state picks one of its state_icons.
             tpl = template_for({"entity": el["entity"], "show": "state"})
