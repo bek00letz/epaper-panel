@@ -98,12 +98,15 @@ Next one when a good amount of work has piled up since v0.15.0.
    lists, a "how it went" report, TRMNL-compatible screens.
 
 The New page presets plan shipped in 0.15.0.
-9. **The add-on's icon set is older than Home Assistant's**: `mdi:cat-outline`
-   (Home Assistant's icon for "Outdoor Cat") isn't in it, so such icons are
-   left out. Fix: bundle the same Material Design Icons version Home
-   Assistant uses, and keep it in step.
-10. **One more editor copy of a server table**: the page conditions' value
-   suggestions (`KNOWN_STATES` in `inspector.js`); read the catalog instead.
+9. **The shipped fallback icon set is older than Home Assistant's** (7.4.47,
+   no `mdi:cat-outline`). Since 0.18.0 the add-on copies Home Assistant's own
+   set at start, so this only matters until that copy works or while it
+   keeps failing. Refresh `addon/app/icons/mdi.json.gz` the way its README
+   says, at a release that touches icons anyway.
+
+Done since the backlog was written: the editor's condition suggestions come
+from the add-on (0.18.0, `b14a961`; a test stops an editor copy coming back),
+and icons follow Home Assistant's own set (0.18.0, `3d98341`).
 
 **ESPHome 2026.10.0 (checked 21 Oct):** our firmware builds with it, 5.79" and
 2.9", no new warnings. It switches off TLS a device doesn't need, but ours
