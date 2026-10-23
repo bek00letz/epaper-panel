@@ -2,12 +2,27 @@
 
 # e-Paper Panel
 
-A Home Assistant add-on for Elecrow's CrowPanel e-paper displays, and for
-TRMNL devices if you turn them on. It turns
-whatever you care about into calm, glanceable pages: on your desk under the
-monitor, by the bed, on the wall, or across the room from the sofa. You design
-the pages in a visual editor in Home Assistant's sidebar; the panel takes
-turns showing them, and a page appears only when it has something to say.
+**Calm screens that know what matters.**
+
+e-Paper Panel is an ambient display system for e-ink screens, run from Home
+Assistant. It decides what's worth seeing right now, lays it out to read from
+where you'll be, and keeps your screens showing it: on your desk under the
+monitor, by the bed, on the wall, or across the room from the sofa.
+
+- **It picks the moment.** A page appears only when it has something to say:
+  the match while it's on, the dryer while it runs, a plane while it's
+  overhead. An alert can take over the screen at once and hand it back later.
+- **You design it once.** Pages are made in a visual editor in Home
+  Assistant's sidebar, drawn by the same engine as the screen, so what you
+  see there is what the screen shows.
+- **It looks after the screens.** Several screens, each with its own pages
+  and quiet hours; always on, or asleep between updates to save power; at
+  home or away from it.
+- **No account.** No sign-up and no cloud of ours. Your pages and settings
+  stay in Home Assistant.
+
+It works with Elecrow's CrowPanel e-paper displays, and with TRMNL devices if
+you turn them on.
 
 ![Pages the add-on draws](docs/pages.png)
 
