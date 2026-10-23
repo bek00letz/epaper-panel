@@ -1,7 +1,7 @@
 # Status
 
 The one place the project's state lives. The coordinator updates it after
-every release and every finished piece of work. Last updated 20 Oct 2026.
+every release and every finished piece of work. Last updated 23 Oct 2026.
 Where we're going and why: [ROADMAP.md](ROADMAP.md).
 
 ## Released
@@ -42,12 +42,9 @@ Worker notes are in the notes folders (`break-it-0.12.0.md`,
 `presets-015.md`, `framework-review.md`, `checklist-0.15.0.md`,
 `unsent-changes.md`, `icon-follows.md`, `ha-icons.md`, `clock-align.md`, `racing-calendars.md` in this one's; `own-icons.md`, `ha-notifications.md`,
 `notify-blueprint.md` in the first coordinator's).
-Merged worktrees kept until the user OKs removing them: `release-next`,
-`presets-015`, `widgets-015`, `editor-zoom`, `unsent-changes`,
-`changed-condition`, `icon-follows`, `ha-icons`, `clock-align`, `scores-fit`,
-`racing-calendars`, `own-icons`, `close-to-wording`, `ha-notifications`,
-`battery-preset`, `notify-blueprint`, `break-020`, `review2-fixes`,
-`services-021`, `batteries-fetch`, `batteries-unavailable`.
+No worktrees: the project moved to `~/Developer/HomeAssistant/e-PaperPanel`
+on 23 Oct as a fresh clone, and the old, fully merged worktrees were deleted
+with the user's OK. New work starts new worktrees.
 
 ## Framework review
 

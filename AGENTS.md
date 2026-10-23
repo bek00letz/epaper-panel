@@ -13,7 +13,7 @@ backlog and the decisions already made.
 
 **Workers**
 - Work on your own branch in your own git worktree, never in the shared
-  folder (`~/Documents/HA/epaper`). Never switch the shared folder's branch:
+  folder (`~/Developer/HomeAssistant/e-PaperPanel/epaper`). Never switch the shared folder's branch:
   it stays on `main`.
 - Note each change under **Unreleased** at the top of `addon/CHANGELOG.md`,
   in plain language.
