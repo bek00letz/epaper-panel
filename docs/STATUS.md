@@ -35,7 +35,9 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Work | Where | State |
 |---|---|---|
-| Nothing in flight | | |
+| Share a page as a file | share-page (local_6b664e91-…) | building |
+| The screen's words in en, ro, es, de, fr | screen-languages (local_4918c8a5-…) | building |
+| Setup from the browser: research and options | browser-setup-research (local_cc8ac9d4-…) | researching; a design session with the user follows |
 
 Worker notes are in the notes folders (`break-it-0.12.0.md`,
 `timers-addon.md`, `firmware-013.md`, `fixes-0131.md`, `editor-polish.md`,
@@ -62,9 +64,8 @@ Next one when a good amount of work has piled up since v0.15.0.
 
 ## Backlog, most important first
 
-1. **0.15.0 and 0.16.0 by hand**: the checklists (`checklist-0.15.0.md`, and the
-   0.16.0 steps in the coordinator's reply of 21 Oct); almost all of
-   it is tested by code, little has met the real Home Assistant or an eye.
+1. **Hands-on checks done** (the user, 26 Oct): the 0.15.0, 0.16.0 and 0.21
+   checklists (Settings › Services, Batteries, Shows).
 2. **The world clock on the 4.2"** sits in a band a third of the height
    (Fit scales by width); a full-height box would read larger.
 3. **Sleeping on the real 5.79" (since 0.13).** Always on first (nothing should change), then
@@ -84,6 +85,12 @@ Next one when a good amount of work has piled up since v0.15.0.
    ~0.05–0.15 W). Estimate: ~1.5–3.5 Wh/day, so weeks, not months, always on;
    the USB meter or the days from 99% to 90% will tell. The bank stays on at
    that draw thanks to its trickle-charge mode; many banks switch off.
+   **Result (26 Oct): the Anker was at 4% after about 6 days** always on
+   (from 20 Oct). Far worse than the estimate: always on drains a power bank
+   in under a week, so sleeping between updates is what a battery needs. The
+   USB meter arrived broken; a replacement is on its way, so current
+   readings wait. Meanwhile the days a full bank lasts asleep (Update every
+   5 minutes or more) can be counted the same way.
 4. **The editor's new parts by eye**, in Safari and inside Home Assistant:
    the screen bar, Add a screen with power first, rename in place, and Fit
    in Safari (reasoned from screenshots, not reproduced).
@@ -91,12 +98,14 @@ Next one when a good amount of work has piled up since v0.15.0.
    Assistant's address and a Cloudflare tunnel works (20 Oct, once the
    integration's entry existed). Still untried: a second Wi-Fi network, and
    "Through your own address".
-6. **Setup from the browser** (next month, large, firmware): a design pass
+6. **Setup from the browser** (large, firmware; started 26 Oct): a design pass
    with the user first on how the panel keeps its Home Assistant actions and
    entities without a per-panel key (ROADMAP, open question).
-7. **The rest of next month** (ROADMAP): the screen's words in Home
-   Assistant's language (which languages first is open), share a page, to-do
-   lists, a "how it went" report, TRMNL-compatible screens.
+7. **Started 26 Oct:** share a page (export and import as a file), and the
+   screen's words in Home Assistant's language: English, Romanian, Spanish,
+   German, French (the user's pick). Still to come: a "how it went" report,
+   TRMNL-compatible screens (a Seeed 7.5" reTerminal arrives in days or
+   weeks, so they can be tried).
 
 The New page presets plan shipped in 0.15.0.
 9. **The shipped fallback icon set is older than Home Assistant's** (7.4.47,
@@ -127,7 +136,8 @@ browser setup's open question), suspend_loop / loop_interval (#18136, power),
 and ESPHome's own epaper_spi driver (could replace the unlicensed ESPBoards
 driver where it supports our controllers).
 
-**Waiting on hardware:** a TRMNL (pairing, pictures, HTTPS, battery); a
+**Waiting on hardware:** a Seeed 7.5" (TRMNL firmware; on its way, 26 Oct);
+a working USB meter (the first arrived broken); a TRMNL (pairing, pictures, HTTPS, battery); a
 second CrowPanel side by side; a 4.2" or 2.9" CrowPanel (they build, untried;
 the 4.2"'s UC8276 revision isn't supported); a battery reading on a CrowPanel
 (needs a resistor divider soldered on).
