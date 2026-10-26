@@ -1,7 +1,7 @@
 # Status
 
 The one place the project's state lives. The coordinator updates it after
-every release and every finished piece of work. Last updated 23 Oct 2026.
+every release and every finished piece of work. Last updated 26 Oct 2026.
 Where we're going and why: [ROADMAP.md](ROADMAP.md).
 
 ## Released
@@ -11,6 +11,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Version | Date | What |
 |---|---|---|
+| 0.21.2 | 26 Oct | Race pages name their session in the badge ("QUALIFYING · LIVE") for every series, show only that session's order, and move on to the next session's time after the page's Hours after; no made-up tyres; the race sensor says "Race", not "gp". Add-on only. |
 | 0.21.1 | 22 Oct | Batteries page fixed (it fetched the power grid since 0.20.2); a battery silent for 12 hours shows as "No answer since…", one line per integration when they drop together; leftover sensors are no batteries; a page's Shows is the one place: its widget's part AND your own condition. Add-on only. |
 | 0.21.0 | 22 Oct | Outside services in the editor: the status card lists failing ones; Settings › Services with Try again; another address behind an Advanced switch, checked by the add-on's own reader; racing, scores and flights can be filled by your own data source or a Home Assistant sensor's attributes. Add-on only. |
 | 0.20.2 | 22 Oct | Review 2's findings 3-8: Batteries as a rule (battery-low sensors count), units follow their sensor, page gating from widget descriptors, "changed" stored as data, notify groups listed, each kind's shortest sleep (TRMNL fix); a racing calendar in the wrong shape keeps its problem sensor on. Add-on only. |
