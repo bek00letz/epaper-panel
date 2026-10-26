@@ -717,6 +717,22 @@ function timersBox(app, scr, redraw) {
   return box;
 }
 
+/* Where the panel stands with Home Assistant, and what to do next. Home Assistant sets the panel's
+   encryption itself when it adds it, so nothing here asks for a key. */
+function connectionNote(p) {
+  const devices = () => h("a", { class: "linkbtn inline", href: "/config/integrations/dashboard", target: "_top" }, "Open Devices & services");
+  const note = (kind, text, extra) => h("div", { class: "note " + kind, role: "status" },
+    h("span", { class: kind === "waiting" ? "led listening" : "led" }), h("span", { text }), extra || null);
+  if (p.connected) return note("good", `Connected in Home Assistant${p.ip ? ` at ${p.ip}` : ""}.`);
+  if (p.waiting === "add") return note("warn", "Home Assistant found the panel. Add it in Settings › Devices & services; it sets up the panel's encryption itself.", devices());
+  if (p.waiting === "confirm") return note("warn", "Home Assistant asks you to confirm the panel's new firmware. In Settings › Devices & services, choose Reconfigure on it and confirm.", devices());
+  if (p.node) return note("warn", "Found, but offline. It picks up changes when it reconnects.");
+  if (p.installed) return h("div", {},
+    note("waiting", "Waiting for Home Assistant to find the panel…"),
+    h("p", { class: "fnote", text: `If nothing shows up in a few minutes, add it yourself: Settings › Devices & services › Add integration › ESPHome, ${p.home_ip ? `and enter ${p.home_ip}` : "and enter the panel's address"}. Home Assistant has 15 minutes after the panel starts; if it says it can't connect, unplug the panel for a moment and try again.` }));
+  return note("warn", "No panel yet. Send to ESPHome and Install it there; Home Assistant then finds it.");
+}
+
 async function installPane(app, pane) {
   const box = h("div", {}, h("p", { class: "fnote", text: "Loading…" }));
   pane.append(box);
@@ -750,7 +766,7 @@ async function installPane(app, pane) {
   function drawEsphome() {
     const e = r.esphome || {}, blocked = (r.problems || []).length > 0;
     if (e.state === "no_folder") {
-      esphomeBox.replaceChildren(group(grow("ESPHome", "Home Assistant has no ESPHome folder. Install the ESPHome add-on, or copy the file below into ESPHome yourself.", null)));
+      esphomeBox.replaceChildren(group(grow("ESPHome", "Home Assistant has no ESPHome folder yet. Install the ESPHome add-on from the add-on store, then come back and Send to ESPHome.", null)));
       return;
     }
     const sub = blocked ? "Fix the above first."
@@ -767,7 +783,7 @@ async function installPane(app, pane) {
   const save = async (extra = {}, msg) => {
     try {
       const body = { ha_host: host.value.trim(), frame_port: parseInt(port.value, 10) || 8099,
-        device_name: dev.value.trim() || "crowpanel-epaper", wifi_ssid: ssid.value.trim(), wifi_password: pw.value, api_encryption_key: key.value.trim(), use_secrets: useSecrets,
+        device_name: dev.value.trim() || "crowpanel-epaper", wifi_ssid: ssid.value.trim(), wifi_password: pw.value, use_secrets: useSecrets,
         wifi_networks: nets.filter((n) => n.ssid.trim()), hotspot: hotspotOn, ...extra };
       const p = api("api/panel-setup", { method: "POST", body });
       saving = p.catch(() => {});
@@ -789,7 +805,6 @@ async function installPane(app, pane) {
       h("button", { class: "btn tinted danger", "aria-label": `Remove the network ${n.ssid || i + 2}`, onclick: () => { nets.splice(i, 1); drawNets(); save(); } }, "Remove"))))),
     h("div", { class: "btnrow" }, h("button", { class: "btn tinted", disabled: nets.length >= 8, onclick: () => { nets.push({ ssid: "", password: "" }); drawNets(); netsBox.querySelector(`[aria-label="Network ${nets.length + 1} name"]`)?.focus(); } }, icon("plus", "sm"), "Add a network")));
   const pw = input(c.wifi_password, () => save(), { type: "password", placeholder: "From your secrets" });
-  const key = h("input", { class: "inp code", readonly: true, value: c.api_encryption_key || "", "aria-label": "Encryption key" });
   let useSecrets = !!c.use_secrets;
   // Its own Wi-Fi, for choosing a network from a phone where it knows none.
   let hotspotOn = c.hotspot !== false;
@@ -812,7 +827,7 @@ async function installPane(app, pane) {
   function apply() {
     const cc = r.config || {};
     drawHotspot();
-    yaml.value = r.yaml || ""; secrets.value = r.secrets_yaml || ""; key.value = cc.api_encryption_key || key.value;
+    yaml.value = r.yaml || ""; secrets.value = r.secrets_yaml || "";
     const issues = r.problems || [];
     problems.replaceChildren(...issues.map((t) => h("p", { class: "note warn" }, icon("info", "sm"), h("span", { text: t }))),
       issues.length ? h("p", { class: "fnote", text: "ESPHome wouldn't install this file. Fix the above and it's ready; Home Assistant's ESPHome folder keeps the last good one until then." }) : "");
@@ -821,7 +836,7 @@ async function installPane(app, pane) {
     secretsWrap.hidden = !(cc.use_secrets || !cc.wifi_ssid);
     const p = r.panel || {};
     status.replaceChildren(...[
-      h("p", { class: "note " + (p.connected ? "good" : "warn") }, h("span", { class: "led" }), h("span", { text: p.connected ? `Connected in Home Assistant${p.ip ? ` at ${p.ip}` : ""}.` : p.node ? "Found, but offline. It picks up changes when it reconnects." : "No panel yet. Install the file below with ESPHome, then add the device in Home Assistant." })),
+      connectionNote(p),
       r.frame_protection && r.frame_protection !== "on" ? h("p", { class: "note warn" }, icon("info", "sm"), h("span", { text: "Pages on your network aren't protected yet. Installing the file below switches it on; nothing goes blank in between." })) : null,
       app.status?.ha_entities?.problem ? h("p", { class: "note warn" }, icon("info", "sm"), h("span", { text: app.status.ha_entities.problem })) : null,
       app.doc.live.display !== app.doc.spec.display ? h("p", { class: "note warn" }, icon("info", "sm"), h("span", { text: "You changed the model but haven't sent it yet. This file is for the model the device has now; send first, then install." })) : null].filter(Boolean));
@@ -830,21 +845,29 @@ async function installPane(app, pane) {
     group(grow("Home Assistant's address", "Where the panel fetches pages from", host), grow("Port", null, port), grow("Device name", null, dev)),
     group(grow("Wi-Fi network", null, ssid), grow("Wi-Fi password", null, pw), grow("Use secrets.yaml", "Keep the Wi-Fi details out of the file", toggle(useSecrets, (v) => { useSecrets = v; save(); }, "Use secrets.yaml"))),
     h("h4", { class: "gtitle", text: "Other networks" }), h("p", { class: "fnote", text: "Where else the device goes, like work. It joins whichever it finds." }), netsBox, hotspotBox,
-    group(grow("Encryption key", "Also protects updates over Wi-Fi", h("div", { class: "inline" }, key, h("button", { class: "btn tinted", onclick: () => copy(key.value, "the key") }, "Copy"))),
-      grow("New key", "The panel then needs reinstalling and re-adding in Home Assistant", h("button", { class: "btn tinted danger", onclick: () => save({ regenerate_keys: true }, "New key made. Reinstall the panel and add it again in Home Assistant.") }, "Make a new key"))),
     h("h4", { class: "gtitle", text: "The panel's file" }), problems, esphomeBox, yaml,
+    h("p", { class: "fnote", text: "Passwords and the panel's update key are hidden here. Send to ESPHome writes the whole file." }),
     h("div", { class: "btnrow" }, copyFile, downloadFile),
     secretsWrap,
     h("h4", { class: "gtitle", text: "Installing" }),
-    r.esphome?.state === "no_folder"
-      ? h("ol", { class: "steps" },
-        h("li", { text: "In ESPHome, choose New device, name it, pick ESP32-S3, then Skip." }),
-        h("li", { text: "Edit the new device, replace everything with the file above, and Install. Use USB-C the first time; after that it updates over Wi-Fi." }),
-        h("li", { text: "When Home Assistant finds the panel under Settings, Devices, choose Configure and paste the encryption key." }))
-      : h("ol", { class: "steps" },
-        h("li", { text: "Send to ESPHome. ESPHome opens in a new tab, with this panel among its devices." }),
-        h("li", { text: "Choose Install on it. Use USB-C the first time; after that it updates over Wi-Fi." }),
-        h("li", { text: "When Home Assistant finds the panel under Settings, Devices, choose Configure and paste the encryption key." })));
+    h("ol", { class: "steps" },
+      r.esphome?.state === "no_folder" ? h("li", { text: "Install the ESPHome add-on from Home Assistant's add-on store." }) : null,
+      h("li", { text: "Send to ESPHome. ESPHome opens in a new tab, with this panel among its devices." }),
+      h("li", { text: "Choose Install on it. Use USB-C the first time; after that it updates over Wi-Fi." }),
+      h("li", { text: "Home Assistant finds the panel and asks to add it, in Settings › Devices & services. Add it within 15 minutes of the panel starting; Home Assistant sets up its encryption itself." })));
+  // Until Home Assistant has the panel, look again every few seconds while this is open.
+  const watch = () => setTimeout(async () => {
+    if (!box.isConnected) return;
+    if (!(r.panel || {}).connected) {
+      try {
+        const x = (await api("api/panel-setup")).body;
+        // Redrawn only when something changed, so nothing on the sheet moves while it waits.
+        if (JSON.stringify(x.panel) !== JSON.stringify(r.panel)) { r.panel = x.panel; apply(); }
+      } catch (_) {}
+    }
+    if (!(r.panel || {}).connected) watch();
+  }, 5000);
+  watch();
   drawNets();
   secretsWrap.append(h("h4", { class: "gtitle", text: "Lines for secrets.yaml" }), secrets, h("div", { class: "btnrow" }, h("button", { class: "btn tinted", onclick: () => copy(secrets.value, "the lines") }, "Copy")));
   apply();

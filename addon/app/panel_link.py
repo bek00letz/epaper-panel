@@ -8,7 +8,9 @@ The panel is an ESPHome device, and the add-on talks to it two ways:
 
 Neither name is guessed. Actions are found in Home Assistant's service list.
 Entities are found by their registry unique_id, which ESPHome derives from the
-firmware's own entity names and which survives any rename.
+panel's MAC address and the firmware's own entity names, and which survives any
+rename. A panel says its MAC with every download (firmware 0.22 and later), so
+its entities are the ones under that MAC, however many panels there are.
 
 A refresh the panel must not miss -- new content, an alert, waking up after
 quiet hours -- stays pending until Home Assistant confirms it was delivered,
@@ -48,6 +50,20 @@ def _slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", str(s).lower()).strip("_")
 
 
+def mac_of(raw) -> str:
+    """A MAC address as Home Assistant writes it ("aa:bb:cc:dd:ee:ff"), or "" if it isn't one."""
+    hexits = re.sub(r"[^0-9a-f]", "", str(raw or "").lower())
+    if len(hexits) != 12 or len(str(raw or "")) > 17:
+        return ""
+    return ":".join(hexits[i:i + 2] for i in range(0, 12, 2))
+
+
+def unique_id_mac(uid: str) -> str:
+    """The MAC address an ESPHome entity's unique_id starts with, in either format, or ""."""
+    uid = str(uid or "")
+    return mac_of(uid.split("/")[0] if "/" in uid else uid.split("-")[0])
+
+
 def unique_id_is(uid: str, domain: str, name: str) -> bool:
     """Match ESPHome's unique_id for an entity, in both formats it has used.
 
@@ -62,15 +78,19 @@ def unique_id_is(uid: str, domain: str, name: str) -> bool:
 
 
 class PanelLink:
-    def __init__(self, hass: Hass, preferred_node=lambda: "", sole=lambda: True, ha_name=lambda: ""):
+    def __init__(self, hass: Hass, preferred_node=lambda: "", sole=lambda: True, ha_name=lambda: "",
+                 mac=lambda: ""):
         """`preferred_node`: the panel's ESPHome node, if set up. `sole`: whether the
         add-on drives only one panel, so the only one in Home Assistant must be it.
-        `ha_name`: the name its firmware gives it in Home Assistant, which tells
-        several panels' entities apart."""
+        `mac`: the MAC address the panel said when it last downloaded, which picks its
+        entities. `ha_name`: the name its firmware gives it in Home Assistant, which
+        tells several panels' entities apart only for firmware older than 0.22, which
+        doesn't say its MAC."""
         self.hass = hass
         self._preferred = preferred_node
         self._sole = sole
         self._ha_name = ha_name
+        self._mac = mac
         self.node: str | None = None
         self.entities: dict[str, str] = {}
         self.problem: str = "not looked for the panel yet"
@@ -117,7 +137,7 @@ class PanelLink:
         self._discovered_at = time.time()
 
         if not nodes:
-            self.problem = "no panel found in Home Assistant. Flash it, then add it under Settings → Devices"
+            self.problem = "Home Assistant hasn't added the panel yet. Install it from ESPHome, then add it when Home Assistant finds it"
             self.entities = {}
             return False
         if node is None:
@@ -131,6 +151,10 @@ class PanelLink:
         self.entities = await self._find_entities(single_panel=len(nodes) == 1 and self._sole())
         self.problem = ""
         return True
+
+    def look_again(self) -> None:
+        """Find the panel afresh at the next call (it just said a new MAC)."""
+        self._discovered_at = 0.0
 
     async def _find_entities(self, single_panel: bool) -> dict[str, str]:
         """Entity IDs for the panel's refresh interval, IP and Wi-Fi, by unique_id."""
@@ -147,6 +171,12 @@ class PanelLink:
                 if unique_id_is(e.get("unique_id"), domain, name):
                     by_device.setdefault(e["device_id"], {})[key] = e["entity_id"]
         panels = {dev_id: ents for dev_id, ents in by_device.items() if "refresh" in ents}
+        mac = mac_of(self._mac())
+        if mac:
+            # The panel said which it is: its entities, and no other panel's, whatever the names.
+            mine = [ents for ents in panels.values() if unique_id_mac(_uid_of(entries, ents["refresh"])) == mac]
+            if mine:
+                return mine[0]
         if len(panels) == 1 and single_panel:
             return next(iter(panels.values()))
         # Several panels: each one's firmware names it after its screen, and Home
@@ -161,6 +191,24 @@ class PanelLink:
             return {}
         named = [d.get("id") for d in registry or [] if d.get("name") == want and d.get("id") in panels]
         return panels[named[0]] if len(named) == 1 else {}
+
+    async def waiting_flow(self) -> str | None:
+        """What Home Assistant is waiting for someone to do about this panel, found by its MAC:
+        "add" (it found the panel and it isn't added yet) or "confirm" (it asks to confirm a change,
+        such as the panel's encryption after new firmware). None when nothing waits, or the panel
+        hasn't said its MAC."""
+        mac = mac_of(self._mac())
+        if not mac or not self.hass.available:
+            return None
+        try:
+            flows = await self.hass.ws({"type": "config_entries/flow/progress"})
+        except HassError:
+            return None
+        for flow in flows or []:
+            ctx = (flow or {}).get("context") or {}
+            if flow.get("handler") == "esphome" and mac_of(ctx.get("unique_id")) == mac:
+                return "confirm" if ctx.get("source") in ("reauth", "reconfigure") else "add"
+        return None
 
     # ------------------------------------------------------------------ actions
     async def call(self, action: str, data: dict | None = None) -> tuple[bool, str]:
@@ -293,7 +341,8 @@ class PanelLink:
 
     async def connection(self) -> dict:
         await self.discover()
-        out = {"connected": False, "ip": None, "rssi": None, "network": None, "node": self.node, "problem": self.problem}
+        out = {"connected": False, "ip": None, "rssi": None, "network": None, "node": self.node, "problem": self.problem,
+               "waiting": None}
         for key, field in (("ip", "ip"), ("wifi", "rssi"), ("network", "network")):
             ent = self.entities.get(key)
             if not ent:
@@ -306,6 +355,8 @@ class PanelLink:
             except HassError:
                 pass
         out["connected"] = bool(out["ip"] or out["rssi"])
+        if not out["connected"]:
+            out["waiting"] = await self.waiting_flow()
         return out
 
     def status(self) -> dict:
@@ -317,6 +368,10 @@ class PanelLink:
             "last_delivered_at": self.last_ok_at,
             "last_error": self.last_error,
         }
+
+
+def _uid_of(entries, entity_id: str) -> str:
+    return next((str(e.get("unique_id") or "") for e in entries or [] if e.get("entity_id") == entity_id), "")
 
 
 def _human_error(raw: str) -> str:

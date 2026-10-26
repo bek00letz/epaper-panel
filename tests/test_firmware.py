@@ -282,7 +282,7 @@ def reference_yaml():
     version = re.search(r'^version:\s*"([^"]+)"', (ROOT / "addon" / "config.yaml").read_text(), re.M).group(1)
     return firmware_gen.render(
         disp=T.get_display(DISPLAY), version=version, device_name="crowpanel-epaper",
-        frames_url='"http://homeassistant.local:8099/frames.epf"', api_key="!secret api_encryption_key",
+        frames_url='"http://homeassistant.local:8099/frames.epf"', ota_key="!secret api_encryption_key",
         wifi_ssid="!secret wifi_ssid", wifi_password="!secret wifi_password",
         interval_min=5, orientation=180), version
 
@@ -301,7 +301,7 @@ def local_build(display, **kw):
     checkout instead of the release tag (the tag doesn't exist yet)."""
     text = firmware_gen.render(
         disp=T.get_display(display), version="1.2.3", device_name="kitchen",
-        frames_url='"http://192.0.2.1:8099/frames.epf"', api_key=TEST_KEY, interval_min=5,
+        frames_url='"http://192.0.2.1:8099/frames.epf"', ota_key=TEST_KEY, interval_min=5,
         **{"wifi_ssid": '"home"', "wifi_password": '"password1"', "orientation": 0, **kw})
     tagged = "  - source: github://bek00letz/epaper-panel@v1.2.3\n"
     assert tagged in text
@@ -357,7 +357,7 @@ class TestFirmwareYaml(unittest.TestCase):
         self.assertIn('  ssid: "work"\n  password: "pw2"\n  fast_connect: true', rest, "one network left: straight away")
         text = firmware_gen.render(
             disp=T.get_display(DISPLAY), version="1.2.3", device_name="kitchen", frames_url='"http://x/frames.epf"',
-            api_key='"k"', wifi_ssid='""', wifi_password='""', interval_min=5, orientation=0, hotspot=hotspot)
+            ota_key=TEST_KEY, wifi_ssid='""', wifi_password='""', interval_min=5, orientation=0, hotspot=hotspot)
         self.assertNotIn('ssid: ""', text)
 
     def test_panel_setup_turns_it_on_with_its_own_password(self):
@@ -382,7 +382,7 @@ class TestFirmwareYaml(unittest.TestCase):
     def test_home_assistant_calls_the_panel_by_its_screens_name(self):
         text = firmware_gen.render(
             disp=T.get_display(DISPLAY), version="1.2.3", device_name="kitchen", frames_url='"https://x/frames.epf"',
-            api_key='"k"', wifi_ssid='"a"', wifi_password='"b"', interval_min=5, orientation=0,
+            ota_key=TEST_KEY, wifi_ssid='"a"', wifi_password='"b"', interval_min=5, orientation=0,
             friendly_name='"Kitchen"')
         self.assertIn('friendly_name: "Kitchen"', text)
 
@@ -416,7 +416,7 @@ class TestFirmwareYaml(unittest.TestCase):
         for disp in ("crowpanel_579", "crowpanel_290"):
             text = firmware_gen.render(
                 disp=T.get_display(disp), version="1.2.3", device_name="kitchen", frames_url='"http://x/frames.epf"',
-                api_key='"k"', wifi_ssid='"a"', wifi_password='"b"', interval_min=5, orientation=0)
+                ota_key=TEST_KEY, wifi_ssid='"a"', wifi_password='"b"', interval_min=5, orientation=0)
             self.assertIn(f"!({firmware_gen.display_settled(T.get_display(disp))})", text)
 
     def test_it_builds_with_or_without_its_own_wifi(self):
@@ -437,7 +437,7 @@ class TestFirmwareYaml(unittest.TestCase):
         for hotspot in (None, ('"Kitchen setup"', '"abcdefghjkmn"')):
             text = firmware_gen.render(
                 disp=T.get_display(DISPLAY), version="1.2.3", device_name="kitchen",
-                frames_url='"http://x/frames.epf"', api_key='"k"', wifi_ssid='"a"', wifi_password='"b"',
+                frames_url='"http://x/frames.epf"', ota_key=TEST_KEY, wifi_ssid='"a"', wifi_password='"b"',
                 interval_min=5, orientation=0, hotspot=hotspot)
             with tempfile.TemporaryDirectory() as tmp:
                 path = Path(tmp) / "panel.yaml"
@@ -559,7 +559,7 @@ class TestASizesFactsAreInItsProfile(unittest.TestCase):
         for d in ("crowpanel_579", "crowpanel_290"):
             disp = dict(T.get_display(d))
             disp["full_refresh"], disp["keep_picture"] = "full_marker();", "kept_marker();"
-            text = firmware_gen.render(disp=disp, version="0.15.0", device_name="p", frames_url="http://h/f.epf", api_key="k",
+            text = firmware_gen.render(disp=disp, version="0.15.0", device_name="p", frames_url="http://h/f.epf", ota_key="k",
                                        wifi_ssid='"x"', wifi_password='"y"', interval_min=1, orientation=0)
             self.assertIn("full_marker();", text)
             self.assertIn("kept_marker();", text)

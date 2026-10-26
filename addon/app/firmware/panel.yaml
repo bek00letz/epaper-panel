@@ -71,10 +71,13 @@ logger:
 
 # A wake never waits for Home Assistant, and Home Assistant being away never
 # restarts a panel that doesn't need it (the default would, after 15 minutes).
+#
+# Encrypted, with no key here: Home Assistant makes the key when it adds the
+# panel, sends it encrypted, and keeps it (Home Assistant 2026.8 and later).
+# The panel keeps it in its own memory, through updates.
 api:
   reboot_timeout: 0s
-  encryption:
-    key: @API_KEY@
+  encryption: {}
   actions:
     - action: refresh_now
       then:
@@ -128,12 +131,21 @@ api:
         - lambda: 'epf::PanelController::instance().remote(epf::NavAction::LOCK_TOGGLE);'
         - script.execute: redraw
 
-# Updates are encrypted with the same key as the Home Assistant connection
-# (an empty encryption block reuses it). No separate password: ESPHome
-# recommends this, and drops the password-only route in 2027.3.
+# Until it has a key, it takes one only in the 15 minutes after it starts, so
+# nothing else on the network can claim it later. Unplugging it for a moment
+# opens the window again. ESPHome warns that the Wi-Fi details are in this
+# file and calls the window pointless: here it guards the key, not the Wi-Fi.
+provisioning:
+  timeout: 15min
+
+# Updates over Wi-Fi need this panel's own update key, made and kept by the
+# add-on. ESPHome 2026.10 can't require encryption with the key Home Assistant
+# sets, and without a key of its own the panel would take an update from
+# anyone on the network. No password: ESPHome drops that route in 2027.3.
 ota:
   - platform: esphome
-    encryption: {}
+    encryption:
+      key: @OTA_KEY@
     # Never asleep in the middle of an update.
     on_begin:
       - lambda: 'epf::PowerPolicy::instance().hold(true);'

@@ -62,6 +62,42 @@
   has none.
 
 Add-on only: no firmware change, nothing to reinstall on the panel.
+Nobody pastes a key any more. **Firmware change**: install the panel again
+from ESPHome after updating. Needs Home Assistant 2026.8 or newer.
+
+- **Home Assistant sets the panel's encryption itself.** Setting up a panel
+  is Send to ESPHome, Install, then add it when Home Assistant finds it, in
+  Settings › Devices & services. There's no key to copy or paste. The panel
+  takes its key only in the 15 minutes after it starts, while it has none;
+  unplug it for a moment to start again. ESPHome now warns, when it builds
+  the panel, that "credentials are set in the configuration for: wifi" and
+  that the window is pointless. That's expected: the window guards the
+  encryption key, and the panel needs its Wi-Fi details to get online.
+- **Updates over Wi-Fi still need the panel's own key.** The add-on makes
+  one for each panel, keeps it, and never shows it. ESPHome can't yet
+  require the key Home Assistant sets for updates, and without a key of its
+  own the panel would take an update from anyone on your network.
+- **The editor says where the panel stands**: waiting for Home Assistant to
+  find it, found and waiting for you to add it, waiting for you to confirm,
+  or connected, with a link to Devices & services. The encryption key, its
+  Copy button and "Make a new key" are gone from Install or update.
+- **The add-on finds each panel in Home Assistant by its MAC address**,
+  which the panel now says when it downloads, instead of by its name.
+
+**Your panel, set up before this release.** It keeps working until you
+install it again, and it keeps its old key as its update key, so ESPHome's
+Install is accepted over Wi-Fi as before.
+1. Update the add-on, open the editor's Settings › Install or update, and
+   choose Send to ESPHome. Then Install in the ESPHome add-on.
+2. After the panel restarts, Home Assistant can't reach it with the old key
+   and asks you to look at it: Settings › Devices & services shows the panel
+   under "Reconfigure" (or a notification). Open it. Home Assistant says the
+   panel "disabled transport encryption" and asks to confirm. Confirm: that
+   wording is Home Assistant's, and it sets a new key for the panel right
+   after. The device, its entities and your automations stay as they are.
+3. Do step 2 within 15 minutes of the panel restarting. If Home Assistant
+   says it can't connect, unplug the panel for a moment, plug it back in and
+   confirm again.
 
 ## 0.21.2
 Race pages say which session they're showing. Add-on only; no firmware
