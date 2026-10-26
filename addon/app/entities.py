@@ -338,14 +338,7 @@ async def publish_computed(session):
             ser = el.get("series") or "f1"
             el_tz = el.get("timezone") or home_tz
             w_mode = el.get("window_mode") or "session"
-            try:
-                pre_b = float(el.get("pre_buffer_hours")) if el.get("pre_buffer_hours") is not None else 2.0
-            except (ValueError, TypeError):
-                pre_b = 2.0
-            try:
-                post_b = float(el.get("post_buffer_hours")) if el.get("post_buffer_hours") is not None else 2.0
-            except (ValueError, TypeError):
-                post_b = 2.0
+            pre_b, post_b = widgets._hours(el, "pre_buffer_hours"), widgets._hours(el, "post_buffer_hours")
             series_to_publish.append((ser, pre_b, post_b, w_mode, el_tz, shapes.own_source(el)))
             wanted.add(f"sensor.epaper_racing_{series_slug(ser)[0]}")
 
@@ -359,7 +352,7 @@ async def publish_computed(session):
                 continue                                  # not fetched yet
             slug = win_info["slug"]
             sensor_id = f"sensor.epaper_racing_{slug}"
-            r_data = await fetch_racing_data(session, slug, tz_name=r_tz, own=own)
+            r_data = await fetch_racing_data(session, slug, tz_name=r_tz, own=own, post_buffer_hours=post_b)
             r_icon = SERIES[slug].icon
             await publish_entity(
                 session, sensor_id, win_info["state"],

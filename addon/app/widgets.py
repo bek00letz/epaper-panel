@@ -185,6 +185,7 @@ class Widget:
 # ---------------------------------------------------------------- gates: answered from the element itself
 
 def _hours(el: dict, key: str) -> float:
+    """A page's "Hours before" or "Hours after": the one reading of it, for its gate and its data."""
     try:
         return float(el.get(key)) if el.get(key) is not None else 2.0
     except (TypeError, ValueError):
@@ -398,8 +399,10 @@ async def _flights(session, el, ctx):
 
 
 async def _racing(session, el, ctx):
+    # Its "Hours after" is its gate's (_race_on): a session's result shows as long as the page does.
     got = await racing.fetch_racing_data(session, el.get("entity") or el.get("series") or "f1", fallback=ctx.prev,
-                                         tz_name=el.get("timezone") or ctx.home_tz, own=shapes.own_source(el))
+                                         tz_name=el.get("timezone") or ctx.home_tz, own=shapes.own_source(el),
+                                         post_buffer_hours=_hours(el, "post_buffer_hours"))
     return got or None
 
 

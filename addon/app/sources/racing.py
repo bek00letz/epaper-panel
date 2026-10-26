@@ -8,19 +8,23 @@ it, so the series' own calendar knows a new season the day it's published
 and a community one adds exact session times once it catches up. `_pick`
 then says what to show, the same way for every series:
 
-  PRE / IN / POST   a race weekend: before, during, and for a few hours after
-                    (`AFTER_HOURS`), while its result is worth showing;
+  PRE / IN / POST   a race weekend, session by session: the session running (IN), or the one
+                    that just ended while its result is worth showing (POST: the page's
+                    "Hours after", the same as its gate's; after the race `AFTER_HOURS`),
+                    else the next one (PRE);
   OFF               the off-season: the next season's first race while it's
                     more than `OFF_SEASON_LEAD` away, or, when no calendar
                     has a race to come, that the calendar isn't out yet.
 
-ESPN's scoreboard adds live status and standings for the series it covers.
+ESPN's scoreboard adds, for the series it covers, each session's live state and its order. A
+race's standings are always a session's (`Race.results`), and a page shows a session's own and
+names it, or none: never one session's order under another's name.
 """
 
 import json
 import re
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 import aiohttp
@@ -95,6 +99,7 @@ def series_of(value) -> Series:
 # ---------------------------------------------------------------- a season: every calendar, merged
 
 AFTER_HOURS = 4.0                       # a finished race's result stays this long
+HOURS_AROUND = 2.0                      # a page's "Hours before" and "Hours after" a session, until it says
 OFF_SEASON_LEAD = timedelta(days=7)     # a season's first race further off than this: off-season
 SEASON_GAP = timedelta(weeks=10)        # a longer gap than this before a race: it opens a season
 CALENDAR_EVERY = 3600.0                 # calendars change rarely
@@ -126,7 +131,21 @@ class Race:
     day: date                   # race day, by which calendars are matched
     sessions: tuple = ()        # ((label, start UTC, hours), ...) by start; () when only the day is known
     season: str = ""            # what its calendar calls the season ("Season 13"), when it says
-    result: tuple = ()          # its order, when the calendar knows it ({pos, driver, team, gap}): your own source
+    # What its sources say of its sessions: ((session, state, order), ...). The session as
+    # `session_name` says it, or "" when the source didn't say whose order it is; the state "in" or
+    # "post" when the source says (ESPN), else ""; the order ({pos, driver, team, gap}) or ().
+    results: tuple = ()
+
+    def said(self, label: str) -> str:
+        """What a source says a session is doing: "in", "post", or "" when none says."""
+        name = session_name(label)
+        return next((st for n, st, _ in self.results if n == name and st), "")
+
+    def order_of(self, label: str) -> tuple:
+        """A session's order, when a source gives it ("": an order whose session nobody said)."""
+        name = session_name(label) if label else ""
+        return next((rows for n, _, rows in self.results if n == name and rows), ())
+
     @property
     def start(self) -> datetime:
         return self.sessions[0][1] if self.sessions else datetime.combine(self.day, datetime.min.time(), timezone.utc)
@@ -364,23 +383,35 @@ class Pick:
     last: Race | None = None            # the last race before now, when one is known
 
 
-def _pick(races: list[Race], now: datetime) -> Pick:
+def _pick(races: list[Race], now: datetime, after_hours: float = HOURS_AROUND) -> Pick:
     """The one rule: the race weekend on now (or until its result is old), else the next race,
-    else the off-season. A season's first race further off than OFF_SEASON_LEAD is the off-season."""
-    after = timedelta(hours=AFTER_HOURS)
-    past = [r for r in races if r.end + after < now]
+    else the off-season. A season's first race further off than OFF_SEASON_LEAD is the off-season.
+
+    In a weekend, the session the page is about: the one running (a source that says one is live
+    or over wins over the calendar's times), else the one that ended in the last `after_hours`
+    (the page's "Hours after", as its gate counts them; the race's result stays `AFTER_HOURS` at
+    least), else the next one."""
+    race_after = timedelta(hours=max(after_hours, AFTER_HOURS))
+    past = [r for r in races if r.end + race_after < now]
     last = past[-1] if past else None
-    nxt = next((r for r in races if r.end + after >= now), None)
+    nxt = next((r for r in races if r.end + race_after >= now), None)
     if nxt is None:
         return Pick("OFF", last=last)
     if nxt.start - now > OFF_SEASON_LEAD and (last is None or nxt.start - last.end > SEASON_GAP):
         return Pick("OFF", nxt, last=last)
     if not nxt.sessions:                # only its day is known
         return Pick("PRE", nxt, last=last)
-    for s in nxt.sessions:
-        if s[1] <= now <= s[1] + timedelta(hours=s[2]):
-            return Pick("IN", nxt, s, last)
-    upcoming = next((s for s in nxt.sessions if s[1] > now), None)
+    end = lambda s: s[1] + timedelta(hours=s[2])  # noqa: E731
+    running = (next((s for s in nxt.sessions if nxt.said(s[0]) == "in"), None)
+               or next((s for s in nxt.sessions if nxt.said(s[0]) != "post" and s[1] <= now <= end(s)), None))
+    if running:
+        return Pick("IN", nxt, running, last)
+    done = next((s for s in reversed(nxt.sessions) if nxt.said(s[0]) == "post" or end(s) < now), None)
+    if done is not None:
+        after = race_after if done is nxt.sessions[-1] else timedelta(hours=after_hours)
+        if now <= end(done) + after:
+            return Pick("POST", nxt, done, last)
+    upcoming = next((s for s in nxt.sessions if s[1] > now and nxt.said(s[0]) != "post"), None)
     if upcoming:
         return Pick("PRE", nxt, upcoming, last)
     return Pick("POST", nxt, nxt.sessions[-1], last)
@@ -404,8 +435,27 @@ def _at(dt: datetime, tz_name: str | None) -> str:
     return f"{_day(loc)} · {clock.hm(loc)} {loc.tzname() or ''}".strip()
 
 
+def badge(session: str, status: str, lap=None, total_laps=None) -> list:
+    """What a race page's badge says, longest first, so a narrow page drops the state before the
+    session's name: ["QUALIFYING · LIVE", "QUALIFYING"], ["RACE · LAP 34/57", "RACE"],
+    ["PRACTICE 3 · FINAL", "PRACTICE 3"]. An order whose session its source didn't say is a
+    "RESULT" (or "LIVE", when the source says it's live), never a session guessed."""
+    state = (f"LAP {lap}/{total_laps}" if lap and total_laps else "LIVE") if status == "IN" else \
+        "FINAL" if status == "POST" else ""
+    name = str(session or "").strip().upper()
+    if not name:
+        return [state if status == "IN" else "RESULT"]
+    return [f"{name} · {state}", name] if state else [name]
+
+
+def _badged(data: dict, words: list) -> dict:
+    data["badge"], data["clock"] = words, words[0]
+    return data
+
+
 def _describe(ser: Series, pick: Pick, tz_name: str | None) -> dict:
-    """The race data a page draws, from what `_pick` found."""
+    """The race data a page draws, from what `_pick` found. Its standings are its session's own,
+    and `session` names them; with none, `detail` says when the session is."""
     race = pick.race
     data = {"series": ser.code, "series_name": ser.title, "event_name": race.name if race else "",
             "circuit": race.location if race else "", "status": pick.status, "standings": []}
@@ -414,23 +464,60 @@ def _describe(ser: Series, pick: Pick, tz_name: str | None) -> dict:
     if pick.last:
         data["last_race_end"] = pick.last.end.isoformat()
     if pick.status == "OFF":
-        data["clock"] = "OFF SEASON"
         if race:
             data["next_start"] = race.start.isoformat() if race.sessions else race.day.isoformat()
             data["detail"] = "Season starts " + (_day(_local(race.sessions[0][1], tz_name)) if race.sessions else _day(race.day))
         else:
             data["detail"] = "Next season's calendar isn't out yet"
-        return data
+        return _badged(data, ["OFF SEASON"])
     if pick.session is None:            # only the race day is known
-        data.update(clock="SCHEDULED", detail=f"Race day · {_day(race.day)}")
-        return data
+        data["detail"] = f"Race day · {_day(race.day)}"
+        return _badged(data, ["SCHEDULED"])
     label = session_name(pick.session[0])
     data["session"], data["session_start"] = label, pick.session[1].isoformat()
-    if race.result and pick.status in ("IN", "POST"):
-        data["standings"] = [dict(r) for r in race.result]
     data["detail"] = f"{label} · {_at(pick.session[1], tz_name)}"
-    data["clock"] = {"IN": f"{label} LIVE", "PRE": "SCHEDULED"}.get(pick.status, "FINAL")
-    return data
+    if pick.status == "PRE":
+        return _badged(data, ["SCHEDULED"])
+    if rows := race.order_of(label):
+        data["standings"] = [dict(r) for r in rows]
+    elif rows := race.order_of(""):     # an order whose session its source didn't say: shown as that
+        data["standings"] = [dict(r) for r in rows]
+        data["session"] = ""
+        del data["session_start"]
+        return _badged(data, badge("", ""))
+    return _badged(data, badge(label, pick.status))
+
+
+def _state(x: dict) -> str:
+    return ((x.get("status") or {}).get("type") or {}).get("state") or ""
+
+
+def _with_board(race: Race, ev: dict) -> Race:
+    """The race with what ESPN's event says: its name and place, and each session's state and order.
+    Every session is ESPN's competition of that name, so an order is only ever its own session's."""
+    comps = [c for c in ev.get("competitions") or [] if isinstance(c, dict)]
+    results = []
+    for c in comps:
+        label = session_name((c.get("type") or {}).get("abbreviation") or (c.get("type") or {}).get("text") or "Race")
+        st = _state(c) or (_state(ev) if len(comps) == 1 else "")     # one session: the event's state is its own
+        if st in ("in", "post"):
+            results.append((label, st, _order(c)))
+    return replace(race, name=ev.get("name") or race.name,
+                   location=_read_board({"events": [ev]})[0].location or race.location, results=tuple(results))
+
+
+def _order(comp: dict) -> tuple:
+    """A session's top ten as ESPN gives them, by its order."""
+    cs = [c for c in comp.get("competitors") or [] if isinstance(c, dict)]
+    if cs and all(isinstance(c.get("order"), int) for c in cs):
+        cs.sort(key=lambda c: c["order"])
+    rows = []
+    for idx, c in enumerate(cs[:10]):
+        tm = c.get("team") or {}
+        rows.append({"pos": idx + 1, "driver": str(_driver_code(c.get("athlete") or {}))[:3].upper(),
+                     "team": tm.get("displayName") or tm.get("shortDisplayName") or "",
+                     "gap": (c.get("status") or {}).get("displayValue") or ("LEADER" if idx == 0 else "")})
+    return tuple(rows)
 
 
 def _board_event(board, race: Race | None):
@@ -454,14 +541,17 @@ async def _races(session, ser: Series, now: datetime, own: str) -> list[Race] | 
 
 
 @runtime.live(30)
-async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_name=None, own=""):
+async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_name=None, own="",
+                            post_buffer_hours=HOURS_AROUND):
     """What a race page draws. `own`: the id of your data source that gives its races in the add-on's
-    own fields, in place of the calendars and ESPN."""
+    own fields, in place of the calendars and ESPN. `post_buffer_hours`: the page's "Hours after",
+    how long a session's result shows (the same number its gate counts)."""
     if not tz_name:
         tz_name = await get_home_timezone(session)
     ser = series_of(str(entity_or_series or "f1").strip().lower())
 
-    # 1. A Home Assistant entity of its own with standings (the fallback is its state): shown as it is
+    # 1. A Home Assistant entity of its own with standings (the fallback is its state): shown as it
+    #    is, its session as it says (its "session" attribute), or a result whose session isn't said
     base_data = None
     if isinstance(fallback, dict):
         base_data = fallback
@@ -473,53 +563,36 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_na
     if isinstance(base_data, dict) and "attributes" in base_data:
         attrs = base_data.get("attributes") or {}
         if attrs.get("standings"):
-            status = str(base_data.get("state") or "").upper()
-            return {
+            status = str(base_data.get("state") or "").upper() or "IN"
+            said = str(attrs.get("session") or "").strip()
+            data = {
                 "series": ser.code,
                 "series_name": ser.title,
                 "event_name": attrs.get("event_name") or attrs.get("event") or ser.event,
                 "circuit": attrs.get("venue") or attrs.get("circuit") or ser.venue,
-                "status": status or "IN",
+                "status": status,
+                "session": session_name(said) if said else "",
                 "lap": attrs.get("lap"),
                 "total_laps": attrs.get("total_laps"),
-                "clock": attrs.get("clock") or status,
                 "standings": attrs.get("standings")
             }
+            return _badged(data, badge(data["session"], status, data["lap"], data["total_laps"]))
 
-    # 2. The season, every calendar merged, and the one rule
+    # 2. The season, every calendar merged (your own source's races in their place), and the one rule
     now = datetime.now(timezone.utc)
     races = await _races(session, ser, now, own)
     if races is None:
         return None                     # no calendar could be read: nothing yet, never a made-up race
-    pick = _pick(races, now)
-    data = _describe(ser, pick, tz_name)
-    if own:
-        return data                     # your source says it all: ESPN's isn't asked
+    pick = _pick(races, now, post_buffer_hours)
 
-    # 3. ESPN's scoreboard on this race: its live status, names and standings
-    board = await _board(session, ser)
-    ev = _board_event(board, pick.race) if pick.status != "OFF" else None
-    if ev is not None:
-        st = (ev.get("status") or {}).get("type") or {}
-        st_state = st.get("state") or "pre"
-        data["status"] = {"in": "IN", "post": "POST"}.get(st_state, "PRE")
-        data["event_name"] = ev.get("name") or data["event_name"]
-        data["circuit"] = _read_board({"events": [ev]})[0].location or data["circuit"]
-        data["clock"] = st.get("description") or data.get("clock")
-        standings = []
-        for idx, c in enumerate(_session_on(ev).get("competitors") or []):
-            if idx >= 10:
-                break
-            ath = c.get("athlete") or {}
-            tm = c.get("team") or {}
-            standings.append({
-                "pos": idx + 1,
-                "driver": str(_driver_code(ath))[:3].upper(),
-                "team": tm.get("displayName") or tm.get("shortDisplayName") or "",
-                "gap": (c.get("status") or {}).get("displayValue") or ("LEADER" if idx == 0 else ""),
-            })
-        data["standings"] = standings
-    return data
+    # 3. ESPN's scoreboard on this race (your own source says it all: ESPN's isn't asked): each
+    #    session's state and order join the race, and the rule is asked again with them
+    if not own and pick.status != "OFF":
+        ev = _board_event(await _board(session, ser), pick.race)
+        if ev is not None:
+            race = _with_board(pick.race, ev)
+            pick = _pick([race if r is pick.race else r for r in races], now, post_buffer_hours)
+    return _describe(ser, pick, tz_name)
 
 
 def _driver_code(athlete: dict) -> str:
@@ -529,15 +602,6 @@ def _driver_code(athlete: dict) -> str:
         return str(code)
     name = str(athlete.get("lastName") or athlete.get("displayName") or athlete.get("shortName") or "").strip()
     return name.split()[-1] if name else "DRV"
-
-
-def _session_on(ev: dict) -> dict:
-    """The session of an ESPN event whose order to show: the one running, else the last one run."""
-    comps = [c for c in ev.get("competitions") or [] if isinstance(c, dict)]
-    state = lambda c: ((c.get("status") or {}).get("type") or {}).get("state")  # noqa: E731
-    return (next((c for c in comps if state(c) == "in"), None)
-            or next((c for c in reversed(comps) if state(c) == "post"), None)
-            or (comps[0] if comps else {}))
 
 
 _racing_window_cache: dict[str, dict] = {}
@@ -550,7 +614,8 @@ def series_slug(series) -> tuple[str, str]:
 
 
 @runtime.live(60)
-async def compute_racing_active_window(session, series="f1", pre_buffer_hours=2.0, post_buffer_hours=2.0, window_mode="session", tz_name=None, own=""):
+async def compute_racing_active_window(session, series="f1", pre_buffer_hours=HOURS_AROUND, post_buffer_hours=HOURS_AROUND,
+                                       window_mode="session", tz_name=None, own=""):
     """Compute whether a Motorsport series (F1, Formula E, NASCAR, IndyCar) is in an active session/race-weekend window."""
     if not tz_name:
         tz_name = await get_home_timezone(session)

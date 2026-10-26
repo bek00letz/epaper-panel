@@ -34,7 +34,7 @@ NOW = datetime.now(timezone.utc).replace(microsecond=0)
 RACES = {"races": [
     {"race": "Last Grand Prix", "place": "Old Town", "sessions": {"Race": iso(NOW - timedelta(days=20))}},
     {"race": "Own Grand Prix", "place": "Testville",
-     "sessions": [{"session": "Qualifying", "start": iso(NOW - timedelta(hours=3))},
+     "sessions": [{"session": "Qualifying", "start": iso(NOW - timedelta(hours=4))},
                   {"session": "Race", "start": iso(NOW + timedelta(days=1))}],
      "result": [{"position": 1, "driver": "abc", "team": "One", "gap": ""}, {"position": 2, "driver": "DEF", "gap": "+1.0"}]},
 ]}
@@ -56,7 +56,9 @@ class TestReading(unittest.TestCase):
         own = races[1]
         self.assertEqual(own.location, "Testville")
         self.assertEqual([s[0] for s in own.sessions], ["Qualifying", "Race"])
-        self.assertEqual(own.result[0], {"pos": 1, "driver": "ABC", "team": "One", "gap": ""})
+        self.assertEqual(own.results[0], ("", "", ({"pos": 1, "driver": "ABC", "team": "One", "gap": ""},
+                                                   {"pos": 2, "driver": "DEF", "team": "", "gap": "+1.0"})),
+                         "no \"result_session\": an order whose session it does not say")
 
     def test_what_is_wrong_is_said_plainly(self):
         wrong = {
@@ -154,6 +156,27 @@ class OwnSource(unittest.IsolatedAsyncioTestCase):
         got = racing._describe(racing.SERIES["f1"], racing._pick(shapes.read("racing", races), NOW), "UTC")
         self.assertEqual(got["status"], "IN")
         self.assertEqual([r["driver"] for r in got["standings"]], ["ABC", "DEF"])
+        self.assertEqual((got["session"], got["badge"]), ("", ["RESULT"]),
+                         "it doesn't say whose result it is: shown as a result, never as the race's")
+
+    async def test_a_result_shows_under_its_own_session_only(self):
+        def page(quali_ago, race_ago=None, after=2.0, said="qualifying"):
+            sessions = [{"session": "Qualifying", "start": iso(NOW - timedelta(hours=quali_ago))},
+                        {"session": "Race", "start": iso(NOW - timedelta(hours=race_ago) if race_ago is not None
+                                                         else NOW + timedelta(days=1))}]
+            races = {"races": [{**RACES["races"][1], "sessions": sessions, "result_session": said}]}
+            return racing._describe(racing.SERIES["f1"], racing._pick(shapes.read("racing", races), NOW, after), "UTC")
+        got = page(0.5)
+        self.assertEqual((got["status"], got["session"], len(got["standings"])), ("IN", "Qualifying", 2))
+        self.assertEqual(got["badge"], ["QUALIFYING · LIVE", "QUALIFYING"])
+        got = page(2.5)
+        self.assertEqual((got["status"], got["session"], got["badge"][0]), ("POST", "Qualifying", "QUALIFYING · FINAL"))
+        got = page(2.5, after=0.5)
+        self.assertEqual((got["status"], got["session"], got["standings"]), ("PRE", "Race", []), "past its Hours after")
+        got = page(20, race_ago=0.5)
+        self.assertEqual((got["status"], got["session"], got["standings"]), ("IN", "Race", []),
+                         "Qualifying's order is never the race's")
+        self.assertEqual(got["badge"], ["RACE · LIVE", "RACE"])
 
     async def test_a_scores_page_reads_your_games(self):
         el = {"type": "sports_match", "league": "soccer/eng.1", "data": {"source": "g1"}}

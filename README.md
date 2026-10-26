@@ -34,8 +34,9 @@ you turn them on.
   game, your team, or a few of them ("Arsenal, Lakers"). The page turns up
   shortly before it starts and leaves just after it ends, on its own.
 - **Race weekends.** Formula 1, Formula E, NASCAR and IndyCar: the top ten
-  with gaps and tyres while a session runs, and the countdown to the next one
-  the rest of the week. Between seasons, when the next one starts, as soon as
+  and their gaps while a session runs and for a while after, with the
+  session named ("Qualifying · live"), and the next session the rest of the
+  week. Between seasons, when the next one starts, as soon as
   the series publishes it.
 - **What's flying over.** When a plane comes near, a page shows its flight,
   airline, route, height and speed, or a radar of everything around you.

@@ -2146,8 +2146,6 @@ def _draw_sports_racing(img, d, el, raw_val, display=None):
     default_name = data.get("series_name") or series
     event_name = str(data.get("event_name") or default_name).upper()
     status = str(data.get("status") or "IN").upper()
-    lap = data.get("lap")
-    total_laps = data.get("total_laps")
     standings = data.get("standings") or []
     show_teams = el.get("show_teams") not in (False, "false", 0, "0")
     try:
@@ -2155,16 +2153,21 @@ def _draw_sports_racing(img, d, el, raw_val, display=None):
     except (ValueError, TypeError):
         max_drv = 10
 
-    # Status badge at top right
-    status_txt = f"LAP {lap}/{total_laps}" if (lap and total_laps) else (data.get("clock") or status)
+    # The badge at top right: the session and its state (racing.badge), its shorter words where the
+    # longer don't fit ("QUALIFYING"); it steps aside where even those would leave the header no room
+    forms = [str(t) for t in (data.get("badge") or []) if t] or [str(data.get("clock") or status)]
     bf = T.font(_s(13, fscale, 10, 20), bold=True)
-    bw = T.text_width(status_txt, bf) + 16
     bx1 = x + w - 16
-    bx0 = bx1 - bw
-    if bx0 - (x + 46) - 10 >= 56:      # the badge steps aside where it would leave the header no room
-        d.rounded_rectangle([(bx0, y + 8), (bx1, y + 34)], radius=5, fill=T.BLACK)
-        d.text((bx0 + bw // 2, y + 21), status_txt, font=bf, fill=T.WHITE, anchor="mm")
-    else:
+    badged = False
+    for status_txt in forms:
+        bw = T.text_width(status_txt, bf) + 16
+        bx0 = bx1 - bw
+        if bx0 - (x + 46) - 10 >= 56:
+            d.rounded_rectangle([(bx0, y + 8), (bx1, y + 34)], radius=5, fill=T.BLACK)
+            d.text((bx0 + bw // 2, y + 21), status_txt, font=bf, fill=T.WHITE, anchor="mm")
+            badged = True
+            break
+    if not badged:
         bx0 = x + w - 4
 
     # Header: the series and the race; off-season, the series and its season. The middle names
@@ -2181,7 +2184,11 @@ def _draw_sports_racing(img, d, el, raw_val, display=None):
     hdr_icon = "mdi:car-electric" if series == "FE" else "mdi:flag-checkered"
     _draw_icon_glyph(d, hdr_icon, x + 24, y + 21, 26)
     hf = T.font(_s(16, fscale, 12, 24), bold=True)
-    header_txt = _fit_text(series if named == series else f"{series} · {named}", max(20, bx0 - (x + 46) - 10), hf)
+    room = max(20, bx0 - (x + 46) - 10)
+    says = [series if named == series else f"{series} · {named}"]
+    if standings and not badged:        # a leaderboard always says whose it is: the header does
+        says = [f"{series} · {forms[0]}", f"{series} · {forms[-1]}", forms[-1]]
+    header_txt = next((t for t in says if T.text_width(t, hf) <= room), None) or _fit_text(says[-1], room, hf)
     d.text((x + 46, y + 21), header_txt, font=hf, fill=T.BLACK, anchor="lm")
 
     d.line([(x + 14, y + 42), (x + w - 14, y + 42)], fill=T.BLACK, width=1)
