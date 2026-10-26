@@ -433,7 +433,7 @@ class TestCitySearch(unittest.TestCase):
         src = (APP_JS / "zones.js").as_uri()
         zones = [{"city": "Vostok", "region": "Antarctica", "tz": "Antarctica/Vostok"}, {"city": "Tokyo", "region": "Asia", "tz": "Asia/Tokyo"},
                  {"city": "Ho Chi Minh", "region": "Asia", "tz": "Asia/Ho_Chi_Minh"}, {"city": "Chicago", "region": "America", "tz": "America/Chicago"}]
-        js = f"""globalThis.navigator = {{ platform: "", userAgent: "" }};
+        js = f"""globalThis.navigator ??= {{ platform: "", userAgent: "" }};
           const Z = await import({json.dumps(src)});
           console.log(JSON.stringify(Z.findCities({json.dumps(zones)}, {json.dumps(q)}).map((z) => z.city)));"""
         out = subprocess.run(["node", "--input-type=module", "-e", js], capture_output=True, text=True, check=True).stdout
