@@ -17,7 +17,7 @@ keyed by the element's index. That keeps this module free of network calls
 and makes it testable with a plain dict.
 """
 import calendar
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 import json
 import math
 import re
@@ -32,8 +32,11 @@ from . import energy
 from . import media
 from . import needs_you
 from . import sport
+from . import race
 from . import sun
 from . import clock
+from . import words
+from .words import say
 from . import clocktime
 from . import countdown
 from . import todo
@@ -407,7 +410,7 @@ def _draw_bar(img, d, el, raw_val, display=None):
         d.text((x + 2, y + 2), title.upper(), font=tf, fill=T.BLACK, anchor="lt")
         if show_label:
             if val is not None:
-                lbl = f"{val:.{places}f}{suffix}"
+                lbl = f"{words.number(val, places)}{suffix}"
                 d.text((x + w - 2, y + 2), lbl, font=tf, fill=T.BLACK, anchor="rt")
         hdr_off = max(16, int(h * 0.42))
         bar_y += hdr_off
@@ -592,7 +595,7 @@ def _fmt_number(raw, el):
         formatted = units.format_value(v, el)          # picks its own unit: 1234 W -> 1.23 kW
     else:
         dec = max(0, min(6, int(el.get("decimals", 0))))
-        formatted = f"{v:.{dec}f}"
+        formatted = words.number(v, dec)
     if not (isinstance(el.get("value"), str) and el.get("value").strip()):
         return f"{el.get('prefix', '')}{formatted}{el.get('suffix', '')}"
     return formatted
@@ -745,7 +748,7 @@ def _level_text(level, unit):
     if level is None:
         return ""
     unit = str(unit or "").strip()
-    num = f"{level:.0f}" if abs(level - round(level)) < 0.05 or unit == "%" else f"{level:.1f}"
+    num = words.number(level, 0 if abs(level - round(level)) < 0.05 or unit == "%" else 1)
     return f"{num}{unit}" if unit in ("%", "") else f"{num} {unit}"
 
 
@@ -793,7 +796,7 @@ def _draw_grid_list(d, x, y, w, h, items, detail, by_number, fscale=1.0, icons_o
         if k < len(shown) and row < rows - 1 and k + 1 < slots:
             d.line([(cx, cy + rh + LIST_GAP // 2), (cx + cw, cy + rh + LIST_GAP // 2)], fill=T.BLACK, width=1)
         if k >= len(shown):
-            d.text((cx + isz + pad, mid), f"and {more} more", font=T.font(text_px, bold=False), fill=T.BLACK, anchor="lm")
+            d.text((cx + isz + pad, mid), say("and_more", more), font=T.font(text_px, bold=False), fill=T.BLACK, anchor="lm")
             continue
         it = shown[k]
         if isz:
@@ -830,15 +833,39 @@ def _no_answer_text(res: dict, now: datetime | None = None) -> str:
     six days by its date, "No answer since 12 Oct", since a weekday would be last week's. Several from one
     integration that went quiet together are one line: "4 not answering" (its name is the integration's)."""
     if res.get("no_answer_count"):
-        return f"{res['no_answer_count']} not answering"
+        return say("status.not_answering", res["no_answer_count"])
     try:
         at = datetime.fromisoformat(str(res.get("no_answer")).replace("Z", "+00:00"))
     except (TypeError, ValueError):
-        return "No answer"
+        return say("status.no_answer")
     now = now or datetime.now(at.tzinfo)
     if (now - at).days > 6:
-        return f"No answer since {at.day} {at:%b}"
-    return f"No answer since {at:%a} {clock.hm(at)}"
+        return say("status.no_answer_since", when=clock.date(at, "date"))
+    return say("status.no_answer_since", when=clock.day_and_time(at))
+
+
+def _fit_line(text, max_w, px, bold=False, floor=11):
+    """A line of words as it fits max_w: smaller first, down to what still reads, then shortened."""
+    f = _fit_font(text, max_w, px, min_sz=min(px, floor), bold=bold)
+    return _fit_text(text, max_w, f), f
+
+
+def _active_badge_w() -> int:
+    """How wide a lone item's "ACTIVE" badge is: its word's, never under 90."""
+    return max(90, T.text_width(say("status.ACTIVE"), T.font(14, bold=True)) + 24)
+
+
+def _on_for(changed, now: datetime | None = None) -> str:
+    """How long an item has been in its state, short ("25m"): from when it changed (an ISO time) or a
+    number of seconds; "" when not known."""
+    if isinstance(changed, (int, float)) and not isinstance(changed, bool):
+        return clock.span_short(changed)
+    try:
+        at = datetime.fromisoformat(str(changed or "").strip().replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    now = now or (datetime.now(at.tzinfo) if at.tzinfo else datetime.now())
+    return clock.span_short((now - at).total_seconds())
 
 
 def _draw_dynamic_grid(img, d, el, raw_val, display=None):
@@ -906,7 +933,7 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
                 active_items.append({
                     "level": None if silent else 0 if low_sensor else level,
                     "silent": silent,
-                    "level_text": (_no_answer_text(res) if silent else "Low" if low_sensor
+                    "level_text": (_no_answer_text(res) if silent else say("status.low") if low_sensor
                                    else _level_text(level, res.get("unit")) if by_number else ""),
                     "entity": ent,
                     "name": name or friendly or ent.split(".")[-1].replace("_", " ").title(),
@@ -921,10 +948,10 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
             chosen_icon = _resolve_spot_icon(it, state)
             active_items.append({
                 "entity": ent,
-                "name": name or (ent.split(".")[-1].replace("_", " ").title() if ent else "Active Spot"),
+                "name": name or (ent.split(".")[-1].replace("_", " ").title() if ent else say("status.active_spot")),
                 "icon": chosen_icon,
                 "state": state,
-                "changed": "25m ago",
+                "changed": 25 * 60,
                 "hide_name": hide_name,
                 "raw_item": it
             })
@@ -938,10 +965,10 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
     if not configured_items and not active_items:
         active_items = [{
             "entity": "switch.sample_1",
-            "name": "Sample Zone",
+            "name": say("status.sample_zone"),
             "icon": "mdi:radiator",
             "state": "on",
-            "changed": "30m ago",
+            "changed": 30 * 60,
             "hide_name": False
         }]
 
@@ -968,11 +995,8 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
             return item.get("level_text", "")
         if sec_mode == "state":
             return item.get("state", "")
-        ch = item.get("changed", "").strip()
-        if ch:
-            clean_ch = ch.removesuffix(" ago").replace(" minutes", "m").replace(" hours", "h").replace(" minute", "m").replace(" hour", "h")
-            return f"on for {clean_ch}"
-        return "active"
+        span = _on_for(item.get("changed"))
+        return say("status.on_for", span=span) if span else say("status.active")
 
     hdr_title = str(el.get("header_title") or "").strip()
     hdr_icon = str(el.get("header_icon") or "").strip()
@@ -990,9 +1014,10 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
             d.text((hx, hy + 12), hdr_title, font=f_ht, fill=T.BLACK, anchor="lm")
 
         if by_number:
-            badge_str = f"{len(active_items)} of {len(configured_items)}"
+            badge_str = say("of", a=len(active_items), b=len(configured_items))
         else:
-            badge_str = f"{len(active_items)} / {len(configured_items)} ON" if configured_items else f"{len(active_items)} ACTIVE"
+            badge_str = say("status.n_on", a=len(active_items), b=len(configured_items)) if configured_items \
+                else say("status.n_active", len(active_items))
         f_hb = T.font(12, bold=True)
         bw = T.text_width(badge_str, f_hb) + 16
         bx0 = x + w - bw
@@ -1009,9 +1034,9 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
         idle_icon = hdr_icon or "mdi:power-sleep"
         _draw_icon_glyph(d, idle_icon, x + w // 2, y + h // 2 - 20, 48)
         f_idle1 = T.font(20, bold=True)
-        d.text((x + w // 2, y + h // 2 + 18), "All Entities Idle", font=f_idle1, fill=T.BLACK, anchor="mm")
+        d.text((x + w // 2, y + h // 2 + 18), _fit_text(say("status.all_idle"), w - 16, f_idle1), font=f_idle1, fill=T.BLACK, anchor="mm")
         f_idle2 = T.font(13, bold=False)
-        d.text((x + w // 2, y + h // 2 + 38), "Automatically skipped from rotation when show_if is configured", font=f_idle2, fill=T.BLACK, anchor="mm")
+        d.text((x + w // 2, y + h // 2 + 38), _fit_text(say("status.all_idle_hint"), w - 16, f_idle2), font=f_idle2, fill=T.BLACK, anchor="mm")
         return
 
     is_wide = (w >= h)
@@ -1049,18 +1074,19 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
                     room = x + w - 24 - T.text_width(sec, lvl_f) - 24 - tx
                     sec = ""
                 else:
-                    room = w - isz - 210
+                    room = (x + w - _active_badge_w() - 24 - 12) - tx          # up to the badge
                 name_txt = _fit_text(it["name"], room, name_f)
                 d.text((tx, y + h // 2 - (int(16 * fscale) if sec else 0)), name_txt, font=name_f, fill=T.BLACK, anchor="lm")
                 if sec:
-                    sec_f = T.font(max(13, min(32, int(20 * fscale))), bold=False)
-                    d.text((tx, y + h // 2 + int(20 * fscale)), sec, font=sec_f, fill=T.BLACK, anchor="lm")
+                    sec_txt, sec_f = _fit_line(sec, room, max(13, min(32, int(20 * fscale))))
+                    d.text((tx, y + h // 2 + int(20 * fscale)), sec_txt, font=sec_f, fill=T.BLACK, anchor="lm")
             if not by_number:                    # a level says it all; "ACTIVE" is for a state
-                bw, bh = 90, 32
+                act, act_f = say("status.ACTIVE"), T.font(14, bold=True)
+                bw, bh = _active_badge_w(), 32
                 bx0 = x + w - bw - 24
                 by0 = y + (h - bh) // 2
                 d.rounded_rectangle([(bx0, by0), (bx0 + bw, by0 + bh)], radius=6, fill=T.BLACK)
-                d.text((bx0 + bw // 2, by0 + bh // 2), "ACTIVE", font=T.font(14, bold=True), fill=T.WHITE, anchor="mm")
+                d.text((bx0 + bw // 2, by0 + bh // 2), act, font=act_f, fill=T.WHITE, anchor="mm")
         else:
             mid_y = y + h // 2
             if hide_txt:
@@ -1073,12 +1099,13 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
                 name_txt = _fit_text(it["name"], w - 32, name_f)
                 d.text((x + w // 2, mid_y + (20 if sec else 30)), name_txt, font=name_f, fill=T.BLACK, anchor="mm")
                 if sec:
-                    sec_f = T.font(max(13, min(28, int(19 * fscale))), bold=False)
-                    d.text((x + w // 2, mid_y + 54), sec, font=sec_f, fill=T.BLACK, anchor="mm")
+                    sec_txt, sec_f = _fit_line(sec, w - 32, max(13, min(28, int(19 * fscale))))
+                    d.text((x + w // 2, mid_y + 54), sec_txt, font=sec_f, fill=T.BLACK, anchor="mm")
             if not by_number:
-                pw, ph = 40, 20
+                on, on_f = say("status.ON"), T.font(11, bold=True)
+                pw, ph = max(40, T.text_width(on, on_f) + 14), 20
                 d.rounded_rectangle([(x + w - pw - 10, y + 10), (x + w - 10, y + 10 + ph)], radius=4, fill=T.BLACK)
-                d.text((x + w - 10 - pw // 2, y + 10 + ph // 2), "ON", font=T.font(11, bold=True), fill=T.WHITE, anchor="mm")
+                d.text((x + w - 10 - pw // 2, y + 10 + ph // 2), on, font=on_f, fill=T.WHITE, anchor="mm")
         return
 
     # Multi-card layout mode
@@ -1171,8 +1198,8 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
                     d.text((tx, cy0 + ch_i // 2 + int(17 * fscale)), sec, font=lvl_f, fill=T.BLACK, anchor="lm")
                 elif sec:
                     base_sec_sz = min(16, max(12, cw_i // 16))
-                    sec_f = T.font(max(10, min(24, int(base_sec_sz * fscale))), bold=False)
-                    d.text((tx, cy0 + ch_i // 2 + int(14 * fscale)), sec, font=sec_f, fill=T.BLACK, anchor="lm")
+                    sec_txt, sec_f = _fit_line(sec, max(30, cx1 - 8 - tx), max(10, min(24, int(base_sec_sz * fscale))))
+                    d.text((tx, cy0 + ch_i // 2 + int(14 * fscale)), sec_txt, font=sec_f, fill=T.BLACK, anchor="lm")
             else:
                 # Vertical orientation (square/tall card)
                 max_avail = min(cw_i - 18, int(ch_i * 0.46))
@@ -1190,10 +1217,11 @@ def _draw_dynamic_grid(img, d, el, raw_val, display=None):
                 d.text((mid_x, cy0 + ch_i * (0.67 if sec else 0.74)), name_txt, font=name_f, fill=T.BLACK, anchor="mm")
                 if sec:
                     base_sec_sz = min(15, max(11, cw_i // 12))
-                    sec_f = T.font(max(10, min(22, int(base_sec_sz * fscale))), bold=False)
+                    sec_px, bold = max(10, min(22, int(base_sec_sz * fscale))), False
                     if by_number:                    # the level reads as large as the name
-                        sec_f = T.font(max(12, min(32, int(base_name_sz * fscale))), bold=True)
-                    d.text((mid_x, cy0 + ch_i * 0.86), sec, font=sec_f, fill=T.BLACK, anchor="mm")
+                        sec_px, bold = max(12, min(32, int(base_name_sz * fscale))), True
+                    sec_txt, sec_f = _fit_line(sec, cw_i - 14, sec_px, bold=bold)
+                    d.text((mid_x, cy0 + ch_i * 0.86), sec_txt, font=sec_f, fill=T.BLACK, anchor="mm")
 
 
 def _parse_val_json(raw_val):
@@ -1282,8 +1310,7 @@ def _draw_calendar_month(img, d, el, raw_val, display=None):
     header_h = min(36, max(22, int(h * 0.14))) if show_header else 0
 
     if show_header:
-        month_name = calendar.month_name[month].upper()
-        header_text = f"{month_name} {year}"
+        header_text = clock.date(datetime(year, month, 1), "month_year").upper()
         header_sz = _s(min(24, max(15, int(header_h * 0.76))), fscale, 13, 36)
         header_f = _fit_font(header_text, w - 20, header_sz, min_sz=12, bold=True)
         d.text((x + w // 2, y + header_h // 2), header_text, font=header_f, fill=T.BLACK, anchor="mm")
@@ -1293,12 +1320,14 @@ def _draw_calendar_month(img, d, el, raw_val, display=None):
 
     if show_weekdays:
         weekday_h = min(24, max(16, int(header_h * 0.65 if header_h else 20)))
-        day_names_long = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"] if first_weekday == 0 else ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"]
-        day_names_short = ["M", "T", "W", "T", "F", "S", "S"] if first_weekday == 0 else ["S", "M", "T", "W", "T", "F", "S"]
-        use_long = col_w >= 34
-        day_labels = day_names_long if use_long else day_names_short
+        order = [(first_weekday + k) % 7 for k in range(7)]       # Monday is 0; Sunday first is 6
+        day_names_long = [words.name("wd", k).rstrip(".").upper() for k in order]
+        day_names_short = [words.name("wdn", k) for k in order]
         wf_sz = _s(min(16, max(11, int(col_w * 0.34))), fscale, 9, 22)
         wf = T.font(wf_sz, bold=True)
+        # The day's short name where every one fits its column ("MIÉ", "DO"), its letter where not
+        use_long = col_w >= 34 and all(T.text_width(n, wf) <= col_w - 4 for n in day_names_long)
+        day_labels = day_names_long if use_long else day_names_short
         wy = y + header_h + 1
         for c_idx, label in enumerate(day_labels):
             cx = x + int((c_idx + 0.5) * col_w)
@@ -1367,7 +1396,7 @@ def _draw_todo_list(img, d, el, raw_val, metrics=None, distance_m=3.0, display=N
     head_mid = y + head_px // 2 + 2
     title = str(el.get("title") or (data or {}).get("name") or "").strip()
     if not str(el.get("entity") or "").strip():
-        d.text((x + w // 2, y + h // 2), "Choose a to-do list", font=T.font(item_px, bold=True), fill=T.BLACK, anchor="mm")
+        d.text((x + w // 2, y + h // 2), _fit_text(say("todo.choose"), w, T.font(item_px, bold=True)), font=T.font(item_px, bold=True), fill=T.BLACK, anchor="mm")
         return
     if data is None:                                   # not fetched yet: the name, nothing else
         d.text((x, head_mid), _shorten(title, head_f, w), font=head_f, fill=T.BLACK, anchor="lm")
@@ -1383,7 +1412,7 @@ def _draw_todo_list(img, d, el, raw_val, metrics=None, distance_m=3.0, display=N
 
     top = y + head_px + max(8, item_px // 3)
     if not items:
-        d.text((x + w // 2, (top + y + h) // 2), todo.empty_text(show), font=T.font(item_px, bold=True), fill=T.BLACK, anchor="mm")
+        d.text((x + w // 2, (top + y + h) // 2), _fit_text(todo.empty_text(show), w, T.font(item_px, bold=True)), font=T.font(item_px, bold=True), fill=T.BLACK, anchor="mm")
         return
 
     style = todo.style_of(el)
@@ -1434,7 +1463,21 @@ def _draw_todo_list(img, d, el, raw_val, metrics=None, distance_m=3.0, display=N
                font=item_f, fill=ink, anchor="lm")
     if more:
         mid = top + n_shown * pitch + row_h // 2
-        d.text((text_x, mid), f"and {more} more", font=item_f, fill=T.BLACK, anchor="lm")
+        d.text((text_x, mid), say("and_more", more), font=item_f, fill=T.BLACK, anchor="lm")
+
+
+def sample_agenda(now: datetime) -> list[dict]:
+    """The made-up agenda the editor shows before a calendar is chosen (and New page's thumbnail), in
+    the screen's language: today, and three days ahead."""
+    at = lambda days, hour, minute=0: (now + timedelta(days=days)).replace(hour=hour, minute=minute, second=0, microsecond=0)
+    return [
+        {"start": at(0, 19, 30).isoformat(), "summary": say("calendar.sample1"), "sub": say("calendar.sample1_sub")},
+        {"start": at(1, 9).isoformat(), "summary": say("calendar.sample2"),
+         "sub": f"{clock.hm(at(1, 9))} • {say('calendar.sample2_sub')}"},
+        {"start": at(3, 7).date().isoformat(), "summary": say("calendar.sample3"),
+         "sub": say("calendar.sample3_sub", time=clock.hm(at(3, 7)))},
+        {"start": at(11, 8).date().isoformat(), "summary": say("calendar.sample4"), "sub": say("calendar.sample4_sub")},
+    ]
 
 
 def _draw_calendar_agenda(img, d, el, raw_val, display=None):
@@ -1444,7 +1487,7 @@ def _draw_calendar_agenda(img, d, el, raw_val, display=None):
     if show_border:
         d.rounded_rectangle([(x, y), (x + w, y + h)], radius=12, outline=T.BLACK, width=1)
 
-    title = str(el.get("title") or "Upcoming Events").upper()
+    title = str(el.get("title") or say("calendar.upcoming")).upper()
     hdr_f = T.font(_s(15, fscale, 11, 24), bold=True)
     d.text((x + 14, y + 16), title, font=hdr_f, fill=T.BLACK, anchor="lm")
 
@@ -1462,15 +1505,9 @@ def _draw_calendar_agenda(img, d, el, raw_val, display=None):
         }]
 
     if not events and raw_val is None:
-        # Default preview sample events
-        events = [
-            {"time_label": "TODAY 19:30", "summary": "Dinner with Sarah", "sub": "Trattoria Al Borgo"},
-            {"time_label": "TUE 20 OCT", "summary": "Dentist Appointment", "sub": "09:00 AM • Dr. Popa"},
-            {"time_label": "THU 22 OCT", "summary": "Trash & Recycling Pickup", "sub": "Bins out by 07:00"},
-            {"time_label": "FRI 30 OCT", "summary": "Trip to Munich", "sub": "Flight LH1657"}
-        ]
+        events = sample_agenda(datetime.now())         # the editor's preview, before a calendar is chosen
 
-    count_badge = f"{len(events)} EVENTS" if events else "NONE"
+    count_badge = say("calendar.events", len(events)) if events else say("calendar.none")
     bf = T.font(_s(11, fscale, 9, 18), bold=True)
     bw = T.text_width(count_badge, bf) + 14
     d.rounded_rectangle([(x + w - bw - 14, y + 6), (x + w - 14, y + 26)], radius=4, fill=T.BLACK)
@@ -1478,7 +1515,8 @@ def _draw_calendar_agenda(img, d, el, raw_val, display=None):
     d.line([(x + 10, y + 32), (x + w - 10, y + 32)], fill=T.BLACK, width=1)
 
     if not events:
-        d.text((x + w // 2, y + h // 2), "No upcoming events scheduled", font=T.font(_s(16, fscale, 12, 26), bold=True), fill=T.BLACK, anchor="mm")
+        ef = T.font(_s(16, fscale, 12, 26), bold=True)
+        d.text((x + w // 2, y + h // 2), _fit_text(say("calendar.empty"), w - 24, ef), font=ef, fill=T.BLACK, anchor="mm")
         return
 
     list_y = y + 36
@@ -1502,22 +1540,17 @@ def _draw_calendar_agenda(img, d, el, raw_val, display=None):
             if raw_st:
                 try:
                     s_clean = str(raw_st).replace("Z", "+00:00")
-                    if len(s_clean) == 10:  # all day "YYYY-MM-DD"
-                        edt = datetime.fromisoformat(s_clean)
-                        if s_clean == today_ymd:
-                            dt_str = "TODAY"
-                        else:
-                            dt_str = edt.strftime("%a %-d %b").upper()
+                    edt = datetime.fromisoformat(s_clean)
+                    if edt.strftime("%Y-%m-%d") != today_ymd:
+                        dt_str = clock.date(edt, "short_day_date").upper()
+                    elif len(s_clean) == 10:  # all day "YYYY-MM-DD"
+                        dt_str = say("day.today").upper()
                     else:
-                        edt = datetime.fromisoformat(s_clean)
-                        if edt.strftime("%Y-%m-%d") == today_ymd:
-                            dt_str = f"TODAY {clock.hm(edt).upper()}"
-                        else:
-                            dt_str = edt.strftime("%a %-d %b").upper()
+                        dt_str = say("day.today_at", time=clock.hm(edt)).upper()
                 except Exception:
-                    dt_str = "SOON"
+                    dt_str = say("calendar.soon")
             else:
-                dt_str = "EVENT"
+                dt_str = say("calendar.event")
 
         df = T.font(_s(12, fscale, 9, 20), bold=True)
         pill_w = max(58, T.text_width(dt_str, df) + 14)
@@ -1540,7 +1573,7 @@ def _draw_calendar_agenda(img, d, el, raw_val, display=None):
         sub_txt = (ev.get("sub") or ev.get("location") or "") if show_sub else ""
         base_tf_sz = min(22, max(14, int(item_h * (0.40 if sub_txt else 0.52))))
         tf = T.font(_s(base_tf_sz, fscale, 12, 34), bold=True)
-        summary = ev.get("summary") or ev.get("message") or "Untitled Event"
+        summary = ev.get("summary") or ev.get("message") or say("calendar.untitled")
         title_txt = _fit_text(summary, title_w, tf)
 
         d.text((title_x, iy_mid - (int(item_h * 0.18) if sub_txt else 0)), title_txt, font=tf, fill=T.BLACK, anchor="lm")
@@ -1578,27 +1611,26 @@ _WEATHER_ICON_MAP = {
     "exceptional": "mdi:alert-circle-outline",
 }
 
-_WEATHER_LABEL_MAP = {
-    "clear-night": "Clear Night",
-    "clear_night": "Clear Night",
-    "cloudy": "Cloudy",
-    "fog": "Foggy",
-    "hail": "Hail",
-    "lightning": "Lightning",
-    "lightning-rainy": "Thunderstorm",
-    "lightning_rainy": "Thunderstorm",
-    "partlycloudy": "Partly Cloudy",
-    "pouring": "Heavy Rain",
-    "rainy": "Rainy",
-    "snowy": "Snowy",
-    "snowy-rainy": "Sleet",
-    "snowy_rainy": "Sleet",
-    "sunny": "Sunny",
-    "windy": "Windy",
-    "windy-variant": "Windy & Cloudy",
-    "windy_variant": "Windy & Cloudy",
-    "exceptional": "Severe Alert",
-}
+def _weather_label(cond: str) -> str:
+    """Home Assistant's weather condition in the screen's words ("partlycloudy" -> "Partly Cloudy")."""
+    key = f"weather.{cond.replace('_', '-')}"
+    return say(key) if words.has(key) else cond.replace("-", " ").replace("_", " ").title()
+
+
+def _weather_details(humidity, wind, wind_unit, pressure_trend) -> list[str]:
+    """The current weather's details, most useful first: humidity, wind, the pressure's way."""
+    parts = []
+    if humidity is not None:
+        parts.append(say("weather.humidity", v=words.number(humidity)))
+    if wind is not None:
+        parts.append(say("weather.wind", v=f"{words.number(wind)} {wind_unit}"))
+    if pressure_trend in ("rising", "falling"):
+        parts.append(say(f"weather.pressure_{pressure_trend}"))
+    return parts
+
+
+def _high_low(hi, lo, sep) -> str:
+    return f"{say('weather.high')} {hi:.0f}°{sep}{say('weather.low')} {lo:.0f}°"
 
 
 def _fit_parts(parts, max_w, size, sep, min_sz=11):
@@ -1626,7 +1658,7 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
         return
 
     cond = str(data.get("condition") or "partlycloudy").lower()
-    cond_label = _WEATHER_LABEL_MAP.get(cond, cond.replace("-", " ").replace("_", " ").title())
+    cond_label = _weather_label(cond)
     temp = data.get("temperature", "--")
     unit = str(data.get("unit") or "°C")
     humidity = data.get("humidity")
@@ -1656,18 +1688,12 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
         cf = _fit_font(cond_label, avail_hero_w, _s(min(28, max(16, int(h * 0.13))), fscale, 14, 42), min_sz=13, bold=True)
         d.text((tx, hero_mid_y + int(h * 0.14)), cond_label, font=cf, fill=T.BLACK, anchor="lm")
         if show_details:
-            chip_parts = []
-            if humidity is not None:
-                chip_parts.append(f"HUM {humidity}%")
-            if wind is not None:
-                chip_parts.append(f"WIND {wind} {wind_unit}")
-            if pressure_trend in ("rising", "falling"):
-                chip_parts.append(f"PRESSURE {pressure_trend.upper()}")
+            chip_parts = _weather_details(humidity, wind, wind_unit, pressure_trend)
             if forecast:
                 today_f = forecast[0]
                 th, tl = today_f.get("temperature"), today_f.get("templow")
                 if th is not None and tl is not None:
-                    chip_parts.append(f"H {th:.0f}° · L {tl:.0f}°")
+                    chip_parts.append(_high_low(th, tl, " · "))
             chip_text, mf = _fit_parts(chip_parts, w - 48, _s(16, fscale, 12, 26), "   •   ")
             if chip_text:
                 d.text((x + 24, y + h - 22), chip_text, font=mf, fill=T.BLACK, anchor="lm")
@@ -1705,26 +1731,20 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
             d.text((tx, hero_mid_y + int(h * 0.13)), cond_label, font=cf, fill=T.BLACK, anchor="lm")
 
             if show_details:
-                line1_parts = []
+                line1_parts = _weather_details(humidity, wind, wind_unit, pressure_trend)
                 line2_parts = []
-                if humidity is not None:
-                    line1_parts.append(f"HUM {humidity}%")
-                if wind is not None:
-                    line1_parts.append(f"WIND {wind} {wind_unit}")
-                if pressure_trend in ("rising", "falling"):
-                    line1_parts.append(f"PRESSURE {pressure_trend.upper()}")
                 if forecast:
                     today_f = forecast[0]
                     th = today_f.get("temperature")
                     tl = today_f.get("templow")
                     if th is not None and tl is not None:
-                        line2_parts.append(f"H {th:.0f}° / L {tl:.0f}°")
+                        line2_parts.append(_high_low(th, tl, " / "))
                     pop = today_f.get("precipitation_probability")
                     precip = today_f.get("precipitation")
                     if pop is not None and float(pop) > 0:
-                        line2_parts.append(f"RAIN {float(pop):.0f}%")
+                        line2_parts.append(say("weather.rain", v=f"{float(pop):.0f}%"))
                     elif precip is not None and float(precip) > 0:
-                        line2_parts.append(f"RAIN {float(precip):.1f}mm")
+                        line2_parts.append(say("weather.rain", v=f"{words.number(float(precip), 1)}mm"))
 
                 avail_chip_w = fore_x - x - 32
                 target_chip_sz = _s(15, fscale, 11, 24)
@@ -1756,11 +1776,11 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
                     div_x = fore_x + int(i * day_w)
                     d.line([(div_x, y + 18), (div_x, y + h - 18)], fill=T.BLACK, width=1)
                 dt_raw = fcast.get("datetime")
-                day_name = f"DAY {i+1}"
+                day_name = say("weather.day_n", n=i + 1)
                 if dt_raw:
                     try:
                         dt = datetime.fromisoformat(str(dt_raw).replace("Z", "+00:00"))
-                        day_name = dt.strftime("%a").upper()
+                        day_name = clock.date(dt, "wd").rstrip(".").upper()
                     except Exception:
                         pass
 
@@ -1782,14 +1802,15 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
                 precip = fcast.get("precipitation")
                 rain_str = ""
                 if pop is not None and float(pop) > 0:
-                    rain_str = f"{float(pop):.0f}% rain"
+                    rain_str = say("weather.rain_chance", v=f"{float(pop):.0f}")
                 elif precip is not None and float(precip) > 0:
-                    rain_str = f"{float(precip):.1f} mm"
+                    rain_str = f"{words.number(float(precip), 1)} mm"
                 if rain_str and h >= 100:                 # below that it would sit on the temperatures
                     rf = _fit_font(rain_str, int(day_w - 6), _s(14, fscale, 10, 22), min_sz=10, bold=True)
                     d.text((cx, y + int(h * 0.90)), rain_str, font=rf, fill=T.BLACK, anchor="mm")
         else:
-            d.text((fore_x + fore_w // 2, y + h // 2), "No forecast data", font=T.font(_s(16, fscale, 12, 24), bold=True), fill=T.BLACK, anchor="mm")
+            nf = T.font(_s(16, fscale, 12, 24), bold=True)
+            d.text((fore_x + fore_w // 2, y + h // 2), _fit_text(say("weather.no_forecast"), fore_w - 12, nf), font=nf, fill=T.BLACK, anchor="mm")
     else:
         # Stacked layout (portrait or narrow cards)
         hero_h = int(h * 0.34)
@@ -1804,13 +1825,7 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
         d.text((tx, mid_y + 18), cond_label, font=cf, fill=T.BLACK, anchor="lm")
 
         if show_details:
-            parts = []
-            if humidity is not None:
-                parts.append(f"HUM {humidity}%")
-            if wind is not None:
-                parts.append(f"WIND {wind} {wind_unit}")
-            if pressure_trend in ("rising", "falling"):
-                parts.append(f"PRESSURE {pressure_trend.upper()}")
+            parts = _weather_details(humidity, wind, wind_unit, pressure_trend)
             txt, mf = _fit_parts(parts, w - 36, _s(14, fscale, 10, 22), "   •   ")
             if txt:
                 d.text((x + 20, y + hero_h - 14), txt, font=mf, fill=T.BLACK, anchor="lm")
@@ -1825,11 +1840,11 @@ def _draw_weather_forecast(img, d, el, raw_val, display=None):
                 ry = y + hero_h + 6 + int(i * row_h)
                 ry_mid = ry + int(row_h * 0.5)
                 dt_raw = fcast.get("datetime")
-                day_name = f"DAY {i+1}"
+                day_name = say("weather.day_n", n=i + 1)
                 if dt_raw:
                     try:
                         dt = datetime.fromisoformat(str(dt_raw).replace("Z", "+00:00"))
-                        day_name = dt.strftime("%A").upper()
+                        day_name = clock.date(dt, "weekday").upper()
                     except Exception:
                         pass
                 row_f = T.font(_s(16, fscale, 12, 26), bold=True)
@@ -1869,10 +1884,10 @@ def _draw_radar_scope(d, sx, sy, sw, sh, max_r_km, ac_list, tracked_cs=""):
 
     # Cardinal labels
     cf = T.font(10, bold=True)
-    d.text((cx, cy - r_scope + 9), "N", font=cf, fill=T.BLACK, anchor="mm")
-    d.text((cx + r_scope - 9, cy), "E", font=cf, fill=T.BLACK, anchor="mm")
-    d.text((cx, cy + r_scope - 9), "S", font=cf, fill=T.BLACK, anchor="mm")
-    d.text((cx - r_scope + 9, cy), "W", font=cf, fill=T.BLACK, anchor="mm")
+    d.text((cx, cy - r_scope + 9), say("compass.N"), font=cf, fill=T.BLACK, anchor="mm")
+    d.text((cx + r_scope - 9, cy), say("compass.E"), font=cf, fill=T.BLACK, anchor="mm")
+    d.text((cx, cy + r_scope - 9), say("compass.S"), font=cf, fill=T.BLACK, anchor="mm")
+    d.text((cx - r_scope + 9, cy), say("compass.W"), font=cf, fill=T.BLACK, anchor="mm")
 
     # Range scale label
     rf = T.font(9, bold=True)
@@ -1921,6 +1936,11 @@ def _draw_radar_scope(d, sx, sy, sw, sh, max_r_km, ac_list, tracked_cs=""):
             d.text((lx, py - 6), cs, font=T.font(10, bold=True), fill=T.BLACK, anchor=anchor)
 
 
+def _compass(cardinal: str) -> str:
+    """A compass point in the screen's letters ("SW" is "SO" in French)."""
+    return "".join(say(f"compass.{c}") if c in "NESW" else c for c in str(cardinal or ""))
+
+
 def _draw_flight_tracker(img, d, el, raw_val, display=None):
     x, y, w, h = _clamp_box(el, 752, 235, display=display)
     fscale = _font_scale(el)
@@ -1949,9 +1969,11 @@ def _draw_flight_tracker(img, d, el, raw_val, display=None):
         mid_x = x + w // 2
         mid_y = y + h // 2
         _draw_icon_glyph(d, "mdi:radar", mid_x, mid_y - 26, 56)
-        d.text((mid_x, mid_y + 16), "AIRSPACE CLEAR", font=T.font(_s(22, fscale, 16, 36), bold=True), fill=T.BLACK, anchor="mm")
-        loc_str = f" overhead {loc_name}" if loc_name else " overhead"
-        d.text((mid_x, mid_y + 42), f"No aircraft{loc_str} within {radius} km", font=T.font(_s(15, fscale, 11, 24), bold=False), fill=T.BLACK, anchor="mm")
+        cf = T.font(_s(22, fscale, 16, 36), bold=True)
+        d.text((mid_x, mid_y + 16), _fit_text(say("flight.clear"), w - 16, cf), font=cf, fill=T.BLACK, anchor="mm")
+        none = say("flight.none_near", place=loc_name, r=radius) if loc_name else say("flight.none", r=radius)
+        nf = T.font(_s(15, fscale, 11, 24), bold=False)
+        d.text((mid_x, mid_y + 42), _fit_text(none, w - 16, nf), font=nf, fill=T.BLACK, anchor="mm")
         return
 
     sub_idx = int(el.get("sub_index", 0))
@@ -1960,10 +1982,11 @@ def _draw_flight_tracker(img, d, el, raw_val, display=None):
         sub_idx = 0
 
     ac = aircraft_list[sub_idx]
-    callsign = str(ac.get("callsign") or ac.get("icao24") or "UNKNOWN").strip().upper()
-    country = ac.get("country") or "Commercial Flight"
+    callsign = str(ac.get("callsign") or ac.get("icao24") or say("flight.unknown")).strip().upper()
+    country = ac.get("country") or say("flight.commercial")
     dist_km = float(ac.get("distance_km") or 0.0)
-    bearing = ac.get("bearing_cardinal") or "OVERHEAD"
+    bearing = _compass(ac.get("bearing_cardinal")) or say("flight.overhead")
+    km = lambda v: words.number(v, 1)
     alt_m = float(ac.get("altitude_m") or 0.0)
     alt_ft = int(alt_m * 3.28084) if alt_m else 0
     speed_ms = float(ac.get("velocity_ms") or 0.0)
@@ -1976,10 +1999,10 @@ def _draw_flight_tracker(img, d, el, raw_val, display=None):
     if style == "radar":
         # Pure Circular PPI Radar Scope
         _draw_radar_scope(d, x + 6, y + 6, w - 12, h - 12, radius, aircraft_list, tracked_cs=callsign)
-        hdr_title = f"{loc_name.upper()} RADAR · {radius} KM" if loc_name else f"AIRSPACE RADAR · {radius} KM"
+        hdr_title = say("flight.radar_at", place=loc_name.upper(), r=radius) if loc_name else say("flight.radar", r=radius)
         rf_hdr = T.font(_s(14, fscale, 10, 22), bold=True)
         d.text((x + 16, y + 18), hdr_title, font=rf_hdr, fill=T.BLACK, anchor="lm")
-        target_str = f"TARGET: {callsign} ({dist_km:.1f} KM {bearing})"
+        target_str = say("flight.target", plane=f"{callsign} ({km(dist_km)} KM {bearing})")
         if sub_total > 1:
             target_str = f"[{sub_idx + 1}/{sub_total}] {target_str}"
         d.text((x + w - 16, y + 18), target_str, font=rf_hdr, fill=T.BLACK, anchor="rm")
@@ -1997,7 +2020,7 @@ def _draw_flight_tracker(img, d, el, raw_val, display=None):
         tw = w - scope_w - 38
         top_y = y + 14
 
-        dist_badge = f"{dist_km:.1f} KM {bearing}{loc_suffix}" if dist_km > 0 else (f"OVERHEAD {loc_name}" if loc_name else "OVERHEAD")
+        dist_badge = f"{km(dist_km)} KM {bearing}{loc_suffix}" if dist_km > 0 else (say("flight.overhead_at", place=loc_name) if loc_name else say("flight.overhead"))
         bf = T.font(_s(12, fscale, 9, 18), bold=True)
         bw = T.text_width(dist_badge, bf) + 16
         bh = 26
@@ -2032,9 +2055,9 @@ def _draw_flight_tracker(img, d, el, raw_val, display=None):
         cw = tw / float(n_cols)
 
         metrics_list = [
-            ("ALTITUDE", f"{alt_ft:,} ft{climb_arrow}", f"{int(alt_m):,} m"),
-            ("SPEED", f"{speed_kts} kts", f"{speed_kmh} km/h"),
-            ("HEADING", f"{track}°", str(ac.get("icao24", "")).upper() or "--")
+            (say("flight.altitude"), f"{words.number(alt_ft, 0, group=True)} ft{climb_arrow}", f"{words.number(int(alt_m), 0, group=True)} m"),
+            (say("flight.speed"), f"{speed_kts} kts", f"{speed_kmh} km/h"),
+            (say("flight.heading"), f"{track}°", str(ac.get("icao24", "")).upper() or "--")
         ]
 
         for i, (label, val_main, val_sub) in enumerate(metrics_list):
@@ -2042,7 +2065,7 @@ def _draw_flight_tracker(img, d, el, raw_val, display=None):
             mid_col_x = col_x + int(cw * 0.5)
             if i > 0:
                 d.line([(col_x, cols_y + 6), (col_x, cols_y + cols_h - 6)], fill=T.BLACK, width=1)
-            lbl_f = T.font(_s(12, fscale, 9, 18), bold=True)
+            lbl_f = _fit_font(label, int(cw - 10), _s(12, fscale, 9, 18), min_sz=9, bold=True)
             main_f = _fit_font(val_main, int(cw - 12), _s(23, fscale, 15, 38), min_sz=14, bold=True)
             d.text((mid_col_x, cols_y + int(cols_h * 0.16)), label, font=lbl_f, fill=T.BLACK, anchor="mm")
             d.text((mid_col_x, cols_y + int(cols_h * (0.52 if show_sub_metrics else 0.60))), val_main, font=main_f, fill=T.BLACK, anchor="mm")
@@ -2055,7 +2078,7 @@ def _draw_flight_tracker(img, d, el, raw_val, display=None):
     top_y = y + 14
     _draw_icon_glyph(d, "mdi:airplane", x + 32, top_y + 22, 48)
 
-    dist_badge = f"{dist_km:.1f} KM {bearing}{loc_suffix}" if dist_km > 0 else (f"OVERHEAD {loc_name}" if loc_name else "OVERHEAD")
+    dist_badge = f"{km(dist_km)} KM {bearing}{loc_suffix}" if dist_km > 0 else (say("flight.overhead_at", place=loc_name) if loc_name else say("flight.overhead"))
     bf = T.font(_s(13, fscale, 10, 20), bold=True)
     bw = T.text_width(dist_badge, bf) + 18
     bh = 28
@@ -2065,7 +2088,7 @@ def _draw_flight_tracker(img, d, el, raw_val, display=None):
     d.text((bx0 + bw // 2, top_y + 4 + bh // 2), dist_badge, font=bf, fill=T.WHITE, anchor="mm")
 
     if sub_total > 1:
-        more_txt = f"FLIGHT {sub_idx + 1} OF {sub_total}"
+        more_txt = say("flight.n_of", i=sub_idx + 1, n=sub_total)
         mf = T.font(_s(12, fscale, 9, 18), bold=True)
         d.text((bx1, top_y + 44), more_txt, font=mf, fill=T.BLACK, anchor="rm")
 
@@ -2085,9 +2108,9 @@ def _draw_flight_tracker(img, d, el, raw_val, display=None):
     cw = (w - 32) / float(n_cols)
 
     metrics_list = [
-        ("ALTITUDE", f"{alt_ft:,} ft{climb_arrow}", f"{int(alt_m):,} m"),
-        ("GROUND SPEED", f"{speed_kts} kts", f"{speed_kmh} km/h"),
-        ("HEADING", f"{track}°", bearing),
+        (say("flight.altitude"), f"{words.number(alt_ft, 0, group=True)} ft{climb_arrow}", f"{words.number(int(alt_m), 0, group=True)} m"),
+        (say("flight.ground_speed"), f"{speed_kts} kts", f"{speed_kmh} km/h"),
+        (say("flight.heading"), f"{track}°", bearing),
         ("SQUAWK / ICAO", str(ac.get("icao24", "")).upper() or "--", "ADS-B")
     ]
 
@@ -2155,7 +2178,7 @@ def _draw_sports_racing(img, d, el, raw_val, display=None):
 
     # The badge at top right: the session and its state (racing.badge), its shorter words where the
     # longer don't fit ("QUALIFYING"); it steps aside where even those would leave the header no room
-    forms = [str(t) for t in (data.get("badge") or []) if t] or [str(data.get("clock") or status)]
+    forms = race.forms(data)
     bf = T.font(_s(13, fscale, 10, 20), bold=True)
     bx1 = x + w - 16
     badged = False
@@ -2175,7 +2198,7 @@ def _draw_sports_racing(img, d, el, raw_val, display=None):
     off = status == "OFF"
     circuit = str(data.get("circuit") or "")
     if off:
-        hero = str(data.get("event_name") or "Season over")
+        hero = str(data.get("event_name") or say("race.season_over"))
         named = str(data.get("season") or default_name).upper()
     elif circuit:
         hero, named = circuit, event_name
@@ -2197,7 +2220,7 @@ def _draw_sports_racing(img, d, el, raw_val, display=None):
         # Before a race, or the off-season: an icon, a name and one line, centred under the header,
         # smaller where the box is, the icon left out where there's no room for it
         mid_icon = "mdi:car-electric" if series == "FE" else "mdi:racing-helmet"
-        detail = str(data.get("detail") or "")
+        detail = race.detail(data)
         _draw_race_card(d, x, y + 42, w, h - 42, mid_icon, hero, detail, fscale)
         return
 
@@ -2230,7 +2253,7 @@ def _draw_sports_racing(img, d, el, raw_val, display=None):
         pos_str = f"P{drv.get('pos', idx + 1)}"
         code = str(drv.get("driver") or drv.get("code") or drv.get("name") or "DRV")[:3].upper()
         team = str(drv.get("team") or drv.get("constructor") or "") if show_teams else ""
-        gap = str(drv.get("gap") or drv.get("interval") or "")
+        gap = race.gap(drv.get("gap") or drv.get("interval") or "")
         tyre = str(drv.get("tyre") or "")[:1].upper()
 
         d.text((cx0 + 2, ry_mid), pos_str, font=pos_f, fill=T.BLACK, anchor="lm")
@@ -2279,7 +2302,7 @@ def _draw_sports_match(img, d, el, raw_val, display=None):
     league = str(data.get("league") or sport.words(el.get("league")).event).upper()
     venue = str(data.get("venue") or "").upper()
     header_title = f"{league} · {venue}" if venue else league
-    clock = str(data.get("clock") or data.get("status") or "LIVE").upper()
+    clock = sport.badge(data, el.get("league")).upper()
     show_stats = el.get("show_stats") not in (False, "false", 0, "0")
     show_scorers = el.get("show_scorers") not in (False, "false", 0, "0")
 
@@ -2315,8 +2338,8 @@ def _draw_sports_match(img, d, el, raw_val, display=None):
     mid_x = x + w // 2
     hero_y = y + int(h * (0.46 if has_scorers else 0.56))
 
-    h_name = str(data.get("home_team") or "HOME").upper()
-    a_name = str(data.get("away_team") or "AWAY").upper()
+    h_name = str(data.get("home_team") or say("sport.home")).upper()
+    a_name = str(data.get("away_team") or say("sport.away")).upper()
     h_score = str(data.get("home_score") if data.get("home_score") is not None else "-")
     a_score = str(data.get("away_score") if data.get("away_score") is not None else "-")
 
@@ -2409,7 +2432,12 @@ def element_text(el, vals, idx):
         return _fmt_number(vals.get(idx, el.get("value", "")), el)
     if el["type"] == "text":
         got = vals.get(idx)
-        base = str(got) if got is not None else str(el.get("value", "") or "")
+        if binding.clock_pattern(el) is not None:
+            base = binding.now_text(el, got)         # the add-on's clock, written in the screen's language
+        elif binding.shows_time(el):
+            base = binding.shown(el, got)            # the time Home Assistant gave, in the screen's language
+        else:
+            base = str(got) if got is not None else str(el.get("value", "") or "")
         if el.get("show") == "unit" and not (isinstance(el.get("value"), str) and el.get("value").strip()):
             # The unit the value is shown in right now, in the user's words.
             word = units.unit_for(base, el)
@@ -2596,7 +2624,7 @@ def collect_templates(page):
                     '"name": {{ (state_attr(e, "friendly_name") or "") | to_json }}, '
                     '"unit": {{ (state_attr(e, "unit_of_measurement") or "") | to_json }}, '
                     '"device_class": {{ (state_attr(e, "device_class") or "") | to_json }}, '
-                    '"changed": {{ (relative_time(states[e].last_changed) if (states[e] is defined and states[e] is not none and states[e].last_changed is defined) else "") | to_json }}}'
+                    '"changed": {{ ((as_timestamp(states[e].last_changed) | timestamp_local) if (states[e] is defined and states[e] is not none and states[e].last_changed is defined) else "") | to_json }}}'
                     "{% if not loop.last %},{% endif %}{% endfor %}]"
                 )
                 out[i] = tpl

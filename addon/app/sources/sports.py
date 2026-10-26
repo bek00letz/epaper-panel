@@ -100,9 +100,10 @@ def _espn_game(ev) -> dict:
         return f"{t.get('displayName', '')} {t.get('shortDisplayName', '')} {t.get('abbreviation', '')}"
     return {
         "id": str(ev.get("id") or comp.get("id") or f"{home_id}_{str(away.get('team', {}).get('id') or '')}"),
-        "home": team(home, "HOME"), "away": team(away, "AWAY"),
+        "home": team(home, ""), "away": team(away, ""),
         "home_score": home.get("score"), "away_score": away.get("score"),
         "status": st_type.get("state") or "pre",
+        "status_name": st_type.get("name") or "",
         "status_text": st_type.get("description") or st_type.get("detail") or "",
         "clock": comp.get("status", {}).get("displayClock") or "",
         "start": ev.get("date") or comp.get("date") or "",
@@ -115,57 +116,38 @@ def _espn_game(ev) -> dict:
 
 
 def game_view(g: dict, league_title="", tz_name=None, league="soccer") -> dict:
-    """A game in the add-on's own fields, as a Scores page draws it: the same for ESPN's and yours."""
-    said = sport.words(league)
+    """A game in the add-on's own fields, as a Scores page draws it: the same for ESPN's and yours.
+    Its badge is said when it's drawn (render/sport.badge), in the screen's language; here are its facts."""
     st_state = g.get("status") or "pre"
-    st_desc = g.get("status_text") or {"pre": "Scheduled", "in": "Live", "post": "Final"}.get(st_state, "Scheduled")
-    clock_val = g.get("clock")
-    is_live = (st_state == "in")
-
     date_str = g.get("start") or ""
     kickoff_time_str = ""
-    kickoff_day_str = ""
     if date_str:
         try:
             kickoff_dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
             if tz_name:
                 try:
-                    local_tz = ZoneInfo(tz_name)
-                    kickoff_dt = kickoff_dt.astimezone(local_tz)
+                    kickoff_dt = kickoff_dt.astimezone(ZoneInfo(tz_name))
                 except Exception:
                     pass
             kickoff_time_str = clock.hm(kickoff_dt)
-            now_local = datetime.now(kickoff_dt.tzinfo)
-            if kickoff_dt.date() != now_local.date():
-                kickoff_day_str = kickoff_dt.strftime("%a ")
         except Exception:
             pass
-
-    if is_live:
-        clock_badge = f"{clock_val} · {st_desc}" if (clock_val and clock_val != "0'") else st_desc
-    elif st_state == "pre":
-        if kickoff_day_str:
-            clock_badge = f"{kickoff_day_str}{kickoff_time_str}"
-        elif kickoff_time_str:
-            clock_badge = f"{said.start} {kickoff_time_str}"
-        else:
-            clock_badge = st_desc
-    else:
-        clock_badge = st_desc
-
     return {
         "id": g.get("id") or "",
-        "league": g.get("league") or league_title or said.event.upper(),
+        "league": g.get("league") or league_title or "",
         "venue": g.get("venue") or "",
-        "clock": clock_badge,
         "status": st_state.upper(),
-        "is_live": is_live,
+        "status_name": g.get("status_name") or "",
+        "status_text": g.get("status_text") or "",
+        "clock_val": g.get("clock") or "",
+        "tz": tz_name or "",
+        "is_live": st_state == "in",
         "kickoff_iso": date_str,
         "kickoff_time": kickoff_time_str,
-        "home_team": g.get("home") or "HOME",
+        "home_team": g.get("home") or "",
         "home_score": g.get("home_score") if g.get("home_score") is not None else "-",
         "home_stats": g.get("home_record") or "",
-        "away_team": g.get("away") or "AWAY",
+        "away_team": g.get("away") or "",
         "away_score": g.get("away_score") if g.get("away_score") is not None else "-",
         "away_stats": g.get("away_record") or "",
         "events_home": ", ".join((g.get("home_scorers") or [])[:3]),
@@ -378,8 +360,8 @@ async def fetch_sports_match(session, entity_or_league="soccer/eng.1", team=None
 
     if isinstance(base_data, dict) and "attributes" in base_data:
         attrs = base_data.get("attributes") or {}
-        home = attrs.get("team_name") or attrs.get("team_abbr") or "HOME"
-        away = attrs.get("opponent_name") or attrs.get("opponent_abbr") or "AWAY"
+        home = attrs.get("team_name") or attrs.get("team_abbr") or ""
+        away = attrs.get("opponent_name") or attrs.get("opponent_abbr") or ""
         h_score = attrs.get("team_score")
         a_score = attrs.get("opponent_score")
         st = str(base_data.get("state") or "PRE").upper()
@@ -387,7 +369,7 @@ async def fetch_sports_match(session, entity_or_league="soccer/eng.1", team=None
         last_play = attrs.get("last_play") or ""
         down_dist = attrs.get("down_distance_text") or ""
         venue = attrs.get("venue") or ""
-        league_name = attrs.get("league") or sport.words(attrs.get("sport")).event.upper()
+        league_name = attrs.get("league") or ""
         return [{
             "id": str(attrs.get("event_id") or attrs.get("id") or f"{home}_{away}"),
             "league": league_name,

@@ -11,17 +11,21 @@ from datetime import datetime, timedelta, timezone
 
 import aiohttp
 
+from render import clock
+from render.words import say
+
 
 def human_ago(dt, now=None):
+    """When it was added, in words ("3 days ago"), in the language spoken (Home Assistant's: entities.py)."""
     now = now or datetime.now(timezone.utc)
     days = (now.date() - dt.astimezone(now.tzinfo).date()).days
     if days <= 0:
-        return "today"
+        return say("feed.today")
     if days == 1:
-        return "yesterday"
+        return say("feed.yesterday")
     if days < 14:
-        return f"{days} days ago"
-    return dt.strftime("%-d %b").lower()
+        return say("feed.days_ago", days)
+    return clock.date(dt, "date").lower()
 
 
 # The parts `detail` is made of, each on its own so a page can show one
@@ -69,7 +73,7 @@ def up_next(items):
     """The first few items, one line each, for a text box that wraps."""
     rows = []
     for d in items[:UP_NEXT_ROWS]:
-        short = d["episode_number"] or (f"{d['new_episodes']} new" if d["kind"] == "series" else d["kind"])
+        short = d["episode_number"] or (say("feed.new", d["new_episodes"]) if d["kind"] == "series" else say("feed.film"))
         rows.append(f"{shorten(d['title'], UP_NEXT_TITLE)} · {short} · {d['added_ago']}")
     return "\n".join(rows)
 
@@ -96,11 +100,11 @@ def describe(it, now=None):
     elif kind == "Series":
         n = it.get("ChildCount") or 0
         title = it.get("Name")
-        detail = f"{n} new episodes" if n != 1 else "1 new episode"
+        detail = say("feed.new_episodes", n)
         new, kind = n, "series"
         length = ""                        # the series' typical episode, not what's new
     else:
-        title, detail = it.get("Name"), "film"
+        title, detail = it.get("Name"), say("feed.film")
         kind = "film"
     ago = human_ago(added, now)
     # The line under the name on a card: which episode, how many, or the film's year and length.
@@ -164,7 +168,7 @@ async def fetch(src, ctx):
     name = src["name"]
     top = out[0] if out else None
     return [
-        (f"sensor.epaper_{name}", top["title"] if top else "nothing new",
+        (f"sensor.epaper_{name}", top["title"] if top else say("feed.nothing_new"),
          {"detail": top["detail"] if top else "", "count": len(out),
           **{k: (top[k] if top else EMPTY[k]) for k in PARTS},
           "up_next": up_next(out),

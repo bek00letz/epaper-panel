@@ -30,7 +30,7 @@ import services
 import timing
 from config import ADDON_VERSION, FRAME_PORT, HA_BASE, HA_TOKEN, INGRESS_GATEWAY, REFRESH, SLEEP_PAGE, WEB_DIR, valid_entity_id
 from fixture import _dated, load_fixture
-from frames import _png, as_int, busy_day, date_for_time, enrich_page_values, refresh_frames, split_page_values
+from frames import _png, as_int, busy_day, date_for_time, device_words, enrich_page_values, refresh_frames, split_page_values
 from ha import curve_series, ha_json, resolve_templates
 from layouts_store import clear_draft, layouts_etag, load_draft, load_layouts, load_sources, sanitize_layouts, save_draft, save_layouts
 from panel_ops import push_panel_update
@@ -447,7 +447,12 @@ async def api_attributes(request):
 
 
 async def api_preview(request):
-    """Render one page spec through the real engine, so WYSIWYG cannot lie."""
+    """Render one page spec through the real engine, so WYSIWYG cannot lie: in the device's language too."""
+    with await device_words(runtime.SESSION, _device(request)):
+        return await _preview(request)
+
+
+async def _preview(request):
     body = await _json(request)
     if not isinstance(body, dict) or not isinstance(body.get("page") or {}, dict):
         raise web.HTTPBadRequest(text="expected {page}")
@@ -554,7 +559,13 @@ async def api_busy_day(request):
 
 async def api_example(request):
     """A page drawn with example values only (examples.py), for preset thumbnails: never the person's own
-    data, and nothing asked of Home Assistant, the internet or a data source. Same body as /api/preview."""
+    data, and nothing asked of Home Assistant, the internet or a data source. Same body as /api/preview,
+    in the device's language."""
+    with await device_words(runtime.SESSION, _device(request)):
+        return await _example(request)
+
+
+async def _example(request):
     body = await _json(request)
     if not isinstance(body, dict) or not isinstance(body.get("page") or {}, dict):
         raise web.HTTPBadRequest(text="expected {page}")
@@ -611,7 +622,7 @@ async def api_catalog(request):
                     for lg in sports.LEAGUES],
         "series": [{"slug": s.slug, "code": s.code, "title": s.title, "aliases": list(s.aliases),
                     "sensor": f"sensor.epaper_racing_{s.slug}"} for s in racing.SERIES.values()],
-        "sport_words": {**{k: said(v) for k, v in sport.SPORTS.items()}, "other": said(sport.OTHER)},
+        "sport_words": {k: said(v) for k, v in sport.catalog().items()},
         "states": states.catalog(),
         "widgets": widgets.catalog(),
         "time_format": timeformat.describe(*await get_home_locale(runtime.SESSION))["resolved"],

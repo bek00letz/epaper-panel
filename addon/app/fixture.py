@@ -105,12 +105,8 @@ def eval_fixture_template(tpl: str, own: bool = True) -> str:
 
     # Handle calendar template
     if '"message": {{ (state_attr(' in s and '"start_time": {{ (state_attr(' in s:
-        return json.dumps([
-            {"time_label": "TODAY 19:30", "summary": "Dinner with Sarah", "sub": "Trattoria Al Borgo"},
-            {"time_label": "TUE 20 OCT", "summary": "Dentist Appointment", "sub": "09:00 AM • Dr. Popa"},
-            {"time_label": "THU 22 OCT", "summary": "Trash & Recycling Pickup", "sub": "Bins out by 07:00"},
-            {"time_label": "FRI 30 OCT", "summary": "Trip to Munich", "sub": "Flight LH1657"}
-        ])
+        from render.layout import sample_agenda             # the same made-up agenda, in the screen's language
+        return json.dumps(sample_agenda(datetime.now()))
 
     if s.startswith("{{") and s.endswith("}}"):
         expr = s[2:-2].strip()
@@ -120,7 +116,7 @@ def eval_fixture_template(tpl: str, own: bool = True) -> str:
     # The clock: `now().strftime('%H:%M')`
     m = re.match(r"^now\(\)\.strftime\(\s*'([^']*)'\s*\)$", expr)
     if m:
-        return datetime.now().strftime(m.group(1))
+        return datetime.now().isoformat(timespec="seconds")      # as the add-on's clock answers (binding.local_value)
 
     # The simple form's no-value guard: `has_value('entity') and <condition>`
     m = re.match(r"^has_value\(\s*'([^']+)'\s*\)\s+and\s+(.+)$", expr)

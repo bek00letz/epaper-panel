@@ -12,14 +12,19 @@ An element may instead describe what it wants:
 
 A raw `value` template still wins when present, so nothing already built
 breaks and power users keep the full language.
+
+A time (when it last changed, a date sensor) is asked of Home Assistant as the time
+itself and written here (`shown`), in the screen's language: Home Assistant's own
+date formats and relative time speak English whatever its language is.
 """
 import json
+import re
 from datetime import datetime
 
 try:
-    from . import clock
+    from . import clock, words
 except ImportError:                     # imported as a top-level module
-    from render import clock
+    from render import clock, words
 
 TIME_FORMATS = {
     "time":     "%H:%M",
@@ -31,16 +36,85 @@ TIME_FORMATS = {
 }
 
 
+# The formats that are dates, written in the screen's language (render/words.py's patterns).
+DATE_FORMATS = ("date", "day_date", "day_full")
+# What shows a time the add-on writes itself, from the time Home Assistant gives.
+TIME_SHOWS = ("last_changed", "last_updated", "date_formatted")
+
+
 def pattern(fmt: str) -> str:
-    """A format's strftime pattern; a time of day follows the panel's 12/24-hour setting (clock.py)."""
+    """A format's strftime pattern; a time of day follows the panel's 12/24-hour setting (clock.py),
+    a date the screen's language."""
     if fmt in ("time", "datetime"):
         return clock.pattern(fmt)
+    if fmt in DATE_FORMATS:
+        return words.date_pattern(fmt)
     return TIME_FORMATS.get(fmt, clock.pattern("time"))
 
 
-def now_text(el, now: datetime | None = None) -> str:
-    """`show: "now"`: the add-on's own clock in the element's format (time by default), never asked of Home Assistant."""
-    return clock.strftime(now or datetime.now(), pattern(el.get("format") or "time"))
+def shows_time(el) -> bool:
+    """Whether an element's binding shows a time the add-on writes (`shown`)."""
+    raw = el.get("value")
+    return not (isinstance(raw, str) and raw.strip()) and el.get("show") in TIME_SHOWS \
+        and bool(str(el.get("entity") or "").strip())
+
+
+def _replaced(el, text: str) -> str:
+    repl_map = el.get("replace")
+    if isinstance(repl_map, dict):
+        for find, repl in repl_map.items():
+            text = text.replace(str(find), str(repl))
+    return text
+
+
+def shown(el, got, now: datetime | None = None) -> str:
+    """A time binding's words from the time Home Assistant gave (an ISO time in its zone): "2 hours",
+    "14:05", "Tue, 21 Oct", in the element's format and the screen's language, with its replacements."""
+    raw = "" if got is None else str(got).strip()
+    try:
+        when = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return _replaced(el, raw)                    # not a time: as it came ("", or Home Assistant's own words)
+    show = el.get("show")
+    fmt = el.get("format") or ("relative" if show in ("last_changed", "last_updated") else "date")
+    if fmt == "relative":
+        now = now or (datetime.now(when.tzinfo) if when.tzinfo else datetime.now())
+        text = clock.span((now - when).total_seconds())
+    else:
+        if show == "date_formatted" and fmt not in TIME_FORMATS:
+            fmt = "date"
+        text = clock.strftime(when, pattern(fmt))
+    return _replaced(el, text)
+
+
+# A template that is only the clock, `{{ now().strftime('%A') }}`: the add-on's clock too.
+CLOCK = re.compile(r"^\s*\{\{\s*now\(\)\.strftime\(\s*'([^'{}\\]*)'\s*\)\s*\}\}\s*$")
+
+
+def clock_pattern(el) -> str | None:
+    """The pattern of an element that shows only the add-on's own clock: `show: "now"` (time by
+    default), or a template that is only now().strftime(...). None for anything else. Its value is
+    the time (local_value), written when the page is drawn (now_text), in the screen's language:
+    Home Assistant's strftime would say the weekday in English whatever its language."""
+    raw = el.get("value")
+    if isinstance(raw, str) and raw.strip():
+        m = CLOCK.match(raw)
+        return m.group(1) if m else None
+    if el.get("show") == "now":
+        return pattern(el.get("format") or "time")
+    return None
+
+
+def now_text(el, now=None) -> str:
+    """The add-on's own clock in the element's format, in the screen's language: `now` is the time
+    (a datetime, or the ISO time local_value gave), or now. A value that isn't a time (the date a
+    sleeping device shows instead, clocktime.py) is shown as it is."""
+    if isinstance(now, str):
+        try:
+            now = datetime.fromisoformat(now)
+        except ValueError:
+            return now
+    return clock.strftime(now or datetime.now(), clock_pattern(el) or pattern("time"))
 
 
 def _quote(s):
@@ -53,12 +127,15 @@ def _quote(s):
     )
 
 
-def template_for(el):
+def template_for(el, readable=False):
     """The Jinja a text/number element should render, or "" if it has none.
 
     Note: `prefix` and `suffix` are applied in Python after template
     resolution and number formatting (`layout.element_text`), so they can
     neither break `float()` on numeric elements nor inject Jinja syntax.
+    A time (TIME_SHOWS) is asked as the time itself, written by `shown`;
+    `readable` writes it as Home Assistant would format it instead, for a
+    person to read and edit (as_template).
     """
     raw = el.get("value")
     if isinstance(raw, str) and raw.strip():
@@ -80,6 +157,8 @@ def template_for(el):
         cond = f"(states['{qent}'] is defined and states['{qent}'] is not none and states['{qent}'].{show} is defined)"
         src = f"states['{qent}'].{show}"
         fmt = el.get("format") or "relative"
+        if not readable:
+            return "{{ (as_timestamp(" + src + ") | timestamp_local) if " + cond + " else '' }}"
         if fmt == "relative":
             core = f"relative_time({src}) if {cond} else ''"
         else:
@@ -98,6 +177,8 @@ def template_for(el):
             src = f"state_attr('{_quote(ent)}', 'start_time')"
         else:
             src = f"states('{_quote(ent)}')"
+        if not readable:
+            return "{{ as_timestamp(" + src + ") | timestamp_local }}"
         core = f"as_timestamp({src}) | timestamp_custom('{pat}')"
     elif show == "unit":
         # The value itself; the renderer turns it into the unit it's shown in
@@ -128,7 +209,7 @@ def as_template(el) -> str:
         return raw
     bound = {k: v for k, v in el.items() if k != "value"}
     ent = str(el.get("entity") or "").strip()
-    tpl = template_for(bound)
+    tpl = template_for(bound, readable=True)
     if not tpl and ent:
         tpl = "{{ states('" + _quote(ent) + "') }}"        # a total today comes from statistics, not a template
     if not tpl:
@@ -151,11 +232,11 @@ def local_value(el, registry):
     there. Returns None when the element is not such a binding, so the caller
     falls back to a template.
     """
+    if clock_pattern(el) is not None:
+        return datetime.now().isoformat(timespec="seconds")      # the time; its words when drawn (now_text)
     raw = el.get("value")
     if isinstance(raw, str) and raw.strip():
         return None
-    if el.get("show") == "now":
-        return now_text(el)
     ent = (el.get("entity") or "").strip()
     info = registry.get(ent) if ent else None
     if info is None:

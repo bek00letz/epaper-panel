@@ -520,7 +520,7 @@ class TestExamples(EditorClient):
 
     def test_each_league_and_series_has_its_own(self):
         self.assertEqual(examples.match("basketball/nba")["home_team"], "LAKERS")
-        self.assertIn("'", examples.match("soccer/eng.1")["clock"])
+        self.assertEqual(sport.badge(examples.match("soccer/eng.1")), "74' · SECOND HALF")
         self.assertEqual(examples.race("indycar")["series"], "INDYCAR")
         self.assertEqual(examples.race("nascar")["standings"][0]["driver"], "LAR")
 
@@ -539,7 +539,7 @@ class TestSportWords(unittest.TestCase):
         self.assertEqual(sport.words("racing").event, "race")
         self.assertEqual(sport.words("rugby/premiership").event, "match")
         self.assertEqual((sport.words("soccer/eng.1").events, sport.words("hockey/nhl").events), ("matches", "games"))
-        self.assertEqual(sport.OTHER.events, "matches")
+        self.assertEqual(sport.catalog()["other"].events, "matches")
 
     def test_every_league_knows_its_busiest_day(self):
         # What the editor's "on a busy day" line counts with: a round, a week, a busy Saturday.
@@ -556,13 +556,15 @@ class TestSportWords(unittest.TestCase):
         return sports._parse_espn_event(ev, "", tz_name="Europe/Bucharest", league=league)
 
     def test_the_start_says_the_sports_word(self):
-        self.assertEqual(self._event("soccer/eng.1")["clock"], "Kick-off 20:00")
-        self.assertEqual(self._event("basketball/nba")["clock"], "Tip-off 20:00")
-        self.assertEqual(self._event("baseball/mlb")["clock"], "First pitch 20:00")
+        self.assertEqual(sport.badge(self._event("soccer/eng.1"), "soccer/eng.1"), "Kick-off 20:00")
+        self.assertEqual(sport.badge(self._event("basketball/nba"), "basketball/nba"), "Tip-off 20:00")
+        self.assertEqual(sport.badge(self._event("baseball/mlb"), "baseball/mlb"), "First pitch 20:00")
 
     def test_with_no_league_name_the_heading_is_the_sports_word(self):
-        self.assertEqual(self._event("soccer/eng.1")["league"], "MATCH")
-        self.assertEqual(self._event("hockey/nhl")["league"], "GAME")
+        for league, word in (("soccer/eng.1", "MATCH"), ("hockey/nhl", "GAME")):
+            self.assertEqual(self._event(league)["league"], "", "the page says it, in its language")
+            el = {"type": "sports_match", "league": league, "x": 24, "y": 14, "w": 744, "h": 208}
+            self.assertIn(word, words_drawn(el, self._event(league)))
 
 
 class TestEveryGame(unittest.TestCase):
@@ -594,7 +596,7 @@ class TestRaceColumns(unittest.TestCase):
 
 
 OFF_SEASON = {"series": "FE", "series_name": "Formula E", "event_name": "Jeddah E-Prix", "circuit": "Jeddah",
-              "status": "OFF", "season": "Season 13", "clock": "OFF SEASON", "detail": "Season starts Fri 18 Dec",
+              "status": "OFF", "season": "Season 13", "next_start": "2026-12-18T12:00:00+00:00", "tz": "UTC",
               "standings": []}
 
 
@@ -621,9 +623,9 @@ class TestOffSeason(Sizes, unittest.TestCase):
         self.assertEqual(said, ["OFF SEASON", "FE · SEASON 13", "Jeddah E-Prix", "Season starts Fri 18 Dec"])
 
     def test_with_no_calendar_out_the_season_is_over(self):
-        value = {**OFF_SEASON, "series": "INDYCAR", "series_name": "IndyCar", "event_name": "", "circuit": "",
-                 "detail": "Next season's calendar isn't out yet"}
+        value = {**OFF_SEASON, "series": "INDYCAR", "series_name": "IndyCar", "event_name": "", "circuit": ""}
         value.pop("season")
+        value.pop("next_start")
         said = words_drawn(self.element, value)
         self.assertEqual(said, ["OFF SEASON", "INDYCAR", "Season over", "Next season's calendar isn't out yet"])
 
@@ -631,7 +633,8 @@ class TestOffSeason(Sizes, unittest.TestCase):
 class TestBeforeARace(Sizes, unittest.TestCase):
     element = {"type": "sports_racing", "series": "nascar", "x": 24, "y": 14, "w": 744, "h": 208}
     value = {"series": "NASCAR", "series_name": "NASCAR", "event_name": "NASCAR Cup Series at Talladega", "circuit": "",
-             "status": "PRE", "clock": "SCHEDULED", "detail": "Race · Sun 25 Oct · 23:00 EET", "standings": []}
+             "status": "PRE", "session": "Race", "session_start": "2026-10-25T21:00:00+00:00", "tz": "Europe/Bucharest",
+             "standings": []}
 
     def test_a_race_no_calendar_places_is_named_in_the_middle_not_left_blank(self):
         said = words_drawn(self.element, self.value)
@@ -642,7 +645,9 @@ class TestExampleTemplates(unittest.TestCase):
     def test_the_clock_and_a_calendars_title_and_date(self):
         from render import binding
         from fixture import eval_fixture_template as ev
-        self.assertEqual(ev("{{ now().strftime('%H:%M') }}", own=False), datetime.now().strftime("%H:%M"))
+        # The clock answers with the time, as the add-on's own does; the page writes it (binding.now_text).
+        el = {"type": "text", "value": "{{ now().strftime('%H:%M') }}"}
+        self.assertEqual(binding.now_text(el, ev(el["value"], own=False)), datetime.now().strftime("%H:%M"))
         self.assertTrue(ev("{{ now().strftime('%A, %-d %B') }}", own=False))
         bins = {"entity": "calendar.bins"}
         self.assertEqual(ev(binding.template_for({**bins, "show": "calendar_title"}), own=False), "Recycling")
@@ -689,11 +694,11 @@ class TestTimeFormat(unittest.TestCase):
         self.assertEqual(sun.facts({"rising": at.isoformat(), "setting": at.isoformat()}, at)[0].value, "2:05 PM")
         self.assertEqual(todo.due_label({"due": at.isoformat()}, at.replace(hour=9))[0], "Today 2:05 PM")
         self.assertEqual(binding.now_text({"show": "now"}, at), "2:05 PM")
-        self.assertIn("%-I:%M %p", binding.template_for({"entity": "sensor.door", "show": "last_changed", "format": "time"}))
+        self.assertEqual(binding.shown({"entity": "sensor.door", "show": "last_changed", "format": "time"}, at.isoformat()), "2:05 PM")
         # A kick-off today reads "Kick-off": today on the real clock, whatever day the tests run.
         kick = datetime.now(TZ).replace(hour=14, minute=5, second=0, microsecond=0)
-        self.assertEqual(sports._parse_espn_event({"date": kick.isoformat(), "competitions": [{"status": {"type": {"state": "pre"}}}]},
-                                                  "", tz_name="Europe/Bucharest", league="soccer/eng.1")["clock"], "Kick-off 2:05 PM")
+        self.assertEqual(sport.badge(sports._parse_espn_event({"date": kick.isoformat(), "competitions": [{"status": {"type": {"state": "pre"}}}]},
+                                                              "", tz_name="Europe/Bucharest", league="soccer/eng.1"), "soccer/eng.1"), "Kick-off 2:05 PM")
         clock.use(False)
         self.assertEqual(clock.hm(at), "14:05")
         self.assertEqual(binding.now_text({"show": "now", "format": "day_full"}, at), "Wednesday, 21 October")

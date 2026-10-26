@@ -42,7 +42,7 @@ import frames
 import health
 import runtime
 import timing as timers                  # paging.timing is a wake's timing
-from render import clock, sleep, theme as T
+from render import clock, sleep, theme as T, words
 
 GLANCE_SECONDS = 120                    # a press during quiet hours shows a page this long
 FIRST_RENDER_SECONDS = 60               # nothing drawn yet: ask again soon
@@ -195,7 +195,7 @@ def reachable(plans: list[dict], cursor: dict, steps: int) -> list[tuple[int, in
 
 def updated_label(at: datetime, now: datetime) -> str:
     """The footer's time: when this page last changed, with the day once it's not today."""
-    return f"updated {clock.hm(at) if at.date() == now.date() else at.strftime('%a ') + clock.hm(at)}"
+    return words.say("footer.updated", time=clock.hm(at) if at.date() == now.date() else clock.day_and_time(at))
 
 
 def digest(data: bytes) -> str:
@@ -353,6 +353,11 @@ def _choose(dev: dict, ahead: Ahead, now: datetime, person: bool) -> str | None:
 async def _draw_now(dev: dict, ahead: Ahead, key: str, now: datetime, art: Art, why: str) -> bytes | None:
     """The exception: draw one picture during a wake, for the size the screen has now."""
     print(f"{dev.get('name')}: drawing its picture while it waits ({why})", flush=True)
+    with await frames.device_words(runtime.SESSION, dev):
+        return await _drawn_now(dev, ahead, key, now, art)
+
+
+async def _drawn_now(dev: dict, ahead: Ahead, key: str, now: datetime, art: Art) -> bytes | None:
     spec = devices.view(dev["id"])                    # placed for the size it has now
     st = ahead.st
     if key == EMPTY_KEY:

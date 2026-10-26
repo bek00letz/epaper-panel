@@ -1,5 +1,38 @@
 # Changelog
 
+## Unreleased
+
+- **The screen speaks Home Assistant's language.** Everything the add-on
+  writes on a screen is now in English, Romanian, Spanish, German or
+  French, whichever Home Assistant is set to (Settings › System ›
+  General). That covers dates and weekdays, "updated", the sleep screen,
+  relative times ("in 3 days", "2 hours"), the to-do list, Countdown and
+  Bin day, race and score badges, weather, planes, energy, notifications,
+  and the messages a page shows when something needs setting up. Words
+  you typed yourself stay exactly as you typed them. In any other
+  language, the screen stays in English for now.
+- **Dates and numbers are written the language's way.** "Mittwoch, 21.
+  Oktober", "miercuri, 21 octombrie", "21,5 °C" with a decimal comma, and
+  the month first in American English. Your 12- or 24-hour setting still
+  decides how times read.
+- **Fixed:** dates written by Home Assistant itself (when a sensor last
+  changed, a date sensor's date, a clock template like the Date page's)
+  were always in English, whatever Home Assistant's language. The add-on
+  now asks Home Assistant for the time and writes the words itself.
+- **Fixed:** the sleep screen's "back at 07:00" ignored the 12-hour
+  setting. It reads "back at 7:00 AM" now when times are 12-hour.
+- **Fixed:** on a status card, the line under a name ("on for 30m") could
+  run under the ACTIVE badge or out of the card. It now gets smaller to
+  fit, and is shortened only if it still doesn't.
+- **Fixed:** a long "set this up" message was cut after three lines with
+  nothing saying so. It now gets smaller first, and ends with "…" if it
+  still doesn't fit.
+- **A TRMNL's pairing messages** are in Home Assistant's language too,
+  with accents taken off ("Gerät" becomes "Geraet"), since its own font
+  has none.
+
+Add-on only: no firmware change, nothing to reinstall on the panel.
+
 ## 0.21.2
 Race pages say which session they're showing. Add-on only; no firmware
 change, so nothing to reinstall on the panel and no Home Assistant restart.

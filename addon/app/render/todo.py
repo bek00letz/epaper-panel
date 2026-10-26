@@ -15,6 +15,7 @@ from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from . import clock
+from .words import cap, say
 
 # What the page shows: everything still to do, or only what's due by today.
 SHOWS = ("open", "due")
@@ -88,15 +89,16 @@ def due_label(item: dict, now: datetime) -> tuple[str, str]:
     if due is None:
         return "", ""
     if _overdue(due, now):
-        return "Overdue", "overdue"
+        return say("todo.overdue"), "overdue"
     day = _day(due)
+    as_dt = datetime.combine(day, time())
     if day == now.date():
-        return (f"Today {clock.hm(due)}" if isinstance(due, datetime) else "Today"), "today"
+        return (say("day.today_at", time=clock.hm(due)) if isinstance(due, datetime) else say("day.today")), "today"
     if day == now.date() + timedelta(days=1):
-        return "Tomorrow", ""
+        return say("day.tomorrow"), ""
     if day < now.date() + timedelta(days=7):
-        return f"{day:%a}", ""
-    return f"{day.day} {day:%b}", ""
+        return cap(clock.date(as_dt, "wd")), ""
+    return clock.date(as_dt, "date"), ""
 
 
 # How rows look (the user's call, 21 Oct). Each row is "invert" (a solid
@@ -154,10 +156,8 @@ def due_sensor(entity_id: str) -> str:
 
 
 def count_label(n: int, show: str) -> str:
-    if show == "due":
-        return f"{n} due"
-    return f"{n} to do"
+    return say("todo.count_due" if show == "due" else "todo.count_open", n)
 
 
 def empty_text(show: str) -> str:
-    return "Nothing due today" if show == "due" else "Nothing to do"
+    return say("todo.empty_due" if show == "due" else "todo.empty_open")

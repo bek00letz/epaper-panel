@@ -35,9 +35,10 @@ _TEAMS = {
     "baseball/mlb": ("YANKEES", "DODGERS", "MLB", "Yankee Stadium"),
     "hockey/nhl": ("RANGERS", "BRUINS", "NHL", "Madison Square Garden"),
 }
-# How a game in progress reads, and a plausible score, by sport.
+# How a game in progress reads, and a plausible score, by sport: ESPN's own words for its clock, or
+# (soccer) its clock and state, said in the screen's language (render/sport.badge).
 _PLAY = {
-    "soccer": ("74' · 2ND HALF", 2, 1, "14 Shots · 58% Poss", "6 Shots · 42% Poss"),
+    "soccer": ({"clock_val": "74'", "status_name": "STATUS_SECOND_HALF"}, 2, 1, "14 Shots · 58% Poss", "6 Shots · 42% Poss"),
     "basketball": ("Q3 · 4:12", 78, 71, "48% FG · 9 3PT", "44% FG · 7 3PT"),
     "football": ("Q3 · 8:40", 17, 14, "312 Yds · 2 TO", "268 Yds · 1 TO"),
     "baseball": ("TOP 7TH", 4, 2, "9 Hits · 0 Err", "6 Hits · 1 Err"),
@@ -49,10 +50,11 @@ def match(league: str) -> dict:
     """A match (or game) in progress in this league."""
     key = str(league or "soccer/eng.1").strip().lower()
     sport = key.split("/", 1)[0]
-    home, away, name, venue = _TEAMS.get(key) or ("HOME", "AWAY", key.split("/")[-1].upper(), "")
+    home, away, name, venue = _TEAMS.get(key) or ("", "", key.split("/")[-1].upper(), "")
     clock, hs, as_, hstat, astat = _PLAY.get(sport, _PLAY["soccer"])
-    out = {"league": name, "venue": venue, "clock": clock, "status": "IN", "home_team": home, "home_score": hs,
-           "home_stats": hstat, "away_team": away, "away_score": as_, "away_stats": astat}
+    out = {"league": name, "venue": venue, "status": "IN", "home_team": home, "home_score": hs,
+           "home_stats": hstat, "away_team": away, "away_score": as_, "away_stats": astat,
+           **(clock if isinstance(clock, dict) else {"clock": clock})}
     if sport == "soccer":
         out.update({"events_home": "Saka (22'), Havertz (58')" if key == "soccer/eng.1" else "", "events_away": ""})
     return out
@@ -72,14 +74,14 @@ _RACES = {"f1": ("Italian Grand Prix", "Autodromo Nazionale Monza", 42, 53),
 
 
 def race(series: str) -> dict:
-    """A race in progress in this series, its badge as a page says it ("RACE · LAP 42/53")."""
-    from sources.racing import badge, series_of
+    """A race in progress in this series (its badge says "RACE · LAP 42/53", in the screen's language)."""
+    from render.race import LEADER
+    from sources.racing import series_of
     ser = series_of(series)
     name, circuit, lap, laps = _RACES.get(ser.slug, _RACES["f1"])
-    gaps = ["LEADER", "+2.1s", "+4.8s", "+7.3s", "+11.0s", "+14.2s", "+18.9s", "+25.1s", "+32.0s", "+38.4s"]
-    words = badge("Race", "IN", lap, laps)
+    gaps = [LEADER, "+2.1s", "+4.8s", "+7.3s", "+11.0s", "+14.2s", "+18.9s", "+25.1s", "+32.0s", "+38.4s"]
     return {"series": ser.code, "series_name": ser.title, "event_name": name, "circuit": circuit, "status": "IN",
-            "session": "Race", "lap": lap, "total_laps": laps, "badge": words, "clock": words[0],
+            "session": "Race", "lap": lap, "total_laps": laps,
             "standings": [{"pos": k + 1, "driver": code, "team": team, "gap": gaps[k]}
                           for k, (code, team) in enumerate(_DRIVERS.get(ser.slug, _DRIVERS["f1"]))]}
 

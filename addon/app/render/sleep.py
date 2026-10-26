@@ -7,17 +7,30 @@ this panel at a distance.
 from __future__ import annotations
 
 import math
+from datetime import datetime
 
+from . import clock
 from . import theme as T
+from .words import say
 
 
-MANUAL_TEXT = "press any button to wake"
+def manual_text() -> str:
+    """What the sleep screen says when it was put to sleep by hand."""
+    return say("sleep.press")
 
 
 def wake_text(reason: str, end: str) -> str:
+    """When it wakes: "back at 07:00" (quiet hours' end, "HH:MM", as the clock shows times), or
+    "back when someone's home"."""
     if str(reason).startswith("away"):
-        return "back when someone’s home"
-    return f"back at {end}"
+        return say("sleep.back_home")
+    try:
+        hour, minute = (int(part) for part in str(end).strip()[:5].split(":"))
+        at = datetime(2000, 1, 1, hour, minute)
+    except ValueError:
+        return say("sleep.back_at", time=str(end))
+    hour = at.hour % 12 or 12 if clock.twelve_hour() else at.hour
+    return say("sleep.back_at", hour, time=clock.hm(at))
 
 
 def render_sleep_page(text: str, orientation: int = 0, display=None):

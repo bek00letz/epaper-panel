@@ -25,6 +25,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 from . import clock, hero
+from .words import cap, say
 from . import theme as T
 from .todo import now_in
 
@@ -70,7 +71,7 @@ def zones(el: dict, home_tz: str | None) -> list[tuple[str, ZoneInfo]]:
             zone = ZoneInfo(name) if name else datetime.now().astimezone().tzinfo
         except Exception:
             continue
-        label = str(z.get("label") or "").strip() or (city(name) if name else "Here")
+        label = str(z.get("label") or "").strip() or (city(name) if name else say("world.here"))
         out.append((label, zone))
     return out
 
@@ -78,7 +79,7 @@ def zones(el: dict, home_tz: str | None) -> list[tuple[str, ZoneInfo]]:
 def _offset(local: datetime, home: datetime) -> str:
     minutes = round((local.utcoffset() - home.utcoffset()).total_seconds() / 60)
     if minutes == 0:
-        return "Same time"
+        return say("world.same_time")
     sign = "+" if minutes > 0 else MINUS
     h, m = divmod(abs(minutes), 60)
     return f"{sign}{h}:{m:02d} h" if m else f"{sign}{h} h"
@@ -92,7 +93,7 @@ def slots(el: dict, home_tz: str | None, now_utc: datetime) -> list[tuple[str, s
         local = now_utc.astimezone(zone)
         days = (local.date() - home.date()).days
         if el.get("asleep"):
-            out.append((label, _offset(local, home), f"{local:%a}" if days else ""))
+            out.append((label, _offset(local, home), cap(clock.date(local, "wd")) if days else ""))
         else:
             mark = "" if not days else (f"+{days}" if days > 0 else f"{MINUS}{-days}")
             out.append((label, clock.hm(local), mark))
@@ -131,7 +132,7 @@ def draw(img, d, box, el: dict, data, *, scale: float = 1.0) -> None:
     data = data if isinstance(data, dict) else {}
     items = slots(el, data.get("tz"), datetime.now(timezone.utc))
     if not items:
-        hero.message(d, box, "Add a city")
+        hero.message(d, box, say("world.add_city"))
         return
     x, y, w, h = box
     rows, cols, px, lpx = layout(len(items), w, h, items, scale)

@@ -33,6 +33,7 @@ import health
 import runtime
 import services
 from render import clock
+from render import race as race_words
 from sources import HOURS_AROUND
 from sources.geo import get_home_timezone
 
@@ -418,8 +419,8 @@ def _pick(races: list[Race], now: datetime, after_hours: float = HOURS_AROUND) -
 
 
 def _day(d) -> str:
-    """A day as the panel says it: "Fri 18 Dec"."""
-    return clock.strftime(d if isinstance(d, datetime) else datetime.combine(d, datetime.min.time()), "%a %-d %b")
+    """A day as the panel says it: "Fri 18 Dec" (render/race.day)."""
+    return race_words.day(d)
 
 
 def _local(dt: datetime, tz_name: str | None) -> datetime:
@@ -429,63 +430,40 @@ def _local(dt: datetime, tz_name: str | None) -> datetime:
         return dt
 
 
-def _at(dt: datetime, tz_name: str | None) -> str:
-    """When a session starts, in the home's time: "Fri 18 Dec · 13:30 GMT"."""
-    loc = _local(dt, tz_name)
-    return f"{_day(loc)} · {clock.hm(loc)} {loc.tzname() or ''}".strip()
-
-
-def badge(session: str, status: str, lap=None, total_laps=None) -> list:
-    """What a race page's badge says, longest first, so a narrow page drops the state before the
-    session's name: ["QUALIFYING · LIVE", "QUALIFYING"], ["RACE · LAP 34/57", "RACE"],
-    ["PRACTICE 3 · FINAL", "PRACTICE 3"]. An order whose session its source didn't say is a
-    "RESULT" (or "LIVE", when the source says it's live), never a session guessed."""
-    state = (f"LAP {lap}/{total_laps}" if lap and total_laps else "LIVE") if status == "IN" else \
-        "FINAL" if status == "POST" else ""
-    name = str(session or "").strip().upper()
-    if not name:
-        return [state if status == "IN" else "RESULT"]
-    return [f"{name} · {state}", name] if state else [name]
-
-
-def _badged(data: dict, words: list) -> dict:
-    data["badge"], data["clock"] = words, words[0]
-    return data
+# What a race page's badge says (render/race.badge), here for what reads races.
+badge = race_words.badge
 
 
 def _describe(ser: Series, pick: Pick, tz_name: str | None) -> dict:
-    """The race data a page draws, from what `_pick` found. Its standings are its session's own,
-    and `session` names them; with none, `detail` says when the session is."""
+    """The race data a page draws, from what `_pick` found: facts, said in the screen's language
+    when it's drawn (render/race.py). Its standings are its session's own, and `session` names
+    them; with none, `session_start` (or `race_day`, or off-season `next_start`) says when."""
     race = pick.race
     data = {"series": ser.code, "series_name": ser.title, "event_name": race.name if race else "",
-            "circuit": race.location if race else "", "status": pick.status, "standings": []}
+            "circuit": race.location if race else "", "status": pick.status, "standings": [], "tz": tz_name or ""}
     if race and race.season:
         data["season"] = race.season
     if pick.last:
         data["last_race_end"] = pick.last.end.isoformat()
     if pick.status == "OFF":
         if race:
-            data["next_start"] = race.start.isoformat() if race.sessions else race.day.isoformat()
-            data["detail"] = "Season starts " + (_day(_local(race.sessions[0][1], tz_name)) if race.sessions else _day(race.day))
-        else:
-            data["detail"] = "Next season's calendar isn't out yet"
-        return _badged(data, ["OFF SEASON"])
+            data["next_start"] = race.sessions[0][1].isoformat() if race.sessions else race.day.isoformat()
+        return data
     if pick.session is None:            # only the race day is known
-        data["detail"] = f"Race day · {_day(race.day)}"
-        return _badged(data, ["SCHEDULED"])
+        data["race_day"] = race.day.isoformat()
+        return data
     label = session_name(pick.session[0])
     data["session"], data["session_start"] = label, pick.session[1].isoformat()
-    data["detail"] = f"{label} · {_at(pick.session[1], tz_name)}"
     if pick.status == "PRE":
-        return _badged(data, ["SCHEDULED"])
+        return data
     if rows := race.order_of(label):
         data["standings"] = [dict(r) for r in rows]
     elif rows := race.order_of(""):     # an order whose session its source didn't say: shown as that
         data["standings"] = [dict(r) for r in rows]
         data["session"] = ""
+        data["badge_status"] = ""       # a RESULT: no source of ours says it's live
         del data["session_start"]
-        return _badged(data, badge("", ""))
-    return _badged(data, badge(label, pick.status))
+    return data
 
 
 def _state(x: dict) -> str:
@@ -516,7 +494,7 @@ def _order(comp: dict) -> tuple:
         tm = c.get("team") or {}
         rows.append({"pos": idx + 1, "driver": str(_driver_code(c.get("athlete") or {}))[:3].upper(),
                      "team": tm.get("displayName") or tm.get("shortDisplayName") or "",
-                     "gap": (c.get("status") or {}).get("displayValue") or ("LEADER" if idx == 0 else "")})
+                     "gap": (c.get("status") or {}).get("displayValue") or (race_words.LEADER if idx == 0 else "")})
     return tuple(rows)
 
 
@@ -576,7 +554,7 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_na
                 "total_laps": attrs.get("total_laps"),
                 "standings": attrs.get("standings")
             }
-            return _badged(data, badge(data["session"], status, data["lap"], data["total_laps"]))
+            return data
 
     # 2. The season, every calendar merged (your own source's races in their place), and the one rule
     now = datetime.now(timezone.utc)
@@ -694,8 +672,8 @@ async def compute_racing_active_window(session, series="f1", pre_buffer_hours=HO
     except Exception:
         local_tz = timezone.utc
 
-    win_start_local = active_win_start.astimezone(local_tz).strftime("%a %H:%M") if active_win_start else None
-    win_end_local = active_win_end.astimezone(local_tz).strftime("%a %H:%M") if active_win_end else None
+    win_start_local = clock.strftime(active_win_start.astimezone(local_tz), "%a %H:%M") if active_win_start else None
+    win_end_local = clock.strftime(active_win_end.astimezone(local_tz), "%a %H:%M") if active_win_end else None
 
     result = {
         "slug": slug,
