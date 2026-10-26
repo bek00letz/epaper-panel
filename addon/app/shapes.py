@@ -22,6 +22,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
+from render import sport
+
 
 @dataclass(frozen=True)
 class Field:
@@ -211,7 +213,7 @@ def _shown_game(v) -> list:
     score = f"{g.get('home_score', '-')}–{g.get('away_score', '-')}" if g else ""
     return [("League", g.get("league") or ""), ("Home", g.get("home_team") or ""), ("Away", g.get("away_team") or ""),
             ("Score", score), ("Status", {"PRE": "Not started", "IN": "Playing", "POST": "Finished"}.get(g.get("status"), "")),
-            ("Start", g.get("kickoff_iso") or ""), ("Clock", g.get("clock") or "")]
+            ("Start", g.get("kickoff_iso") or ""), ("Clock", sport.badge(g) if g else "")]
 
 
 def _shown_plane(v) -> list:

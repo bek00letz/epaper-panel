@@ -11,11 +11,11 @@ from pathlib import Path
 from aiohttp import web
 
 import examples
-from sources.geo import get_home_timezone
+from sources.geo import get_home_timezone, home_language
 import feeds
 import widgets
 import live_data
-from render import binding, clock, epf, icons, layout, sleep, stripmeta, subitems, theme as T
+from render import binding, clock, epf, icons, layout, sleep, stripmeta, subitems, theme as T, words
 import airports
 import companion
 import config
@@ -31,7 +31,7 @@ import share
 import timing
 from config import ADDON_VERSION, FRAME_PORT, HA_BASE, HA_TOKEN, INGRESS_GATEWAY, REFRESH, SLEEP_PAGE, WEB_DIR, valid_entity_id
 from fixture import _dated, load_fixture
-from frames import _png, as_int, busy_day, date_for_time, enrich_page_values, refresh_frames, split_page_values
+from frames import _png, as_int, busy_day, date_for_time, device_words, enrich_page_values, refresh_frames, split_page_values
 from ha import curve_series, ha_json, resolve_templates
 from layouts_store import clear_draft, layouts_etag, load_draft, load_layouts, load_sources, sanitize_layouts, save_draft, save_layouts
 from panel_ops import push_panel_update
@@ -486,7 +486,12 @@ async def api_attributes(request):
 
 
 async def api_preview(request):
-    """Render one page spec through the real engine, so WYSIWYG cannot lie."""
+    """Render one page spec through the real engine, so WYSIWYG cannot lie: in the device's language too."""
+    with await device_words(runtime.SESSION, _device(request)):
+        return await _preview(request)
+
+
+async def _preview(request):
     body = await _json(request)
     if not isinstance(body, dict) or not isinstance(body.get("page") or {}, dict):
         raise web.HTTPBadRequest(text="expected {page}")
@@ -593,7 +598,13 @@ async def api_busy_day(request):
 
 async def api_example(request):
     """A page drawn with example values only (examples.py), for preset thumbnails: never the person's own
-    data, and nothing asked of Home Assistant, the internet or a data source. Same body as /api/preview."""
+    data, and nothing asked of Home Assistant, the internet or a data source. Same body as /api/preview,
+    in the device's language."""
+    with await device_words(runtime.SESSION, _device(request)):
+        return await _example(request)
+
+
+async def _example(request):
     body = await _json(request)
     if not isinstance(body, dict) or not isinstance(body.get("page") or {}, dict):
         raise web.HTTPBadRequest(text="expected {page}")
@@ -650,10 +661,15 @@ async def api_catalog(request):
                     for lg in sports.LEAGUES],
         "series": [{"slug": s.slug, "code": s.code, "title": s.title, "aliases": list(s.aliases),
                     "sensor": f"sensor.epaper_racing_{s.slug}"} for s in racing.SERIES.values()],
-        "sport_words": {**{k: said(v) for k, v in sport.SPORTS.items()}, "other": said(sport.OTHER)},
+        "sport_words": {k: said(v) for k, v in sport.catalog().items()},
         "states": states.catalog(),
         "widgets": widgets.catalog(),
         "time_format": timeformat.describe(*await get_home_locale(runtime.SESSION))["resolved"],
+        # The languages a device can speak, Home Assistant's, and the words presets write on a page
+        # in each (render/words_table.py "page.*", "state.*"): the editor keeps no copy.
+        "languages": {"choices": words.choices(), "home": words.resolve(home_language()),
+                      "home_offered": words.offered(home_language())},
+        "page_words": words.page_words(),
     })
 
 
@@ -812,6 +828,8 @@ def _screen(dev: dict, everyone: list[dict]) -> dict:
         "timing": timing.describe(dev, **kind.timers),
         "setup": kind.setup_flow, "info": kind.describe(dev),
         "entity_suffix": dev.get("entity_suffix") or "",
+        # Its language: its own choice ("" is Home Assistant's), and the one it speaks (render/words.py).
+        "language": dev.get("language") or "", "speaks": words.for_device(dev.get("language"), home_language()),
         # Enough to offer "the same quiet hours as …" when adding a screen.
         "quiet": {k: (dev.get("quiet_hours") or {}).get(k) for k in ("enabled", "start", "end")},
     }
@@ -925,6 +943,11 @@ async def api_devices_update(request):
     fields = {}
     if "name" in body:
         fields["name"] = _clean_name(body["name"], exclude_id=dev["id"])
+    if "language" in body:
+        lang = str(body.get("language") or "").strip().lower()
+        if lang and lang not in words.LANGUAGES:
+            raise web.HTTPBadRequest(text="Pick one of the languages offered, or Same as Home Assistant.")
+        fields["language"] = lang or None                # none: Home Assistant's
     kind = kinds.of(dev)
     try:
         fields.update(timing.settings(dev, body, **kind.timers))
@@ -934,6 +957,8 @@ async def api_devices_update(request):
     old = dict(dev)
     dev = devices.update(dev["id"], **fields) if fields else dev
     note = None
+    if (old.get("language") or None) != (dev.get("language") or None):
+        await _rerender()                              # its words change at its next update
     if kind.sleeps(old) != kind.sleeps(dev):
         await _rerender()                              # what it fetches next follows the new mode
         note = await kind.switched(old, dev)

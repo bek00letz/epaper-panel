@@ -124,10 +124,16 @@ def draw_aside(img, d, fact: Fact, box: Box, value_px: int, top: int | None = No
 def message(d, box: Box, text: str) -> None:
     """What a widget says instead of its fact (nothing to show, something to set up), centred."""
     x, y, w, h = box
-    f = T.font(max(MIN_CAPTION, min(h // 6, 26)), bold=True, text=text)
-    lines = T.wrap_lines(text, f, w)[:3]
-    asc, desc = f.getmetrics()
-    lh = asc + desc
+    for px in range(max(MIN_CAPTION, min(h // 6, 26)), MIN_CAPTION - 1, -1):
+        # Smaller until it's three lines at most and fits the box (longer languages need it), then cut
+        f = T.font(px, bold=True, text=text)
+        lines = T.wrap_lines(text, f, w)
+        asc, desc = f.getmetrics()
+        lh = asc + desc
+        if len(lines) <= 3 and lh * len(lines) <= h:
+            break
+    if len(lines) > 3:
+        lines = lines[:2] + [shorten(lines[2] + " " + " ".join(lines[3:]), f, w)]
     top = y + (h - lh * len(lines)) // 2
     for k, line in enumerate(lines):
         d.text((x + w // 2, top + k * lh), shorten(line, f, w), font=f, fill=T.BLACK, anchor="mt")

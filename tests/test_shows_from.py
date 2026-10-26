@@ -78,7 +78,7 @@ class TestAsTemplate(unittest.TestCase):
         el = {"type": "text", "entity": "sensor.pawpaw_location", "show": "last_changed", "format": "relative", "prefix": "since ", "replace": {"x": "y"}}
         got = binding.as_template(el)
         self.assertTrue(got.startswith("since {{ "), got)
-        self.assertIn(binding.template_for(el)[3:-3], got)
+        self.assertIn(binding.template_for(el, readable=True)[3:-3], got)
 
     def test_before_and_after_with_braces_stay_words(self):
         got = binding.as_template({"type": "text", "entity": "sensor.a", "suffix": " {%"})

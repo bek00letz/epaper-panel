@@ -1,11 +1,13 @@
 // What the add-on knows and the editor reads, never copies (framework review
 // #5–#7): the leagues and racing series it follows, each sport's words, Home
 // Assistant's state words by device, every widget's descriptor (name, icon,
-// box, fields, how often what it shows changes) and the time format. Served
+// box, fields, how often what it shows changes), the time format, the languages a
+// device can speak and the words presets write on a page in each. Served
 // by GET /api/catalog (web.api_catalog) and set once at the editor's start.
 // No imports from util.js: the tests read this file under node.
 
-const C = { leagues: [], series: [], sport_words: {}, states: {}, widgets: {}, time_format: "24h" };
+const C = { leagues: [], series: [], sport_words: {}, states: {}, widgets: {}, time_format: "24h",
+  languages: { choices: [["en", "English"]], home: "en", home_offered: true }, page_words: {} };
 
 export function setCatalog(cat) {
   if (!cat || typeof cat !== "object") return;
@@ -36,6 +38,31 @@ export const sportWord = (league) => sportWords(league).event;
 export function stateWords(entityId, deviceClass) {
   const domain = String(entityId || "").split(".")[0];
   return C.states[deviceClass ? `${domain}.${deviceClass}` : ""] || C.states[domain] || null;
+}
+
+/* The language of the device being edited (its `speaks`, from GET /api/devices): presets write
+   their words on a page in it, when the page is made. From then on they're the person's own. */
+let speaks = "en";
+export function setSpeaking(lang) { speaks = lang || "en"; }
+export const speaking = () => speaks;
+
+/* A word a preset writes on a page ("page.<key>" in the add-on's table), in the device's language,
+   English when it has none; {n} filled in. */
+export function pageWord(key, n) {
+  const row = C.page_words["page." + key] || {};
+  const text = row[speaks] || row.en || key;
+  return n === undefined ? text : text.replace("{n}", String(n));
+}
+
+/* Home Assistant's word for a state (stateWords' "word"), in the device's language. */
+export const stateWord = (word) => (C.page_words["state." + word] || {})[speaks] || word;
+
+/* A page's name as a preset gives it: the device's word, its accents folded, since a page's
+   name is a plain-letter slug ("Météo" is "meteo", "Gerät" is "Geraet"). */
+const FOLD = { ä: "ae", ö: "oe", ü: "ue", Ä: "Ae", Ö: "Oe", Ü: "Ue", ß: "ss" };
+export function pageNameWord(key) {
+  const text = (C.page_words["page.name." + key] || {})[speaks] || (C.page_words["page.name." + key] || {}).en || "";
+  return text.replace(/[äöüÄÖÜß]/g, (c) => FOLD[c]).normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
 }
 
 /* Widgets: their descriptors, in offer order. */

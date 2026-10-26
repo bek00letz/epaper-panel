@@ -537,6 +537,18 @@ up to v0.12.0). `app/legacy.js` keeps the pieces of it this one still uses.
   outline (`app/glyphs.js`), never from a font or a list of its own.
 - **Times of day go through `render/clock.py`**: one 12/24-hour setting
   (`timeformat.py`, Home Assistant's country by default) for every device.
+- **Every word the add-on puts on a screen comes from `render/words_table.py`**
+  through `words.say` (the user's call, 26 Oct): never an English string in a
+  drawer, never Python's own `%a`/`%b` (dates go through `clock.strftime` /
+  `clock.date`). A device speaks its own language (Settings › Device
+  "Language"), else Home Assistant's, else English: `frames.device_words` is
+  the one place that picks it, around each device's drawing. A design's values
+  are fetched once for all its devices, so what's fetched carries facts (a
+  time, a session, a state) and the drawer says them. Presets write their
+  labels in the device's language when the page is made (catalog
+  `page_words`, `pageWord`); after that they're the person's words.
+  `tests/test_words.py` lists any word a language lacks and checks the
+  longest ones fit.
 - **Dynamic units live in the renderer** (`render/units.py`), so the canvas and
   the panel agree. The editor's copy of the tables only draws the example.
 

@@ -212,3 +212,12 @@ class TestAddingScreens(unittest.TestCase):
         el = next(iter(pages.values()))["elements"][0]
         self.assertTrue(el.get("_auto"))
         self.assertLessEqual(el["x"] + el["w"], 400)
+
+
+class TestTheEditorKnowsTheSameKeys(unittest.TestCase):
+    def test_its_list_is_the_add_ons(self):
+        import re
+        from pathlib import Path
+        js = (Path(support.APP) / "web" / "app" / "doc.js").read_text()
+        got = re.search(r"export const ARRANGE_KEYS = \[([^\]]*)\]", js).group(1)
+        self.assertEqual([k.strip().strip('"') for k in got.split(",")], list(arrange.ARRANGE_KEYS))

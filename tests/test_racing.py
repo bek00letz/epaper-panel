@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 import support  # noqa: F401
 
+from render import race as race_words
 from sources import racing
 
 NOW = datetime.now(timezone.utc)
@@ -140,7 +141,7 @@ class TestEverySeriesFetchesItsOwn(unittest.IsolatedAsyncioTestCase):
         web = FakeWeb({"sportstimes": {"races": [{"name": "Live ePrix", "location": "Here",
                                                   "sessions": {"qualifying": started}}]}})
         data = await racing.fetch_racing_data.direct(web, "fe", tz_name="UTC")
-        self.assertEqual((data["status"], data["session"], data["badge"]), ("IN", "Qualifying", ["QUALIFYING · LIVE", "QUALIFYING"]))
+        self.assertEqual((data["status"], data["session"], race_words.forms(data)), ("IN", "Qualifying", ["QUALIFYING · LIVE", "QUALIFYING"]))
         self.assertEqual(data["standings"], [], "no source has its order: the card, not someone else's")
 
     async def test_the_race_window_asks_the_same_places(self):
@@ -173,9 +174,9 @@ class TestBetweenSeasons(unittest.IsolatedAsyncioTestCase):
         web = FakeWeb({f"/_db/fe/{NOW.year}.json": sessions_file(("London ePrix", "London", london)),
                        "formulaecal.com/api/year/%d" % NOW.year: sessions_file(("London ePrix", "London", london))})
         data, win = await self.both(web, "fe")
-        self.assertEqual((data["status"], data["clock"]), ("OFF", "OFF SEASON"))
+        self.assertEqual((data["status"], race_words.forms(data)[0]), ("OFF", "OFF SEASON"))
         self.assertEqual(data["event_name"], "", "never last season's race as if it were on")
-        self.assertEqual(data["detail"], "Next season's calendar isn't out yet")
+        self.assertEqual(race_words.detail(data), "Next season's calendar isn't out yet")
         self.assertTrue(data["last_race_end"].startswith(london.date().isoformat()))
         self.assertFalse(win["is_active"], "the page stays out of the rotation")
 
@@ -188,7 +189,7 @@ class TestBetweenSeasons(unittest.IsolatedAsyncioTestCase):
         data, win = await self.both(web, "fe")
         self.assertEqual((data["status"], data["event_name"], data["circuit"], data["season"]),
                          ("OFF", "Jeddah E-Prix", "Jeddah", "Season 13"))
-        self.assertEqual(data["detail"], "Season starts " + racing._day(jeddah))
+        self.assertEqual(race_words.detail(data), "Season starts " + racing._day(jeddah))
         self.assertFalse(win["is_active"])
 
     async def test_the_official_calendar_names_a_race_and_a_community_one_times_it(self):
@@ -198,13 +199,13 @@ class TestBetweenSeasons(unittest.IsolatedAsyncioTestCase):
                        f"/_db/fe/{NOW.year}.json": sessions_file(("Saudi Arabia ePrix", "Diriyah", race))})
         data = await racing.fetch_racing_data.direct(web, "fe", tz_name="UTC")
         self.assertEqual((data["status"], data["event_name"]), ("PRE", "Jeddah E-Prix"))
-        self.assertTrue(data["detail"].startswith("Qualifying · "), data["detail"])
+        self.assertTrue(race_words.detail(data).startswith("Qualifying · "), race_words.detail(data))
 
     async def test_a_race_known_only_by_its_day_says_race_day(self):
         day = (NOW + timedelta(days=3)).date()
         web = FakeWeb({"fiaformulae.com": official_page(("Jeddah E-Prix", "Jeddah", day.isoformat()))})
         data = await racing.fetch_racing_data.direct(web, "fe", tz_name="UTC")
-        self.assertEqual((data["status"], data["detail"]),
+        self.assertEqual((data["status"], race_words.detail(data)),
                          ("PRE", "Race day · " + racing._day(day)), "a season opener a week off")
 
     async def test_espn_with_no_race_to_come_is_the_off_season_not_its_last_result(self):
@@ -219,7 +220,7 @@ class TestBetweenSeasons(unittest.IsolatedAsyncioTestCase):
             forget()
             data, win = await self.both(FakeWeb({"site.api.espn.com": board}), series)
             self.assertEqual((data["status"], data["standings"]), ("OFF", []), series)
-            self.assertEqual(data["detail"], "Next season's calendar isn't out yet")
+            self.assertEqual(race_words.detail(data), "Next season's calendar isn't out yet")
             self.assertFalse(win["is_active"])
 
     async def test_a_finished_race_shows_its_result_for_a_few_hours_then_the_next(self):
@@ -252,7 +253,7 @@ class TestBetweenSeasons(unittest.IsolatedAsyncioTestCase):
             c["at"] -= racing.CALENDAR_EVERY
         data = await racing.fetch_racing_data.direct(FakeWeb(pages), "fe", tz_name="UTC")
         self.assertEqual((data["status"], data["event_name"]), ("OFF", "Sao Paulo ePrix"))
-        self.assertTrue(data["detail"].startswith("Season starts "))
+        self.assertTrue(race_words.detail(data).startswith("Season starts "))
 
     async def test_a_calendar_that_cant_be_read_keeps_its_last_season(self):
         pages = {f"/_db/fe/{NOW.year}.json": sessions_file(("Mexico City ePrix", "Mexico City", NOW + timedelta(days=2)))}
@@ -349,14 +350,14 @@ class TestTheSessionShown(unittest.IsolatedAsyncioTestCase):
         # Practice 3 ended an hour ago: its own order, named, by ESPN's order (not its list's).
         data = await self.page(weekend(NOW - timedelta(hours=2.5)), done)
         self.assertEqual((data["status"], data["session"], self.leader(data)), ("POST", "Practice 3", "HAM"))
-        self.assertEqual(data["badge"], ["PRACTICE 3 · FINAL", "PRACTICE 3"])
+        self.assertEqual(race_words.forms(data), ["PRACTICE 3 · FINAL", "PRACTICE 3"])
         self.assertEqual([r["pos"] for r in data["standings"]], [1, 2])
         # Austin's Qualifying starts 2 hours after Practice 3 ends, so with Hours after at 2 its result
         # shows until then. At 1, past it: the next session's card, never Practice 3's order under it.
         data = await self.page(weekend(NOW - timedelta(hours=2.7)), done, post_buffer_hours=1.0)
         self.assertEqual((data["status"], data["session"], data["standings"]), ("PRE", "Qualifying", []))
-        self.assertTrue(data["detail"].startswith("Qualifying · "), data["detail"])
-        self.assertEqual(data["badge"], ["SCHEDULED"])
+        self.assertTrue(race_words.detail(data).startswith("Qualifying · "), race_words.detail(data))
+        self.assertEqual(race_words.forms(data), ["SCHEDULED"])
 
     async def test_the_page_leaves_a_result_when_its_gate_does(self):
         done = {"FP1": "post", "FP2": "post", "FP3": "post"}
@@ -374,8 +375,8 @@ class TestTheSessionShown(unittest.IsolatedAsyncioTestCase):
     async def test_during_qualifying(self):
         data = await self.page(weekend(NOW - timedelta(hours=3.8)), {"FP1": "post", "FP2": "post", "FP3": "post", "Qual": "in"})
         self.assertEqual((data["status"], data["session"], self.leader(data)), ("IN", "Qualifying", "ANT"))
-        self.assertEqual(data["badge"], ["QUALIFYING · LIVE", "QUALIFYING"])
-        self.assertEqual(data["clock"], "QUALIFYING · LIVE", "Home Assistant's sensor says the same")
+        self.assertEqual(race_words.forms(data), ["QUALIFYING · LIVE", "QUALIFYING"])
+        self.assertEqual(race_words.forms(data)[0], "QUALIFYING · LIVE", "Home Assistant's sensor says the same")
         self.assertEqual(data["event_name"], "United States Grand Prix")
         forget()
         web = FakeWeb({"site.api.espn.com": gp_board(weekend(NOW - timedelta(hours=3.8)), {}), "sportstimes": None})
@@ -394,7 +395,7 @@ class TestTheSessionShown(unittest.IsolatedAsyncioTestCase):
             data = await self.page(weekend(race - timedelta(hours=26.5)), states)
             if shows:
                 self.assertEqual((data["status"], data["session"], self.leader(data)), ("POST", "Race", "VER"), hours_ago)
-                self.assertEqual(data["badge"], ["RACE · FINAL", "RACE"])
+                self.assertEqual(race_words.forms(data), ["RACE · FINAL", "RACE"])
             else:
                 self.assertEqual((data["status"], data["standings"]), ("OFF", []), "its result for AFTER_HOURS, then not")
 
@@ -407,23 +408,23 @@ class TestTheSessionShown(unittest.IsolatedAsyncioTestCase):
         data = await racing.fetch_racing_data.direct(FakeWeb({"sportstimes": file}), "fe", tz_name="UTC")
         self.assertEqual((data["series"], data["status"], data["session"], data["standings"]),
                          ("FE", "IN", "Qualifying", []))
-        self.assertEqual(data["badge"], ["QUALIFYING · LIVE", "QUALIFYING"])
+        self.assertEqual(race_words.forms(data), ["QUALIFYING · LIVE", "QUALIFYING"])
         forget()
         file["races"][0]["sessions"]["qualifying"] = iso(NOW - timedelta(hours=1.6))
         data = await racing.fetch_racing_data.direct(FakeWeb({"sportstimes": file}), "fe", tz_name="UTC")
-        self.assertEqual((data["status"], data["session"], data["badge"]), ("POST", "Qualifying", ["QUALIFYING · FINAL", "QUALIFYING"]))
+        self.assertEqual((data["status"], data["session"], race_words.forms(data)), ("POST", "Qualifying", ["QUALIFYING · FINAL", "QUALIFYING"]))
 
     async def test_a_sensor_of_your_own_names_its_session_or_shows_a_result(self):
         board = [{"pos": 1, "driver": "VER"}, {"pos": 2, "driver": "NOR"}]
         state = {"state": "in", "attributes": {"standings": board, "session": "qual", "lap": None}}
         data = await racing.fetch_racing_data.direct(FakeWeb({}), "f1", fallback=state, tz_name="UTC")
-        self.assertEqual((data["session"], data["badge"]), ("Qualifying", ["QUALIFYING · LIVE", "QUALIFYING"]))
+        self.assertEqual((data["session"], race_words.forms(data)), ("Qualifying", ["QUALIFYING · LIVE", "QUALIFYING"]))
         state = {"state": "in", "attributes": {"standings": board, "lap": 34, "total_laps": 57, "session": "Race"}}
         data = await racing.fetch_racing_data.direct(FakeWeb({}), "f1", fallback=state, tz_name="UTC")
-        self.assertEqual(data["badge"], ["RACE · LAP 34/57", "RACE"])
+        self.assertEqual(race_words.forms(data), ["RACE · LAP 34/57", "RACE"])
         state = {"state": "post", "attributes": {"standings": board}}
         data = await racing.fetch_racing_data.direct(FakeWeb({}), "f1", fallback=state, tz_name="UTC")
-        self.assertEqual((data["session"], data["badge"]), ("", ["RESULT"]), "a session nobody said isn't guessed")
+        self.assertEqual((data["session"], race_words.forms(data)), ("", ["RESULT"]), "a session nobody said isn't guessed")
 
 
 class TestOneNumberOfHours(unittest.TestCase):
@@ -474,7 +475,7 @@ class TestTheBadge(unittest.TestCase):
             for data in (examples.race(series), practice):
                 for w in (752, 480, 360, 300, 260, 240, 200, 180, 150):     # narrower is cut with an ellipsis
                     texts = self.drawn(data, w)
-                    self.assertTrue(any(data["badge"][-1] in t for t in texts), (series, w, texts))
+                    self.assertTrue(any(race_words.forms(data)[-1] in t for t in texts), (series, w, texts))
         self.assertIn("RACE · LAP 42/53", self.drawn(examples.race("f1"), 752), "the whole of it where there's room")
         self.assertIn("RACE", self.drawn(examples.race("f1"), 240), "the session's name, its state left out")
         self.assertIn("F1 · PRACTICE 3", self.drawn(practice, 200), "the badge steps aside: the header says it")

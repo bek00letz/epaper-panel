@@ -100,7 +100,7 @@ def date_for_time(page: dict, vals: dict, now: datetime) -> tuple[dict, dict, se
         if el.get("type") == "world_clock":
             el["asleep"] = True                 # each city: hours ahead or behind (render/worldclock.py)
             continue
-        text = _strftime(now, "%A" if dated else "%A %-d %B")
+        text = clock.date(now, "weekday" if dated else "weekday_date")
         out_vals[i] = text
         if el.get("size"):
             # The box was sized for "12:34"; the day must fit it too, never larger than the clock was.

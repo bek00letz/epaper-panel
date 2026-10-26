@@ -23,6 +23,7 @@ import runtime
 import services
 import shapes
 import widgets
+from render import race as race_words, sport
 from sources import flights, racing, sports
 
 
@@ -156,7 +157,7 @@ class OwnSource(unittest.IsolatedAsyncioTestCase):
         got = racing._describe(racing.SERIES["f1"], racing._pick(shapes.read("racing", races), NOW), "UTC")
         self.assertEqual(got["status"], "IN")
         self.assertEqual([r["driver"] for r in got["standings"]], ["ABC", "DEF"])
-        self.assertEqual((got["session"], got["badge"]), ("", ["RESULT"]),
+        self.assertEqual((got["session"], race_words.forms(got)), ("", ["RESULT"]),
                          "it doesn't say whose result it is: shown as a result, never as the race's")
 
     async def test_a_result_shows_under_its_own_session_only(self):
@@ -168,15 +169,15 @@ class OwnSource(unittest.IsolatedAsyncioTestCase):
             return racing._describe(racing.SERIES["f1"], racing._pick(shapes.read("racing", races), NOW, after), "UTC")
         got = page(0.5)
         self.assertEqual((got["status"], got["session"], len(got["standings"])), ("IN", "Qualifying", 2))
-        self.assertEqual(got["badge"], ["QUALIFYING · LIVE", "QUALIFYING"])
+        self.assertEqual(race_words.forms(got), ["QUALIFYING · LIVE", "QUALIFYING"])
         got = page(2.5)
-        self.assertEqual((got["status"], got["session"], got["badge"][0]), ("POST", "Qualifying", "QUALIFYING · FINAL"))
+        self.assertEqual((got["status"], got["session"], race_words.forms(got)[0]), ("POST", "Qualifying", "QUALIFYING · FINAL"))
         got = page(2.5, after=0.5)
         self.assertEqual((got["status"], got["session"], got["standings"]), ("PRE", "Race", []), "past its Hours after")
         got = page(20, race_ago=0.5)
         self.assertEqual((got["status"], got["session"], got["standings"]), ("IN", "Race", []),
                          "Qualifying's order is never the race's")
-        self.assertEqual(got["badge"], ["RACE · LIVE", "RACE"])
+        self.assertEqual(race_words.forms(got), ["RACE · LIVE", "RACE"])
 
     async def test_a_scores_page_reads_your_games(self):
         el = {"type": "sports_match", "league": "soccer/eng.1", "data": {"source": "g1"}}
@@ -185,7 +186,7 @@ class OwnSource(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([g["home_team"] for g in got], ["Home Town", "Finished FC"], "playing first")
         live = got[0]
         self.assertEqual((live["home_score"], live["away_score"], live["status"], live["league"]), (2, 1, "IN", "Our League"))
-        self.assertIn("31'", live["clock"])
+        self.assertIn("31'", sport.badge(live))
         self.assertEqual(live["events_home"], "Someone (12')")
         with live_data.waiting_for_fresh():
             self.assertTrue(await widgets._match_on(self.session, el, "UTC"), "a game on now opens its window")

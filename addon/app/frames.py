@@ -8,7 +8,7 @@ import urllib.parse
 from datetime import datetime, timedelta, timezone
 from email.utils import formatdate
 
-from render import binding, countdown, epf, layout, sleep, stripmeta, subitems, theme as T, todo, units
+from render import binding, countdown, epf, layout, sleep, stripmeta, subitems, theme as T, todo, units, words
 import cadence
 import conditions
 import config
@@ -572,8 +572,8 @@ async def draw_category(plan: dict, sub_count: int, page_no: int, *, footer: dic
 def empty_page(orient: int, display: str, clock: str | None = None):
     """What a screen shows when its design has no pages. `clock`: the footer's time (now)."""
     cw, _ = T.canvas_dims(orient, display=display)
-    page = {"elements": [{"type": "text", "value": "no pages", "x": 24, "y": 60, "w": cw - 48, "h": 120}]}
-    return layout.render_page(page, {}, clock=clock or clock_text(datetime.now()), label="empty",
+    page = {"elements": [{"type": "text", "value": words.say("empty.no_pages"), "x": 24, "y": 60, "w": cw - 48, "h": 120}]}
+    return layout.render_page(page, {}, clock=clock or clock_text(datetime.now()), label=words.say("empty.label"),
                               orientation=orient, display=display)
 
 
@@ -667,6 +667,14 @@ def follow_widget_parts() -> list[str]:
     return done
 
 
+async def device_words(session, dev: dict):
+    """The language a device's pictures are drawn in, as a `with` block (render/words.speaking):
+    its own (Settings › Device), else Home Assistant's, with Home Assistant's country's way of
+    writing dates. The one place that says it."""
+    country, language = await get_home_locale(session)
+    return words.speaking(words.for_device((dev or {}).get("language"), language), country)
+
+
 async def _refresh_all(session) -> dict[str, Frames]:
     timeformat.apply(*await get_home_locale(session))          # 12- or 24-hour, for every device
     await follow_battery_rules(session)
@@ -683,7 +691,8 @@ async def _refresh_all(session) -> dict[str, Frames]:
             st = states.get(dev["design"])
             if st is None:
                 st = states[dev["design"]] = await design_state(session, dev["design"], spec)
-            out[dev["id"]] = await _refresh_device(session, dev, spec, st)
+            with await device_words(session, dev):           # its words, in its language
+                out[dev["id"]] = await _refresh_device(session, dev, spec, st)
         except Exception as exc:
             # One screen that can't be drawn must not cost the others.
             print(f"{dev['name']}: render failed: {health.describe(exc)}", flush=True)

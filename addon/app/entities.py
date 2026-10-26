@@ -15,8 +15,8 @@ from config import HA_BASE, HA_TOKEN, PUBLISH_VIA_STATES_API, RETIRED_SENSORS, v
 from ha import call_ha_service, ha_json
 from layouts_store import load_layouts, load_sources
 from sources.flights import fetch_overhead_aircraft, place_of
-from render import sport, todo
-from sources.geo import get_home_timezone
+from render import race as race_words, sport, todo, words
+from sources.geo import get_home_locale, get_home_timezone
 from sources import needs_you
 from sources.ha_services import fetch_todo_items, todo_list_id
 from sources.racing import SERIES, compute_racing_active_window, fetch_racing_data, series_slug
@@ -143,8 +143,12 @@ async def publish_sources(session):
         name = f"Source “{slug}”"
 
         async def fetch(src=src, name=name):
+            # Its words ("3 days ago") are in its sensor, for every page and Home Assistant alike: in
+            # Home Assistant's language.
+            country, language = await get_home_locale(session)
             try:
-                rows = await feeds.run_one(src, {**ctx, "session": runtime.SESSION or session})
+                with words.speaking(language, country):
+                    rows = await feeds.run_one(src, {**ctx, "session": runtime.SESSION or session})
             except Exception as exc:
                 health.fail(name, exc, kind="source")
                 raise
@@ -347,6 +351,10 @@ async def publish_computed(session):
             sensor_id = f"sensor.epaper_racing_{slug}"
             r_data = await fetch_racing_data(session, slug, tz_name=r_tz, own=own, post_buffer_hours=post_b)
             r_icon = SERIES[slug].icon
+            country, language = await get_home_locale(session)
+            with words.speaking(language, country):             # its words as a page says them, in Home Assistant's language
+                r_detail = race_words.detail(r_data) if r_data else ""
+                r_clock = race_words.forms(r_data)[0] if r_data else ""
             await publish_entity(
                 session, sensor_id, win_info["state"],
                 {
@@ -357,8 +365,8 @@ async def publish_computed(session):
                     "event_name": (r_data or {}).get("event_name") or win_info["event_name"],
                     "circuit": (r_data or {}).get("circuit") or win_info["circuit"],
                     "session_name": win_info["session_name"],
-                    "detail": (r_data or {}).get("detail", ""),
-                    "clock": (r_data or {}).get("clock", ""),
+                    "detail": r_detail,
+                    "clock": r_clock,
                     "window_mode": win_info["window_mode"],
                     "window_start": win_info["window_start"],
                     "window_start_local": win_info["window_start_local"],

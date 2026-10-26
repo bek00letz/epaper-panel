@@ -92,6 +92,11 @@ async def get_home_coordinates(session):
     return _home_location_cache["lat"], _home_location_cache["lon"]
 
 
+def home_language() -> str | None:
+    """Home Assistant's language as last read (get_home_locale reads it), for what can't wait on it."""
+    return _ha_config_cache.get("language")
+
+
 async def get_home_locale(session) -> tuple[str | None, str | None]:
     """Home Assistant's country and language (from the same /config read as its time zone)."""
     await get_home_timezone(session)

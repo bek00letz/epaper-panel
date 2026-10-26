@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from . import clock, hero
 from . import theme as T
 from .todo import now_in
+from .words import cap, say
 
 ITEM_PX = 30            # a row's words, as the to-do list's
 HEAD_PX = 22            # the heading and its count
@@ -44,15 +45,15 @@ def age_label(raw, now: datetime, asleep: bool = False) -> str:
         if asleep:
             return clock.hm(when)
         if ago < timedelta(minutes=1):
-            return "now"
+            return say("ago.now")
         if ago < timedelta(hours=1):
-            return f"{int(ago.total_seconds() // 60)} min"
-        return f"{int(ago.total_seconds() // 3600)} h"
+            return say("ago.minutes", int(ago.total_seconds() // 60))
+        return say("ago.hours", int(ago.total_seconds() // 3600))
     if days == 1:
-        return "Yesterday"
+        return say("day.yesterday")
     if days < 7:
-        return f"{when:%a}"
-    return f"{when.day} {when:%b}"
+        return cap(clock.date(when, "wd"))
+    return clock.date(when, "date")
 
 
 def _rows(item_px: int) -> tuple[int, int]:
@@ -112,16 +113,16 @@ def _messages(items, msg_f, text_w: int, row_h: int, avail_h: int) -> list[list[
 def draw_notifications(img, d, box, el: dict, data, *, scale: float = 1.0) -> None:
     x, y, w, h = box
     item_px, head_px = _s(ITEM_PX, scale, 12, 96), _s(HEAD_PX, scale, 11, 64)
-    title = str(el.get("title") or "").strip() or "Notifications"
+    title = str(el.get("title") or "").strip() or say("needs.notifications")
     if not isinstance(data, dict):                   # not read yet: the heading, nothing else
         _heading(d, x, y, w, title, "", head_px)
         return
     now = now_in(data.get("tz"))
     items = [i for i in data.get("items") or [] if isinstance(i, dict) and i.get("title")]
-    _heading(d, x, y, w, title, f"{len(items)} new" if items else "", head_px)
+    _heading(d, x, y, w, title, say("needs.new", len(items)) if items else "", head_px)
     top = y + head_px + max(8, item_px // 3)
     if not items:
-        _empty(d, x, top, w, y + h, "No notifications", item_px)
+        _empty(d, x, top, w, y + h, say("needs.no_notifications"), item_px)
         return
 
     row_h, pitch = _rows(item_px)
@@ -158,13 +159,13 @@ def draw_notifications(img, d, box, el: dict, data, *, scale: float = 1.0) -> No
                 r0 += asc + desc
             r0 += max(6, row_h // 4)
     if more:
-        d.text((text_x, r0 + row_h // 2), f"and {more} more", font=item_f, fill=T.BLACK, anchor="lm")
+        d.text((text_x, r0 + row_h // 2), say("and_more", more), font=item_f, fill=T.BLACK, anchor="lm")
 
 
 # ------------------------------------------------------------------ updates
 
 def count_words(n: int) -> str:
-    return f"{n} waiting"
+    return say("needs.waiting", n)
 
 
 def draw_updates(img, d, box, el: dict, data, *, scale: float = 1.0) -> None:
@@ -173,7 +174,7 @@ def draw_updates(img, d, box, el: dict, data, *, scale: float = 1.0) -> None:
     from sources.needs_you import GROUP_NAMES, short_name
     x, y, w, h = box
     item_px, head_px = _s(ITEM_PX, scale, 12, 96), _s(HEAD_PX, scale, 11, 64)
-    title = str(el.get("title") or "").strip() or "Updates"
+    title = str(el.get("title") or "").strip() or say("needs.updates")
     if not isinstance(data, dict):
         _heading(d, x, y, w, title, "", head_px)
         return
@@ -181,7 +182,7 @@ def draw_updates(img, d, box, el: dict, data, *, scale: float = 1.0) -> None:
     _heading(d, x, y, w, title, count_words(len(items)) if items else "", head_px)
     top = y + head_px + max(8, item_px // 3)
     if not items:
-        _empty(d, x, top, w, y + h, "Everything's up to date", item_px)
+        _empty(d, x, top, w, y + h, say("needs.up_to_date"), item_px)
         return
 
     row_h, pitch = _rows(item_px)
@@ -189,7 +190,8 @@ def draw_updates(img, d, box, el: dict, data, *, scale: float = 1.0) -> None:
     label_f = T.font(max(10, round(item_px * 0.8)), bold=True)
     gap = max(16, round(item_px * 0.6))
     groups = [g for g in GROUP_NAMES if any(u.get("group") == g for u in items)]
-    col = max(T.text_width(GROUP_NAMES[g], label_f) for g in groups) + gap
+    group_name = lambda g: say(f"needs.group.{g}") if g in GROUP_NAMES else ""
+    col = max(T.text_width(group_name(g), label_f) for g in groups) + gap
     # The group's column only where the names keep most of the row; otherwise each says its full name.
     by_column = col <= w * 0.34
     shown, more = _fit(len(items), y + h - top, row_h, pitch)
@@ -197,7 +199,7 @@ def draw_updates(img, d, box, el: dict, data, *, scale: float = 1.0) -> None:
     for k, u in enumerate(items[:shown]):
         mid = top + k * pitch + row_h // 2
         if by_column and (k == 0 or items[k - 1].get("group") != u.get("group")):
-            d.text((x, mid), GROUP_NAMES.get(u.get("group"), ""), font=label_f, fill=T.BLACK, anchor="lm")
+            d.text((x, mid), group_name(u.get("group")), font=label_f, fill=T.BLACK, anchor="lm")
         right = x + w
         version = "Installing" if u.get("installing") else str(u.get("version") or "")
         # A version is shown whole or not at all ("2026.…" says nothing); the name needs the room more.
@@ -207,7 +209,7 @@ def draw_updates(img, d, box, el: dict, data, *, scale: float = 1.0) -> None:
         name = short_name(u) if by_column else u["name"]
         d.text((text_x, mid), hero.shorten(name, item_f, max(1, right - text_x)), font=item_f, fill=T.BLACK, anchor="lm")
     if more:
-        d.text((text_x, top + shown * pitch + row_h // 2), f"and {more} more", font=item_f, fill=T.BLACK, anchor="lm")
+        d.text((text_x, top + shown * pitch + row_h // 2), say("and_more", more), font=item_f, fill=T.BLACK, anchor="lm")
 
 
 # ------------------------------------------------------------------ the badge

@@ -33,6 +33,7 @@ import asyncio
 import re
 import secrets
 import time
+import unicodedata
 import urllib.parse
 from collections import OrderedDict, deque
 from datetime import datetime
@@ -49,7 +50,8 @@ import reach
 import runtime
 from entities import publish_entity
 from kinds import WRONG_KEYS, Kind, device_for, of as kind_of, register, shown
-from render import sleep, theme as T
+from render import sleep, theme as T, words
+from sources.geo import get_home_locale
 
 PAIR_SECONDS = 600                      # how long "Add new device" listens for a new TRMNL
 KEEP_IMAGES = 4                         # pictures kept for the device to fetch after /api/display
@@ -59,9 +61,16 @@ MAC_RE = re.compile(r"^[0-9A-F]{2}(:[0-9A-F]{2}){5}$")
 HOST_RE = re.compile(r"^[A-Za-z0-9.\-]+(:[0-9]{1,5})?$|^\[[0-9A-Fa-f:.]+\](:[0-9]{1,5})?$")
 FRIENDLY_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
-# What the TRMNL shows on its own screen (its font is plain ASCII).
-NOT_PAIRING = "Not paired yet. In Home Assistant, open e-Paper and add this TRMNL as a device."
-PAIRED_MESSAGE = "Paired with e-Paper. Your pages come next."
+# What the TRMNL shows on its own screen (its font is plain ASCII), in Home Assistant's language:
+# it isn't a device of ours yet, so it has no language of its own.
+NOT_PAIRING = "trmnl.not_paired"
+PAIRED_MESSAGE = "trmnl.paired"
+
+
+async def _said(key: str, **params) -> str:
+    country, language = await get_home_locale(runtime.SESSION)
+    with words.speaking(language, country):
+        return words.say(key, **params)
 
 
 class Trmnl(Kind):
@@ -216,8 +225,15 @@ def _friendly_id() -> str:
             return fid
 
 
+# Letters its font hasn't, written as people write them without it ("Gerät" is "Geraet").
+_PLAIN = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "Ä": "Ae", "Ö": "Oe", "Ü": "Ue", "ß": "ss",
+                        "’": "'", "‘": "'", "“": '"', "”": '"', "–": "-", "—": "-", "…": "...", "\u202f": " "})
+
+
 def _ascii(text: str) -> str:
-    return re.sub(r"[^\x20-\x7e]", "", str(text))[:120]
+    """The text in its font's letters: accents taken off ("încă" is "inca"), anything else left out."""
+    plain = unicodedata.normalize("NFKD", str(text).translate(_PLAIN))
+    return re.sub(r"[^\x20-\x7e]", "", "".join(c for c in plain if not unicodedata.combining(c)))[:120]
 
 
 def _refused(message: str) -> web.Response:
@@ -241,11 +257,11 @@ async def api_setup(request):
     dev = _waiting_device()
     if mac is None or dev is None:
         WRONG_KEYS.wrong(who)                          # someone knocking: slows down a scan
-        return _refused(NOT_PAIRING)
+        return _refused(await _said(NOT_PAIRING))
     owner = next((d for d in devices.all_devices()
                   if d.get("kind") == Trmnl.id and (d.get("setup") or {}).get("mac") == mac), None)
     if owner is not None and owner["id"] != dev["id"]:
-        return _refused(f"This TRMNL is already the device {owner.get('name')}. Pair it again from there.")
+        return _refused(await _said("trmnl.already", name=owner.get("name")))
     key = devices.rekey(dev["id"])                      # a key it had before stops working
     setup = dev.get("setup") or {}
     fid = setup.get("friendly_id") or _friendly_id()
@@ -258,7 +274,7 @@ async def api_setup(request):
     return web.json_response({"status": 200, "api_key": key, "friendly_id": fid,
                               # Empty: no setup picture. One would replace the device's own logo,
                               # and the first page follows in the same wake (bl.cpp).
-                              "image_url": "", "message": PAIRED_MESSAGE})
+                              "image_url": "", "message": _ascii(await _said(PAIRED_MESSAGE))})
 
 
 # ---------------------------------------------------------------- a wake

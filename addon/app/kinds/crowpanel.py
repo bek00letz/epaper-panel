@@ -240,7 +240,7 @@ class CrowPanel(Kind):
         if not alert:
             auto = quiet_active and qh.get("sleep_screen", True)
             text = (sleep.wake_text(quiet_reason, qh.get("end") or "07:00") if quiet_active
-                    else sleep.MANUAL_TEXT)
+                    else sleep.manual_text())
             sleep_img = await asyncio.to_thread(sleep.render_sleep_page, text, orient, display)
             imgs.insert(0, T.orient_for_panel(T.to_1bit(sleep_img), orient, display=display))
             cat_offsets = [0] + [o + 1 for o in cat_offsets]

@@ -178,7 +178,10 @@ class TestKeptAndWaiting(unittest.TestCase):
 @unittest.skipUnless(shutil.which("node"), "no node to read the editor's presets")
 class TestThePreset(unittest.TestCase):
     def run_js(self, body):
-        script = f"import * as P from {json.dumps(str(APP_JS / 'presets.js'))};\n{body}"
+        # With the add-on's catalog, as the editor has it: a preset's words come from it.
+        from test_presets import catalog_json
+        script = (f"import * as Cat from {json.dumps(str(APP_JS / 'catalog.js'))}; import * as P from {json.dumps(str(APP_JS / 'presets.js'))};\n"
+                  f"Cat.setCatalog({json.dumps(catalog_json())});\n{body}")
         return json.loads(subprocess.run(["node", "--input-type=module", "-e", script], capture_output=True, text=True, check=True).stdout)
 
     def test_bin_day_is_a_countdown_that_repeats(self):

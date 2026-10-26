@@ -8,17 +8,19 @@ from __future__ import annotations
 
 from . import hero
 from . import theme as T
+from . import words
+from .words import say
 
 ICONS = {"solar": "mdi:white-balance-sunny", "grid_import": "mdi:transmission-tower-import",
          "grid_export": "mdi:transmission-tower-export", "entity": "mdi:lightning-bolt"}
-VERBS = {"solar": "made", "grid_import": "bought", "grid_export": "sold", "entity": ""}
-WHEN = {"day": "today", "month": "this month", "year": "this year"}
-MISSING = {"solar": "Add solar panels to your Energy dashboard",
-           "grid_import": "Add the grid to your Energy dashboard",
-           "grid_export": "Add the grid to your Energy dashboard",
-           "grid": "Add the grid to your Energy dashboard",
-           "entity": "Choose a sensor",
-           "prices": "Add prices to the grid in your Energy dashboard"}
+PERIODS = ("day", "month", "year")
+# What's missing, as words (render/words_table.py "energy.missing.*").
+MISSING = {"solar": "solar", "grid_import": "grid", "grid_export": "grid", "grid": "grid", "entity": "entity",
+           "prices": "prices"}
+
+
+def missing(what: str) -> str:
+    return say(f"energy.missing.{MISSING.get(what, 'entity')}")
 
 # Currency symbols people expect, and whether they go before the number.
 # Anything else is shown by its code after the number ("4.20 CHF").
@@ -31,19 +33,19 @@ CURRENCY = {"USD": ("$", True), "GBP": ("£", True), "JPY": ("¥", True), "CNY":
 def kwh(v: float) -> str:
     v = abs(float(v))
     if v >= 1000:
-        return f"{v / 1000:.1f} MWh"
-    return f"{v:.1f} kWh" if v < 10 else f"{v:.0f} kWh"
+        return f"{words.number(v / 1000, 1)} MWh"
+    return f"{words.number(v, 1 if v < 10 else 0)} kWh"
 
 
 def watts(v: float) -> str:
     v = abs(float(v))
     if v >= 1000:
-        return f"{v / 1000:.1f} kW"
-    return f"{v:.0f} W"
+        return f"{words.number(v / 1000, 1)} kW"
+    return f"{words.number(v, 0)} W"
 
 
 def money(v: float, currency: str) -> str:
-    amount = f"{abs(float(v)):,.2f}"
+    amount = words.number(abs(float(v)), 2, group=True)
     sym, before = CURRENCY.get(str(currency or "").upper(), (str(currency or "").upper(), False))
     if not sym:
         return amount
@@ -93,12 +95,11 @@ def draw_total(img, d, box, el: dict, data, *, scale: float = 1.0) -> None:
     if not isinstance(data, dict):
         return
     source = el.get("source") if el.get("source") in ICONS else "solar"
-    period = el.get("period") if el.get("period") in WHEN else "month"
+    period = el.get("period") if el.get("period") in PERIODS else "month"
     if data.get("total") is None:
-        hero.message(d, box, MISSING.get(data.get("missing") or source, "Nothing to show yet"))
+        hero.message(d, box, missing(data.get("missing") or source))
         return
-    verb = VERBS[source]
-    caption = f"{verb} {WHEN[period]}" if verb else WHEN[period]
+    caption = say(f"energy.{source}.{period}")
     fact = hero.Fact(kwh(data["total"]), caption, ICONS[source])
     values = data.get("bars") or []
     hero.draw(img, d, box, fact, beside=(lambda b: bars(d, _chart_box(b), values)) if values else None, scale=scale)
@@ -110,15 +111,15 @@ def draw_grid(img, d, box, el: dict, data, *, scale: float = 1.0) -> None:
     w, today = data.get("watts"), data.get("today")
     if w is None and today is None:
         if data.get("missing") or el.get("entity"):
-            hero.message(d, box, MISSING["entity" if el.get("entity") else "grid"])
+            hero.message(d, box, missing("entity" if el.get("entity") else "grid"))
         return
     if w is not None:
-        caption = "buying from the grid" if w > 0 else "selling to the grid"
+        caption = say("energy.buying") if w > 0 else say("energy.selling")
         if abs(w) < 1:
-            caption = "not using the grid"
+            caption = say("energy.idle")
         fact = hero.Fact(watts(w), caption, "mdi:transmission-tower")
     else:                                   # no power sensor: today's balance instead
-        fact = hero.Fact(kwh(today), "bought today" if today >= 0 else "sold today", "mdi:transmission-tower")
+        fact = hero.Fact(kwh(today), say("energy.grid_import.day" if today >= 0 else "energy.grid_export.day"), "mdi:transmission-tower")
     values = data.get("bars") or []
     hero.draw(img, d, box, fact, scale=scale,
               beside=(lambda b: bars(d, _chart_box(b), values, signed=True)) if any(v for v in values if v) else None)
@@ -129,13 +130,13 @@ def draw_cost(img, d, box, el: dict, data, *, scale: float = 1.0) -> None:
         return
     today, month, cur = data.get("today"), data.get("month"), data.get("currency") or ""
     if today is None:
-        hero.message(d, box, MISSING["prices"])
+        hero.message(d, box, missing("prices"))
         return
     sells = bool(data.get("sells"))
 
-    def words(v, when):                     # net of both ways when you sell, so one word says it
-        return f"earned {when}" if v >= 0 and sells else f"spent {when}"
+    def said(v, when):                      # net of both ways when you sell, so one word says it
+        return say(f"energy.earned.{when}" if v >= 0 and sells else f"energy.spent.{when}")
 
-    main = hero.Fact(money(today, cur), words(today, "today"), "mdi:cash-plus" if today >= 0 and sells else "mdi:cash-minus")
-    aside = hero.Fact(money(month, cur), words(month, "this month")) if month is not None else None
+    main = hero.Fact(money(today, cur), said(today, "day"), "mdi:cash-plus" if today >= 0 and sells else "mdi:cash-minus")
+    aside = hero.Fact(money(month, cur), said(month, "month")) if month is not None else None
     hero.draw(img, d, box, main, aside=aside, scale=scale, share=0.36)

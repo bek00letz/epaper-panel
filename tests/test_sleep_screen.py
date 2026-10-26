@@ -53,7 +53,7 @@ class TestSleepScreen(unittest.IsolatedAsyncioTestCase):
     def test_wake_text(self):
         self.assertEqual(sleep.wake_text("schedule (23:00–07:00)", "07:00"), "back at 07:00")
         self.assertEqual(sleep.wake_text("away (person.alex: not_home)", "07:00"), "back when someone’s home")
-        self.assertEqual(sleep.MANUAL_TEXT, "press any button to wake")
+        self.assertEqual(sleep.manual_text(), "press any button to wake")
 
     def test_a_user_page_cannot_be_named_like_the_sleep_screen(self):
         self.assertIsNone(config.PAGE_RE.match(config.SLEEP_PAGE))

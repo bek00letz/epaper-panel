@@ -32,6 +32,7 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 
 from . import clock, hero
+from .words import say, speaking
 from .todo import now_in
 
 ICONS = {"date": "mdi:calendar-clock", "bins": "mdi:trash-can"}
@@ -87,7 +88,7 @@ def next_bins(el: dict, now: datetime) -> tuple[date, list[str]] | None:
         else:
             period = 7 * every
             when = first + timedelta(days=-(-(start - first).days // period) * period)
-        name = str(b.get("name") or "").strip() or "Bins"
+        name = str(b.get("name") or "").strip() or say("countdown.bins")
         if best is None or when < best:
             best, names = when, [name]
         elif when == best and name not in names:
@@ -138,7 +139,12 @@ def _next_day(el: dict, now: datetime) -> date | None:
 
 def status(el: dict, now: datetime) -> dict:
     """{"state": "passed", "on"} | {"state": "waiting", "from"} | {"state": "showing"}: what the
-    page does now, said in the editor (the strip's tile, the page's note)."""
+    page does now, said in the editor (the strip's tile, the page's note), so in its language: English."""
+    with speaking("en"):
+        return _status(el, now)
+
+
+def _status(el: dict, now: datetime) -> dict:
     if passed(el, now):
         when, _ = _at(el.get("at"), now.tzinfo)
         return {"state": "passed", "on": _date_words(when.date(), now.date())}
@@ -163,12 +169,12 @@ def page_passed(page: dict, now: datetime) -> bool:
 
 def _days_words(days: int, numbers: bool) -> str:
     if numbers:
-        return f"{days} day" if days == 1 else f"{days} days"
-    return "Today" if days == 0 else "Tomorrow" if days == 1 else f"In {days} days"
+        return say("day.days", days)
+    return say("day.today") if days == 0 else say("day.tomorrow") if days == 1 else say("day.in_days", days)
 
 
 def _date_words(d: date, today: date) -> str:
-    return f"{d:%A} {d.day} {d:%B}" + ("" if d.year == today.year else f" {d.year}")
+    return clock.date(datetime.combine(d, datetime.min.time()), "weekday_date" if d.year == today.year else "weekday_date_year")
 
 
 def describe(el: dict, now: datetime) -> hero.Fact | tuple[hero.Fact, hero.Fact] | None:
@@ -182,18 +188,19 @@ def describe(el: dict, now: datetime) -> hero.Fact | tuple[hero.Fact, hero.Fact]
             return None
         when, names = got
         days = (when - today).days
-        return (hero.Fact(_days_words(days, says_numbers(el)), " and ".join(names), icon),
+        return (hero.Fact(_days_words(days, says_numbers(el)), say("and").join(names), icon),
                 hero.Fact(_date_words(when, today)))
     when, timed = target(el, now)
     if when is None:
         return None
     name = str(el.get("name") or "").strip()
     if _passed_at(when, timed, now):
-        return hero.Fact("Passed", name, icon), hero.Fact(_date_words(when.date(), today))
+        return hero.Fact(say("countdown.passed"), name, icon), hero.Fact(_date_words(when.date(), today))
     days = (when.date() - today).days
     if timed and days == 0:
         mins = max(0, round((when - now).total_seconds() / 60))
-        big = "Now" if mins < 1 else f"In {mins} min" if mins < 60 else f"In {round(mins / 60)} hours" if mins >= 90 else "In 1 hour"
+        big = say("time.now") if mins < 1 else say("time.in_minutes", mins) if mins < 60 \
+            else say("time.in_hours", round(mins / 60)) if mins >= 90 else say("time.in_hours", 1)
     else:
         big = _days_words(days, False)
     aside = _date_words(when.date(), today) + (f", {clock.hm(when)}" if timed else "")
@@ -204,7 +211,7 @@ def draw(img, d, box, el: dict, data, *, scale: float = 1.0) -> None:
     now = now_in((data or {}).get("tz") if isinstance(data, dict) else None)
     got = describe(el, now)
     if got is None:
-        hero.message(d, box, "Choose a date" if el.get("to") != "bins" else "Add a bin and its day")
+        hero.message(d, box, say("countdown.choose_date") if el.get("to") != "bins" else say("countdown.add_bin"))
         return
     main, aside = got
     hero.draw(img, d, box, main, aside=aside, scale=scale)

@@ -10,8 +10,9 @@ from __future__ import annotations
 import re
 from datetime import datetime
 
-from . import hero
+from . import clock, hero
 from . import theme as T
+from .words import cap, say
 from .todo import now_in
 
 TITLE_LINES = 2
@@ -21,7 +22,7 @@ ICONS = {"music": "mdi:music", "tvshow": "mdi:television-classic", "episode": "m
 
 def _episode(season, episode) -> str:
     try:
-        return f"S{int(season)} E{int(episode)}"
+        return say("media.episode", season=int(season), episode=int(episode))
     except (TypeError, ValueError):
         return ""
 
@@ -36,8 +37,8 @@ def describe(item: dict) -> tuple[str, str, str]:
     where = str(item.get("player") or "").strip()
     app = str(item.get("app") or "").strip()
     if not title:                       # some apps say only which app is playing
-        title, app = app or "Playing", ""
-    parts = [p for p in (by, ep, where if not app else f"{app} on {where}" if where else app) if p]
+        title, app = app or say("media.playing"), ""
+    parts = [p for p in (by, ep, where if not app else say("media.app_on", app=app, where=where) if where else app) if p]
     kind = str(item.get("kind") or "").lower()
     icon = ICONS.get(kind) or ("mdi:television-classic" if series else "mdi:music" if item.get("artist") else "mdi:play-circle")
     return title, " · ".join(parts), icon
@@ -47,7 +48,7 @@ def draw_now_playing(img, d, box, el: dict, data, *, scale: float = 1.0) -> None
     if not isinstance(data, list):
         return
     if not data:
-        hero.message(d, box, "Nothing playing")
+        hero.message(d, box, say("media.nothing"))
         return
     try:
         item = data[max(0, int(el.get("sub_index", 0))) % len(data)]
@@ -115,10 +116,10 @@ def _start(ev: dict, tz) -> datetime | None:
 def day_label(when: datetime, now: datetime) -> str:
     days = (when.date() - now.date()).days
     if days <= 0:
-        return "Tonight" if when.hour >= 17 else "Today"
+        return say("day.tonight") if when.hour >= 17 else say("day.today")
     if days == 1:
-        return "Tomorrow"
-    return f"{when:%A}" if days < 7 else f"{when.day} {when:%b}"
+        return say("day.tomorrow")
+    return cap(clock.date(when, "weekday")) if days < 7 else clock.date(when, "date")
 
 
 def upcoming(events, now: datetime, days: int = 7) -> list[dict]:
@@ -139,7 +140,7 @@ def upcoming(events, now: datetime, days: int = 7) -> list[dict]:
 def draw_tv_week(img, d, box, el: dict, data, *, scale: float = 1.0) -> None:
     x, y, w, h = box
     if not str(el.get("entity") or "").strip():
-        hero.message(d, box, "Choose a calendar of shows")
+        hero.message(d, box, say("media.choose_calendar"))
         return
     if not isinstance(data, dict):
         return
@@ -149,7 +150,7 @@ def draw_tv_week(img, d, box, el: dict, data, *, scale: float = 1.0) -> None:
     except (TypeError, ValueError):
         days = 7
     rows = upcoming(data.get("events"), now, days)
-    title = str(el.get("title") or ("On TV this week" if days == 7 else f"On TV, next {days} days")).strip()
+    title = str(el.get("title") or (say("media.on_tv_week") if days == 7 else say("media.on_tv_days", days))).strip()
     row_px = max(hero.MIN_CAPTION + 2, min(round(h * 0.135 * scale), round(h * 0.25)))
     head_px = max(hero.MIN_CAPTION, round(row_px * 0.85))
     hf = T.font(head_px, bold=False)
@@ -160,7 +161,7 @@ def draw_tv_week(img, d, box, el: dict, data, *, scale: float = 1.0) -> None:
         d.text((x + w, y), count, font=T.font(head_px, bold=True), fill=T.BLACK, anchor="ra")
     top = y + round(head_px * 1.9)
     if not rows:
-        hero.message(d, (x, top, w, y + h - top), "Nothing new this week" if days == 7 else "Nothing new coming up")
+        hero.message(d, (x, top, w, y + h - top), say("media.none_week") if days == 7 else say("media.none_soon"))
         return
     bold, reg = T.font(row_px, bold=True), T.font(row_px, bold=False)
     asc, desc = bold.getmetrics()
@@ -177,4 +178,4 @@ def draw_tv_week(img, d, box, el: dict, data, *, scale: float = 1.0) -> None:
         d.text((x + w, ry), r["ep"], font=f, fill=T.BLACK, anchor="ra")
         d.text((x + day_w, ry), hero.shorten(r["show"], f, w - day_w - ep_w - round(row_px * 0.6)), font=f, fill=T.BLACK)
     if len(shown) < len(rows):
-        d.text((x + day_w, top + len(shown) * pitch), f"and {len(rows) - len(shown)} more", font=reg, fill=T.BLACK)
+        d.text((x + day_w, top + len(shown) * pitch), say("and_more", len(rows) - len(shown)), font=reg, fill=T.BLACK)
