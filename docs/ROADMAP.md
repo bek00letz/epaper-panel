@@ -56,7 +56,7 @@ browser setup stands on: a ready-made firmware per model has to build.
 
 | Item | You get | Size | Firmware | Depends on |
 |---|---|---|---|---|
-| Setup from the browser | Plug the panel into the computer, press Install in the editor, pick Wi-Fi, and it pairs like a TRMNL. No ESPHome add-on, no YAML. Today's YAML path stays, under Advanced, until this has proven itself | large | yes | every offered size building (0.13); a ready-made firmware built for each release and model; a design pass first (see Open questions) |
+| Setup from the browser (**parked 26 Oct**: see `docs/design/browser-setup.md`; today's route loses its key paste first, then the Seeed on TRMNL's firmware decides) | Plug the panel into the computer, press Install in the editor, pick Wi-Fi, and it pairs like a TRMNL. No ESPHome add-on, no YAML. Today's YAML path stays, under Advanced, until this has proven itself | large | yes | every offered size building (0.13); a ready-made firmware built for each release and model; a design pass first (see Open questions) |
 | The screen speaks your language | Dates, weekdays, "updated", the sleep screen and presets in Home Assistant's language, or a device's own. First: English, Romanian, Spanish, German, French (the user's pick, 26 Oct; in progress) | medium | no | translators for languages beyond the first few |
 | The editor in your language | The editor's own words (menus, sheets, settings) in the same languages as the screen | large | no | the screen's words first; one word table shared with them |
 | Share a page | Export a page or a screen's pages as a file; importing asks for your own sensors, like New page does | medium | no | – |

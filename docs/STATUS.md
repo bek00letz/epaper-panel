@@ -37,7 +37,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 |---|---|---|
 | Share a page as a file | share-page (local_6b664e91-…) | building |
 | The screen's words in en, ro, es, de, fr | screen-languages (local_4918c8a5-…) | building |
-| Setup from the browser: research and options | browser-setup-research (local_cc8ac9d4-…) | researching; a design session with the user follows |
+| No key paste: Home Assistant sets the panel's key (today's ESPHome route) | no-key-paste (worker local_cc8ac9d4-…) | building |
 
 Worker notes are in the notes folders (`break-it-0.12.0.md`,
 `timers-addon.md`, `firmware-013.md`, `fixes-0131.md`, `editor-polish.md`,
@@ -98,9 +98,11 @@ Next one when a good amount of work has piled up since v0.15.0.
    Assistant's address and a Cloudflare tunnel works (20 Oct, once the
    integration's entry existed). Still untried: a second Wi-Fi network, and
    "Through your own address".
-6. **Setup from the browser** (large, firmware; started 26 Oct): a design pass
-   with the user first on how the panel keeps its Home Assistant actions and
-   entities without a per-panel key (ROADMAP, open question).
+6. **Setup from the browser: parked** (the user, 26 Oct). Researched
+   (`docs/design/browser-setup.md`, with the user's answers): the key is
+   solved by Home Assistant 2026.8, but owning a whole install line is a lot
+   to carry. Instead today's route drops the key paste, and the decision
+   waits for the Seeed 7.5" on TRMNL's firmware.
 7. **Started 26 Oct:** share a page (export and import as a file), and the
    screen's words in Home Assistant's language: English, Romanian, Spanish,
    German, French (the user's pick). Still to come: a "how it went" report,
