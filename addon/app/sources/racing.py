@@ -33,6 +33,7 @@ import health
 import runtime
 import services
 from render import clock
+from sources import HOURS_AROUND
 from sources.geo import get_home_timezone
 
 
@@ -99,7 +100,6 @@ def series_of(value) -> Series:
 # ---------------------------------------------------------------- a season: every calendar, merged
 
 AFTER_HOURS = 4.0                       # a finished race's result stays this long
-HOURS_AROUND = 2.0                      # a page's "Hours before" and "Hours after" a session, until it says
 OFF_SEASON_LEAD = timedelta(days=7)     # a season's first race further off than this: off-season
 SEASON_GAP = timedelta(weeks=10)        # a longer gap than this before a race: it opens a season
 CALENDAR_EVERY = 3600.0                 # calendars change rarely

@@ -273,14 +273,7 @@ async def publish_computed(session):
             lg = el.get("league") or "soccer/eng.1"
             el_tz = el.get("timezone") or home_tz
             team = el.get("team")
-            try:
-                pre_b = float(el.get("pre_buffer_hours")) if el.get("pre_buffer_hours") is not None else 2.0
-            except (ValueError, TypeError):
-                pre_b = 2.0
-            try:
-                post_b = float(el.get("post_buffer_hours")) if el.get("post_buffer_hours") is not None else 2.0
-            except (ValueError, TypeError):
-                post_b = 2.0
+            pre_b, post_b = widgets.hours_around(el, "pre_buffer_hours"), widgets.hours_around(el, "post_buffer_hours")
             leagues_to_publish.append((lg, pre_b, post_b, el_tz, team, shapes.own_source(el)))
             wanted.add(f"sensor.epaper_sports_{league_slug(lg)[1]}")
 
@@ -338,7 +331,7 @@ async def publish_computed(session):
             ser = el.get("series") or "f1"
             el_tz = el.get("timezone") or home_tz
             w_mode = el.get("window_mode") or "session"
-            pre_b, post_b = widgets._hours(el, "pre_buffer_hours"), widgets._hours(el, "post_buffer_hours")
+            pre_b, post_b = widgets.hours_around(el, "pre_buffer_hours"), widgets.hours_around(el, "post_buffer_hours")
             series_to_publish.append((ser, pre_b, post_b, w_mode, el_tz, shapes.own_source(el)))
             wanted.add(f"sensor.epaper_racing_{series_slug(ser)[0]}")
 

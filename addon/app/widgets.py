@@ -29,11 +29,12 @@ from typing import Any, Awaitable, Callable
 import examples
 import shapes
 from render import arrange, layout, sport, subitems
-from sources import batteries, energy, flights, ha_services, home, needs_you, racing, sports, station
+from sources import HOURS_AROUND, batteries, energy, flights, ha_services, home, needs_you, racing, sports, station
 
 # A default box: "fill" takes the content area less `inset` (from `y`); otherwise each size is clamped to it.
 FILL = {"fill": True, "y": 14, "inset": 20}
 BORDER = {"kind": "toggle", "key": "show_border", "label": "Border", "def": True}
+AROUND = f"{HOURS_AROUND:g}"        # what "Hours before" and "Hours after" show until a page says
 
 
 def sel(key, label, options, default):
@@ -184,18 +185,19 @@ class Widget:
 
 # ---------------------------------------------------------------- gates: answered from the element itself
 
-def _hours(el: dict, key: str) -> float:
-    """A page's "Hours before" or "Hours after": the one reading of it, for its gate and its data."""
+def hours_around(el: dict, key: str) -> float:
+    """A page's "Hours before" or "Hours after" (`pre_buffer_hours`, `post_buffer_hours`): the one
+    reading of it, for its gate, its data and its window sensor (entities.py)."""
     try:
-        return float(el.get(key)) if el.get(key) is not None else 2.0
+        return float(el.get(key)) if el.get(key) is not None else HOURS_AROUND
     except (TypeError, ValueError):
-        return 2.0
+        return HOURS_AROUND
 
 
 async def _match_on(session, el, home_tz):
     win = await sports.compute_sports_active_window(session, el.get("league") or "soccer/eng.1",
-                                                    pre_buffer_hours=_hours(el, "pre_buffer_hours"),
-                                                    post_buffer_hours=_hours(el, "post_buffer_hours"),
+                                                    pre_buffer_hours=hours_around(el, "pre_buffer_hours"),
+                                                    post_buffer_hours=hours_around(el, "post_buffer_hours"),
                                                     tz_name=el.get("timezone") or home_tz, team=el.get("team"),
                                                     own=shapes.own_source(el))
     return bool((win or {}).get("is_active"))               # None: not fetched yet
@@ -203,8 +205,8 @@ async def _match_on(session, el, home_tz):
 
 async def _race_on(session, el, home_tz):
     win = await racing.compute_racing_active_window(session, el.get("series") or "f1",
-                                                    pre_buffer_hours=_hours(el, "pre_buffer_hours"),
-                                                    post_buffer_hours=_hours(el, "post_buffer_hours"),
+                                                    pre_buffer_hours=hours_around(el, "pre_buffer_hours"),
+                                                    post_buffer_hours=hours_around(el, "post_buffer_hours"),
                                                     window_mode=el.get("window_mode") or "session",
                                                     tz_name=el.get("timezone") or home_tz, own=shapes.own_source(el))
     return bool((win or {}).get("is_active"))
@@ -402,7 +404,7 @@ async def _racing(session, el, ctx):
     # Its "Hours after" is its gate's (_race_on): a session's result shows as long as the page does.
     got = await racing.fetch_racing_data(session, el.get("entity") or el.get("series") or "f1", fallback=ctx.prev,
                                          tz_name=el.get("timezone") or ctx.home_tz, own=shapes.own_source(el),
-                                         post_buffer_hours=_hours(el, "post_buffer_hours"))
+                                         post_buffer_hours=hours_around(el, "post_buffer_hours"))
     return got or None
 
 
@@ -559,7 +561,7 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
                    sel("max_drivers", "Leaderboard", [["6", "Top 6, extra large"], ["8", "Top 8, large"], ["10", "Top 10"]], "10"),
                    {"kind": "window", "label": "Only show around sessions"},
                    sel("window_mode", "Around", [["session", "Each session"], ["weekend", "The whole weekend"]], "session"),
-                   num("pre_buffer_hours", "Hours before", "2", 0, 24, 0.5), num("post_buffer_hours", "Hours after", "2", 0, 24, 0.5),
+                   num("pre_buffer_hours", "Hours before", AROUND, 0, 24, 0.5), num("post_buffer_hours", "Hours after", AROUND, 0, 24, 0.5),
                    toggle("show_teams", "Team names", True), text("timezone", "Time zone", "Home Assistant's"), BORDER,
                    {"kind": "data"}, {"kind": "sensorid"}]),
     Widget("sports_match", "Scores", "ball", _match,
@@ -576,7 +578,7 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
                    entity("entity", "Team Tracker sensor"),
                    # {event}: the league's sport's word for one (render/sport.py): "match", "game".
                    {"kind": "window", "label": "Only show on {event} days"},
-                   num("pre_buffer_hours", "Hours before", "2", 0, 24, 0.5), num("post_buffer_hours", "Hours after", "2", 0, 24, 0.5),
+                   num("pre_buffer_hours", "Hours before", AROUND, 0, 24, 0.5), num("post_buffer_hours", "Hours after", AROUND, 0, 24, 0.5),
                    text("timezone", "Time zone", "Home Assistant's"), toggle("show_stats", "Team stats", True),
                    toggle("show_scorers", "Scorers", True), BORDER, {"kind": "data"}, {"kind": "sensorid"}]),
 )}

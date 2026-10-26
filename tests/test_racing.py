@@ -426,6 +426,31 @@ class TestTheSessionShown(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((data["session"], data["badge"]), ("", ["RESULT"]), "a session nobody said isn't guessed")
 
 
+class TestOneNumberOfHours(unittest.TestCase):
+    """"Hours before" and "Hours after" until a page says: one number, for the gate, the data, the
+    window sensors and the editor (the coordinator's review, 26 Oct)."""
+
+    def test_every_reader_has_the_same_default(self):
+        import inspect
+        import pathlib
+        import widgets
+        from sources import HOURS_AROUND, sports
+        for fn in (racing.compute_racing_active_window, racing.fetch_racing_data, sports.compute_sports_active_window):
+            params = inspect.signature(fn.direct).parameters
+            for key in ("pre_buffer_hours", "post_buffer_hours"):
+                if key in params:
+                    self.assertEqual(params[key].default, HOURS_AROUND, (fn.__name__, key))
+        for key in ("pre_buffer_hours", "post_buffer_hours"):
+            self.assertEqual(widgets.hours_around({}, key), HOURS_AROUND)
+            self.assertEqual(widgets.hours_around({key: "x"}, key), HOURS_AROUND)
+            self.assertEqual(widgets.hours_around({key: 0.5}, key), 0.5)
+            for t in ("sports_racing", "sports_match"):
+                field = next(f for f in widgets.get(t).describe()["fields"] if f.get("key") == key)
+                self.assertEqual(float(field["ph"]), HOURS_AROUND, (t, key))
+        presets = (pathlib.Path(racing.__file__).parents[1] / "web" / "app" / "presets.js").read_text()
+        self.assertNotIn("buffer_hours:", presets, "a preset leaves them unset, so they follow the one number")
+
+
 class TestTheBadge(unittest.TestCase):
     """A leaderboard is never drawn without its session's name: in the badge, shorter where it must
     be, or in the header where the badge steps aside."""
