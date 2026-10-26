@@ -1,5 +1,32 @@
 # Changelog
 
+## Unreleased
+
+Add-on only; no firmware change.
+
+- **A race page says which session it's showing.** The black badge names
+  the session and how it stands: "QUALIFYING · LIVE", "PRACTICE 3 ·
+  FINAL", "RACE · LAP 34/57" (laps when its source gives them). Where it
+  doesn't fit, it drops the state, then moves into the header, so a
+  leaderboard always says whose it is. For every series.
+- **Fixed:** the order shown could be another session's. On a Saturday
+  morning before Qualifying, the page showed Practice 3's order with
+  nothing saying so. Now a session's order shows while it runs and for the
+  page's "Hours after" once it ends (the same hours that keep the page in
+  the rotation), then the next session's time. After the race, its result
+  stays for 4 hours, as before.
+- **Your own race data can say whose result it is.** A source or sensor
+  that gives a race's result can add `result_session` ("Qualifying"), and
+  the page shows it under that session only. Without it, the page labels
+  it "RESULT" rather than guess. A Home Assistant sensor with its own
+  standings can name its session in a `session` attribute.
+- **Fixed:** a race series' sensor in Home Assistant gave its session as
+  the calendar's own short code ("gp", "Qual") in `session_name`. It says
+  "Race", "Qualifying" now, as the page does.
+- **Fixed:** every driver on a race page had a medium-tyre box next to
+  their name, made up by the add-on: ESPN doesn't say which tyres anyone
+  is on. A tyre is drawn now only when your own source or sensor gives one.
+
 ## 0.21.1
 Add-on only; no firmware change, so nothing to reinstall on the panel
 and no Home Assistant restart. Update the add-on.

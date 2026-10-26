@@ -11,6 +11,7 @@ import aiohttp
 
 import runtime
 from render import clock, sport
+from sources import HOURS_AROUND
 from sources.geo import get_home_timezone
 
 
@@ -219,7 +220,8 @@ def league_slug(entity_or_league) -> tuple[str, str]:
 
 
 @runtime.live(60)
-async def compute_sports_active_window(session, entity_or_league="soccer/eng.1", pre_buffer_hours=2.0, post_buffer_hours=2.0, tz_name=None, team=None, own=""):
+async def compute_sports_active_window(session, entity_or_league="soccer/eng.1", pre_buffer_hours=HOURS_AROUND,
+                                       post_buffer_hours=HOURS_AROUND, tz_name=None, team=None, own=""):
     if not tz_name:
         tz_name = await get_home_timezone(session)
     endpoint_path, slug = league_slug(entity_or_league)

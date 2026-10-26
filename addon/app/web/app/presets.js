@@ -37,16 +37,17 @@ const watchShowIf = (ent) => `{{ states('${watchEnt(ent)}_count') | int(0) > 0 }
 const boxed = (el) => ({ x: 18, y: 14, w: 756, h: 222, show_border: true, ...el });
 
 // The leagues and series come from the add-on's catalog (catalog.js), never a copy here:
-// Scores and Race weekend offer exactly what it fetches, in its order.
+// Scores and Race weekend offer exactly what it fetches, in its order. Their Hours before and
+// after are left unset: the add-on's own number (sources.HOURS_AROUND) until the person changes them.
 const memo = (fn) => { let key, val; return () => { const k = fn.key(); if (k !== key) { key = k; val = fn(); } return val; }; };
 const leagueLooks = Object.assign(() => leagues().map((lg) => ({
   id: "sports_match_" + lg.slug, name: lg.name, tier: "when", widget: true,
   note: `Shows on ${(lg.words || {}).event || "match"} days.`,
-  make: () => [boxed({ type: "sports_match", league: lg.path, team: "", entity: "", pre_buffer_hours: 2, post_buffer_hours: 2, auto_window: true })],
+  make: () => [boxed({ type: "sports_match", league: lg.path, team: "", entity: "", auto_window: true })],
 })), { key: () => leagues() });
 const seriesLooks = Object.assign(() => series().map((sr) => ({
   id: "sports_racing_" + sr.slug, name: sr.title, tier: "when", widget: true,
-  make: () => [boxed({ type: "sports_racing", series: sr.slug, entity: "", window_mode: "session", pre_buffer_hours: 2, post_buffer_hours: 2, auto_window: true })],
+  make: () => [boxed({ type: "sports_racing", series: sr.slug, entity: "", window_mode: "session", auto_window: true })],
 })), { key: () => series() });
 const LEAGUE_LOOKS = memo(leagueLooks), SERIES_LOOKS = memo(seriesLooks);
 
@@ -269,7 +270,7 @@ export const PRESETS = [
   {
     id: "race_weekend", group: "sports", title: "Race weekend", was: "Formula 1",
     get kw() { return "racing motorsport grand prix f1 " + series().map((x) => `${x.title} ${x.code}`).join(" "); },
-    desc: "The top ten with gaps and tyres while a session runs; the countdown to the next one the rest of the week.",
+    desc: "The top ten and their gaps while a session runs; the countdown to the next one the rest of the week.",
     asks: "", choose: "Series", name: (look) => look.name,
     get looks() { return SERIES_LOOKS(); },
   },

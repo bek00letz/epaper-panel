@@ -98,8 +98,9 @@ def _each(items: list, item: str):
 
 
 def _read_races(body) -> list:
-    """{"races": [{"race", "place", "sessions": [{"session", "start"}] or {session: start}, "result": [...]}]}
-    -> racing.Race, by start."""
+    """{"races": [{"race", "place", "sessions": [{"session", "start"}] or {session: start}, "result": [...],
+    "result_session"}]} -> racing.Race, by start. A result is its session's ("result_session"); without
+    one, the page shows it as a result whose session it doesn't know."""
     from sources import racing
     out = []
     for i, r in _each(_list(body, "races", "race"), "race"):
@@ -122,9 +123,11 @@ def _read_races(body) -> list:
         for j, row in enumerate(r.get("result") or [], 1):
             if isinstance(row, dict) and _text(row.get("driver")):
                 result.append({"pos": int(_number(row.get("position")) or j), "driver": _text(row.get("driver"))[:3].upper(),
-                               "team": _text(row.get("team")), "gap": _text(row.get("gap")), "tyre": ""})
+                               "team": _text(row.get("team")), "gap": _text(row.get("gap"))})
+        of = _text(r.get("result_session"))
         race = racing._timed(name, _text(r.get("place")), sessions, _text(r.get("season")))
-        out.append(racing.Race(race.name, race.location, race.day, race.sessions, race.season, tuple(result)))
+        out.append(racing.Race(race.name, race.location, race.day, race.sessions, race.season,
+                               ((racing.session_name(of) if of else "", "", tuple(result)),) if result else ()))
     return sorted(out, key=lambda x: x.start)
 
 
@@ -177,6 +180,7 @@ def _soon(days: float, hour: int) -> str:
 def _race_example() -> dict:
     return {"races": [{"race": "Example Grand Prix", "place": "Example Circuit",
                        "sessions": [{"session": "Qualifying", "start": _soon(2, 14)}, {"session": "Race", "start": _soon(3, 13)}],
+                       "result_session": "Qualifying",
                        "result": [{"position": 1, "driver": "ABC", "team": "Team One", "gap": ""},
                                   {"position": 2, "driver": "DEF", "team": "Team Two", "gap": "+1.2s"}]}]}
 
@@ -221,7 +225,8 @@ def _shown_plane(v) -> list:
 
 SHAPES = {s.kind: s for s in (
     Shape("racing", "Racing", "races", "race",
-          (Field("race", "Race", True), Field("place", "Place"), Field("season", "Season", says="what its calendar calls it")),
+          (Field("race", "Race", True), Field("place", "Place"), Field("season", "Season", says="what its calendar calls it"),
+           Field("result_session", "Result of", says="the session its result is from, like Qualifying: the page names it")),
           _read_races, _race_example, _shown_race,
           more=(("sessions", (Field("session", "Session", True, "Practice 1, Qualifying, Race…"),
                               Field("start", "Start", True, "date and time, like 2026-10-25T20:00:00Z"))),

@@ -111,16 +111,37 @@ class TestEverySeriesFetchesItsOwn(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all("/_db/fe/" in u or "formulaecal.com" in u for u in web.asked[1:]), web.asked)
         self.assertEqual((data["series"], data["event_name"]), ("FE", "Race on fe"))
 
+    async def _live(self, series):
+        """A board whose one session runs now, as NASCAR's does on race day."""
+        web = FakeWeb({"site.api.espn.com": {"events": [{
+            "name": "Race now", "date": iso(NOW - timedelta(minutes=30)), "circuit": {"fullName": "Track"},
+            "status": {"type": {"state": "in", "description": "In Progress"}},
+            "competitions": [{"competitors": [{"athlete": {"displayName": "Kyle Larson"}, "team": {"displayName": "Hendrick"}}]}],
+        }]}})
+        return await racing.fetch_racing_data.direct(web, series, tz_name="UTC")
+
     async def test_a_driver_without_a_code_gets_one_from_the_surname(self):
-        _, data = await self._fetch("nascar")
+        data = await self._live("nascar")
         self.assertEqual(data["standings"][0]["driver"], "LAR")
+
+    async def test_a_board_before_its_session_is_no_leaderboard(self):
+        # ESPN lists who's entered before a session runs: never an order, under any name.
+        _, data = await self._fetch("nascar")
+        self.assertEqual((data["status"], data["standings"]), ("PRE", []))
+
+    async def test_no_driver_gets_a_tyre_nobody_gave(self):
+        # Every driver had a medium tyre box: ESPN gives no tyres, the add-on made one up.
+        data = await self._live("nascar")
+        self.assertTrue(data["standings"])
+        self.assertTrue(all("tyre" not in row for row in data["standings"]), data["standings"])
 
     async def test_a_live_formula_e_session_says_live(self):
         started = iso(NOW - timedelta(minutes=20))
         web = FakeWeb({"sportstimes": {"races": [{"name": "Live ePrix", "location": "Here",
                                                   "sessions": {"qualifying": started}}]}})
         data = await racing.fetch_racing_data.direct(web, "fe", tz_name="UTC")
-        self.assertEqual((data["status"], data["clock"]), ("IN", "Qualifying LIVE"))
+        self.assertEqual((data["status"], data["session"], data["badge"]), ("IN", "Qualifying", ["QUALIFYING · LIVE", "QUALIFYING"]))
+        self.assertEqual(data["standings"], [], "no source has its order: the card, not someone else's")
 
     async def test_the_race_window_asks_the_same_places(self):
         for series, want in (("nascar", "/racing/nascar-premier/"), ("indycar", "/racing/irl/"),
@@ -277,6 +298,193 @@ class TestBetweenSeasons(unittest.IsolatedAsyncioTestCase):
             self.assertIsNotNone(entry and entry["failing_since"], f"said so with {odd}")
             for c in racing._calendar_cache.values():
                 c["at"] -= racing.CALENDAR_EVERY
+
+
+# The 2026 United States GP as ESPN's board has it (checked 26 Oct): one event, a competition per
+# session ("FP1", "FP2", "FP3", "Qual", "Race"), each with its own state and its own order.
+GP = ("FP1", "FP2", "FP3", "Qual", "Race")
+LEADERS = {"FP1": "Charles Leclerc", "FP2": "Oscar Piastri", "FP3": "Lewis Hamilton", "Qual": "Kimi Antonelli",
+           "Race": "Max Verstappen"}
+
+
+def gp_board(starts: dict, states: dict) -> dict:
+    """ESPN's board for a weekend: each session's start, and the state ESPN gives it ("pre" if not said)."""
+    def comp(abbr):
+        st = states.get(abbr, "pre")
+        out = {"type": {"abbreviation": abbr}, "date": iso(starts[abbr]),
+               "status": {"type": {"state": st, "description": {"pre": "Scheduled", "in": "In Progress"}.get(st, "Final")}}}
+        out["competitors"] = [{"order": 2, "athlete": {"displayName": "George Russell"}},
+                              {"order": 1, "athlete": {"displayName": LEADERS[abbr]}}]
+        return out
+    ev_state = "in" if "in" in states.values() else "post" if states.get("Race") == "post" else "pre"
+    return {"events": [{"name": "United States Grand Prix", "date": iso(starts["FP1"]),
+                        "circuit": {"fullName": "Circuit of the Americas", "address": {"city": "Austin"}},
+                        "status": {"type": {"state": ev_state, "description": "In Progress" if ev_state == "in" else "Final"}},
+                        "competitions": [comp(a) for a in GP]}]}
+
+
+def weekend(fp3: datetime) -> dict:
+    """A weekend's starts from its third practice: as Austin's, Qualifying 3½ hours later, the race the day after."""
+    return {"FP1": fp3 - timedelta(hours=24), "FP2": fp3 - timedelta(hours=20.5), "FP3": fp3,
+            "Qual": fp3 + timedelta(hours=3.5), "Race": fp3 + timedelta(hours=26.5)}
+
+
+class TestTheSessionShown(unittest.IsolatedAsyncioTestCase):
+    """The user's find (26 Oct): on a race weekend nothing said which session the page was for, and
+    the standings could be another session's. One rule picks the session; its order is its own."""
+
+    def setUp(self):
+        forget()
+
+    async def page(self, starts, states, **kw):
+        forget()
+        web = FakeWeb({"site.api.espn.com": gp_board(starts, states), "sportstimes": None})
+        return await racing.fetch_racing_data.direct(web, "f1", tz_name="UTC", **kw)
+
+    def leader(self, data):
+        return data["standings"][0]["driver"] if data["standings"] else None
+
+    async def test_saturday_morning_between_practice_3_and_qualifying(self):
+        done = {"FP1": "post", "FP2": "post", "FP3": "post"}
+        # Practice 3 ended an hour ago: its own order, named, by ESPN's order (not its list's).
+        data = await self.page(weekend(NOW - timedelta(hours=2.5)), done)
+        self.assertEqual((data["status"], data["session"], self.leader(data)), ("POST", "Practice 3", "HAM"))
+        self.assertEqual(data["badge"], ["PRACTICE 3 · FINAL", "PRACTICE 3"])
+        self.assertEqual([r["pos"] for r in data["standings"]], [1, 2])
+        # Austin's Qualifying starts 2 hours after Practice 3 ends, so with Hours after at 2 its result
+        # shows until then. At 1, past it: the next session's card, never Practice 3's order under it.
+        data = await self.page(weekend(NOW - timedelta(hours=2.7)), done, post_buffer_hours=1.0)
+        self.assertEqual((data["status"], data["session"], data["standings"]), ("PRE", "Qualifying", []))
+        self.assertTrue(data["detail"].startswith("Qualifying · "), data["detail"])
+        self.assertEqual(data["badge"], ["SCHEDULED"])
+
+    async def test_the_page_leaves_a_result_when_its_gate_does(self):
+        done = {"FP1": "post", "FP2": "post", "FP3": "post"}
+        for after in (0.25, 1.0, 1.5):                  # all before Qualifying starts, 2 hours on
+            for past, shows in ((after - 0.05, True), (after + 0.05, False)):
+                fp3 = NOW - timedelta(hours=1.5 + past)
+                data = await self.page(weekend(fp3), done, post_buffer_hours=after)
+                self.assertEqual(data["session"] == "Practice 3", shows, (after, past, data["session"]))
+                forget()
+                web = FakeWeb({"site.api.espn.com": gp_board(weekend(fp3), done), "sportstimes": None})
+                win = await racing.compute_racing_active_window.direct(web, "f1", pre_buffer_hours=0,
+                                                                       post_buffer_hours=after, tz_name="UTC")
+                self.assertEqual(win["is_active"], shows, ("the gate counts the same hours", after, past))
+
+    async def test_during_qualifying(self):
+        data = await self.page(weekend(NOW - timedelta(hours=3.8)), {"FP1": "post", "FP2": "post", "FP3": "post", "Qual": "in"})
+        self.assertEqual((data["status"], data["session"], self.leader(data)), ("IN", "Qualifying", "ANT"))
+        self.assertEqual(data["badge"], ["QUALIFYING · LIVE", "QUALIFYING"])
+        self.assertEqual(data["clock"], "QUALIFYING · LIVE", "Home Assistant's sensor says the same")
+        self.assertEqual(data["event_name"], "United States Grand Prix")
+        forget()
+        web = FakeWeb({"site.api.espn.com": gp_board(weekend(NOW - timedelta(hours=3.8)), {}), "sportstimes": None})
+        win = await racing.compute_racing_active_window.direct(web, "f1", tz_name="UTC")
+        self.assertEqual(win["session_name"], "Qualifying", "Home Assistant's sensor says it as the page does, not \"Qual\"")
+
+    async def test_a_session_running_late_is_still_live(self):
+        # Its calendar time is over, but ESPN says it still runs (a red flag): it's the one shown.
+        data = await self.page(weekend(NOW - timedelta(hours=5.5)), {"FP1": "post", "FP2": "post", "FP3": "post", "Qual": "in"})
+        self.assertEqual((data["status"], data["session"], self.leader(data)), ("IN", "Qualifying", "ANT"))
+
+    async def test_after_the_race(self):
+        states = dict.fromkeys(GP, "post")
+        for hours_ago, shows in ((0.5, True), (3.5, True), (4.5, False)):
+            race = NOW - timedelta(hours=2.5 + hours_ago)
+            data = await self.page(weekend(race - timedelta(hours=26.5)), states)
+            if shows:
+                self.assertEqual((data["status"], data["session"], self.leader(data)), ("POST", "Race", "VER"), hours_ago)
+                self.assertEqual(data["badge"], ["RACE · FINAL", "RACE"])
+            else:
+                self.assertEqual((data["status"], data["standings"]), ("OFF", []), "its result for AFTER_HOURS, then not")
+
+    async def test_formula_e_with_its_own_sessions(self):
+        # Formula E has no ESPN board: its calendar's sessions, by the same rule, and no order to show.
+        q = NOW - timedelta(minutes=20)
+        file = {"races": [{"name": "Miami ePrix", "location": "Miami", "sessions": {
+            "fp1": iso(q - timedelta(hours=26)), "fp2": iso(q - timedelta(hours=3)), "qualifying": iso(q),
+            "race": iso(q + timedelta(hours=4))}}]}
+        data = await racing.fetch_racing_data.direct(FakeWeb({"sportstimes": file}), "fe", tz_name="UTC")
+        self.assertEqual((data["series"], data["status"], data["session"], data["standings"]),
+                         ("FE", "IN", "Qualifying", []))
+        self.assertEqual(data["badge"], ["QUALIFYING · LIVE", "QUALIFYING"])
+        forget()
+        file["races"][0]["sessions"]["qualifying"] = iso(NOW - timedelta(hours=1.6))
+        data = await racing.fetch_racing_data.direct(FakeWeb({"sportstimes": file}), "fe", tz_name="UTC")
+        self.assertEqual((data["status"], data["session"], data["badge"]), ("POST", "Qualifying", ["QUALIFYING · FINAL", "QUALIFYING"]))
+
+    async def test_a_sensor_of_your_own_names_its_session_or_shows_a_result(self):
+        board = [{"pos": 1, "driver": "VER"}, {"pos": 2, "driver": "NOR"}]
+        state = {"state": "in", "attributes": {"standings": board, "session": "qual", "lap": None}}
+        data = await racing.fetch_racing_data.direct(FakeWeb({}), "f1", fallback=state, tz_name="UTC")
+        self.assertEqual((data["session"], data["badge"]), ("Qualifying", ["QUALIFYING · LIVE", "QUALIFYING"]))
+        state = {"state": "in", "attributes": {"standings": board, "lap": 34, "total_laps": 57, "session": "Race"}}
+        data = await racing.fetch_racing_data.direct(FakeWeb({}), "f1", fallback=state, tz_name="UTC")
+        self.assertEqual(data["badge"], ["RACE · LAP 34/57", "RACE"])
+        state = {"state": "post", "attributes": {"standings": board}}
+        data = await racing.fetch_racing_data.direct(FakeWeb({}), "f1", fallback=state, tz_name="UTC")
+        self.assertEqual((data["session"], data["badge"]), ("", ["RESULT"]), "a session nobody said isn't guessed")
+
+
+class TestOneNumberOfHours(unittest.TestCase):
+    """"Hours before" and "Hours after" until a page says: one number, for the gate, the data, the
+    window sensors and the editor (the coordinator's review, 26 Oct)."""
+
+    def test_every_reader_has_the_same_default(self):
+        import inspect
+        import pathlib
+        import widgets
+        from sources import HOURS_AROUND, sports
+        for fn in (racing.compute_racing_active_window, racing.fetch_racing_data, sports.compute_sports_active_window):
+            params = inspect.signature(fn.direct).parameters
+            for key in ("pre_buffer_hours", "post_buffer_hours"):
+                if key in params:
+                    self.assertEqual(params[key].default, HOURS_AROUND, (fn.__name__, key))
+        for key in ("pre_buffer_hours", "post_buffer_hours"):
+            self.assertEqual(widgets.hours_around({}, key), HOURS_AROUND)
+            self.assertEqual(widgets.hours_around({key: "x"}, key), HOURS_AROUND)
+            self.assertEqual(widgets.hours_around({key: 0.5}, key), 0.5)
+            for t in ("sports_racing", "sports_match"):
+                field = next(f for f in widgets.get(t).describe()["fields"] if f.get("key") == key)
+                self.assertEqual(float(field["ph"]), HOURS_AROUND, (t, key))
+        presets = (pathlib.Path(racing.__file__).parents[1] / "web" / "app" / "presets.js").read_text()
+        self.assertNotIn("buffer_hours:", presets, "a preset leaves them unset, so they follow the one number")
+
+
+class TestTheBadge(unittest.TestCase):
+    """A leaderboard is never drawn without its session's name: in the badge, shorter where it must
+    be, or in the header where the badge steps aside."""
+
+    def drawn(self, data, w):
+        from PIL import Image, ImageDraw
+        from render import layout
+        img = Image.new("L", (800, 300), 255)
+        d = ImageDraw.Draw(img)
+        texts = []
+        real = d.text
+        d.text = lambda xy, txt, **kw: (texts.append(txt), real(xy, txt, **kw))
+        layout._draw_sports_racing(img, d, {"type": "sports_racing", "x": 0, "y": 0, "w": w, "h": 235}, json.dumps(data))
+        return texts
+
+    def test_every_series_names_its_session_at_every_width(self):
+        import examples
+        practice = {**examples.race("f1"), "session": "Practice 3", "status": "POST", "lap": None,
+                    "badge": racing.badge("Practice 3", "POST")}
+        for series in racing.SERIES:
+            for data in (examples.race(series), practice):
+                for w in (752, 480, 360, 300, 260, 240, 200, 180, 150):     # narrower is cut with an ellipsis
+                    texts = self.drawn(data, w)
+                    self.assertTrue(any(data["badge"][-1] in t for t in texts), (series, w, texts))
+        self.assertIn("RACE · LAP 42/53", self.drawn(examples.race("f1"), 752), "the whole of it where there's room")
+        self.assertIn("RACE", self.drawn(examples.race("f1"), 240), "the session's name, its state left out")
+        self.assertIn("F1 · PRACTICE 3", self.drawn(practice, 200), "the badge steps aside: the header says it")
+
+    def test_the_words_of_a_badge(self):
+        self.assertEqual(racing.badge("Qualifying", "IN"), ["QUALIFYING · LIVE", "QUALIFYING"])
+        self.assertEqual(racing.badge("Race", "IN", 34, 57), ["RACE · LAP 34/57", "RACE"])
+        self.assertEqual(racing.badge("Practice 3", "POST"), ["PRACTICE 3 · FINAL", "PRACTICE 3"])
+        self.assertEqual(racing.badge("", "POST"), ["RESULT"])
+        self.assertEqual(racing.badge("", "IN"), ["LIVE"])
 
 
 if __name__ == "__main__":
