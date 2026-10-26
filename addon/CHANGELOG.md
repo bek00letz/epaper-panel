@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed:** a duplicated page lost its groups. The copy's elements got
+  new IDs and its groups still named the original's, so they emptied and
+  went away.
+
 ## 0.21.2
 Race pages say which session they're showing. Add-on only; no firmware
 change, so nothing to reinstall on the panel and no Home Assistant restart.

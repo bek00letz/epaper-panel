@@ -23,11 +23,14 @@ const newId = (taken) => { let id; do { id = "e" + Math.random().toString(16).sl
 export function ensureIds(spec) {
   const seen = new Set();
   for (const p of Object.values(spec.pages || {})) {
+    // A page's groups follow its elements' new IDs (a duplicated or opened page), or they'd lose them.
+    const renamed = new Map();
     for (const el of p.elements || []) {
       if (!el || typeof el !== "object") continue;
-      if (!el.id || seen.has(el.id)) el.id = newId(seen);
+      if (!el.id || seen.has(el.id)) { const was = el.id; el.id = newId(seen); if (was && !renamed.has(was)) renamed.set(was, el.id); }
       seen.add(el.id);
     }
+    if (renamed.size) for (const g of p.elements) if (g?.type === "group" && Array.isArray(g.members)) g.members = g.members.map((m) => renamed.get(m) || m);
   }
   return spec;
 }

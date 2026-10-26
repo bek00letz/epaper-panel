@@ -303,3 +303,17 @@ class TestTheCanvasOutlinesThemForAMoment(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(shutil.which("node"), "no node to run the editor's doc")
+class TestIdsKeepGroups(unittest.TestCase):
+    def test_a_duplicated_page_keeps_its_groups(self):
+        # A copy's elements get new IDs; its group must follow them, or it loses its members and goes.
+        c = run_js("""const page = { elements: [
+              { id: 'x', type: 'text', x: 0, y: 0, w: 10, h: 10 }, { id: 'y', type: 'text', x: 20, y: 0, w: 10, h: 10 },
+              { id: 'g', type: 'group', style: 'outline', members: ['x', 'y'] }] };
+            const spec = D.ensureIds({ pages: { a: page, b: JSON.parse(JSON.stringify(page)) } });
+            const els = spec.pages.b.elements, g = els.find((e) => e.type === 'group');
+            console.log(JSON.stringify([!!g, g.members.every((m) => els.some((e) => e.id === m && e.type !== 'group')),
+              g.members.length, els.some((e) => e.id === 'x'), spec.pages.a.elements[2].members]));""")
+        self.assertEqual(c, [True, True, 2, False, ["x", "y"]])
