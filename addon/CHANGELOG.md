@@ -61,7 +61,6 @@
   with accents taken off ("Gerät" becomes "Geraet"), since its own font
   has none.
 
-Add-on only: no firmware change, nothing to reinstall on the panel.
 Nobody pastes a key any more. **Firmware change**: install the panel again
 from ESPHome after updating. Needs Home Assistant 2026.8 or newer.
 
