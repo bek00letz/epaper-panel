@@ -164,7 +164,7 @@ export function setupStep(app, p, { thumb, add, foot, initialLook = 0, rememberL
 }
 
 /* ---------- what presets set up in place ---------- */
-const SETUPS = { wifi: wifiSetup, jellyfin: jellyfinSetup, energy: energySetup, players: playersSetup, date: countSetup("date"), bins: countSetup("bins"), parts: partsSetup, zones: zonesSetup, batteries: batteriesSetup };
+export const SETUPS = { wifi: wifiSetup, jellyfin: jellyfinSetup, energy: energySetup, players: playersSetup, date: countSetup("date"), bins: countSetup("bins"), parts: partsSetup, zones: zonesSetup, batteries: batteriesSetup };
 
 /* Guest Wi-Fi: the network goes into the code, so it's asked for. */
 function wifiSetup({ changed }) {
@@ -389,19 +389,26 @@ function countSetup(to) {
 
 /* A preset that shows several sensors (Battery and solar) asks for each, one
    at a time in place, with the Energy dashboard's own picked first and said
-   so. Each part is optional: an empty one can be filled in the inspector. */
+   so. Each part is optional: an empty one can be filled in the inspector.
+   A shared page's sensors are asked the same way (sharesheet.js): a part
+   says its kind (`asks`, a sensor by default), where it's used (`where`), and
+   whether the page can't do without it (`needed`: a condition's). With
+   `p.partsOptional`, nothing has to be picked; `partsNote` says what then. */
 function partsSetup({ app, p, changed }) {
   const picks = {}, tags = {};
   let open = null, roles = {};
   const node = h("div", { class: "stepsec" }, h("h3", { class: "slab", text: "What it shows" }));
   const list = h("div", { class: "group parts" });
-  node.append(list, h("p", { class: "fnote", text: "Leave one out and its gauge stays empty until you pick it in the inspector." }));
+  node.append(list, h("p", { class: "fnote", text: p.partsNote || "Leave one out and its gauge stays empty until you pick it in the inspector." }));
   const name = (id) => app.entMap.get(id)?.name || id;
+  const askOf = (part) => ({ asks: part.asks || "sensor", prefer: part.prefer });
+  const needed = p.parts.filter((part) => part.needed);
   function draw() {
     list.replaceChildren(...p.parts.map((part) => {
-      const q = { asks: "sensor", prefer: part.prefer };
+      const q = askOf(part);
+      const state = picks[part.key] ? `${name(picks[part.key])}${tags[part.key] ? " · " + tags[part.key] : ""}` : part.needed ? "Needed" : "Not chosen";
       const row = h("div", { class: "gr part" },
-        h("span", { class: "gl" }, part.label, h("small", { text: picks[part.key] ? `${name(picks[part.key])}${tags[part.key] ? " · " + tags[part.key] : ""}` : "Not chosen" })),
+        h("span", { class: "gl" }, part.label, h("small", { text: part.where ? `${part.where} · ${state}` : state })),
         h("button", { class: "btn tinted", "aria-expanded": String(open === part.key), onclick: () => { open = open === part.key ? null : part.key; draw(); } },
           open === part.key ? "Done" : picks[part.key] ? "Change" : "Choose"));
       if (open !== part.key) return row;
@@ -413,7 +420,7 @@ function partsSetup({ app, p, changed }) {
   energySensors().then((en) => {
     roles = en || {};
     for (const part of p.parts) {
-      const first = rankSensors({ asks: "sensor", prefer: part.prefer }, app.ents, roles)[0];
+      const first = rankSensors(askOf(part), app.ents, roles)[0];
       if (!picks[part.key] && first?.tag) { picks[part.key] = first.e.entity_id; tags[part.key] = first.tag; }
     }
     draw(); changed();
@@ -421,7 +428,7 @@ function partsSetup({ app, p, changed }) {
   draw();
   return {
     node,
-    ready: () => Object.values(picks).some(Boolean),
+    ready: () => (needed.length ? needed.every((part) => picks[part.key]) : !!p.partsOptional || Object.values(picks).some(Boolean)),
     shows: () => (Object.values(picks).some(Boolean) ? { mine: true, extra: { ...picks }, caption: "With your sensors." } : { mine: false }),
     commit: async () => ({ extra: { ...picks } }),
   };

@@ -793,6 +793,7 @@ function page(app, head, body) {
   body.append(section(null, h("div", { class: "btnrow" },
     h("button", { class: "btn tinted", onclick: () => app.duplicatePage() }, icon("dup", "sm"), "Duplicate"),
     h("button", { class: "btn tinted", onclick: () => app.savePreset() }, "Save as preset"),
+    h("button", { class: "btn tinted", onclick: () => app.sharePage() }, icon("share", "sm"), "Share…"),
     h("button", { class: "btn tinted danger", onclick: () => app.deletePage() }, icon("trash", "sm"), "Delete"))));
   body.append(h("p", { class: "empty-note", text: doc.els().length ? "Select something on the canvas to change it." : "This page is empty. Insert a sensor, text or an icon." }));
 }

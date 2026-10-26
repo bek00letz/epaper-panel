@@ -278,7 +278,10 @@ class TestEverythingFits(unittest.TestCase):
     def test_placed_on_another_size_by_the_add_on(self):
         """Framework review #5: the editor keeps no copy of arrange.auto_box; New page asks POST /api/fit."""
         js = (APP_JS / "newpage.js").read_text()
-        self.assertIn('api("api/fit", { method: "POST", body: { elements: els, from_canvas: `${CANVAS.w}x${CANVAS.h}`', js)
+        # A preset from the 5.79"; a shared page from the size it was shared from (sharesheet.js), the same way.
+        self.assertIn('fitToDevice(app, page, from = `${CANVAS.w}x${CANVAS.h}`)', js)
+        self.assertIn('api("api/fit", { method: "POST", body: { elements: els, from_canvas: from,', js)
+        self.assertIn("await fitToDevice(app, page, opened.canvas)", js)
         self.assertIn("page.elements = await fitToDevice(app, page);", js)
         self.assertNotIn("fitToCanvas", (APP_JS / "presets.js").read_text())
 

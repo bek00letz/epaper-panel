@@ -6,17 +6,19 @@
 
 import { h, icon, api, clone, slug, prefs } from "./util.js";
 
-/* A built-in preset (drawn for the 5.79") placed on this device by the add-on (POST /api/fit, the one
-   way a design goes to another size), then rearranged if it stands upright. Asked once per page. */
+/* A built-in preset (drawn for the 5.79") or a shared page (drawn on `from`, "WxH") placed on this
+   device by the add-on (POST /api/fit, the one way a design goes to another size), then rearranged if
+   it stands upright and was drawn lying down. Asked once per page. */
 const fitAsked = new Map();
-async function fitToDevice(app, page) {
+export async function fitToDevice(app, page, from = `${CANVAS.w}x${CANVAS.h}`) {
   const g = app.geometry(), spec = app.doc.spec, els = page.elements || [];
-  if (g.W === CANVAS.w && g.H === CANVAS.h) return els;
-  const key = JSON.stringify([els, spec.display, spec.orientation]);
-  if (!fitAsked.has(key)) fitAsked.set(key, api("api/fit", { method: "POST", body: { elements: els, from_canvas: `${CANVAS.w}x${CANVAS.h}`, display: spec.display, orientation: Number(spec.orientation || 0) } })
+  if (`${g.W}x${g.H}` === from) return els;
+  const key = JSON.stringify([els, from, spec.display, spec.orientation]);
+  if (!fitAsked.has(key)) fitAsked.set(key, api("api/fit", { method: "POST", body: { elements: els, from_canvas: from, display: spec.display, orientation: Number(spec.orientation || 0) } })
     .then((r) => r.body?.elements || els, () => { fitAsked.delete(key); return els; }));
   const placed = clone(await fitAsked.get(key));
-  if (g.portrait) reflowPageElements({ elements: placed }, true, g.d, await timesOf(page));
+  const [fw, fh] = from.split("x").map(Number);
+  if (g.portrait && fw > fh) reflowPageElements({ elements: placed }, true, g.d, await timesOf(page));
   return placed;
 }
 
@@ -35,6 +37,7 @@ import { PRESETS as ALL_PRESETS, GROUPS, sleepsBetweenUpdates, staleNote, preset
 import { thumbnail } from "./strip.js";
 import { slider } from "./slider.js";
 import { setupStep } from "./setup.js";
+import { importStep, openFileButton } from "./sharesheet.js";
 
 const UNITS = { Style: ["style", "styles"], League: ["league", "leagues"], Series: ["series", "series"] };
 const count = (p) => (p.sub ? p.sub : p.looks.length > 1 && UNITS[p.choose || "Style"] ? `${p.looks.length} ${UNITS[p.choose || "Style"][1]}` : "");
@@ -44,18 +47,19 @@ const hasStep = (p) => p.looks.length > 1 || !!p.asks || !!p.needs;
 /* A thumbnail, sized for the device: wide screens fill the card, tall ones
    keep to a shelf's height. `example` draws it with the add-on's example
    values, never the person's own. */
-function thumb(app, key, page, { example = false, fit = true, cls = "" } = {}) {
+function thumb(app, key, page, { example = false, fit = true, from, cls = "" } = {}) {
   const g = app.geometry();
   const img = h("img", { class: "thumb", alt: "", "data-thumb": key, draggable: "false" });
   // Built-in presets are drawn for the 5.79" and fitted to this device; your own are as you saved them.
   requestAnimationFrame(async () => {
-    const fitted = fit ? { ...page, elements: await fitToDevice(app, page) } : page;
+    const fitted = fit ? { ...page, elements: await fitToDevice(app, page, from) } : page;
     thumbnail(app, key, img, fitted, { example });
   });
   return h("span", { class: "thumbwrap " + cls, style: { aspectRatio: `${g.W} / ${g.H}` } }, img);
 }
 
-export function openPresets(app) {
+/* New page; with `imported` (a shared file the add-on read, sharesheet.readShared), open at its step. */
+export function openPresets(app, { imported } = {}) {
   const g = app.geometry();
   // Every preset on every device; one that draws differently on a device that sleeps says so on its card.
   const PRESETS = ALL_PRESETS, sleeps = sleepsBetweenUpdates(app.screen);
@@ -78,7 +82,9 @@ export function openPresets(app) {
     const stepBox = h("div", { class: "step", hidden: true });
     const body = h("div", { class: "sheet-body shelfbody" }, shelves, results, stepBox);
     const blank = h("button", { class: "btn tinted blankbtn", onclick: () => { close(); app.addPage("untitled", { tier: "rotate", elements: [] }); } }, icon("plus", "sm"), "Blank page");
-    const foot = h("div", { class: "sheet-foot" }, blank, h("span", { class: "spacer" }));
+    // A shared page's file opens here, as a preset's next step (sharesheet.js).
+    const openFile = openFileButton((opened) => pickImport(opened));
+    const foot = h("div", { class: "sheet-foot" }, blank, openFile, h("span", { class: "spacer" }));
     node.append(body, foot);
 
     const yours = () => app.doc.spec.custom_presets || [];
@@ -153,15 +159,23 @@ export function openPresets(app) {
 
     function pick(p) {
       if (!hasStep(p)) { close(); add(p, lookOf(p, 0), ""); return; }
-      step = setupStep(app, p, {
+      enter(setupStep(app, p, {
         thumb, add: (look, ent, extra) => { close(); add(p, look, ent, extra); },
         foot, initialLook: prefs.get("look_" + p.id, 0),
         rememberLook: (i) => prefs.set("look_" + p.id, i),
-      });
+      }), p.title);
+    }
+    function pickImport(opened) {
+      if (step) leave();
+      const s = importStep(app, opened, { thumb, foot, add: (pages) => { close(); addShared(pages, opened); } });
+      enter(s, s.title);
+    }
+    function enter(s, name) {
+      step = s;
       stepBox.replaceChildren(step.node);
       shelves.hidden = results.hidden = true; stepBox.hidden = false;
-      back.hidden = false; search.hidden = true; blank.hidden = true; node.classList.add("stepping");
-      title.textContent = p.title;
+      back.hidden = false; search.hidden = true; blank.hidden = true; openFile.hidden = true; node.classList.add("stepping");
+      title.textContent = name;
       body.scrollTop = 0;
       step.focus();
     }
@@ -170,7 +184,7 @@ export function openPresets(app) {
       step.dispose(); step = null;
       stepBox.hidden = true; stepBox.replaceChildren();
       shelves.hidden = !!query.trim(); results.hidden = !query.trim();
-      back.hidden = true; search.hidden = false; blank.hidden = false; node.classList.remove("stepping");
+      back.hidden = true; search.hidden = false; blank.hidden = false; openFile.hidden = false; node.classList.remove("stepping");
       title.textContent = "New page";
       (shelves.hidden ? results : shelves).classList.add("fade");
       setTimeout(() => q.focus({ preventScroll: true }));
@@ -182,7 +196,14 @@ export function openPresets(app) {
     }, true);
 
     drawShelves();
+    if (imported) pickImport(imported);
   }, { cls: "wide tall", focus: "input[type=search]" });
+
+  /* A shared file's pages, placed for this device, added at the end of the rotation in the file's order. */
+  async function addShared(pages, opened) {
+    const placed = await Promise.all(pages.map(async ({ name, ...page }) => [name, { ...page, elements: await fitToDevice(app, page, opened.canvas) }]));
+    app.addPages(placed, opened.rotation);
+  }
 
   async function add(p, look, ent, extra) {
     const page = pageFor(p, look, ent, extra, (id) => app.entMap.get(id) || "");
