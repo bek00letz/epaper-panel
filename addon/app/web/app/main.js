@@ -20,6 +20,7 @@ import { Glyphs } from "./glyphs.js";
 import { renderScreenBar } from "./screenbar.js";
 import { refreshLeftOut } from "./busyday.js";
 import { deleteNotifying } from "./notify.js";
+import { openShare, readShared, openFileButton } from "./sharesheet.js";
 
 const ZOOM_STEPS = [0.75, 1, 1.25, 1.5, 2];
 const ZOOM_MIN = 0.5, ZOOM_MAX = 3;                  // a pinch can go a little past the steps
@@ -59,6 +60,7 @@ class App {
     matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => this.applyTheme());
     this.wireKeys();
     this.wirePinch();
+    this.wireDrop();
     addEventListener("beforeunload", (e) => { if (this.doc.saving !== "saved") { this.doc.flush(); e.preventDefault(); e.returnValue = ""; } });
     document.addEventListener("visibilitychange", () => { if (document.hidden) this.doc.flush(); else this.poll(); });
   }
@@ -166,6 +168,7 @@ class App {
     const only = this.screens.length < 2;
     menu(anchor, [...items, "sep",
       { label: "Rename…", run: () => this.startRename() },
+      { label: "Share all pages…", icon: "share", disabled: !Object.keys(this.doc.spec.pages).length, run: () => this.sharePages() },
       { label: "Remove", danger: true, disabled: only, run: () => removeScreen(this, this.screen) },
       "sep",
       { label: "Add new device…", icon: "plus", run: () => openAddScreen(this) }], { label: "Devices" });
@@ -536,14 +539,46 @@ class App {
   openInspectorOnPhone() { if (matchMedia("(max-width: 760px)").matches) this.el.insp.classList.add("open"); }
 
   uniqueName(base) { let n = slug(base) || "page", k = 2; const b = n; while (this.doc.spec.pages[n]) n = `${b}_${k++}`; return n; }
-  addPage(base, page) {
-    const doc = this.doc, n = this.uniqueName(base);
-    doc.spec.pages[n] = page;
-    if (page.tier !== "alert") doc.spec.rotation.push(n);
-    doc.cur = n; doc.sel = [];
+  addPage(base, page) { this.addPages([[base, page]]); }
+  /* Pages added at once, as [base name, page]: each named after its base, unique here, and at the end
+     of the rotation (an alert never is). With `rotation` (a shared file's: base names, in order, a page
+     maybe twice), in that order instead. One undo takes them all back. */
+  addPages(list, rotation) {
+    const doc = this.doc, names = new Map();
+    for (const [base, page] of list) {
+      const n = this.uniqueName(base);
+      doc.spec.pages[n] = page;
+      names.set(base, n);
+    }
+    const order = rotation ? rotation.map((b) => names.get(b)) : [...names.values()];
+    doc.spec.rotation.push(...order.filter((n) => n && doc.spec.pages[n].tier !== "alert"));
+    const first = names.values().next().value;
+    doc.cur = first; doc.sel = [];
     doc.commit(); doc.emit("page");
-    toast(`Added ${pageTitle(n)}. Rename it in the inspector.`, { label: "Undo", run: () => doc.undo() });
+    toast(names.size === 1 ? `Added ${pageTitle(first)}. Rename it in the inspector.` : `Added ${names.size} pages.`, { label: "Undo", run: () => doc.undo() });
     requestAnimationFrame(() => { const t = this.el.strip.querySelector('[aria-current="page"]'); if (t) t.scrollIntoView({ inline: "nearest", block: "nearest" }); });
+  }
+  /* Share pages as a file (sharesheet.js): one page, or all of them in the order they come round. */
+  sharePage(name = this.doc.cur) { if (this.doc.spec.pages[name]) openShare(this, [name], pageTitle(name)); }
+  sharePages() {
+    const spec = this.doc.spec;
+    const names = [...new Set([...spec.rotation.filter((n) => spec.pages[n]), ...Object.keys(spec.pages)])];
+    if (names.length) openShare(this, names, this.screen?.name || "Pages");
+  }
+  /* A shared page's file dropped anywhere on the editor opens in New page, at its step. */
+  wireDrop() {
+    let depth = 0;
+    const files = (e) => [...(e.dataTransfer?.types || [])].includes("Files");
+    const show = (on) => document.body.classList.toggle("dropping", on);
+    addEventListener("dragenter", (e) => { if (!files(e)) return; e.preventDefault(); depth++; show(true); });
+    addEventListener("dragleave", (e) => { if (!files(e)) return; depth = Math.max(0, depth - 1); if (!depth) show(false); });
+    addEventListener("dragover", (e) => { if (!files(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = "copy"; });
+    addEventListener("drop", async (e) => {
+      if (!files(e)) return;
+      e.preventDefault(); depth = 0; show(false);
+      const opened = await readShared(e.dataTransfer.files[0]);
+      if (opened) { closeAll(); openPresets(this, { imported: opened }); }
+    });
   }
   renamePage(old, raw) {
     const doc = this.doc, n = slug(raw);
@@ -767,6 +802,7 @@ class App {
     menu(anchor || null, [
       { label: "Open", run: () => doc.openPage(n) },
       { label: "Duplicate", icon: "dup", run: () => this.duplicatePage(n) },
+      { label: "Share…", icon: "share", run: () => this.sharePage(n) },
       p.tier !== "alert" ? { label: times ? "Show again" : "Add to rotation", run: () => { doc.spec.rotation.push(n); doc.commit(); } } : null,
       p.tier !== "alert" && times ? { label: times > 1 ? "Show once less" : "Take out of rotation", run: () => this.takeOut(n) } : null,
       "sep",
@@ -804,10 +840,11 @@ class App {
     if (Object.keys(this.doc.spec.pages).length) return;
     this.el.area.querySelector(".firstrun")?.remove();
     this.el.area.append(h("div", { class: "firstrun" }, h("h2", { text: "No pages yet" }),
-      h("p", { text: "A page is one screen on the panel. Start from a preset and pick your sensor, or start blank." }),
+      h("p", { text: "A page is one screen on the panel. Start from a preset and pick your sensor, start blank, or open a page someone shared." }),
       h("div", { class: "btnrow center" },
         h("button", { class: "btn primary", onclick: (e) => { e.currentTarget.closest(".firstrun").remove(); this.openPresets(); } }, "Choose a preset"),
-        h("button", { class: "btn tinted", onclick: (e) => { e.currentTarget.closest(".firstrun").remove(); this.addPage("untitled", { tier: "rotate", elements: [] }); } }, "Blank page"))));
+        h("button", { class: "btn tinted", onclick: (e) => { e.currentTarget.closest(".firstrun").remove(); this.addPage("untitled", { tier: "rotate", elements: [] }); } }, "Blank page"),
+        openFileButton((opened) => { this.el.area.querySelector(".firstrun")?.remove(); openPresets(this, { imported: opened }); }))));
   }
 
   /* ---------- appearance ---------- */

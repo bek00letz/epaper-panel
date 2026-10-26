@@ -27,6 +27,7 @@ import notify
 import reach
 import runtime
 import services
+import share
 import timing
 from config import ADDON_VERSION, FRAME_PORT, HA_BASE, HA_TOKEN, INGRESS_GATEWAY, REFRESH, SLEEP_PAGE, WEB_DIR, valid_entity_id
 from fixture import _dated, load_fixture
@@ -350,6 +351,19 @@ async def api_draft_delete(request):
 
 async def api_entities(request):
     """Entity list for the picker. Cached briefly -- it is a big response."""
+    try:
+        return web.json_response(await entity_list())
+    except HomeAssistantUnreachable as exc:
+        return web.json_response({"error": str(exc)}, status=502)
+
+
+class HomeAssistantUnreachable(Exception):
+    """Home Assistant didn't give its entity list (the reason, already safe to show: health.describe)."""
+
+
+async def entity_list() -> list[dict]:
+    """Home Assistant's entities as the editor lists them, the add-on's own first: the picker's list, and
+    what a shared page's slots are told about each sensor (share.export)."""
     by_id = {}
     if not HA_TOKEN:
         states = load_fixture().get("states", {})
@@ -371,7 +385,7 @@ async def api_entities(request):
             try:
                 states = await ha_json(runtime.SESSION, "/states")
             except Exception as exc:
-                return web.json_response({"error": health.describe(exc)}, status=502)
+                raise HomeAssistantUnreachable(health.describe(exc))
             runtime.ENTITY_CACHE.update(at=time.time(), items=states)
         for s in (runtime.ENTITY_CACHE["items"] or []):
             if isinstance(s, dict) and "entity_id" in s:
@@ -413,8 +427,33 @@ async def api_entities(request):
         if made is not None and src.get("type"):
             made["feed"] = str(src["type"])
 
-    items = sorted(by_id.values(), key=lambda e: (0 if e.get("is_epaper") else 1, e["entity_id"]))
-    return web.json_response(items)
+    return sorted(by_id.values(), key=lambda e: (0 if e.get("is_epaper") else 1, e["entity_id"]))
+
+
+async def api_share_export(request):
+    """POST {pages: {name: page}, rotation, canvas, title} -> {file, name, words}: the pages as a file to
+    share (share.export), its file name, and the words that go in it as written, for the editor to list."""
+    body = await _body(request)
+    if not isinstance(body.get("pages"), dict) or not body["pages"]:
+        raise web.HTTPBadRequest(text="There's no page to share.")
+    try:
+        ents = await entity_list()
+    except HomeAssistantUnreachable as exc:
+        return web.json_response({"error": f"Couldn't read your sensors from Home Assistant, so nothing could be "
+                                           f"left out safely. Try again in a moment. ({exc})"}, status=502)
+    rotation = body.get("rotation") if isinstance(body.get("rotation"), list) else []
+    file = share.export(body["pages"], rotation, str(body.get("canvas") or ""), ents, load_sources())
+    return web.json_response({"file": file, "name": share.file_name(str(body.get("title") or "")),
+                              "words": share.words(file)})
+
+
+async def api_share_open(request):
+    """POST {text} -> a shared file's pages and slots (share.open_file), or 422 {error} saying why not."""
+    body = await _body(request)
+    try:
+        return web.json_response(share.open_file(str(body.get("text") or "")))
+    except share.Refused as exc:
+        return web.json_response({"error": str(exc)}, status=422)
 
 
 async def api_attributes(request):
@@ -1461,6 +1500,8 @@ def make_apps():
         web.get("/fonts/{name}", panel_font),
         web.get("/api/entities", api_entities),
         web.get("/api/attributes", api_attributes),
+        web.post("/api/share/export", api_share_export),
+        web.post("/api/share/open", api_share_open),
         web.get("/api/aircraft", api_aircraft),
         web.get("/api/airport", api_airport),
         web.get("/api/changed", api_changed),

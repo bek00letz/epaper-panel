@@ -437,6 +437,23 @@ up to v0.12.0). `app/legacy.js` keeps the pieces of it this one still uses.
   Style is "Anything else"'s, so the Style row hides while it follows.
   A row is `{icon, look}`, or just an icon (the first shape, which keeps
   the icon's Style): `layout.icon_in_state` reads both.
+- **Sharing is a file, and opening one is New page** (the user's calls,
+  26 Oct; `share.py`, `app/sharesheet.js`, `app/share.js`). Share… is in
+  the page's inspector and its menu, Share all pages… in the device menu;
+  Open a file… is in New page's footer and the first run, and a file
+  dropped on the editor opens there too. The file never holds anything
+  of the sender's home: every entity ID, wherever it is (a condition, a
+  template, a Devices grid), becomes a numbered slot, and the Wi-Fi, a
+  flight's place, data sources, notifications and battery ticks stay out;
+  `tests/test_share.py` builds a page of every kind of element and fails
+  on any leak. Typed words go as written, listed in the sheet first.
+  Opening asks for the slots through New page's own steps (`SETUPS`:
+  `parts` for sensors, `wifi`, `jellyfin`), never a picker of its own. A
+  newer file, or one with an element this version can't draw
+  (`share.drawable`), is refused with the reason; an older one is brought
+  up through `share.UPGRADES` when the format changes. A new place a
+  sensor can hide needs nothing (every string is searched); a new private
+  field that isn't an entity goes in `share._home_only`.
 - **The inspector is ordered by how often things are touched**: what it shows,
   how it looks, arrange, then "More". Rare settings go under More, not away.
 - **Picking: smallest thing under the pointer first.** Clicking again without

@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **Share a page as a file.** Share… (in a page's inspector or its
+  right-click menu) or Share all pages… (in the device menu) saves the
+  page, or every page, as a file such as `Kitchen.epaper.json`: you send
+  it however you like, and nothing is uploaded. Before saving, the sheet
+  says what goes in it. Your sensors' names and IDs, your Wi-Fi name and
+  password, places, data sources, keys and the device's settings stay
+  home; the words you typed go as you wrote them, and are listed.
+- **Open a shared page.** Open a file… in New page (or drop the file on
+  the editor) shows it like a preset: its pictures, then your own sensors
+  to pick, your Wi-Fi or your Jellyfin where it needs them, the same way
+  New page asks. Every page in the file is added at once, in its order,
+  at the end of the rotation, with one Undo. A page made on another size
+  is placed for this device. A file from a newer version, or with
+  something this version can't show, isn't opened, and the editor says
+  why and what to do.
 - **Fixed:** a duplicated page lost its groups. The copy's elements got
   new IDs and its groups still named the original's, so they emptied and
   went away.
