@@ -20,12 +20,11 @@ and says what reads from there). One engine for canvas and screen. Smart
 pages with no keys or accounts (scores, racing, planes, Jellyfin). Private by
 default. A thin client, so a button press redraws in under a second.
 
-**Weakest.** Four of the five sizes the editor offers can't build their
-firmware today (found by break-it), and most of the rest hasn't met real
-hardware: Low Power Mode, TRMNL, away from home, a second panel. Setting up
-a panel takes the ESPHome add-on, a YAML paste, a USB cable and a key paste.
-The screen's words are English only. Two days of fast, parallel building
-left a lot of surface; the next release should make it solid, not wider.
+**Weakest** (updated 26 Oct). Much hasn't met real hardware: sleeping
+between updates (always on drained a power bank in about 6 days, so a
+battery needs sleep), TRMNL screens, the 4.2" and 2.9", a second panel.
+Setting up a panel takes the ESPHome add-on, a YAML paste, a USB cable and a
+key paste. The screen's words are English only (five languages in progress).
 
 **Where it can win.** TRMNL's value is its software, but that software is a
 cloud service. The self-hosted servers for TRMNL (Terminus, LaraPaper) have
@@ -58,9 +57,9 @@ browser setup stands on: a ready-made firmware per model has to build.
 | Item | You get | Size | Firmware | Depends on |
 |---|---|---|---|---|
 | Setup from the browser | Plug the panel into the computer, press Install in the editor, pick Wi-Fi, and it pairs like a TRMNL. No ESPHome add-on, no YAML. Today's YAML path stays, under Advanced, until this has proven itself | large | yes | every offered size building (0.13); a ready-made firmware built for each release and model; a design pass first (see Open questions) |
-| The screen speaks your language | Dates, weekdays, "updated", the sleep screen and presets in Home Assistant's language | medium | no | translators for languages beyond the first few |
+| The screen speaks your language | Dates, weekdays, "updated", the sleep screen and presets in Home Assistant's language, or a device's own. First: English, Romanian, Spanish, German, French (the user's pick, 26 Oct; in progress) | medium | no | translators for languages beyond the first few |
+| The editor in your language | The editor's own words (menus, sheets, settings) in the same languages as the screen | large | no | the screen's words first; one word table shared with them |
 | Share a page | Export a page or a screen's pages as a file; importing asks for your own sensors, like New page does | medium | no | – |
-| To-do lists | The shopping list or any Home Assistant to-do list as a page, shown only when it has items | small | no | – |
 | "How it went" report | One button copies a report (kind, size, firmware, errors; no names, addresses or entities) for a GitHub issue | small | no | – |
 | TRMNL-compatible screens | Seeed's reTerminal and other screens running TRMNL's firmware, listed and sized properly. The next kind of screen we grow toward | small | no | someone with one to try it |
 
