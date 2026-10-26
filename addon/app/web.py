@@ -35,7 +35,7 @@ from ha import curve_series, ha_json, resolve_templates
 from layouts_store import clear_draft, layouts_etag, load_draft, load_layouts, load_sources, sanitize_layouts, save_draft, save_layouts
 from panel_ops import push_panel_update
 import panel_setup
-from panel_setup import _detect_external_port, _detect_panel_connection, _new_api_key, generate_esphome_yaml, hotspot_name, load_panel_setup, more_networks, save_panel_setup, wifi_problems
+from panel_setup import _detect_external_port, _detect_panel_connection, generate_esphome_yaml, hotspot_name, load_panel_setup, more_networks, save_panel_setup, wifi_problems
 from sources.flights import fetch_overhead_aircraft
 
 
@@ -1119,8 +1119,9 @@ async def api_jellyfin_suggest(request):
 
 
 def _masked_setup(cfg: dict, dev: dict) -> dict:
-    """A panel's setup for the browser: passwords masked."""
+    """A panel's setup for the browser: passwords masked, and its update key never sent."""
     out = dict(cfg)
+    out["ota_key"] = feeds.SECRET_MASK
     if out.get("wifi_password"):
         out["wifi_password"] = feeds.SECRET_MASK
     out["wifi_networks"] = [{"ssid": n["ssid"], "password": feeds.SECRET_MASK if n["password"] else ""}
@@ -1186,8 +1187,6 @@ async def api_panel_setup_post(request):
         raise web.HTTPBadRequest(text="expected a JSON object")
     dev = _device(request)
     cur = load_panel_setup(dev)
-    if body.get("regenerate_keys"):
-        cur["api_encryption_key"] = _new_api_key()
     for k in ("device_name", "ha_host", "wifi_ssid"):
         if k in body and isinstance(body[k], str):
             cur[k] = body[k].strip()
@@ -1215,10 +1214,6 @@ async def api_panel_setup_post(request):
         before = {n["ssid"]: n["password"] for n in more_networks(cur)}
         cur["wifi_networks"] = [{"ssid": n["ssid"], "password": before.get(n["ssid"], "") if n["password"] == feeds.SECRET_MASK
                                  else n["password"]} for n in more_networks({"wifi_networks": body["wifi_networks"]})]
-    for k in ("api_encryption_key",):
-        if k in body and isinstance(body[k], str) and body[k].strip():
-            if not body.get("regenerate_keys"):
-                cur[k] = body[k].strip()
     saved = save_panel_setup(dev["id"], cur)
     saved["display"] = T.get_display(load_layouts(dev["id"]).get("display"))["id"]
     masked_cfg = _masked_setup(saved, dev)

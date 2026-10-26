@@ -162,7 +162,7 @@ def _hotspot_lines(hotspot: tuple[str, str]) -> list[str]:
     return ["  ap:", f"    ssid: {hotspot[0]}", f"    password: {hotspot[1]}", "", "captive_portal:"]
 
 
-def render(*, disp: dict, version: str, device_name: str, frames_url: str, api_key: str,
+def render(*, disp: dict, version: str, device_name: str, frames_url: str, ota_key: str,
            wifi_ssid: str, wifi_password: str, interval_min: int,
            orientation: int, friendly_name: str = '"E-paper panel"',
            more_networks: list[tuple[str, str]] = (), hotspot: tuple[str, str] | None = None) -> str:
@@ -178,7 +178,7 @@ def render(*, disp: dict, version: str, device_name: str, frames_url: str, api_k
         "COMPONENT_REF": component_ref(version), "DISPLAY_COMPONENT": component,
         "DISPLAY_BLOCK": block, "DISPLAY_SETTLED": display_settled(disp), "FULL_REFRESH": full_refresh(disp),
         "DISPLAY_POWER_PIN": str(DISPLAY_POWER_PIN), "KEEP_DISPLAY_PIN": str(keep_display_pin(disp)),
-        "KEEP_PICTURE": keep_picture(disp), "API_KEY": api_key,
+        "KEEP_PICTURE": keep_picture(disp), "OTA_KEY": ota_key,
         "WIFI_BLOCK": wifi_block([(wifi_ssid, wifi_password), *more_networks], hotspot),
         "FRIENDLY_NAME": friendly_name,
         "INTERVAL_MIN": str(max(1, min(60, int(interval_min)))),

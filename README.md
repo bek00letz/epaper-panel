@@ -229,17 +229,18 @@ Assistant entities for your automations. Everything else works without it.
 
 1. In the editor, open **Settings** (the gear) › **Install or update**.
 2. Check Home Assistant's address and your Wi-Fi details. Add any other
-   networks it will meet (work, say). The add-on makes an encryption key and
-   a frame token for you, and the password for the panel's own Wi-Fi, which
-   it opens where it knows no network.
-3. **Copy** or **Download** the panel's file. If Home Assistant's ESPHome
-   folder is there, the add-on has already written it in.
-4. In the **ESPHome** add-on: **New device**, give it a name, pick
-   **ESP32-S3**, then **Skip**. **Edit** the new device, replace everything
-   with the file, and **Install**. Use USB-C the first time; after that it
-   updates over Wi-Fi.
-5. When Home Assistant finds the panel under **Settings › Devices &
-   services**, choose **Configure** and paste the encryption key.
+   networks it will meet (work, say). The add-on makes the panel's keys for
+   you, and you never need them, and the password for the panel's own
+   Wi-Fi, which it opens where it knows no network.
+3. **Send to ESPHome** (it needs the **ESPHome** add-on). ESPHome opens with
+   the panel among its devices.
+4. Choose **Install** on it. Use USB-C the first time; after that it updates
+   over Wi-Fi.
+5. Home Assistant finds the panel and asks to add it, in **Settings ›
+   Devices & services**. Add it within 15 minutes of the panel starting
+   (unplug it for a moment to start again). Home Assistant sets up its
+   encryption itself; there's nothing to type. Needs Home Assistant 2026.8
+   or newer.
 
 When a release changes the panel's firmware, the changelog says so at the
 top; install it again the same way. Until you do, the panel keeps working on
@@ -466,8 +467,9 @@ removed only once nothing produces it any more.
   the widgets you put on a page, the data sources you set up, and Iconify
   while you add or update icon sets. Airport codes are looked up from a copy
   bundled with the add-on.
-- **The panel talks to Home Assistant encrypted**, with its own key, which
-  also protects its updates over Wi-Fi.
+- **The panel talks to Home Assistant encrypted**, with a key Home Assistant
+  makes and keeps when it adds the panel. Its updates over Wi-Fi need a key
+  of their own, one per panel, which the add-on keeps and never shows.
 
 ## How it works
 

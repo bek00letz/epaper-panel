@@ -39,6 +39,7 @@ class FakeHass:
         self.calls = []
         self.fail_actions = 0
         self.renames = []
+        self.flows = []
 
     async def rest(self, method, path, json=None, timeout=15):
         self.calls.append((method, path, json))
@@ -66,6 +67,8 @@ class FakeHass:
     async def ws(self, payload, timeout=10):
         if payload["type"] == "config/entity_registry/list":
             return list(self.registry)
+        if payload["type"] == "config_entries/flow/progress":
+            return list(self.flows)
         if payload["type"] == "config/entity_registry/update":
             if payload["new_entity_id"] in self.states:
                 raise HassError("Entity ID is already in use")
@@ -164,6 +167,40 @@ class TestPanelLink(unittest.TestCase):
         run(link.deliver())
         attempts = [c for c in hass.calls if c[1].endswith("_refresh_now")]
         self.assertEqual(len(attempts), 1)
+
+    def test_the_mac_it_says_picks_its_entities_whatever_the_names(self):
+        kitchen = [dict(e, entity_id=e["entity_id"].replace("e_paper_panel", "kitchen"), device_id="dev2",
+                        unique_id=e["unique_id"].replace("00:00:5E:00:53:01", "00:00:5E:00:53:02"))
+                   for e in PANEL_REGISTRY]
+        hass = FakeHass(registry=PANEL_REGISTRY + kitchen)
+        # Two panels, the add-on drives several, and no name to tell them apart: only the MAC does.
+        link = panel_link.PanelLink(hass, lambda: "crowpanel_epaper", sole=lambda: False,
+                                    mac=lambda: "00005e005302")
+        self.assertTrue(run(link.discover()))
+        self.assertEqual(link.entities["ip"], "sensor.kitchen_panel_ip")
+        link = panel_link.PanelLink(hass, lambda: "crowpanel_epaper", sole=lambda: False)
+        run(link.discover())
+        self.assertEqual(link.entities, {})                     # no MAC, no name: reported, not guessed
+
+    def test_mac_in_every_form_home_assistant_uses(self):
+        self.assertEqual(panel_link.mac_of("00005E005301"), "00:00:5e:00:53:01")
+        self.assertEqual(panel_link.mac_of("00:00:5e:00:53:01"), "00:00:5e:00:53:01")
+        self.assertEqual(panel_link.unique_id_mac("00:00:5E:00:53:01/0/number/Refresh interval"), "00:00:5e:00:53:01")
+        self.assertEqual(panel_link.unique_id_mac("00005e005301-number-refresh_interval"), "00:00:5e:00:53:01")
+        for bad in ("", "0000", "00:00:5e:00:53:01:02", "zz005e005301", None):
+            self.assertEqual(panel_link.mac_of(bad), "")
+
+    def test_what_home_assistant_waits_for_is_found_by_mac(self):
+        hass = FakeHass(services={}, registry=[])
+        link = panel_link.PanelLink(hass, lambda: "", mac=lambda: "00005e005301")
+        self.assertIsNone(run(link.connection())["waiting"])
+        hass.flows = [{"handler": "esphome", "context": {"source": "zeroconf", "unique_id": "00:00:5e:00:53:09"}}]
+        self.assertIsNone(run(link.waiting_flow()))             # another panel's discovery
+        hass.flows.append({"handler": "esphome", "context": {"source": "zeroconf", "unique_id": "00:00:5e:00:53:01"}})
+        self.assertEqual(run(link.connection())["waiting"], "add")
+        hass.flows = [{"handler": "esphome", "context": {"source": "reauth", "unique_id": "00:00:5e:00:53:01"}}]
+        self.assertEqual(run(link.waiting_flow()), "confirm")
+        self.assertIsNone(run(panel_link.PanelLink(hass, lambda: "").waiting_flow()))   # firmware that says no MAC
 
     def test_set_refresh_interval_targets_the_real_entity(self):
         hass = FakeHass()

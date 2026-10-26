@@ -158,8 +158,14 @@ settings and 0.14 screen bar were first seen by the user on 21 Oct.
   positions (`theme.footer_plan()`); the firmware never hard-codes them.
 - **The frame token switches on when the panel first uses it**, so a
   reinstall never leaves the panel blank. Actions always need a key.
-- **Over-the-air updates are secured by the API key** (ESPHome's encryption
-  key), with no separate password.
+- **Home Assistant sets each panel's encryption key; updates over Wi-Fi need
+  a separate update key** (the user, 26 Oct; 0.22). Nobody pastes or sees a
+  key. The add-on makes one update key per panel (`setup.ota_key`) and writes
+  it under `ota: encryption: key:`, because ESPHome 2026.10 can't require
+  encryption with a key set at runtime: without its own key, the panel would
+  accept an update from anyone on the network. A panel set up before keeps
+  its old key as its update key. No separate password. Replaces "updates are
+  secured by the API key" (ROADMAP, Later: drop it when ESPHome can).
 - **Only an answer from the add-on puts a panel to sleep.** One firmware for
   both modes.
 - **Two timers per screen, "Update every" and "Rotate every"** (20 Oct,

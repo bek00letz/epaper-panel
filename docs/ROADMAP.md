@@ -124,6 +124,12 @@ to a path in a source's own format may come later on top.
 | A source in its own form (option B of 0.21's services, noted 22 Oct) | Pick, per field, where in a data source's own JSON a widget's field is (like "Value at"), with a live preview, so an API in another form can fill a Racing, Scores or Flights page without reshaping it first. 0.21 reads the add-on's own form from a source or a sensor's attributes; this would sit on top as an adapter (`shapes.read`) | medium | no | – |
 | A guide behind the starter page's QR code | A current guide with worked examples, at an address that won't move. Today the QR code opens the README's three-step "Your first page" | small–medium | no | – |
 
+**Worth a look:** one key per panel again. Since 0.22 a panel's file carries
+an update key of its own, because ESPHome 2026.10 can't require encrypted
+updates with the key Home Assistant sets. When ESPHome can (watch `ota:
+encryption:` with a keyless `api:`), drop the update key and let Home
+Assistant's key secure updates too, so the file carries no key at all.
+
 ## Decided with the user (20 Oct)
 
 - **0.13 only proves and hardens.** Nothing new until what shipped has met

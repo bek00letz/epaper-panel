@@ -9,6 +9,8 @@
 // Low Power Mode (PowerPolicy in epf_core.h): the first download after a start
 // says why the panel is awake, and every answer may say how long to sleep.
 // Always on, every answer may say when the next timed download starts (X-EPF-Next).
+// Every download says which panel it is (?mac=), so the add-on finds it in Home
+// Assistant by the address Home Assistant knows it by, never by a name.
 
 #include "epf_core.h"
 
@@ -23,6 +25,7 @@
 #include "soc/soc_caps.h"
 #include "esphome/components/display/display_buffer.h"
 #include "esphome/core/hal.h"
+#include "esphome/core/helpers.h"
 
 #include <sys/time.h>
 
@@ -98,7 +101,8 @@ class EpfClient {
   bool start_fetch(const std::string &url, esphome::display::DisplayBuffer *epd) {
     if (state_.load(std::memory_order_acquire) != IDLE) return false;
     if (!alloc_()) return false;
-    url_ = url + (url.find('?') == std::string::npos ? "?" : "&") + "cap=" + std::to_string(capacity_) + wake_query_;
+    url_ = url + (url.find('?') == std::string::npos ? "?" : "&") + "cap=" + std::to_string(capacity_) + "&mac=" +
+           mac_() + wake_query_;
     wake_query_.clear();                    // said once, on the first download after a start
     send_etag_ = current_etag_;
     native_w_ = epd ? epd->get_native_width() : 0;
@@ -263,6 +267,15 @@ class EpfClient {
   uint8_t *back_buf_{nullptr};
   size_t capacity_{0};
   int native_w_{0}, native_h_{0};
+  // Its Wi-Fi MAC address, as Home Assistant's ESPHome devices are known by: 12 lower-case hex digits.
+  static std::string mac_() {
+    uint8_t mac[6];
+    esphome::get_mac_address_raw(mac);
+    char out[13];
+    snprintf(out, sizeof out, "%02x%02x%02x%02x%02x%02x", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+    return out;
+  }
+
   std::string url_, send_etag_, current_etag_, wake_query_, last_sleep_, last_next_;
   uint32_t last_next_at_ms_{0};
   AnswerHeaders answer_;                  // written by the download task

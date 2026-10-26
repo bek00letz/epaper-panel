@@ -299,6 +299,15 @@ YAML comes only from `addon/app/firmware/panel.yaml`. After changing it, run
 - **HTTPS is checked against ESP-IDF's certificate bundle**
   (`esp_crt_bundle_attach`, enabled in `components/epf/__init__.py`). Don't
   turn checking off to make a tunnel work; fix the tunnel's certificate.
+- **The panel's file has no key under `api:`** (0.22): Home Assistant sets it
+  when it adds the panel, inside the `provisioning:` window. Updates over
+  Wi-Fi need the panel's own update key under `ota: encryption: key:`
+  (`setup.ota_key`, one per panel). ESPHome refuses `ota: encryption: {}`
+  with a keyless `api:`, and without an `ota:` key the panel takes plain,
+  unauthenticated updates from anyone. The update key goes only into the
+  file in ESPHome's folder: never to the browser (`web._masked_setup`), the
+  log or a shared file. ESPHome's add-on leaves a file of this shape alone
+  when Home Assistant hands it the key.
 - **`on_boot` fires before wifi is associated.** A fetch there races the
   network and loses. `refetch` waits on `wifi.connected` first; keep it that way.
 - **Changing navigation state does nothing on screen on its own.** Follow it

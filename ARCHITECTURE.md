@@ -470,13 +470,27 @@ Assistant. Each CrowPanel device has its own link. It never guesses names:
   `show_page` is a panel. The device name from that panel's setup picks it.
   The only panel in Home Assistant is taken as ours only while the add-on
   drives a single CrowPanel.
-- **Several panels' entities**: each panel's firmware names it after its
-  screen (`friendly_name`), so Home Assistant's device has that name.
-  Panel setup records it (`setup.installed_name`) when it writes the file,
-  and the link takes the one device with that name, or reports.
 - **Entities** (refresh interval, IP, Wi-Fi) are found by registry
-  `unique_id`, which ESPHome builds from the firmware's entity names
-  (`<MAC>/0/number/Refresh interval`). It survives any rename of the entity ID.
+  `unique_id`, which ESPHome builds from the panel's MAC address and the
+  firmware's entity names (`<MAC>/0/number/Refresh interval`). It survives
+  any rename of the entity ID. The panel says its MAC with every download
+  (`?mac=`, firmware 0.22 and later; kept in the device's state), so with
+  several panels the link takes the entities under that MAC.
+- **Several panels' entities, older firmware**: without a MAC, each panel's
+  firmware names it after its screen (`friendly_name`), so Home Assistant's
+  device has that name. Panel setup records it (`setup.installed_name`) when
+  it writes the file, and the link takes the one device with that name, or
+  reports.
+- **What Home Assistant waits for**: a discovered panel not added yet, or a
+  change to confirm, are its config flows in progress for the panel's MAC
+  (`waiting_flow`); the editor says which and links to Devices & services.
+- **Keys**: Home Assistant makes the encryption key when it adds the panel
+  (keyless `api: encryption:`, a 15-minute `provisioning:` window after each
+  start while it has none) and keeps it; the add-on never sees it. Updates
+  over Wi-Fi need the panel's own update key (`setup.ota_key`), made by the
+  add-on, written into the file under `ota:` and never sent to the browser.
+  ESPHome 2026.10 can't require encryption with the key Home Assistant
+  sets, so without it the panel would take an update from anyone.
 - **A refresh is delivered or kept pending.** Alerts, quiet hours starting or
   ending, and what a person does (Send, Push, the Refresh button, the action
   endpoint) call `request_refresh()`. `panel_link_loop` retries

@@ -22,8 +22,19 @@ from fixture import load_fixture
 from layouts_store import load_layouts
 
 
-def _new_api_key() -> str:
+def _new_update_key() -> str:
+    """A panel's update key: what its updates over Wi-Fi are encrypted with (ESPHome's form)."""
     return base64.b64encode(os.urandom(32)).decode("ascii")
+
+
+def _take_old_key(cfg: dict) -> bool:
+    """Before 0.22 a panel's one key was its Home Assistant key too (`api_encryption_key`). Home
+    Assistant sets that one now; the panel still runs the old key for updates, so it becomes the
+    update key and the next Install from ESPHome is accepted. Whether anything changed."""
+    old = cfg.pop("api_encryption_key", None)
+    if old and not cfg.get("ota_key"):
+        cfg["ota_key"] = old
+    return old is not None
 
 
 def load_panel_setup(dev: dict, default_host: str = "homeassistant.local") -> dict:
@@ -32,7 +43,7 @@ def load_panel_setup(dev: dict, default_host: str = "homeassistant.local") -> di
     The size and orientation are the device's own (`display` is shown here
     for the form, and saving it changes the device)."""
     cfg = dict(dev.get("setup") or {})
-    changed = False
+    changed = _take_old_key(cfg)
     defaults = {
         "device_name": (runtime.ESPHOME_DEVICE if dev.get("install_token") else
                         re.sub(r"[^a-z0-9]+", "-", str(dev.get("name") or "").lower()).strip("-")
@@ -40,7 +51,8 @@ def load_panel_setup(dev: dict, default_host: str = "homeassistant.local") -> di
         "ha_host": default_host,
         "wifi_ssid": "",
         "wifi_password": "",
-        "api_encryption_key": _new_api_key(),
+        # Never shown, logged or sent to the browser (web._masked_setup).
+        "ota_key": _new_update_key(),
         "use_secrets": False,
         # Its own Wi-Fi when it finds no network it knows (wifi_block).
         "hotspot": True,
@@ -60,7 +72,7 @@ def load_panel_setup(dev: dict, default_host: str = "homeassistant.local") -> di
 
 
 def save_panel_setup(device_id, cfg: dict) -> dict:
-    """Keep a panel's setup with its device (devices.json is 0600: the Wi-Fi password and API key)."""
+    """Keep a panel's setup with its device (devices.json is 0600: the Wi-Fi password and update key)."""
     cfg = {k: v for k, v in cfg.items() if k != "display"}
     dev_name = re.sub(r"[^a-z0-9-]+", "-", str(cfg.get("device_name") or "crowpanel-epaper").strip().lower()).strip("-")
     cfg["device_name"] = dev_name or "crowpanel-epaper"
@@ -187,7 +199,7 @@ def generate_esphome_yaml(cfg: dict, dev: dict, public_base: str | None = None) 
     use_secrets = bool(cfg.get("use_secrets"))
     ssid = (cfg.get("wifi_ssid") or "").strip()
     pw = cfg.get("wifi_password") or ""
-    api_key = (cfg.get("api_encryption_key") or "").strip() or _new_api_key()
+    ota_key = (cfg.get("ota_key") or "").strip() or _new_update_key()
     # Its own timer, which runs only while it's always on: Update every (timing.py), never a setting here.
     initial_min = kinds.of(dev).update_minutes(dev)
     try:
@@ -196,10 +208,11 @@ def generate_esphome_yaml(cfg: dict, dev: dict, public_base: str | None = None) 
         orient = 0
 
     known_secrets = _inspect_existing_secrets()
+    # A panel whose key lived in secrets.yaml keeps it there: that's the key it runs.
     if use_secrets and "api_encryption_key" in known_secrets:
-        api_key_line = "!secret api_encryption_key"
+        ota_key_line = "!secret api_encryption_key"
     else:
-        api_key_line = _yaml_str(api_key)
+        ota_key_line = _yaml_str(ota_key)
 
 
     if (use_secrets or not ssid) and "wifi_ssid" in known_secrets:
@@ -218,7 +231,7 @@ def generate_esphome_yaml(cfg: dict, dev: dict, public_base: str | None = None) 
         (wifi_ssid_line, wifi_pw_line), more = more[0], more[1:]
     yaml_text = firmware_gen.render(
         disp=disp, version=ADDON_VERSION, device_name=dev_name, frames_url=_yaml_str(frames_epf_url),
-        api_key=api_key_line, wifi_ssid=wifi_ssid_line, wifi_password=wifi_pw_line,
+        ota_key=ota_key_line, wifi_ssid=wifi_ssid_line, wifi_password=wifi_pw_line,
         interval_min=initial_min, orientation=orient, friendly_name=_yaml_str(ha_name(dev)),
         more_networks=more,
         hotspot=(_yaml_str(hotspot_name(dev)), _yaml_str(cfg.get("hotspot_password") or _new_hotspot_password()))
@@ -227,7 +240,6 @@ def generate_esphome_yaml(cfg: dict, dev: dict, public_base: str | None = None) 
     secrets_text = f"""# Put these in your ESPHome secrets.yaml if using !secret references:
 wifi_ssid: {_yaml_str(ssid or "your-wifi-ssid")}
 wifi_password: {_yaml_str(pw or "your-wifi-password")}
-api_encryption_key: {_yaml_str(api_key)}
 """
     return yaml_text, secrets_text
 
@@ -235,11 +247,15 @@ api_encryption_key: {_yaml_str(api_key)}
 async def _detect_panel_connection(dev: dict) -> dict:
     """Whether Home Assistant sees the panel, found by its registry IDs (see PanelLink)."""
     link = kinds.of(dev).link(dev)
+    # Firmware from 0.22 on says its MAC when it downloads: it's installed and fetching.
+    st = devices.state(dev["id"])
+    seen = {"installed": bool(st.get("mac")), "home_ip": st.get("ip") or None}
     if not HA_TOKEN or link is None:
         panel_fix = load_fixture().get("panel") or {}
         return {"connected": False, "ip": None, "rssi": panel_fix.get("rssi"), "network": None, "node": None,
+                "waiting": None, **seen,
                 "problem": "running without Home Assistant" if not HA_TOKEN else "the add-on can't reach this device"}
-    return await link.connection()
+    return {**await link.connection(), **seen}
 
 
 async def _detect_external_port(session: aiohttp.ClientSession | None = None) -> int:

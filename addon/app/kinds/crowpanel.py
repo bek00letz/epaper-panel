@@ -43,12 +43,13 @@ import frames
 import health
 import paging
 import panel_ops
+import reach
 import runtime
 import timing
 from render.clock import hm as clock_text
 from config import HA_TOKEN, SLEEP_PAGE
 from kinds import Kind, device_for, of as kind_of, register
-from panel_link import PanelLink
+from panel_link import PanelLink, mac_of
 from render import epf, sleep, stripmeta, subitems, theme as T
 
 
@@ -153,7 +154,8 @@ class CrowPanel(Kind):
                 # Installed from a file that named it, or the name every panel had before that.
                 return setup.get("installed_name") or ("E-paper panel" if dev_now.get("install_token") else "")
 
-            rt.link = PanelLink(runtime.HASS, preferred, sole=only_panel, ha_name=ha_name)
+            rt.link = PanelLink(runtime.HASS, preferred, sole=only_panel, ha_name=ha_name,
+                                mac=lambda: devices.state(dev_id).get("mac") or "")
         return rt.link
 
     def room(self, dev):
@@ -508,8 +510,24 @@ def next_header() -> dict:
     return {"X-EPF-Next": str(cadence.until_next_fetch_ms())}
 
 
+def note_which(dev: dict, request) -> None:
+    """Which panel this is: the MAC it says (firmware 0.22 and later), how Home Assistant knows it
+    (panel_link), and its address at home when it asked straight, not through a proxy. Written only
+    when it changes."""
+    mac = mac_of(request.query.get("mac"))
+    if not mac:
+        return
+    ip = "" if reach.through_proxy(request) else reach.sender(request)
+    st = devices.state(dev["id"])
+    if st.get("mac") != mac or (ip and st.get("ip") != ip):
+        devices.set_state(dev["id"], mac=mac, **({"ip": ip} if ip else {}))
+        if runtime.device(dev["id"]).link is not None:
+            runtime.device(dev["id"]).link.look_again()   # found again, by its MAC
+
+
 async def frames_epf(request):
     dev = device_for(request, CrowPanel.id)
+    note_which(dev, request)
     try:
         if "cap" in request.query and runtime.set_panel_capacity(dev["id"], int(request.query["cap"])):
             runtime.LIVE._event().set()                # render to the new size now
