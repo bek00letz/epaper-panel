@@ -1,5 +1,17 @@
 # Setup from the browser: research and options
 
+> **Parked (the user, 26 Oct).** Not built for now. Instead, today's ESPHome
+> route drops the key paste (Home Assistant 2026.8 sets the key itself), and
+> the decision waits for the Seeed 7.5" with TRMNL's firmware: living with it
+> may show whether CrowPanels should keep our firmware at all.
+> The user's answers, should this come back: **design A**; the add-on adds the
+> panel to Home Assistant for you; on plain http, all three fallbacks (link to
+> the secure address, flash through Home Assistant's USB, download under
+> Advanced); our own install sheet; keep extra networks and the hotspot
+> (password given at pairing); firmware from the GitHub release at first
+> Install. The user's worry, 26 Oct: owning a whole install line (CI builds,
+> a firmware store, pairing, the sheet) is a lot to carry.
+
 Research for the design session with the user (worker browser-setup-research,
 26 Oct 2026). Nothing is built. Checked against ESPHome 2026.10.0 and Home
 Assistant 2026.10.4 (the current releases), and both projects' main branches of
