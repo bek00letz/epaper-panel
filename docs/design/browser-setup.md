@@ -23,8 +23,8 @@ device, with the key set by Home Assistant when it adds the device.**
 - Home Assistant: when it adds such a device, it makes a key, sends it over an
   encrypted connection (Noise with a well-known all-zeros key: safe from
   anyone listening, not from someone actively in the middle), keeps it per MAC
-  address, and uses it from then on. Encrypted since 2026.8; in plain text
-  since 2025.8 (deprecated; ESPHome drops that in 2027.2).
+  address, and uses it from then on. Home Assistant 2026.8 and later, which
+  every install of this add-on already runs.
 - Updates over Wi-Fi are then secured by that same key, with no password
   (ESPHome 2026.9 and later), as our decision in STATUS wants.
 
@@ -64,11 +64,10 @@ it) instead of by name: more reliable, and it's what the pairing knows.
 
 | Feature | ESPHome | Home Assistant | What it gives us |
 |---|---|---|---|
-| Key set when Home Assistant adds the device | 2026.7 (`provisioning:`, esphome#17152); keyless `encryption:` older | 2025.8 in plain text; **2026.8 encrypted** (core#176144) | The key without a paste. Home Assistant keeps it; the add-on never sees it |
+| Key set when Home Assistant adds the device | 2026.7 (`provisioning:`, esphome#17152); keyless `encryption:` older | 2026.8 (core#176144) | The key without a paste. Home Assistant keeps it; the add-on never sees it |
 | Key told to the ESPHome add-on | – | 2026.8 | If the person later adopts the panel in the ESPHome add-on, it gets the same key instead of locking Home Assistant out |
 | Device dials Home Assistant (`outgoing_connection`) | 2026.10 (esphome#18919) | 2026.10 (core#180961) | Panels on another subnet, and woken panels reach Home Assistant at once. **Not away from home**: raw TCP to port 6054, an IP address only, and only for a device Home Assistant has added before |
 | Setup wizard shown when added (`api: wizard:`) | 2026.10 (esphome#19966) | 2026.11 (beta now) | Nice to have: Home Assistant's own add dialog could show the panel's settings. Not needed |
-| Re-flashed without a key | – | A reauth asks once ("encryption was removed"), checks it's the same MAC, then sets a new key | One way for old panels to move over, keeping the device and its entities |
 | Update pulled by the device (`update: http_request`, `ota: http_request`) | Since 2024 | Shows as an update entity | The panel can update itself from the add-on. Checks an MD5 only, no signature |
 | Improv Wi-Fi over USB (`improv_serial`) and Bluetooth (`improv_ble`) | Long-standing | Improv over Bluetooth hands over to ESPHome's add flow | Picking Wi-Fi in the same sheet as Install |
 
@@ -152,8 +151,8 @@ ESPHome's own route for products, plus one action to pair.
    trades the code for its frame key at the add-on and shows its first page.
 6. Unplug, put it where it goes.
 
-**Needs:** Home Assistant 2026.8 or newer for the new path (the encrypted
-key handover); the ESPHome integration that's built into Home Assistant; no
+**Needs:** Home Assistant 2026.8 or newer (set as the add-on's minimum; no
+install runs anything older); the ESPHome integration that's built into Home Assistant; no
 ESPHome add-on. The firmware is built with ESPHome 2026.10 or newer (in CI, not
 by the person).
 
@@ -181,7 +180,6 @@ by the person).
 - Frames, buttons, sleeping, Update every: as today.
 - Entities and actions: as today, the same names, found by MAC.
 - Other networks and a per-panel hotspot password need firmware work (above).
-- Old panels keep working. See the section on old panels.
 
 **Away from home, asleep, TRMNL, privacy**
 - Away: frames over HTTPS through Home Assistant's address, as today. Pairing,
@@ -236,9 +234,9 @@ project (a release key in GitHub's secrets, the public half in the firmware,
 checked before the new firmware is switched on): a key the maintainer has to
 guard and be able to replace.
 
-**What breaks or stays:** old panels' ESPHome devices and any automation
-using `esphome.*` actions don't carry over; `panel_link` is replaced. Works
-with any Home Assistant version.
+**What breaks or stays:** the panel is no longer an ESPHome device in Home
+Assistant, so automations would use the companion's actions instead of
+`esphome.*` ones; `panel_link` is replaced.
 
 **Away, asleep, TRMNL, privacy:** the one design where Home Assistant can wake
 an always-on panel **away from home** (the held-open request goes through
@@ -258,29 +256,23 @@ and updates work as in A.
 
 **Gains over A:** pages don't wait on Home Assistant, and the pairing is tied to the
 very panel on the cable. **Costs:** a second way in for panels not installed from the
-editor (plugged into Home Assistant, ESPHome Web, an older install), so two
+editor (plugged into Home Assistant, ESPHome Web), so two
 pairing routes to keep in step, against the "one source of truth" rule. Size
 between A and B.
 
-## Panels set up the old way
+## The panel set up today
 
-- They keep working untouched in every design: their YAML has their key,
-  address and frame key. The YAML path stays under Advanced.
-- Moving one over (A and C): install the ready-made firmware over USB from the
-  editor (a new install erases the panel). Home Assistant notices the key is
-  gone and asks once to confirm ("encryption was removed"), checks it's the same
-  MAC, then sets a new key. The device, its entities and automations stay. The
-  add-on pairs it with the frame key it already has, so nothing else changes.
-  Then the old key in `devices.json` can go.
-- In B: the old ESPHome device is removed from Home Assistant, and automations
-  that used it need redoing.
+The add-on is ten days old, and the only panel set up through YAML is the
+user's own, so nothing needs a migration feature. That panel keeps working on
+its YAML, which stays under Advanced. To move it to the new setup, install the
+ready-made firmware over USB and set it up like a new panel.
 
 ## Recommendation
 
 **A.** It's ESPHome's own route for ready-made devices (built for the
 European rule EN 18031 against default passwords), so ESPHome and Home
 Assistant maintain the hard parts: the key, its safe handover, updates
-secured by it, the reauth that moves old panels over. Whatever installed the
+secured by it. Whatever installed the
 firmware (the editor, Home Assistant's USB, ESPHome Web), the pairing is the
 same single path through Home Assistant. It keeps today's entities, actions and
 `panel_link`, and Home Assistant holds the key instead of the add-on. B's real
@@ -291,27 +283,23 @@ must show before the panel is added to Home Assistant.
 Built in this order, each step useful alone: every model built by CI and served
 by the add-on (also lets Advanced users install without ESPHome); the
 ready-made firmware; the install sheet; pairing through Home Assistant;
-updates through the action; moving old panels over.
+updates through the action.
 
 ## Questions only the user can answer
 
 1. **A, B or C?**
-2. **May the new setup require Home Assistant 2026.8 or newer?** Older
-   versions would keep the YAML path.
-3. **When Home Assistant finds the panel, may the add-on add it for you**, since
+2. **When Home Assistant finds the panel, may the add-on add it for you**, since
    you pressed Install? Or should you confirm in Home Assistant's own card?
-4. **Home Assistant on plain HTTP (no Install button):** link to its secure
+3. **Home Assistant on plain HTTP (no Install button):** link to its secure
    address when there is one, flash through Home Assistant's own USB, or only
    download and ESPHome Web under Advanced? (They can stack.)
-5. **The install sheet:** our own, in the editor's style, or ESP Web Tools'
+4. **The install sheet:** our own, in the editor's style, or ESP Web Tools'
    ready-made dialog (faster to build, Material look)?
-6. **Other networks and the hotspot when lost:** keep both for new panels
+5. **Other networks and the hotspot when lost:** keep both for new panels
    (more firmware code: extra networks and a hotspot password given at
    pairing), or drop the hotspot after setup and the extra networks?
-7. **Firmware files:** downloaded from the GitHub release at the first
+6. **Firmware files:** downloaded from the GitHub release at the first
    Install (recommended), or built into the add-on?
-8. **Old panels:** offer "Move to the new setup" in the editor, or leave them on
-   YAML until they're reinstalled?
 
 ## Not confirmed
 
@@ -342,8 +330,7 @@ updates through the action; moving old panels over.
 - Key over an encrypted zero-key connection: home-assistant/core#176144
   (in 2026.8.0); source `homeassistant/components/esphome/manager.py`
   (`_handle_dynamic_encryption_key`, `_async_provision_key_over_noise`,
-  dashboard key sync), `config_flow.py` (reauth "encryption removed"),
-  `encryption_key_storage.py` (keys per MAC)
+  dashboard key sync), `encryption_key_storage.py` (keys per MAC)
 - ESPHome source: `components/api/api_connection.cpp` (set-key request,
   plain-text set deprecated until 2027.2.0), `api_server.cpp` (saved key),
   `components/esphome/ota/__init__.py` (updates secured by the provisioned key, 2026.9.0 on),
