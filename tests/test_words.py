@@ -182,6 +182,71 @@ class TestDatesAndNumbers(unittest.TestCase):
         self.assertIsNone(binding.clock_pattern({"type": "text", "value": "{{ now().strftime('%A') }} {{ states('x') }}"}))
 
 
+class TestADevicesOwnLanguage(unittest.TestCase):
+    def test_its_own_else_home_assistants_else_english(self):
+        self.assertEqual([words.for_device(own, home) for own, home in
+                          (("de", "fr"), ("", "fr"), (None, "ro-RO"), ("", "it"), ("xx", "es"), ("", None))],
+                         ["de", "fr", "ro", "en", "es", "en"])
+
+    def test_its_pictures_are_drawn_in_it(self):
+        import frames
+        from unittest import mock
+
+        async def locale(_):
+            return "FR", "fr"
+
+        async def drawn(dev):
+            with mock.patch.object(frames, "get_home_locale", locale):
+                with await frames.device_words(None, dev):
+                    return words.language(), words.country()
+        self.assertEqual(asyncio.run(drawn({"language": "de"})), ("de", "FR"))
+        self.assertEqual(asyncio.run(drawn({})), ("fr", "FR"), "Same as Home Assistant")
+
+
+class TestPresetsWriteTheDevicesWords(unittest.TestCase):
+    """The user's call (26 Oct): a preset's labels are written in the device's language when the page
+    is made; from then on they're the person's own words, never translated again."""
+
+    def js(self, lang, body):
+        import json
+        import shutil
+        import test_presets as tp
+        if not shutil.which("node"):
+            self.skipTest("no node to read the editor's presets")
+        return tp.run_js(f"Cat.setSpeaking({json.dumps(lang)});\n{body}")
+
+    def test_labels_and_page_names_in_the_devices_language(self):
+        body = """const p = (id) => P.presetById(id), l = (id) => p(id).looks[0];
+          const texts = (id, ent) => P.pageFor(p(id), l(id), ent).elements.filter((e) => e.type === "text" && e.value).map((e) => e.value);
+          console.log(JSON.stringify({ climate: texts("climate", "sensor.indoor_temperature"), name: P.pageName(p("climate"), l("climate"), ""),
+            weather: P.pageName(p("weather_forecast"), l("weather_forecast"), ""),
+            status: P.pageFor(p("status"), l("status"), "binary_sensor.front_door").elements.find((e) => e.replace)?.replace }));"""
+        de, fr, en = self.js("de", body), self.js("fr", body), self.js("en", body)
+        self.assertEqual((de["climate"], de["name"], de["weather"]), (["Raumklima"], "Raumtemperatur", "Wetter"))
+        self.assertEqual(fr["weather"], "Meteo", "a page's name is a plain-letter slug: accents folded")
+        self.assertEqual((en["climate"], en["name"]), (["room climate"], "Room temperature"))
+        self.assertEqual(de["status"], {"on": "An", "off": "Aus"}, "Home Assistant's state words, in German")
+
+    def test_every_word_a_preset_writes_is_in_the_table(self):
+        src = (APP / "web" / "app" / "presets.js").read_text()
+        keys = {"page." + k for k in re.findall(r'pageWord\(\s*"([\w.]+)"', src)}
+        keys |= {"page.name." + k for k in re.findall(r'pageNameWord\(\s*"(\w+)"', src)}
+        keys |= {"page.name." + k for k in re.findall(r'^\s+id: "(\w+)", group:', src, re.M)
+                 if k not in ("match", "race_weekend", "batteries")}     # named by their league, series or rule
+        self.assertGreater(len(keys), 30)
+        self.assertEqual(sorted(k for k in keys if k not in WORDS), [])
+
+    def test_every_state_word_is_in_the_table(self):
+        from render import states
+        said = {w for v in states.STATES.values() for (w, _) in v.values()}
+        self.assertEqual(sorted(w for w in said if f"state.{w}" not in WORDS), [])
+
+    def test_the_catalog_carries_them_for_every_language(self):
+        got = words.page_words()
+        self.assertTrue(all(set(row) == set(words.LANGUAGES) for row in got.values()))
+        self.assertEqual(got["page.room_climate"]["ro"], "climat interior")
+
+
 class TestPagesSayIt(unittest.TestCase):
     def test_a_race_page_says_its_session_and_state(self):
         data = {"status": "IN", "session": "Qualifying", "session_start": "2026-10-24T21:00:00+00:00", "tz": "Europe/Bucharest"}
@@ -315,17 +380,40 @@ class TestTheLongestWordsFit(unittest.TestCase):
                         self.assertGreater(drawn, 0, "it says something")
                         self.assertEqual(drawn - _inside(img, (el["x"], el["y"], el["w"], el["h"])), 0)
 
+    def test_a_word_fits_up_to_its_largest_size(self):
+        # A preset's word that's longer in some languages is as large as fits, at most its max_size.
+        el = {"type": "text", "max_size": 80, "bold": True, "x": 0, "y": 0, "w": 580, "h": 128}
+        for word, want in (("Closed", 80), ("Geschlossen", 80), ("Manipulation erkannt", None)):
+            got = []
+            layout._draw_text(*T.new_canvas(), el, word, got)
+            self.assertFalse(got[0]["overflow"], word)
+            self.assertEqual(got[0]["size"], want or got[0]["size"])
+            self.assertLessEqual(got[0]["size"], 80)
+        self.assertEqual(arrange.auto_box(el, "792x272", "296x128")["max_size"], 30, "placed on a smaller size like a size")
+
     def test_every_preset_fits(self):
-        # The presets' own fit check (test_presets.TestEverythingFits), in every other language.
+        # The presets' own fit check (test_presets.TestEverythingFits), with the labels they write in
+        # each other language: on the 5.79" and placed on every other size offered.
+        import json
         import shutil
         import test_presets as tp
         if not shutil.which("node"):
             self.skipTest("no node to read the editor's presets")
         fits = tp.TestEverythingFits("test_on_every_offered_size")
-        fits.setUpClass()
+        base = arrange.canvas_key(T.DISPLAYS["crowpanel_579"]["w"], T.DISPLAYS["crowpanel_579"]["h"])
         for lang in OTHERS:
-            with speaking(lang):
-                fits.test_on_every_offered_size()
+            cat = tp.run_js(f"Cat.setSpeaking({json.dumps(lang)});" + tp.CATALOGUE)
+            for key, d in T.DISPLAYS.items():
+                if d.get("offered") is False:
+                    continue
+                target = arrange.canvas_key(d["w"], d["h"])
+                for p in cat["presets"]:
+                    for look in p["looks"]:
+                        page = json.loads(json.dumps(look["example"]))
+                        for el in page["elements"]:
+                            el.update(arrange.auto_box(el, base, target))
+                        with self.subTest(lang=lang, look=look["id"], display=key), speaking(lang):
+                            self.assertEqual(fits.check(page, key), [])
 
     def test_the_sleep_screen_fits(self):
         for lang in words.LANGUAGES:
@@ -356,3 +444,28 @@ class TestTheLongestWordsFit(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+from test_editor_api import EditorClient  # noqa: E402
+
+
+class TestTheLanguageSetting(EditorClient):
+    """Settings › Device "Language": Same as Home Assistant ("") or one of the five."""
+
+    async def test_set_it_read_it_and_go_back_to_home_assistants(self):
+        dev = (await (await self.ed.get("/api/devices")).json())["devices"][0]
+        self.assertEqual((dev["language"], dev["speaks"]), ("", "en"))
+        r = await self.ed.patch(f"/api/devices/{dev['id']}", json={"language": "de"})
+        self.assertEqual(r.status, 200)
+        self.assertEqual(((await r.json())["device"]["language"], (await r.json())["device"]["speaks"]), ("de", "de"))
+        r = await self.ed.patch(f"/api/devices/{dev['id']}", json={"language": "it"})
+        self.assertEqual(r.status, 400, "only the languages offered")
+        r = await self.ed.patch(f"/api/devices/{dev['id']}", json={"language": ""})
+        self.assertEqual((await r.json())["device"]["language"], "")
+        import devices
+        self.assertNotIn("language", devices.get(dev["id"]), "Home Assistant's: nothing stored")
+
+    async def test_the_catalog_offers_them(self):
+        cat = await (await self.ed.get("/api/catalog")).json()
+        self.assertEqual([c for c, _ in cat["languages"]["choices"]], list(words.LANGUAGES))
+        self.assertIn("page.room_climate", cat["page_words"])

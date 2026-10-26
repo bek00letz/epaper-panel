@@ -13,7 +13,7 @@ import { SETTING_NAMES } from "./doc.js";
 import { paint } from "./glyphs.js";
 import { problemLines, servicesPane } from "./services.js";
 import { formNote } from "./data.js";
-import { widgets as widgetDescriptors } from "./catalog.js";
+import { widgets as widgetDescriptors, catalog } from "./catalog.js";
 
 const thumbImg = (app, key, page) => {
   const img = h("img", { class: "thumb", alt: "", "data-thumb": key, draggable: "false" });
@@ -512,6 +512,22 @@ export async function placeFor(app, display, orientation) {
 
 const signal = (dbm) => (dbm >= -60 ? "strong" : dbm >= -70 ? "good" : dbm >= -80 ? "weak" : "very weak");
 const awakeText = (s, per) => (s == null ? null : `awake ${s.toLocaleString([], { maximumFractionDigits: 1 })} s ${per}`);
+/* The device's language (render/words.py): what its screen says, Home Assistant's unless chosen.
+   Its pages' own words stay as they were written. */
+function languageRow(app, scr) {
+  const langs = catalog().languages || {}, choices = langs.choices || [["en", "English"]];
+  const named = (code) => (choices.find(([c]) => c === code) || [code, code])[1];
+  const home = langs.home_offered === false ? "English: Home Assistant's isn't offered yet" : named(langs.home || "en");
+  return grow("Language", "For the dates and words the add-on writes. Yours stay as you wrote them",
+    select([["", `Same as Home Assistant (${home})`], ...choices], scr.language || "", async (v) => {
+      try {
+        app.applyScreens((await api(`api/devices/${encodeURIComponent(scr.id)}`, { method: "PATCH", body: { language: v } })).body);
+        forgetThumbnails(); app.canvas?.preview(true); app.renderStrip();
+        toast(`${scr.name} is in ${named(app.screen?.speaks || v || "en")} from its next update.`);
+      } catch (e) { toast(`Couldn't change it: ${e.message}`); }
+    }, { "aria-label": "Language" }));
+}
+
 function pairedPane(app, pane, show) {
   const doc = app.doc, spec = doc.spec, scr = app.screen || {}, info = scr.info || {};
   const name = input(scr.name || "", async (v) => {
@@ -528,7 +544,8 @@ function pairedPane(app, pane, show) {
   const disp = DISPLAYS[spec.display] || {};
   pane.append(h("h4", { class: "gtitle", text: "Display" }), group(
     grow("Size", "As it reports it", h("span", { class: "fnote", text: disp.w ? `${disp.name}, ${disp.w} × ${disp.h}` : "" })),
-    grow("Mounted", "Which way up it stands", select(ORIENTATIONS, spec.orientation || 0, (v) => setMounted(app, v)))));
+    grow("Mounted", "Which way up it stands", select(ORIENTATIONS, spec.orientation || 0, (v) => setMounted(app, v))),
+    languageRow(app, scr)));
   pane.append(h("h4", { class: "gtitle", text: "Power" }), timersBox(app, scr, () => show("panel")));
   sharedGroup(app, pane, scr, show);
   removeGroup(app, pane, scr);
@@ -593,7 +610,8 @@ async function panelPane(app, pane, show) {
   const reflowNote = h("p", { class: "fnote" });
   pane.append(h("h4", { class: "gtitle", text: "Display" }), group(
     grow("Model", null, select(kind.displays.map((d) => [d.id, `${d.name}, ${d.w} × ${d.h}`]), spec.display, (v) => placeFor(app, v, spec.orientation || 0))),
-    grow("Mounted", "Which way up it hangs", select(ORIENTATIONS, spec.orientation || 0, (v) => setMounted(app, v)))), reflowNote);
+    grow("Mounted", "Which way up it hangs", select(ORIENTATIONS, spec.orientation || 0, (v) => setMounted(app, v))),
+    languageRow(app, scr)), reflowNote);
   pane.append(h("h4", { class: "gtitle", text: "Power" }), timersBox(app, scr, () => show("panel")));
 
   sharedGroup(app, pane, scr, show);
@@ -1188,7 +1206,7 @@ async function addSetPane(app, pane, st, addSet, back) {
 
 /* ---------- time and language ---------- */
 // One setting for every device's times (render/clock.py): clocks, sunrise, "Today 14:00", kick-off.
-// The screen's language goes here too when it comes.
+// Each device's language is its own, in Settings › Device (the user's call, 26 Oct); this says where.
 async function timePane(app, pane) {
   const box = h("div", {}, h("p", { class: "fnote", text: "Checking…" }));
   pane.append(box);
@@ -1202,7 +1220,7 @@ async function timePane(app, pane) {
         draw(); forgetThumbnails(); app.canvas?.preview(true); app.renderStrip();
         toast(`Times read ${word(r.resolved)} now, on every device from its next update.`);
       } catch (e) { toast(`Couldn't change it: ${e.message}`); }
-    }, { "aria-label": "Time" }))));
+    }, { "aria-label": "Time" }))), h("p", { class: "fnote", text: "Each device's language is in Settings › Device." }));
   draw();
 }
 

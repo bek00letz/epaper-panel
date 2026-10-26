@@ -11,6 +11,14 @@
   and the messages a page shows when something needs setting up. Words
   you typed yourself stay exactly as you typed them. In any other
   language, the screen stays in English for now.
+- **Each device can have its own language** (a panel in a guest room,
+  say): Settings › Device › Language. It's "Same as Home Assistant" unless
+  you pick one of the five.
+- **New pages are made in the device's language.** A preset's labels and
+  the page's name ("Raumklima", "Météo") are written in it when you add
+  the page, and after that they're your words: edit them as you like, and
+  they never change by themselves. Pages you already have keep their words.
+  A page's name can't hold accents yet, so they're left off ("Meteo").
 - **Dates and numbers are written the language's way.** "Mittwoch, 21.
   Oktober", "miercuri, 21 octombrie", "21,5 °C" with a decimal comma, and
   the month first in American English. Your 12- or 24-hour setting still
@@ -27,6 +35,10 @@
 - **Fixed:** a long "set this up" message was cut after three lines with
   nothing saying so. It now gets smaller first, and ends with "…" if it
   still doesn't fit.
+- **Status's state word fits whatever the language.** "Geschlossen" or
+  "Tampering detected" used to run out of its box at a fixed size; on a
+  new Status page it's as large as fits, up to the size it was.
+- **Status says "for 2 hours"**, not "since 2 hours", on a new page.
 - **A TRMNL's pairing messages** are in Home Assistant's language too,
   with accents taken off ("Gerät" becomes "Geraet"), since its own font
   has none.

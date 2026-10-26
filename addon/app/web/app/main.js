@@ -11,7 +11,7 @@ import { renderInspector } from "./inspector.js";
 import { openEntityPicker, openAttributePicker, openIconPicker, openInsert } from "./pickers.js";
 import { openPresets } from "./newpage.js";
 import { savePresetSheet, openStatus, openSettings, resolveClashes, openShortcuts, openAddScreen, removeScreen } from "./sheets.js";
-import { setCatalog } from "./catalog.js";
+import { setCatalog, setSpeaking } from "./catalog.js";
 import { geometry, setDisplays, applyCatalog, makeElement, makeEntityElement, elName, TYPES, pairByType, LAYOUT_KEYS, normalizeLineParity } from "./elements.js";
 import { syncDynamicGridShowIf, syncWidgetShowIf } from "./conditions.js";
 import { CATEGORY_TERMS } from "./legacy.js";
@@ -134,7 +134,7 @@ class App {
     this.screens = r.devices || []; this.kinds = r.kinds || []; setDisplays(r.displays);
     const id = want || this.screen?.id;
     this.screen = this.screens.find((d) => d.id === id) || this.screens[0] || null;
-    setDevice(this.screen?.id);
+    setDevice(this.screen?.id); setSpeaking(this.screen?.speaks);
     if (this.screen) prefs.set("device", this.screen.id);
     this.renderToolbar(); this.renderBar(); renderScreenBar(this);
   }
@@ -143,7 +143,7 @@ class App {
     await this.doc.flush();
     const to = this.screens.find((d) => d.id === id);
     if (!to) return;
-    this.screen = to; setDevice(id); prefs.set("device", id);
+    this.screen = to; setDevice(id); setSpeaking(to.speaks); prefs.set("device", id);
     this.status = null; this.device = null; this.didScroll = false;
     try {
       const note = await this.doc.load();

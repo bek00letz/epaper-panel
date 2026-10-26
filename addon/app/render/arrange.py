@@ -20,7 +20,7 @@ import secrets
 from . import theme as T
 
 # What may differ between sizes. Everything else is the element's content and style.
-ARRANGE_KEYS = ("x", "y", "w", "h", "size", "font_scale")
+ARRANGE_KEYS = ("x", "y", "w", "h", "size", "max_size", "font_scale")
 AUTO = "_auto"
 # Element types whose box keeps its real size (in mm) when placed on a smaller screen, rather than
 # shrinking with the page (the badge, the user's call 22 Oct): registered by widgets.py ("keeps_size").
@@ -98,8 +98,9 @@ def auto_box(el: dict, base: str, target: str) -> dict:
     for k in ("y", "h"):
         if isinstance(el.get(k), (int, float)):
             out[k] = round(el[k] * s + (oy if k == "y" else 0))
-    if isinstance(el.get("size"), (int, float)) and el.get("size"):
-        out["size"] = max(8, round(el["size"] * s))
+    for k in ("size", "max_size"):                  # a text's size, or the largest it may fit to
+        if isinstance(el.get(k), (int, float)) and el.get(k):
+            out[k] = max(8, round(el[k] * s))
     if "font_scale" in el:
         out["font_scale"] = el["font_scale"]
     if el.get("type") in KEEP_SIZE and all(isinstance(out.get(k), (int, float)) for k in ("x", "y", "w", "h")):
@@ -134,8 +135,9 @@ def base_box(box: dict, base: str, target: str) -> dict:
     for k in ("y", "h"):
         if isinstance(box.get(k), (int, float)):
             out[k] = round((box[k] - (oy if k == "y" else 0)) / s)
-    if isinstance(box.get("size"), (int, float)) and box.get("size"):
-        out["size"] = max(8, round(box["size"] / s))
+    for k in ("size", "max_size"):
+        if isinstance(box.get(k), (int, float)) and box.get(k):
+            out[k] = max(8, round(box[k] / s))
     if "font_scale" in box:
         out["font_scale"] = box["font_scale"]
     return out

@@ -669,9 +669,10 @@ def follow_widget_parts() -> list[str]:
 
 async def device_words(session, dev: dict):
     """The language a device's pictures are drawn in, as a `with` block (render/words.speaking):
-    Home Assistant's, with its country's way of writing dates. The one place that says it."""
+    its own (Settings › Device), else Home Assistant's, with Home Assistant's country's way of
+    writing dates. The one place that says it."""
     country, language = await get_home_locale(session)
-    return words.speaking(language, country)
+    return words.speaking(words.for_device((dev or {}).get("language"), language), country)
 
 
 async def _refresh_all(session) -> dict[str, Frames]:

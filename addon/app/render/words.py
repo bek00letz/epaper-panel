@@ -5,8 +5,9 @@ words, labels) comes from one table, `render/words_table.py`, through `say()`. W
 typed are theirs and never pass through here. A word missing in a language is said in English
 (tests/test_words.py lists any).
 
-The language is the device's, set around each device's drawing with `speaking()`: Home
-Assistant's language by default (`resolve`), English for one we don't have yet. It's a context
+The language is the device's, set around each device's drawing with `speaking()`: the one
+chosen for it in Settings › Device, else Home Assistant's (`for_device`), English for one we
+don't have yet. It's a context
 variable, not a global, so two devices drawn at once (the render cycle and an editor preview)
 each speak their own. Outside `speaking()` it's English: what the editor and the log read.
 
@@ -35,6 +36,11 @@ def resolve(tag) -> str:
     return base if base in LANGUAGES else DEFAULT
 
 
+def offered(tag) -> bool:
+    """Whether a language tag is one we speak (Home Assistant in Italian isn't, yet)."""
+    return str(tag or "").strip().lower().replace("_", "-").split("-", 1)[0] in LANGUAGES
+
+
 @contextmanager
 def speaking(language, country=""):
     """Say everything inside in `language` (a tag; resolved), with dates as `country` writes them."""
@@ -43,6 +49,18 @@ def speaking(language, country=""):
         yield
     finally:
         _speaking.reset(token)
+
+
+def for_device(own, home) -> str:
+    """The language a device speaks: its own choice (Settings › Device "Language"), else Home
+    Assistant's, else English."""
+    own = str(own or "").strip().lower()
+    return own if own in LANGUAGES else resolve(home)
+
+
+def choices() -> list[list[str]]:
+    """The languages a device can speak, each named in itself, for the editor: [[code, name], ...]."""
+    return [[code, NAMES[code]] for code in LANGUAGES]
 
 
 def language() -> str:
@@ -144,6 +162,13 @@ def date_pattern(kind: str) -> str:
     if lang == "en" and country() == "US" and row.get("en_US"):
         return row["en_US"]
     return entry(f"date.{kind}", lang)
+
+
+def page_words() -> dict:
+    """The words presets write on a page, and Home Assistant's state words, in every language, for
+    the editor: {key: {language: text}}. A preset writes them in the device's language when the
+    page is made; from then on they're the person's own words."""
+    return {k: {lang: entry(k, lang) for lang in LANGUAGES} for k in WORDS if k.startswith(("page.", "state."))}
 
 
 def missing() -> dict[str, list[str]]:

@@ -185,12 +185,15 @@ def _draw_text(img, d, el, text, metrics=None, distance_m=3.0, display=None):
     inner_w = max(8, w - pad_x * 2)
     inner_h = h - (8 if has_bg else 0)
     wrap = el.get("wrap") in (True, "true", 1, "1")
+    # A size of its own, or as large as fits the box: at most `max_size` (what a preset gives a word
+    # that's longer in some languages, "Geschlossen" where English says "Closed").
+    most = max(8, min(360, int(el.get("max_size") or 200)))
     if el.get("size"):
         size = max(8, min(360, int(el["size"])))
     elif wrap:
-        size = T.fit_wrapped(text, inner_w, inner_h, 200, bold=bold, family=family)
+        size = T.fit_wrapped(text, inner_w, inner_h, most, bold=bold, family=family)
     else:
-        size = T.fit_size(text, inner_w, inner_h, 200, bold=bold, family=family)
+        size = T.fit_size(text, inner_w, inner_h, most, bold=bold, family=family)
     f = T.font(size, bold=bold, family=family, text=text)
     asc, desc = f.getmetrics()
     lines = T.wrap_lines(text, f, inner_w) if wrap else [text]

@@ -18,7 +18,7 @@ const TOP_KEYS = ["display", "orientation", "quiet_hours", "custom_presets", "lo
 /* Every element has an ID, unique across the pages: a screen of another
    size keeps its own place for each element by it. New, pasted and
    duplicated elements get theirs here, in one place. */
-export const ARRANGE_KEYS = ["x", "y", "w", "h", "size", "font_scale"];
+export const ARRANGE_KEYS = ["x", "y", "w", "h", "size", "max_size", "font_scale"];
 const newId = (taken) => { let id; do { id = "e" + Math.random().toString(16).slice(2, 8); } while (taken.has(id)); return id; };
 export function ensureIds(spec) {
   const seen = new Set();

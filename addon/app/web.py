@@ -11,11 +11,11 @@ from pathlib import Path
 from aiohttp import web
 
 import examples
-from sources.geo import get_home_timezone
+from sources.geo import get_home_timezone, home_language
 import feeds
 import widgets
 import live_data
-from render import binding, clock, epf, icons, layout, sleep, stripmeta, subitems, theme as T
+from render import binding, clock, epf, icons, layout, sleep, stripmeta, subitems, theme as T, words
 import airports
 import companion
 import config
@@ -626,6 +626,11 @@ async def api_catalog(request):
         "states": states.catalog(),
         "widgets": widgets.catalog(),
         "time_format": timeformat.describe(*await get_home_locale(runtime.SESSION))["resolved"],
+        # The languages a device can speak, Home Assistant's, and the words presets write on a page
+        # in each (render/words_table.py "page.*", "state.*"): the editor keeps no copy.
+        "languages": {"choices": words.choices(), "home": words.resolve(home_language()),
+                      "home_offered": words.offered(home_language())},
+        "page_words": words.page_words(),
     })
 
 
@@ -784,6 +789,8 @@ def _screen(dev: dict, everyone: list[dict]) -> dict:
         "timing": timing.describe(dev, **kind.timers),
         "setup": kind.setup_flow, "info": kind.describe(dev),
         "entity_suffix": dev.get("entity_suffix") or "",
+        # Its language: its own choice ("" is Home Assistant's), and the one it speaks (render/words.py).
+        "language": dev.get("language") or "", "speaks": words.for_device(dev.get("language"), home_language()),
         # Enough to offer "the same quiet hours as …" when adding a screen.
         "quiet": {k: (dev.get("quiet_hours") or {}).get(k) for k in ("enabled", "start", "end")},
     }
@@ -897,6 +904,11 @@ async def api_devices_update(request):
     fields = {}
     if "name" in body:
         fields["name"] = _clean_name(body["name"], exclude_id=dev["id"])
+    if "language" in body:
+        lang = str(body.get("language") or "").strip().lower()
+        if lang and lang not in words.LANGUAGES:
+            raise web.HTTPBadRequest(text="Pick one of the languages offered, or Same as Home Assistant.")
+        fields["language"] = lang or None                # none: Home Assistant's
     kind = kinds.of(dev)
     try:
         fields.update(timing.settings(dev, body, **kind.timers))
@@ -906,6 +918,8 @@ async def api_devices_update(request):
     old = dict(dev)
     dev = devices.update(dev["id"], **fields) if fields else dev
     note = None
+    if (old.get("language") or None) != (dev.get("language") or None):
+        await _rerender()                              # its words change at its next update
     if kind.sleeps(old) != kind.sleeps(dev):
         await _rerender()                              # what it fetches next follows the new mode
         note = await kind.switched(old, dev)

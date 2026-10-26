@@ -17,7 +17,7 @@
 // No imports from util.js: the tests read this file under node.
 
 import { gateOf, gateShowIf, todoShowIf, WIDGET_WRITES_CONDITION } from "./legacy.js";
-import { leagues, series, widgetChangesEvery, stateWords } from "./catalog.js";
+import { leagues, series, widgetChangesEvery, stateWords, stateWord, pageWord, pageNameWord } from "./catalog.js";
 
 export const GROUPS = [
   ["day", "Your day"],
@@ -83,7 +83,7 @@ export const PRESETS = [
     looks: [
       { id: "calendar_combo", name: "Month and agenda", make: (ent) => [
         calendarMonth(ent, { x: 16, y: 12, w: 368, h: 228 }),
-        { type: "calendar_agenda", x: 396, y: 12, w: 380, h: 228, title: "Coming up", max_events: 4, show_border: true, entity: ent || "" },
+        { type: "calendar_agenda", x: 396, y: 12, w: 380, h: 228, title: pageWord("coming_up"), max_events: 4, show_border: true, entity: ent || "" },
       ] },
       { id: "calendar_month", name: "Month", make: (ent) => [calendarMonth(ent, { x: 20, y: 14, w: 752, h: 222 })] },
     ],
@@ -101,17 +101,17 @@ export const PRESETS = [
     // Bin day is a countdown that repeats (the user's call, 21 Oct): one preset, what it counts to picked next.
     id: "countdown", group: "day", title: "Countdown", sub: "A date, bin day or an event", kw: "days until date birthday holiday bin bins trash rubbish recycling garbage waste collection",
     desc: "Days until a date of yours, or until the bins go out. No calendar needed; one from Home Assistant works too.",
-    asks: "", choose: "Counts down to", name: (look, extra) => (look.id === "countdown_bins" ? "Bin day" : extra?.name || "Countdown"),
+    asks: "", choose: "Counts down to", name: (look, extra) => (look.id === "countdown_bins" ? pageNameWord("bin_day") : extra?.name || pageNameWord("countdown")),
     looks: [
       { id: "countdown_date", name: "A date", needs: "date",
-        exampleExtra: () => ({ name: "Holiday", at: isoDay(12) }),
+        exampleExtra: () => ({ name: pageWord("holiday"), at: isoDay(12) }),
         make: (_, x = {}) => [{ type: "countdown", to: "date", name: x.name || "", at: x.at || "", yearly: !!x.yearly, show_before: x.show_before || 0, x: 24, y: 14, w: 744, h: 208 }] },
       { id: "countdown_bins", name: "Bin day", needs: "bins",
-        exampleExtra: () => ({ bins: [{ name: "Recycling", from: isoDay(1), every: 2 }, { name: "General waste", from: isoDay(8), every: 2 }], today_until: "noon" }),
+        exampleExtra: () => ({ bins: [{ name: pageWord("recycling"), from: isoDay(1), every: 2 }, { name: pageWord("general_waste"), from: isoDay(8), every: 2 }], today_until: "noon" }),
         make: (_, x = {}) => [{ type: "countdown", to: "bins", today_until: x.today_until || "noon", ...(x.numbers ? { numbers: true } : {}), bins: x.bins || [], show_before: x.show_before || 0, x: 24, y: 14, w: 744, h: 208 }] },
       { id: "event_countdown", name: "A calendar event", asks: "calendar", example: "calendar.bins", make: (ent) => [
         { type: "icon", icon: "mdi:calendar-clock", x: 32, y: 40, w: 110, h: 110 },
-        { type: "number", entity: ent || "", show: "days_until", suffix: " days", decimals: 0, x: 160, y: 24, w: 340, h: 130, align: "left" },
+        { type: "number", entity: ent || "", show: "days_until", suffix: pageWord("days"), decimals: 0, x: 160, y: 24, w: 340, h: 130, align: "left" },
         { type: "text", entity: ent || "", show: "calendar_title", size: 30, bold: false, x: 164, y: 166, w: 300, h: 42, align: "left" },
         { type: "text", entity: ent || "", show: "date_formatted", format: "day_date", size: 28, bold: false, x: 470, y: 166, w: 290, h: 42, align: "right" },
       ] },
@@ -125,7 +125,7 @@ export const PRESETS = [
     looks: [{ id: "climate", name: "Room temperature", make: (ent) => [
       { type: "icon", icon: "mdi:thermometer", x: 32, y: 44, w: 116, h: 116 },
       { type: "number", entity: ent || "", show: "state", unit: "entity", decimals: 1, x: 160, y: 30, w: 320, h: 128, align: "left" },
-      { type: "text", value: "room climate", size: 30, bold: false, x: 164, y: 170, w: 320, h: 40, align: "left" },
+      { type: "text", value: pageWord("room_climate"), size: 30, bold: false, x: 164, y: 170, w: 320, h: 40, align: "left" },
       { type: "curve", entity: ent || "", hours: 24, x: 490, y: 100, w: 270, h: 86 },
     ] }],
   },
@@ -137,8 +137,8 @@ export const PRESETS = [
     looks: [{ id: "presence_door", name: "Status", make: (ent) => [
       // Its words and icon are the picked sensor's kind's (framework review #2): Home Assistant's own.
       { type: "icon", entity: ent || "", icon: "entity", x: 32, y: 44, w: 116, h: 116 },
-      { type: "text", entity: ent || "", show: "state", words: "entity", size: 80, bold: true, x: 164, y: 30, w: 360, h: 128, align: "left" },
-      { type: "text", entity: ent || "", show: "last_changed", format: "relative", prefix: "since ", size: 30, bold: false, x: 164, y: 170, w: 420, h: 40, align: "left" },
+      { type: "text", entity: ent || "", show: "state", words: "entity", max_size: 80, bold: true, x: 164, y: 30, w: 580, h: 128, align: "left" },
+      { type: "text", entity: ent || "", show: "last_changed", format: "relative", prefix: pageWord("for"), size: 30, bold: false, x: 164, y: 170, w: 420, h: 40, align: "left" },
     ] }],
   },
   {
@@ -147,10 +147,10 @@ export const PRESETS = [
     asks: "", example: ["timer.dryer_cycle", "person.partner", "sensor.cat_location", "binary_sensor.front_door"],
     looks: [{ id: "dynamic_entities", name: "Dynamic status", tier: "when", make: (ent, ex) => [{
       type: "dynamic_grid", x: 20, y: 16, w: 752, h: 214,
-      header_icon: "mdi:lightning-bolt", header_title: "On now", filter_state: "on",
+      header_icon: "mdi:lightning-bolt", header_title: pageWord("on_now"), filter_state: "on",
       layout_mode: "grid", show_labels: "both", icon_size: "auto", secondary_mode: "runtime",
       items: ex ? ex.map((e) => ({ entity: e, name: "", icon: "" }))
-        : [["Spot 1", "mdi:radiator"], ["Spot 2", "mdi:radiator"], ["Spot 3", "mdi:paw"], ["Spot 4", "mdi:bed"]].map(([name, icon], k) => ({ entity: k ? "" : ent || "", name, icon })),
+        : ["mdi:radiator", "mdi:radiator", "mdi:paw", "mdi:bed"].map((icon, k) => ({ entity: k ? "" : ent || "", name: pageWord("spot", k + 1), icon })),
     }] }],
   },
   {
@@ -158,7 +158,7 @@ export const PRESETS = [
     // page's number (or its own), the page only while one does; or, the other way, the charged ones.
     id: "batteries", group: "home", title: "Batteries", kw: "battery batteries low charge charged level remote sensor phone alert",
     desc: "The batteries that need charging, emptiest first, or the ones that are charged. Shows only while one does.",
-    asks: "", needs: "batteries", name: (_, x = {}) => (x.rule === "at_least" ? "Charged" : "Low batteries"),
+    asks: "", needs: "batteries", name: (_, x = {}) => pageNameWord(x.rule === "at_least" ? "charged" : "low_batteries"),
     looks: [{ id: "batteries", name: "Batteries", tier: (x = {}) => (x.tier === "alert" ? "alert" : "when"),
       exampleExtra: () => ({ rule: "below", value: 40, items: ["sensor.smoke_alarm_battery", "sensor.door_sensor_battery", "sensor.remote_battery", "sensor.thermostat_battery"] }),
       make: (_, x = {}) => [batteryGrid(x)] }],
@@ -191,7 +191,7 @@ export const PRESETS = [
     looks: [{ id: "solar", name: "Solar today", make: (ent) => [
       { type: "icon", icon: "mdi:white-balance-sunny", x: 32, y: 44, w: 116, h: 116 },
       { type: "number", entity: ent || "", show: "state", unit: "entity", total: "today", decimals: 1, x: 160, y: 30, w: 310, h: 128, align: "left" },
-      { type: "text", value: "produced today", size: 30, bold: false, x: 164, y: 170, w: 320, h: 40, align: "left" },
+      { type: "text", value: pageWord("produced_today"), size: 30, bold: false, x: 164, y: 170, w: 320, h: 40, align: "left" },
       { type: "curve", entity: ent || "", hours: 24, x: 490, y: 100, w: 270, h: 86 },
     ] }],
   },
@@ -214,10 +214,10 @@ export const PRESETS = [
     ],
     looks: [{ id: "energy_gauges", name: "Battery and solar", make: (_, x = {}) => [
       { type: "box", x: 18, y: 14, w: 356, h: 218, fill: "outline", radius: 14, thickness: 3 },
-      { type: "text", value: "ENERGY & STORAGE", size: 18, bold: true, invert: true, radius: 8, x: 34, y: 28, w: 280, h: 32, align: "center" },
-      { type: "bar", entity: x.battery || "", title: "HOME BATTERY", bar_style: "segmented", segments: 10, min_val: 0, max_val: 100, unit: "entity", decimals: 0, show_label: true, x: 34, y: 74, w: 324, h: 66 },
-      { type: "bar", entity: x.load || "", title: "HOUSE POWER", bar_style: "solid", min_val: 0, max_val: "power", unit: "entity", decimals: 0, show_label: true, x: 34, y: 152, w: 324, h: 64 },
-      { type: "bar_chart", entity: x.solar || "", title: "24H GENERATION", hours: 24, bars: 12, show_labels: true, show_border: true, x: 390, y: 14, w: 384, h: 218 },
+      { type: "text", value: pageWord("energy_storage"), size: 18, bold: true, invert: true, radius: 8, x: 34, y: 28, w: 280, h: 32, align: "center" },
+      { type: "bar", entity: x.battery || "", title: pageWord("home_battery"), bar_style: "segmented", segments: 10, min_val: 0, max_val: 100, unit: "entity", decimals: 0, show_label: true, x: 34, y: 74, w: 324, h: 66 },
+      { type: "bar", entity: x.load || "", title: pageWord("house_power"), bar_style: "solid", min_val: 0, max_val: "power", unit: "entity", decimals: 0, show_label: true, x: 34, y: 152, w: 324, h: 64 },
+      { type: "bar_chart", entity: x.solar || "", title: pageWord("generation_24h"), hours: 24, bars: 12, show_labels: true, show_border: true, x: 390, y: 14, w: 384, h: 218 },
     ] }],
   },
   {
@@ -295,18 +295,18 @@ export const PRESETS = [
     asks: "jellyfin", needs: "jellyfin", choose: "Style", example: "sensor.epaper_watch",
     looks: [
       watchLook("watch", "Newest", (ent) => [
-        { type: "text", value: "new to watch", size: 26, bold: false, x: 40, y: 28, w: 300, h: 36, align: "left" },
+        { type: "text", value: pageWord("new_to_watch"), size: 26, bold: false, x: 40, y: 28, w: 300, h: 36, align: "left" },
         { type: "text", entity: watchEnt(ent), show: "attribute", attribute: "detail", size: 26, bold: false, x: 352, y: 28, w: 400, h: 36, align: "right" },
         { type: "text", entity: watchEnt(ent), x: 40, y: 74, w: 712, h: 150, align: "left" },
       ]),
       watchLook("episode", "Episode card", (ent) => [
         { type: "text", entity: watchEnt(ent), x: 40, y: 22, w: 712, h: 96, align: "left" },
         { type: "text", entity: watchEnt(ent), show: "attribute", attribute: "about", size: 34, bold: false, x: 40, y: 128, w: 712, h: 46, align: "left" },
-        { type: "text", entity: watchEnt(ent), show: "attribute", attribute: "added_ago", prefix: "added ", size: 26, bold: false, x: 40, y: 188, w: 420, h: 36, align: "left" },
+        { type: "text", entity: watchEnt(ent), show: "attribute", attribute: "added_ago", prefix: pageWord("added"), size: 26, bold: false, x: 40, y: 188, w: 420, h: 36, align: "left" },
       ]),
       watchLook("up_next", "Up next", (ent) => [
-        { type: "text", value: "up next", size: 26, bold: false, x: 40, y: 18, w: 300, h: 34, align: "left" },
-        { type: "text", entity: watchEnt(ent), show: "attribute", attribute: "count", suffix: " new", size: 26, bold: false, x: 452, y: 18, w: 300, h: 34, align: "right" },
+        { type: "text", value: pageWord("up_next"), size: 26, bold: false, x: 40, y: 18, w: 300, h: 34, align: "left" },
+        { type: "text", entity: watchEnt(ent), show: "attribute", attribute: "count", suffix: pageWord("n_new"), size: 26, bold: false, x: 452, y: 18, w: 300, h: 34, align: "right" },
         { type: "text", entity: watchEnt(ent), show: "attribute", attribute: "up_next", wrap: true, size: 26, bold: false, x: 40, y: 68, w: 712, h: 160, align: "left" },
       ]),
     ],
@@ -317,14 +317,14 @@ export const PRESETS = [
    name onto the page), so the page is asked for them, not left with a sample.
    The words sit left of the code, wrapping inside their box at every size. */
 export function guestWifi({ ssid = "", password = "", auth = "WPA" } = {}) {
-  const name = ssid || "Your network";
+  const name = ssid || pageWord("your_network");
   return [
     { type: "box", x: 18, y: 14, w: 756, h: 218, fill: "outline", radius: 16, thickness: 3 },
     { type: "icon", icon: "mdi:wifi", invert: true, radius: 14, x: 42, y: 38, w: 72, h: 72 },
-    { type: "text", value: "GUEST WI-FI", size: 42, bold: true, x: 132, y: 36, w: 400, h: 52, align: "left" },
-    { type: "text", value: "Point your phone camera at the code to join.", size: 22, bold: false, wrap: true, x: 132, y: 94, w: 400, h: 64, align: "left" },
+    { type: "text", value: pageWord("guest_wifi"), size: 42, bold: true, x: 132, y: 36, w: 400, h: 52, align: "left" },
+    { type: "text", value: pageWord("scan_hint"), size: 22, bold: false, wrap: true, x: 132, y: 94, w: 400, h: 64, align: "left" },
     { type: "text", value: name, size: 22, bold: true, pill: true, radius: 8, x: 42, y: 172, w: 490, h: 38, align: "center" },
-    { type: "qr", qr_mode: "wifi", wifi_ssid: ssid, wifi_password: password, wifi_auth: auth, title: "SCAN TO JOIN", x: 568, y: 24, w: 184, h: 198 },
+    { type: "qr", qr_mode: "wifi", wifi_ssid: ssid, wifi_password: password, wifi_auth: auth, title: pageWord("scan"), x: 568, y: 24, w: 184, h: 198 },
   ];
 }
 
@@ -480,7 +480,7 @@ export function withUnits(elements, infoOf = () => "") {
     // A state's words and icons, by the sensor's domain and device class (the catalog's): you can still edit them.
     if (e.words === "entity" || (e.type === "icon" && e.icon === "entity")) {
       const words = e.entity ? stateWords(e.entity, about.device_class) : null;
-      if (e.words === "entity") { delete e.words; if (words) e.replace = Object.fromEntries(Object.entries(words).map(([k, v]) => [k, v.word])); }
+      if (e.words === "entity") { delete e.words; if (words) e.replace = Object.fromEntries(Object.entries(words).map(([k, v]) => [k, stateWord(v.word)])); }
       if (e.icon === "entity") {
         const icons = words ? Object.fromEntries(Object.entries(words).filter(([, v]) => v.icon).map(([k, v]) => [k, v.icon])) : {};
         e.icon = (words && (words.off || Object.values(words)[0])?.icon) || "mdi:information-outline";   // its resting state's
@@ -511,7 +511,7 @@ export function examplePage(p, look) {
 export function pageName(p, look, ent, entName, extra) {
   if (p.namedByEntity && ent) return entName || ent.split(".")[1];
   if (p.name) return p.name(look, extra);
-  return p.title;
+  return pageNameWord(p.id) || p.title;               // in the device's language (catalog.js)
 }
 
 /* Search: every word somewhere in its title, old name, words, group or
@@ -562,7 +562,7 @@ export function batteryGrid(x = {}) {
   const low = x.rule !== "at_least";
   return {
     type: "dynamic_grid", x: 20, y: 16, w: 752, h: 214,
-    header_icon: low ? "mdi:battery-alert-variant-outline" : "mdi:battery-check", header_title: low ? "Low batteries" : "Charged",
+    header_icon: low ? "mdi:battery-alert-variant-outline" : "mdi:battery-check", header_title: pageWord(low ? "name.low_batteries" : "name.charged"),
     filter_rule: low ? "below" : "at_least", filter_value: Number.isFinite(Number(x.value)) && x.value !== "" ? Number(x.value) : BATTERY_DEFAULT[low ? "below" : "at_least"],
     layout_mode: "list", show_labels: "both", icon_size: "auto",          // a row each, so every name reads (the user's call)
     batteries: low ? "swap" : "charge", except: [...(x.except || [])], also: [...(x.also || [])], items: [],
