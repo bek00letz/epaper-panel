@@ -129,7 +129,7 @@ class TestDatesAndNumbers(unittest.TestCase):
 
     def test_a_short_date_in_each_language(self):
         self.assertEqual(self.written("short_day_date"), {
-            "en": "Wed 21 Oct", "ro": "mie. 21 oct.", "es": "mié 21 oct", "de": "Mi. 21. Okt.", "fr": "mer. 21 oct."})
+            "en": "Wed 21 Oct", "ro": "mie., 21 oct.", "es": "mié 21 oct", "de": "Mi. 21. Okt.", "fr": "mer. 21 oct."})
 
     def test_american_english_puts_the_month_first(self):
         with speaking("en", "US"):
@@ -277,10 +277,19 @@ class TestPagesSayIt(unittest.TestCase):
         self.assertEqual(countdown.status({"type": "countdown", "to": "date", "at": "2026-10-01"}, now),
                          {"state": "passed", "on": "Thursday 1 October"}, "the editor's words stay English")
 
+    def test_romanian_as_the_user_reads_it(self):
+        # The user's review (26 Oct): the screen speaks as itself, "Restant", "OFF SEASON" kept in English.
+        with speaking("ro"):
+            self.assertEqual((sleep.manual_text(), sleep.wake_text("away", ""), sleep.wake_text("schedule", "07:00")),
+                             ("apasă orice buton ca să mă trezești", "revin când e cineva în apropiere", "revin la 07:00"))
+            self.assertEqual((say("todo.overdue"), race.forms({"status": "OFF"})), ("Restant", ["OFF SEASON"]))
+            self.assertEqual(clock.day_and_time(AT), "mie., 14:05")
+            self.assertEqual(say("status.on_for", span=clock.span_short(1800)), "pornit de 30 min")
+
     def test_the_sleep_screen_says_when_in_its_hours(self):
         with speaking("es"):
-            self.assertEqual(sleep.wake_text("schedule", "01:30"), "vuelve a la 01:30")
-            self.assertEqual(sleep.wake_text("schedule", "07:00"), "vuelve a las 07:00")
+            self.assertEqual(sleep.wake_text("schedule", "01:30"), "vuelvo a la 01:30")
+            self.assertEqual(sleep.wake_text("schedule", "07:00"), "vuelvo a las 07:00")
         clock.use(True)
         try:
             self.assertEqual(sleep.wake_text("schedule", "19:00"), "back at 7:00 PM", "never a 24-hour time in 12-hour")

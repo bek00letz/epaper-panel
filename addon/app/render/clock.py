@@ -66,8 +66,8 @@ def date(dt: datetime, kind: str = "date") -> str:
 
 
 def day_and_time(dt: datetime) -> str:
-    """A short weekday and a time: "Tue 14:05"."""
-    return f"{date(dt, 'wd')} {hm(dt)}"
+    """A short weekday and a time: "Tue 14:05", "mar., 14:05"."""
+    return words.say("date.day_time", day=date(dt, "wd"), time=hm(dt))
 
 
 # How long, in its largest whole unit, as Home Assistant's relative time says it ("2 hours").
