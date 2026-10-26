@@ -122,7 +122,7 @@ def _read_races(body) -> list:
         for j, row in enumerate(r.get("result") or [], 1):
             if isinstance(row, dict) and _text(row.get("driver")):
                 result.append({"pos": int(_number(row.get("position")) or j), "driver": _text(row.get("driver"))[:3].upper(),
-                               "team": _text(row.get("team")), "gap": _text(row.get("gap")), "tyre": ""})
+                               "team": _text(row.get("team")), "gap": _text(row.get("gap"))})
         race = racing._timed(name, _text(r.get("place")), sessions, _text(r.get("season")))
         out.append(racing.Race(race.name, race.location, race.day, race.sessions, race.season, tuple(result)))
     return sorted(out, key=lambda x: x.start)

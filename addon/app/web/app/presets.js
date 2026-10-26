@@ -269,7 +269,7 @@ export const PRESETS = [
   {
     id: "race_weekend", group: "sports", title: "Race weekend", was: "Formula 1",
     get kw() { return "racing motorsport grand prix f1 " + series().map((x) => `${x.title} ${x.code}`).join(" "); },
-    desc: "The top ten with gaps and tyres while a session runs; the countdown to the next one the rest of the week.",
+    desc: "The top ten and their gaps while a session runs; the countdown to the next one the rest of the week.",
     asks: "", choose: "Series", name: (look) => look.name,
     get looks() { return SERIES_LOOKS(); },
   },

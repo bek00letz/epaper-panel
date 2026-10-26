@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed:** every driver on a race page had a medium-tyre box next to
+  their name, made up by the add-on: ESPN doesn't say which tyres anyone
+  is on. A tyre is drawn now only when your own source or sensor gives one.
+
 ## 0.21.1
 Add-on only; no firmware change, so nothing to reinstall on the panel
 and no Home Assistant restart. Update the add-on.

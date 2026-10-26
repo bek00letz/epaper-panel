@@ -517,7 +517,6 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_na
                 "driver": str(_driver_code(ath))[:3].upper(),
                 "team": tm.get("displayName") or tm.get("shortDisplayName") or "",
                 "gap": (c.get("status") or {}).get("displayValue") or ("LEADER" if idx == 0 else ""),
-                "tyre": "M"
             })
         data["standings"] = standings
     return data

@@ -79,7 +79,7 @@ def race(series: str) -> dict:
     gaps = ["LEADER", "+2.1s", "+4.8s", "+7.3s", "+11.0s", "+14.2s", "+18.9s", "+25.1s", "+32.0s", "+38.4s"]
     return {"series": ser.code, "series_name": ser.title, "event_name": name, "circuit": circuit, "status": "IN",
             "lap": lap, "total_laps": laps,
-            "standings": [{"pos": k + 1, "driver": code, "team": team, "gap": gaps[k], "tyre": "M" if ser.slug == "f1" else ""}
+            "standings": [{"pos": k + 1, "driver": code, "team": team, "gap": gaps[k]}
                           for k, (code, team) in enumerate(_DRIVERS.get(ser.slug, _DRIVERS["f1"]))]}
 
 

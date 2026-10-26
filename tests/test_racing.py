@@ -115,6 +115,12 @@ class TestEverySeriesFetchesItsOwn(unittest.IsolatedAsyncioTestCase):
         _, data = await self._fetch("nascar")
         self.assertEqual(data["standings"][0]["driver"], "LAR")
 
+    async def test_no_driver_gets_a_tyre_nobody_gave(self):
+        # Every driver had a medium tyre box: ESPN gives no tyres, the add-on made one up.
+        _, data = await self._fetch("nascar")
+        self.assertTrue(data["standings"])
+        self.assertTrue(all("tyre" not in row for row in data["standings"]), data["standings"])
+
     async def test_a_live_formula_e_session_says_live(self):
         started = iso(NOW - timedelta(minutes=20))
         web = FakeWeb({"sportstimes": {"races": [{"name": "Live ePrix", "location": "Here",

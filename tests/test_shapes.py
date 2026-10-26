@@ -56,7 +56,7 @@ class TestReading(unittest.TestCase):
         own = races[1]
         self.assertEqual(own.location, "Testville")
         self.assertEqual([s[0] for s in own.sessions], ["Qualifying", "Race"])
-        self.assertEqual(own.result[0], {"pos": 1, "driver": "ABC", "team": "One", "gap": "", "tyre": ""})
+        self.assertEqual(own.result[0], {"pos": 1, "driver": "ABC", "team": "One", "gap": ""})
 
     def test_what_is_wrong_is_said_plainly(self):
         wrong = {
