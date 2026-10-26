@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
-
-Add-on only; no firmware change.
+## 0.21.2
+Race pages say which session they're showing. Add-on only; no firmware
+change, so nothing to reinstall on the panel and no Home Assistant restart.
+Update the add-on.
 
 - **A race page says which session it's showing.** The black badge names
   the session and how it stands: "QUALIFYING · LIVE", "PRACTICE 3 ·
