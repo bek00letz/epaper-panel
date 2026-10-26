@@ -377,6 +377,10 @@ class TestTheSessionShown(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data["badge"], ["QUALIFYING · LIVE", "QUALIFYING"])
         self.assertEqual(data["clock"], "QUALIFYING · LIVE", "Home Assistant's sensor says the same")
         self.assertEqual(data["event_name"], "United States Grand Prix")
+        forget()
+        web = FakeWeb({"site.api.espn.com": gp_board(weekend(NOW - timedelta(hours=3.8)), {}), "sportstimes": None})
+        win = await racing.compute_racing_active_window.direct(web, "f1", tz_name="UTC")
+        self.assertEqual(win["session_name"], "Qualifying", "Home Assistant's sensor says it as the page does, not \"Qual\"")
 
     async def test_a_session_running_late_is_still_live(self):
         # Its calendar time is over, but ESPN says it still runs (a red flag): it's the one shown.

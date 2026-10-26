@@ -20,6 +20,9 @@ Add-on only; no firmware change.
   the page shows it under that session only. Without it, the page labels
   it "RESULT" rather than guess. A Home Assistant sensor with its own
   standings can name its session in a `session` attribute.
+- **Fixed:** a race series' sensor in Home Assistant gave its session as
+  the calendar's own short code ("gp", "Qual") in `session_name`. It says
+  "Race", "Qualifying" now, as the page does.
 - **Fixed:** every driver on a race page had a medium-tyre box next to
   their name, made up by the add-on: ESPN doesn't say which tyres anyone
   is on. A tyre is drawn now only when your own source or sensor gives one.

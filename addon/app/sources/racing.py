@@ -644,7 +644,7 @@ async def compute_racing_active_window(session, series="f1", pre_buffer_hours=HO
         event_name = race.name or event_name
         circuit_name = race.location
         # A race known only by its day: the whole day (UTC), until a calendar has its sessions
-        sessions_list = list(race.sessions) or [("Race day", race.start, 24.0)]
+        sessions_list = [(session_name(lbl), t, h) for lbl, t, h in race.sessions] or [("Race day", race.start, 24.0)]
         ev = None if own else _board_event(await _board(session, ser), race)
         if ev is not None and (((ev.get("status") or {}).get("type") or {}).get("state") == "in"
                                or any(((c.get("status") or {}).get("type") or {}).get("state") == "in"
