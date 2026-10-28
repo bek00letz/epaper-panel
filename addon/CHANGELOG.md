@@ -45,6 +45,8 @@
   changed, a date sensor's date, a clock template like the Date page's)
   were always in English, whatever Home Assistant's language. The add-on
   now asks Home Assistant for the time and writes the words itself.
+- **The sleep screen says "back when someone's around"**, not "someone's
+  home": being home isn't being near the screen.
 - **Fixed:** the sleep screen's "back at 07:00" ignored the 12-hour
   setting. It reads "back at 7:00 AM" now when times are 12-hour.
 - **Fixed:** on a status card, the line under a name ("on for 30m") could
