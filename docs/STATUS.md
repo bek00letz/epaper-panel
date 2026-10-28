@@ -1,7 +1,7 @@
 # Status
 
 The one place the project's state lives. The coordinator updates it after
-every release and every finished piece of work. Last updated 26 Oct 2026.
+every release and every finished piece of work. Last updated 28 Oct 2026.
 Where we're going and why: [ROADMAP.md](ROADMAP.md).
 
 ## Released
@@ -11,6 +11,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Version | Date | What |
 |---|---|---|
+| 0.22.0 | 28 Oct | Share a page as a file (nothing private in it, opens in New page with your own sensors); the screen's words in English, Romanian, Spanish, German and French, per device ("Same as Home Assistant" by default); no key to paste: Home Assistant sets the panel's key, updates keep their own key. **Firmware change**; needs Home Assistant 2026.8. |
 | 0.21.2 | 26 Oct | Race pages name their session in the badge ("QUALIFYING · LIVE") for every series, show only that session's order, and move on to the next session's time after the page's Hours after; no made-up tyres; the race sensor says "Race", not "gp". Add-on only. |
 | 0.21.1 | 22 Oct | Batteries page fixed (it fetched the power grid since 0.20.2); a battery silent for 12 hours shows as "No answer since…", one line per integration when they drop together; leftover sensors are no batteries; a page's Shows is the one place: its widget's part AND your own condition. Add-on only. |
 | 0.21.0 | 22 Oct | Outside services in the editor: the status card lists failing ones; Settings › Services with Try again; another address behind an Advanced switch, checked by the add-on's own reader; racing, scores and flights can be filled by your own data source or a Home Assistant sensor's attributes. Add-on only. |
@@ -35,9 +36,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Work | Where | State |
 |---|---|---|
-| Share a page as a file | share-page (local_6b664e91-…) | building |
-| The screen's words in en, ro, es, de, fr | screen-languages (local_4918c8a5-…) | building |
-| No key paste: Home Assistant sets the panel's key (today's ESPHome route) | no-key-paste (worker local_cc8ac9d4-…) | building |
+| Nothing in flight | | |
 
 Worker notes are in the notes folders (`break-it-0.12.0.md`,
 `timers-addon.md`, `firmware-013.md`, `fixes-0131.md`, `editor-polish.md`,
@@ -103,9 +102,11 @@ Next one when a good amount of work has piled up since v0.15.0.
    solved by Home Assistant 2026.8, but owning a whole install line is a lot
    to carry. Instead today's route drops the key paste, and the decision
    waits for the Seeed 7.5" on TRMNL's firmware.
-7. **Started 26 Oct:** share a page (export and import as a file), and the
-   screen's words in Home Assistant's language: English, Romanian, Spanish,
-   German, French (the user's pick). Still to come: a "how it went" report,
+7. **Shipped in 0.22.0:** share a page, the screen's words in five languages,
+   no key paste. Found on the way, for later: the days-until " days" suffix
+   ("1 days"; Romanian "20 de zile" needs plurals), Scores, Planes and stacked
+   Weather spilling out of their box on the 2.9" in every language, accents
+   in page names. Still to come: a "how it went" report,
    TRMNL-compatible screens (a Seeed 7.5" reTerminal arrives in days or
    weeks, so they can be tried).
 
