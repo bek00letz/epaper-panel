@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.22.0
+Share a page as a file, the screen in five languages, and no key to paste
+when setting up a panel. **Firmware change**: after updating the add-on,
+Send to ESPHome and Install the panel again, then confirm once in Home
+Assistant (the steps are below). Needs Home Assistant 2026.8 or newer. No
+Home Assistant restart.
 
 - **Share a page as a file.** Share… (in a page's inspector or its
   right-click menu) or Share all pages… (in the device menu) saves the
