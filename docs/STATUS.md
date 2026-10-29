@@ -90,6 +90,12 @@ Next one when a good amount of work has piled up since v0.15.0.
    USB meter arrived broken; a replacement is on its way, so current
    readings wait. Meanwhile the days a full bank lasts asleep (Update every
    5 minutes or more) can be counted the same way.
+   **USB meter working (29 Oct):** an FNIRSI FNAC-28, read on the Mac by
+   `~/Developer/HomeAssistant/tools/fnirsi-logger` (`./fnirsi-log`; CSV with
+   per-second average, min and max current). First 15 s, always on: 5.14 V,
+   54 mA average (36 mA floor, 123 mA peaks), 0.28 W, about 6.7 Wh a day,
+   which matches the Anker emptying in about 6 days. Next: a longer always-on
+   run, then the same asleep.
 4. **The editor's new parts by eye**, in Safari and inside Home Assistant:
    the screen bar, Add a screen with power first, rename in place, and Fit
    in Safari (reasoned from screenshots, not reproduced).
@@ -140,7 +146,7 @@ and ESPHome's own epaper_spi driver (could replace the unlicensed ESPBoards
 driver where it supports our controllers).
 
 **Waiting on hardware:** a Seeed 7.5" (TRMNL firmware; on its way, 26 Oct);
-a working USB meter (the first arrived broken); a TRMNL (pairing, pictures, HTTPS, battery); a
+a TRMNL (pairing, pictures, HTTPS, battery); a
 second CrowPanel side by side; a 4.2" or 2.9" CrowPanel (they build, untried;
 the 4.2"'s UC8276 revision isn't supported); a battery reading on a CrowPanel
 (needs a resistor divider soldered on).
