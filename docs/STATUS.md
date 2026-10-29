@@ -118,9 +118,13 @@ Next one when a good amount of work has piled up since v0.15.0.
    refresh clears it). Its cost, measured (50 min asleep on 0.22.1): none
    that shows, wakes 0.148 mAh median against 0.159 on 0.22.0, 7.93 mA
    average, sleep 6.28 mA, the full refresh at 14:20 (10 s, 0.197 mAh). Next
-   lever: the 6.27 mA asleep. The fix no longer needs the display powered in
-   sleep, so a run with it switched off (`KEEP_DISPLAY_ASLEEP = False`) shows
-   how much of that is the display.
+   lever was the 6.27 mA asleep, and it's the board's own: with the display
+   switched off in sleep (`power_begin(-1)`, 29 Oct) it sleeps at 6.21 mA,
+   no lights are on, and the build already has ESP-IDF's PSRAM and flash
+   leakage workarounds. Most likely the always-on regulator. Settled as the
+   CrowPanel's draw (the user, 29 Oct): about 1 Wh a day at 5 minutes, about
+   10 days on a 2000 mAh battery, 2 weeks at most whatever the interval.
+   Nothing left to gain in firmware; keeping the display powered stays.
 4. **The editor's new parts by eye**, in Safari and inside Home Assistant:
    the screen bar, Add a screen with power first, rename in place, and Fit
    in Safari (reasoned from screenshots, not reproduced).
