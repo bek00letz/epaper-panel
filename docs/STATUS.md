@@ -90,7 +90,8 @@ Next one when a good amount of work has piled up since v0.15.0.
    USB meter arrived broken; a replacement is on its way, so current
    readings wait. Meanwhile the days a full bank lasts asleep (Update every
    5 minutes or more) can be counted the same way.
-   **USB meter working (29 Oct):** an FNIRSI FNAC-28, read on the Mac by
+   **USB meter working (29 Oct):** an FNIRSI FNAC-28 (its PC port needs a
+   USB-A to USB-C cable; C to C never connects), read on the Mac by
    `~/Developer/HomeAssistant/tools/fnirsi-logger` (`./fnirsi-log`; CSV with
    per-second average, min and max current). First 15 s, always on: 5.14 V,
    54 mA average (36 mA floor, 123 mA peaks), 0.28 W, about 6.7 Wh a day,
