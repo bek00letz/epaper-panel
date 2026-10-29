@@ -1,7 +1,7 @@
 # Status
 
 The one place the project's state lives. The coordinator updates it after
-every release and every finished piece of work. Last updated 28 Oct 2026.
+every release and every finished piece of work. Last updated 29 Oct 2026.
 Where we're going and why: [ROADMAP.md](ROADMAP.md).
 
 ## Released
@@ -11,6 +11,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Version | Date | What |
 |---|---|---|
+| 0.22.1 | 29 Oct | Sleeping panels no longer stack their pages: the first refresh after a wake drives every pixel, still without a flash (every CrowPanel size). **Firmware change**. Not yet seen on a panel. |
 | 0.22.0 | 28 Oct | Share a page as a file (nothing private in it, opens in New page with your own sensors); the screen's words in English, Romanian, Spanish, German and French, per device ("Same as Home Assistant" by default); no key to paste: Home Assistant sets the panel's key, updates keep their own key. **Firmware change**; needs Home Assistant 2026.8. |
 | 0.21.2 | 26 Oct | Race pages name their session in the badge ("QUALIFYING · LIVE") for every series, show only that session's order, and move on to the next session's time after the page's Hours after; no made-up tyres; the race sensor says "Race", not "gp". Add-on only. |
 | 0.21.1 | 22 Oct | Batteries page fixed (it fetched the power grid since 0.20.2); a battery silent for 12 hours shows as "No answer since…", one line per integration when they drop together; leftover sensors are no batteries; a page's Shows is the one place: its widget's part AND your own condition. Add-on only. |
@@ -110,7 +111,13 @@ Next one when a good amount of work has piled up since v0.15.0.
    costs ~2 s more (12:27's wake, 11 s), ~0.03 mAh: small.
    **Found on the way:** after a wake, the partial refresh doesn't clear the
    old picture, so pages stack up at full black (the first real try of
-   keeping the picture through sleep). A worker is on it (sleep-picture-fix).
+   keeping the picture through sleep). **Fixed in 0.22.1** (the controller's
+   memory of the picture is reset as the board sleeps; the first refresh after
+   a wake now writes it inverted first). To check on the panel: no stacking,
+   no flash after a wake; and a meter run for the fix's cost per wake. Next
+   lever: the 6.27 mA asleep. The fix no longer needs the display powered in
+   sleep, so a run with it switched off (`KEEP_DISPLAY_ASLEEP = False`) shows
+   how much of that is the display.
 4. **The editor's new parts by eye**, in Safari and inside Home Assistant:
    the screen bar, Add a screen with power first, rename in place, and Fit
    in Safari (reasoned from screenshots, not reproduced).
