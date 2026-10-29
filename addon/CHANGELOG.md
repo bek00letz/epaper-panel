@@ -1,8 +1,9 @@
 # Changelog
 
-## Unreleased
-**Firmware change**: after updating the add-on, Send to ESPHome and
-Install the panel again.
+## 0.22.1
+A fix for panels that sleep between updates. **Firmware change**: after
+updating the add-on, Send to ESPHome and Install the panel again. No Home
+Assistant restart.
 
 - **Fixed: a panel that sleeps between updates stacked its pages.** After
   each wake the new page was drawn, but the old one's black stayed, so
