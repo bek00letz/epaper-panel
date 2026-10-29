@@ -246,6 +246,14 @@ When a release changes the panel's firmware, the changelog says so at the
 top; install it again the same way. Until you do, the panel keeps working on
 the firmware it has.
 
+To watch the panel's logs, open its entry in **Settings › Devices & services ›
+ESPHome**, choose **Configure** and turn on **Subscribe to logs from the
+device**: they then appear in Home Assistant's log. For every line, not just
+warnings, also choose **Enable debug logging** on the ESPHome page; choosing
+it again stops and downloads the log. ESPHome's own Logs button
+can't connect over Wi-Fi, because only Home Assistant and the panel know the
+key Home Assistant set; over USB it works as always.
+
 ### 3. Your first page
 
 1. Choose **New page** at the front of the page strip.
