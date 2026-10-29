@@ -11,7 +11,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Version | Date | What |
 |---|---|---|
-| 0.22.1 | 29 Oct | Sleeping panels no longer stack their pages: the first refresh after a wake drives every pixel, still without a flash (every CrowPanel size). **Firmware change**. Not yet seen on a panel. |
+| 0.22.1 | 29 Oct | Sleeping panels no longer stack their pages: the first refresh after a wake drives every pixel, still without a flash (every CrowPanel size). **Firmware change**. Seen on the 5.79" (29 Oct, 4–5 rotations asleep): no stacking, only faint ghosting. |
 | 0.22.0 | 28 Oct | Share a page as a file (nothing private in it, opens in New page with your own sensors); the screen's words in English, Romanian, Spanish, German and French, per device ("Same as Home Assistant" by default); no key to paste: Home Assistant sets the panel's key, updates keep their own key. **Firmware change**; needs Home Assistant 2026.8. |
 | 0.21.2 | 26 Oct | Race pages name their session in the badge ("QUALIFYING · LIVE") for every series, show only that session's order, and move on to the next session's time after the page's Hours after; no made-up tyres; the race sensor says "Race", not "gp". Add-on only. |
 | 0.21.1 | 22 Oct | Batteries page fixed (it fetched the power grid since 0.20.2); a battery silent for 12 hours shows as "No answer since…", one line per integration when they drop together; leftover sensors are no batteries; a page's Shows is the one place: its widget's part AND your own condition. Add-on only. |
@@ -113,8 +113,9 @@ Next one when a good amount of work has piled up since v0.15.0.
    old picture, so pages stack up at full black (the first real try of
    keeping the picture through sleep). **Fixed in 0.22.1** (the controller's
    memory of the picture is reset as the board sleeps; the first refresh after
-   a wake now writes it inverted first). To check on the panel: no stacking,
-   no flash after a wake; and a meter run for the fix's cost per wake. Next
+   a wake now writes it inverted first). Seen on the panel (29 Oct): no
+   stacking over 4–5 rotations, faint ghosting only (the every-8th full
+   refresh clears it). Still to measure: the fix's cost per wake. Next
    lever: the 6.27 mA asleep. The fix no longer needs the display powered in
    sleep, so a run with it switched off (`KEEP_DISPLAY_ASLEEP = False`) shows
    how much of that is the display.
