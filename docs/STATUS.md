@@ -115,7 +115,9 @@ Next one when a good amount of work has piled up since v0.15.0.
    memory of the picture is reset as the board sleeps; the first refresh after
    a wake now writes it inverted first). Seen on the panel (29 Oct): no
    stacking over 4–5 rotations, faint ghosting only (the every-8th full
-   refresh clears it). Still to measure: the fix's cost per wake. Next
+   refresh clears it). Its cost, measured (50 min asleep on 0.22.1): none
+   that shows, wakes 0.148 mAh median against 0.159 on 0.22.0, 7.93 mA
+   average, sleep 6.28 mA, the full refresh at 14:20 (10 s, 0.197 mAh). Next
    lever: the 6.27 mA asleep. The fix no longer needs the display powered in
    sleep, so a run with it switched off (`KEEP_DISPLAY_ASLEEP = False`) shows
    how much of that is the display.
