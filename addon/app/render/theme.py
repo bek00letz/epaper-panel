@@ -26,12 +26,16 @@ DISPLAYS = {
         "esphome_model": "5.79in",
         # The firmware's facts about this board (render/epf.py, firmware_gen.py): its id in a
         # frame file; whether its buffer stores rows right to left (the driver's mirror_x);
-        # the C++ that asks for a full refresh (the panel's policy decides when); and the C++
-        # that tells it the picture survived a deep sleep ("" for none: it's switched off).
+        # the C++ that asks for a full refresh (the panel's policy decides when); the C++
+        # that tells it the picture survived a deep sleep ("" for none: it's switched off);
+        # and the C++ that makes the first refresh after that sleep drive every pixel, since
+        # its controller's memory of the picture didn't survive (epf_client.h).
         "frame_model": 0x0579,
         "mirrored": True,
         "full_refresh": "id(epd).force_full_update();",
         "keep_picture": "epf::crowpanel_picture_kept(id(epd));",
+        # Two controllers in cascade, the left and right halves.
+        "drive_every_pixel": "epf::crowpanel_drive_every_pixel(id(epd), 2);",
         "esphome_component": "github://ESPBoards/esphome-lvgl-crowpanel-epaper-5.79-4.2",
     },
     "crowpanel_420": {
@@ -49,6 +53,7 @@ DISPLAYS = {
         "mirrored": True,
         "full_refresh": "id(epd).force_full_update();",
         "keep_picture": "epf::crowpanel_picture_kept(id(epd));",
+        "drive_every_pixel": "epf::crowpanel_drive_every_pixel(id(epd), 1);",
         "esphome_component": "github://ESPBoards/esphome-lvgl-crowpanel-epaper-5.79-4.2",
     },
     "crowpanel_290": {
@@ -68,6 +73,7 @@ DISPLAYS = {
         # epf restarts the count (epf_client.h).
         "full_refresh": "epf::full_refresh_next(id(epd));",
         "keep_picture": "epf::waveshare_picture_kept(id(epd));",
+        "drive_every_pixel": "epf::waveshare_drive_every_pixel(id(epd));",
         # Its display memory is upright (128 x 296): mounted at 0°, a page is
         # turned a quarter (270°, as in Elecrow's 2.9" demo) into the panel.
         "panel_turns": 3,
@@ -92,6 +98,7 @@ DISPLAYS = {
         "mirrored": False,
         "full_refresh": "",
         "keep_picture": "",
+        "drive_every_pixel": "",
         "esphome_component": "waveshare_epaper",
     },
     "crowpanel_102": {
@@ -113,6 +120,7 @@ DISPLAYS = {
         "mirrored": False,
         "full_refresh": "",
         "keep_picture": "",
+        "drive_every_pixel": "",
         "esphome_component": "waveshare_epaper",
     },
     # TRMNL's own 7.5" screen. A TRMNL says its size on every wake; any other

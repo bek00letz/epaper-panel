@@ -221,6 +221,9 @@ display:
         it.printf(40, 130, id(diag_small), "ip: %s", id(wifi_ip).state.c_str());
         it.print(40, 170, id(diag_small), "waiting for frames");
       }
+      // The first picture after a deep sleep that kept it: the display no longer
+      // remembers what's on screen, so this refresh drives every pixel (epf_client.h).
+      if (epf::PowerPolicy::instance().take_first_refresh()) epf::crowpanel_drive_every_pixel(id(epd), 2);
 
 # The five controls are discrete push-buttons (Elecrow's 5.79_key demo), all
 # active-low. Which is "next" depends on how the panel is mounted.
@@ -449,7 +452,7 @@ script:
   # Low Power Mode: everything on screen is done, so sleep until the next
   # check or a press of any of the five buttons (GPIO 1, 2, 4, 5, 6, all
   # RTC-capable on the ESP32-S3; active-low, so any one pressed wakes it).
-  # The display sleeps too, powered, keeping its picture for the next wake.
+  # The display sleeps too, powered: the next wake's first change is partial.
   - id: go_to_sleep
     mode: single
     then:

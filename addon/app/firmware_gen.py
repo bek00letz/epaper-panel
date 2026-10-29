@@ -56,24 +56,36 @@ def display_settled(disp: dict) -> str:
 DISPLAY_POWER_PIN = 7
 
 # Low Power Mode, TRMNL's way (0.13): the display stays powered through deep
-# sleep, its controller in the sleep that keeps its memory, so the first change
-# after a wake is a partial refresh. Untried on a real panel; False is the way
-# back to 0.12's behaviour (the display switched off in deep sleep, a full
-# refresh after every wake that changes the picture).
+# sleep, so the first change after a wake is a partial refresh, no flash. Its
+# controller's memory of the picture doesn't survive that sleep (the 5.79", 29
+# Oct: every page stayed on screen), so that first refresh drives every pixel
+# (epf_core.h, "The first refresh after a deep sleep"). False is the way back to
+# 0.12's behaviour (the display switched off in deep sleep, a full refresh after
+# every wake that changes the picture).
 KEEP_DISPLAY_ASLEEP = True
 
-# After such a sleep, how each driver is told it still holds the picture, so it
-# doesn't start with a full refresh (epf_client.h), is the profile's "keep_picture".
+# After such a sleep, how each driver is told the screen still shows the
+# picture, so it doesn't start with a full refresh, is the profile's
+# "keep_picture"; how its first refresh is made to drive every pixel is its
+# "drive_every_pixel" (epf_client.h). A size without both always switches its
+# display off in deep sleep: a full refresh after every wake.
 
 
 def keep_display_pin(disp: dict) -> int:
     """The pin the firmware holds on through deep sleep, or -1 to switch the display off."""
-    return DISPLAY_POWER_PIN if KEEP_DISPLAY_ASLEEP and disp.get("keep_picture") else -1
+    kept = disp.get("keep_picture") and disp.get("drive_every_pixel")
+    return DISPLAY_POWER_PIN if KEEP_DISPLAY_ASLEEP and kept else -1
 
 
 def keep_picture(disp: dict) -> str:
     """The C++ statement run at start-up when the display kept its picture through sleep."""
     return disp["keep_picture"] if keep_display_pin(disp) >= 0 else "{}"
+
+
+def drive_every_pixel(disp: dict) -> str:
+    """The C++ statement run once the first picture after such a sleep is drawn, before
+    its refresh: it makes that refresh drive every pixel."""
+    return disp["drive_every_pixel"] if keep_display_pin(disp) >= 0 else "{}"
 
 
 def full_refresh(disp: dict) -> str:
@@ -178,7 +190,7 @@ def render(*, disp: dict, version: str, device_name: str, frames_url: str, ota_k
         "COMPONENT_REF": component_ref(version), "DISPLAY_COMPONENT": component,
         "DISPLAY_BLOCK": block, "DISPLAY_SETTLED": display_settled(disp), "FULL_REFRESH": full_refresh(disp),
         "DISPLAY_POWER_PIN": str(DISPLAY_POWER_PIN), "KEEP_DISPLAY_PIN": str(keep_display_pin(disp)),
-        "KEEP_PICTURE": keep_picture(disp), "OTA_KEY": ota_key,
+        "KEEP_PICTURE": keep_picture(disp), "DRIVE_EVERY_PIXEL": drive_every_pixel(disp), "OTA_KEY": ota_key,
         "WIFI_BLOCK": wifi_block([(wifi_ssid, wifi_password), *more_networks], hotspot),
         "FRIENDLY_NAME": friendly_name,
         "INTERVAL_MIN": str(max(1, min(60, int(interval_min)))),
