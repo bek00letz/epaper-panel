@@ -100,7 +100,17 @@ Next one when a good amount of work has piled up since v0.15.0.
    2 s burst at ~100 mA (peaks ~200 mA); between updates it sits at ~50 mA,
    Wi-Fi up with ESPHome's default light power save. Updates are about 2% of
    the energy: the awake idle is the cost, so sleeping is the whole lever.
-   Next: the same run asleep (half an hour, to catch several wakes).
+   **Asleep, 50 minutes (Update every 5 minutes):** 8.0 mA average, 0.04 W,
+   about 1.0 Wh a day, 6.5 times less than always on (roughly 5–6 weeks on
+   the same Anker, if it stays on at that draw). Asleep it's a flat 6.27 mA;
+   each wake is 7–11 s at ~65 mA (~0.16 mAh). The sleep current is about
+   three quarters of the energy, so it's the next lever: an ESP32 in deep
+   sleep is ~0.02 mA, so most of the 6 mA is the rest of the board (power
+   LED, regulator, USB chip, or the display kept powered). The full refresh
+   costs ~2 s more (12:27's wake, 11 s), ~0.03 mAh: small.
+   **Found on the way:** after a wake, the partial refresh doesn't clear the
+   old picture, so pages stack up at full black (the first real try of
+   keeping the picture through sleep). A worker is on it (sleep-picture-fix).
 4. **The editor's new parts by eye**, in Safari and inside Home Assistant:
    the screen bar, Add a screen with power first, rename in place, and Fit
    in Safari (reasoned from screenshots, not reproduced).
