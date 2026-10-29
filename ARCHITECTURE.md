@@ -840,13 +840,16 @@ measure.
   that's cut in sleep, the pins float and `ANY_LOW` wakes the panel in a
   loop. The RTC's own pull-ups are the fallback.
 - **Whether the display needs a full, flashing refresh after every wake.**
-  As built, it does: the CrowPanel driver makes its first refresh after any
-  start a full one, and the display's power rail (`GPIO7`) is cut in deep
-  sleep, so the controller loses its picture memory anyway. An unchanged page
-  is a 304 and isn't redrawn at all. Holding the rail (`gpio_hold_en` on
-  GPIO7) and putting the controller into its memory-keeping sleep might allow
-  partial refreshes after a wake, at the controller's sleep current and a
-  change to the driver: worth trying once the sleep current is known.
+  Since 0.13 it doesn't: the display's power rail (`GPIO7`) is held on
+  through deep sleep and its driver is told the screen still shows the
+  picture, so the first change is partial. Tried on the 5.79" (29 Oct), the
+  controller's memory of the picture did *not* survive the sleep: its reset
+  line (`GPIO47`) isn't a pin the ESP32-S3 can hold, the datasheet promises
+  the memory only while the controller sleeps, not across a reset, and every
+  page stayed on screen in black. So the first refresh after a wake writes the
+  new picture inverted into that memory and drives every pixel, without a
+  flash (`epf_core.h`, "The first refresh after a deep sleep"; TRMNL does the
+  same). An unchanged page is a 304 and isn't redrawn at all.
 - **How long the first press takes**, from a deep-sleeping panel to the page
   on screen: boot, Wi-Fi, the strip's download and decode.
 - A USB power bank may switch off when the panel sleeps, seeing "nothing

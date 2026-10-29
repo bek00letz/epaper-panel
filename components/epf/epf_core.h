@@ -349,6 +349,44 @@ class WaveformPolicy {
   uint32_t interval_sec_{0};
 };
 
+// ---------------------------------------------------------------------------
+// The first refresh after a deep sleep that kept the picture.
+//
+// A partial refresh moves only the pixels that differ between the new picture
+// and the display controller's memory of the previous one. That memory doesn't
+// survive the panel's deep sleep (seen on the 5.79", 29 Oct: every page stayed
+// on screen in black): the controller is reset as the board sleeps, since its
+// reset line (GPIO 47) is one the ESP32-S3 can't hold. So before the first
+// refresh after such a sleep, the firmware writes the new picture inverted into
+// that memory: every pixel then counts as changing, and the partial refresh
+// drives each one to its new colour without a flash, whatever was on screen
+// (TRMNL's firmware does the same). From then on the controller keeps the
+// memory itself. Each driver's own call writes it (epf_client.h).
+
+// One controller's share of each row of `row_bytes` bytes. A cascade of two
+// controllers (the 5.79") splits each row into halves that overlap by a byte
+// when the count is odd, as its driver sends them: the first from byte 0, the
+// second from the middle, each `count` bytes.
+struct RowShare {
+  size_t first;
+  size_t count;
+};
+inline RowShare row_share(size_t row_bytes, int controllers, int index) {
+  if (controllers != 2) return {0, row_bytes};
+  size_t half = (row_bytes + 1) / 2;
+  return {index == 0 ? 0 : row_bytes / 2, half};
+}
+
+// Sends one controller's share of `buffer` inverted, a byte at a time, in the
+// order its driver sends the picture itself.
+template <class Send>
+inline void send_inverted_share(const uint8_t *buffer, size_t row_bytes, size_t rows, RowShare share, Send send) {
+  for (size_t row = 0; row < rows; row++) {
+    const uint8_t *p = buffer + row * row_bytes + share.first;
+    for (size_t x = 0; x < share.count; x++) send((uint8_t) ~p[x]);
+  }
+}
+
 // Every way a person or Home Assistant can move the panel. dispatch() is the
 // only entry point, so every input shares one state machine and one notion of
 // "someone is using the panel right now".
@@ -995,6 +1033,7 @@ class PowerPolicy {
     mem_ = &mem;
     have_ = held_ = pressed_ = false;
     kept_ = wake != Wake::BOOT && mem.picture_kept;
+    first_refresh_due_ = kept_;
     mem.picture_kept = 0;                           // until it next sleeps with the display powered
     if (wake == Wake::BUTTON && slept_ms < QUICK_WAKE_MS) {
       if (++mem.quick_wakes >= QUICK_WAKES_LIMIT && !mem.buttons_off) {
@@ -1076,9 +1115,17 @@ class PowerPolicy {
     mem_->picture_kept = display_kept;
   }
 
-  // After a deep sleep that kept the display powered: it still holds what's on
-  // screen, so the first change can be partial. False after any other start.
+  // After a deep sleep that kept the display powered: the screen still shows its
+  // picture, so the first change can be partial. False after any other start.
   bool picture_kept() const { return kept_; }
+
+  // True once after such a sleep, for the first picture drawn: the one whose
+  // refresh must drive every pixel (send_inverted_share). Asked as it's drawn.
+  bool take_first_refresh() {
+    bool due = first_refresh_due_;
+    first_refresh_due_ = false;
+    return due;
+  }
 
  private:
   PowerPolicy() = default;
@@ -1092,7 +1139,7 @@ class PowerPolicy {
   Remembered *mem_{nullptr};
   Wake wake_{Wake::BOOT};
   SleepOrder order_;
-  bool have_{false}, held_{false}, pressed_{false}, kept_{false};
+  bool have_{false}, held_{false}, pressed_{false}, kept_{false}, first_refresh_due_{false};
   uint32_t answer_ms_{0}, press_ms_{0};
 };
 

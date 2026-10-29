@@ -46,10 +46,10 @@ template <class Driver> inline void full_refresh_next(Driver *display) {
   Count::restart(display);
 }
 
-// After a deep sleep that kept the display powered with its picture in memory
-// (PowerPolicy::picture_kept), its driver needn't start with a full refresh:
-// the refresh policy decides. Each driver counts its refreshes and does a full
-// one first; these start the count past that. Only on_boot calls them
+// After a deep sleep that kept the display powered, the screen still shows its
+// picture (PowerPolicy::picture_kept), so its driver needn't start with a full
+// refresh: the refresh policy decides. Each driver counts its refreshes and does
+// a full one first; these start the count past that. Only on_boot calls them
 // (firmware_gen.KEEP_PICTURE).
 template <class Driver> inline void crowpanel_picture_kept(Driver *display) {
   struct Count : Driver {
@@ -62,6 +62,70 @@ template <class Driver> inline void waveshare_picture_kept(Driver *display) {
     static void skip_first(Driver *d) { static_cast<Count *>(d)->at_update_ = 1; }
   };
   Count::skip_first(display);
+}
+
+// The controller's memory of the previous picture is gone after that sleep
+// (epf_core.h, "The first refresh after a deep sleep"): these write the picture
+// just drawn, inverted, into it, so the refresh that follows drives every pixel.
+// Each writes exactly where and how its driver writes that memory before a full
+// refresh. Only the display's lambda calls them, once per wake, after drawing
+// (PowerPolicy::take_first_refresh, firmware_gen.DRIVE_EVERY_PIXEL).
+
+// The CrowPanel driver (SSD1683, one controller or a cascade of `controllers`):
+// RAM 0x26 from the top-left, the second controller from the right (its X
+// counts down from the last byte of its share). Its own refresh resets the
+// counters. Mid-refresh or still starting (it never is at the first picture
+// after a wake), it isn't touched and that refresh is a full one instead.
+template <class Driver> inline void crowpanel_drive_every_pixel(Driver *display, int controllers) {
+  struct Ram : Driver {
+    static void seed(Driver *d, int controllers) {
+      auto *s = static_cast<Ram *>(d);
+      if (s->state_ != decltype(s->state_)::IDLE) {
+        s->force_full_update();
+        return;
+      }
+      const size_t row_bytes = (size_t) s->native_width_() / 8, rows = (size_t) s->native_height_();
+      for (int i = 0; i < (controllers == 2 ? 2 : 1); i++) {
+        RowShare share = row_share(row_bytes, controllers, i);
+        const uint8_t to = i == 0 ? 0x00 : 0x80;   // the second controller of a cascade
+        s->spi_command_(0x4E | to);                // X counter
+        s->spi_data_(i == 0 ? 0 : (uint8_t) (share.count - 1));
+        s->spi_command_(0x4F | to);                // Y counter
+        s->spi_data_(0x00);
+        s->spi_data_(0x00);
+        s->spi_command_(0x26 | to);                // the previous picture
+        s->spi_start_data_();
+        send_inverted_share(s->buffer_, row_bytes, rows, share, [s](uint8_t b) { s->spi_write_byte_(b); });
+        s->spi_end_data_();
+      }
+    }
+  };
+  Ram::seed(display, controllers);
+}
+
+// ESPHome's Waveshare driver for an SSD1680-type controller (the 2.9"): RAM 0x26
+// from the top-left, as its full refresh writes it.
+template <class Driver> inline void waveshare_drive_every_pixel(Driver *display) {
+  struct Ram : Driver {
+    static void seed(Driver *d) {
+      auto *s = static_cast<Ram *>(d);
+      if (!s->wait_until_idle_()) {
+        full_refresh_next(d);
+        return;
+      }
+      const size_t row_bytes = (size_t) s->get_width_controller() / 8, rows = (size_t) s->get_height_internal();
+      s->command(0x4E);
+      s->data(0x00);
+      s->command(0x4F);
+      s->data(0x00);
+      s->data(0x00);
+      s->command(0x26);
+      s->start_data_();
+      send_inverted_share(s->buffer_, row_bytes, rows, row_share(row_bytes, 1, 0), [s](uint8_t b) { s->write_byte(b); });
+      s->end_data_();
+    }
+  };
+  Ram::seed(display);
 }
 
 // Per buffer, in PSRAM. Two of the larger size fit an N8R8 board's 8 MB with
@@ -305,7 +369,7 @@ inline int &power_display_pin_() {
 
 // At start-up, before the first download: why it's awake and what it remembers.
 // `display_pin`: the display's power pin, to keep it on through deep sleep (TRMNL's
-// way: the picture stays in the controller's memory), or -1 to switch it off.
+// way: the first change after a wake is partial), or -1 to switch it off.
 inline void power_begin(int display_pin) {
   power_display_pin_() = display_pin;
   // Held on through the sleep it just woke from. The pin is an output, already
@@ -370,8 +434,9 @@ inline bool may_redraw() {
 
 // Just before deep sleep: how long, and what wakes it. `buttons`: the button pins as a bit mask.
 // The display has finished refreshing (sleep_due waits for it). Its driver puts its
-// controller in the sleep that keeps its memory (on_safe_shutdown); holding its
-// power pin on keeps that memory, and so the picture, for the next wake.
+// controller to sleep (on_safe_shutdown), and its power pin is held on. Its memory
+// of the picture is lost all the same (its reset line isn't held), so the next
+// wake's first refresh drives every pixel (PowerPolicy::take_first_refresh).
 inline uint32_t power_prepare_sleep(uint32_t now_ms, uint64_t buttons) {
   auto &p = PowerPolicy::instance();
   int pin = power_display_pin_();

@@ -1,5 +1,18 @@
 # Changelog
 
+## Unreleased
+**Firmware change**: after updating the add-on, Send to ESPHome and
+Install the panel again.
+
+- **Fixed: a panel that sleeps between updates stacked its pages.** After
+  each wake the new page was drawn, but the old one's black stayed, so
+  every page ended up on screen on top of the others. The display forgets
+  the picture it shows while the panel sleeps (its reset line can't be held
+  through deep sleep), and a quick refresh only moves the pixels it thinks
+  changed. Now the first refresh after a wake moves every pixel to its new
+  colour, still without a flash; from then on it works as before. Every
+  CrowPanel size. Always on, nothing changes.
+
 ## 0.22.0
 Share a page as a file, the screen in five languages, and no key to paste
 when setting up a panel. **Firmware change**: after updating the add-on,

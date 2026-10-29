@@ -503,6 +503,40 @@ class TestFirmwareYaml(unittest.TestCase):
             self.assertNotEqual(firmware_gen.keep_picture(disp), "{}", display)
             self.assertIn("switch:\n  - platform: gpio\n    pin: 7\n", text, "the pin it holds is the display's power")
 
+    def test_the_first_refresh_after_a_sleep_drives_every_pixel(self):
+        # The 5.79", 29 Oct: the controller's memory of the picture didn't survive deep
+        # sleep, so each page's black stayed on screen. After the first picture of such a
+        # wake is drawn, and before its refresh, its driver's call writes it inverted into
+        # that memory (epf_client.h): a partial refresh then drives every pixel.
+        for display in offered_sizes():
+            disp = T.get_display(display)
+            call = firmware_gen.drive_every_pixel(disp)
+            self.assertEqual(call, disp["drive_every_pixel"], display)
+            text = local_build(display)
+            lam = text.split("    lambda: |-\n", 1)[1].split("\n\n", 1)[0]
+            line = f"if (epf::PowerPolicy::instance().take_first_refresh()) {call}"
+            self.assertIn(line, lam, display)
+            self.assertGreater(lam.index(line), lam.index("client.draw_overlays"), "after the whole picture is drawn")
+            self.assertEqual(text.count("take_first_refresh()"), 1, "asked once, where the picture is drawn")
+        # Each driver's own call, and a cascade says it's two controllers.
+        self.assertIn("crowpanel_drive_every_pixel(id(epd), 2)", T.get_display("crowpanel_579")["drive_every_pixel"])
+        self.assertIn("crowpanel_drive_every_pixel(id(epd), 1)", T.get_display("crowpanel_420")["drive_every_pixel"])
+        self.assertIn("waveshare_drive_every_pixel(id(epd))", T.get_display("crowpanel_290")["drive_every_pixel"])
+
+    def test_a_size_that_cant_drive_every_pixel_switches_its_display_off(self):
+        # Without a way to make its first refresh after a wake drive every pixel, a partial
+        # refresh would stack pictures: that size sleeps as 0.12 did, a full refresh after
+        # every wake. Decided by its profile, never by its name.
+        disp = dict(T.get_display(DISPLAY))
+        disp["drive_every_pixel"] = ""
+        self.assertEqual(firmware_gen.keep_display_pin(disp), -1)
+        self.assertEqual(firmware_gen.keep_picture(disp), "{}")
+        self.assertEqual(firmware_gen.drive_every_pixel(disp), "{}")
+        text = firmware_gen.render(disp=disp, version="0.22.0", device_name="p", frames_url="http://h/f.epf", ota_key="k",
+                                   wifi_ssid='"x"', wifi_password='"y"', interval_min=5, orientation=0)
+        self.assertIn("epf::power_begin(-1);", text)
+        self.assertIn("if (epf::PowerPolicy::instance().take_first_refresh()) {}", text)
+
     def test_a_press_before_the_frames_arrive_keeps_the_picture(self):
         # After a deep sleep the frames aren't in memory: a redraw then drew "waiting
         # for frames" over the picture on screen.
@@ -523,6 +557,7 @@ class TestFirmwareYaml(unittest.TestCase):
             firmware_gen.KEEP_DISPLAY_ASLEEP = keep
         self.assertIn("epf::power_begin(-1);", text)
         self.assertIn("if (epf::PowerPolicy::instance().picture_kept()) {}", text)
+        self.assertIn("if (epf::PowerPolicy::instance().take_first_refresh()) {}", text)
 
     def test_mounting_upside_down_swaps_the_buttons(self):
         self.assertEqual(firmware_gen.button_pins(180)["NEXT_PIN"], 6)
@@ -539,7 +574,7 @@ if __name__ == "__main__":
 
 class TestASizesFactsAreInItsProfile(unittest.TestCase):
     """A CrowPanel size's firmware facts live in its profile, so a new size can't miss one quietly (review #8)."""
-    FACTS = ("frame_model", "mirrored", "full_refresh", "keep_picture")
+    FACTS = ("frame_model", "mirrored", "full_refresh", "keep_picture", "drive_every_pixel")
 
     def test_every_offered_size_has_each(self):
         offered = [d for d, p in T.DISPLAYS.items() if p.get("kind") == "crowpanel" and p.get("offered", True)]
@@ -551,7 +586,7 @@ class TestASizesFactsAreInItsProfile(unittest.TestCase):
             for fact in self.FACTS:
                 self.assertIn(fact, p, f"{d} has no {fact}")
             self.assertIsInstance(p["mirrored"], bool)
-            self.assertTrue(p["full_refresh"] and p["keep_picture"], d)
+            self.assertTrue(p["full_refresh"] and p["keep_picture"] and p["drive_every_pixel"], d)
             self.assertEqual(epf.MODEL_MAP[d], p["frame_model"])
             self.assertEqual(d in epf.MIRRORED_MODELS, p["mirrored"])
 
@@ -559,7 +594,9 @@ class TestASizesFactsAreInItsProfile(unittest.TestCase):
         for d in ("crowpanel_579", "crowpanel_290"):
             disp = dict(T.get_display(d))
             disp["full_refresh"], disp["keep_picture"] = "full_marker();", "kept_marker();"
+            disp["drive_every_pixel"] = "drive_marker();"
             text = firmware_gen.render(disp=disp, version="0.15.0", device_name="p", frames_url="http://h/f.epf", ota_key="k",
                                        wifi_ssid='"x"', wifi_password='"y"', interval_min=1, orientation=0)
             self.assertIn("full_marker();", text)
             self.assertIn("kept_marker();", text)
+            self.assertIn("drive_marker();", text)

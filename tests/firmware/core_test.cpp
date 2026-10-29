@@ -580,12 +580,16 @@ static void test_power() {
   p.on_answer(200, true, timer, 0);
   epf::choose_waveform(wf, p, mem);
   CHECK(wf.sleeps_between(), "told to sleep again: still the sleeping policy");
+  CHECK(p.take_first_refresh(), "the first picture after it drives every pixel: the display's memory is gone");
+  CHECK(!p.take_first_refresh(), "only the first: the display keeps its memory from then on");
   p.before_sleep(2000, false);
   p.begin(Wake::BUTTON, mem, 900000);
   CHECK(!p.picture_kept(), "slept with the display switched off: nothing kept");
+  CHECK(!p.take_first_refresh(), "switched off: its driver refreshes in full first, nothing to drive");
   p.before_sleep(3000, true);
   p.begin(Wake::BOOT, mem, 0);
   CHECK(!p.picture_kept(), "a power cut or reset never trusts the display's memory");
+  CHECK(!p.take_first_refresh(), "a fresh start refreshes in full first");
   epf::choose_waveform(wf, p, mem);
   CHECK(!wf.sleeps_between(), "a fresh start is always on until told to sleep");
   p.on_answer(200, true, timer, 0);
@@ -695,6 +699,42 @@ static void test_aligned_fetches() {
   panel.reset_fetch_idle();
 }
 
+// The first refresh after a deep sleep drives every pixel: the previous-picture memory gets the
+// new picture inverted, in each controller's share of a row, as its driver sends the picture.
+static void test_drive_every_pixel() {
+  // One controller (the 4.2", the 2.9"): the whole row.
+  auto one = epf::row_share(50, 1, 0);
+  CHECK(one.first == 0 && one.count == 50, "one controller: the whole row");
+  // The 5.79": 99 bytes a row, two controllers overlapping by a byte (its driver: 0..49, 49..98).
+  auto left = epf::row_share(99, 2, 0), right = epf::row_share(99, 2, 1);
+  CHECK(left.first == 0 && left.count == 50, "cascade: left half from byte 0, %zu bytes", left.count);
+  CHECK(right.first == 49 && right.count == 50, "cascade: right half from byte %zu", right.first);
+  CHECK(right.count - 1 == 0x31, "the second controller's X counter starts at its driver's 0x31");
+  auto even = epf::row_share(100, 2, 1);
+  CHECK(even.first == 50 && even.count == 50, "an even row splits without overlap");
+
+  // Every byte inverted, in order, row by row: every pixel reads as changing.
+  const size_t row_bytes = 99, rows = 3;
+  std::vector<uint8_t> picture(row_bytes * rows);
+  for (size_t i = 0; i < picture.size(); i++) picture[i] = (uint8_t) (i * 37 + 11);
+  for (int c = 0; c < 2; c++) {
+    auto share = epf::row_share(row_bytes, 2, c);
+    std::vector<uint8_t> sent;
+    epf::send_inverted_share(picture.data(), row_bytes, rows, share, [&](uint8_t b) { sent.push_back(b); });
+    CHECK(sent.size() == share.count * rows, "controller %d: %zu bytes sent", c, sent.size());
+    bool ok = true;
+    for (size_t r = 0; r < rows; r++)
+      for (size_t x = 0; x < share.count; x++)
+        ok = ok && sent[r * share.count + x] == (uint8_t) ~picture[r * row_bytes + share.first + x];
+    CHECK(ok, "controller %d: each byte of its share, inverted, in the driver's order", c);
+  }
+  // White (0xFF) where it stays white reads as black before: driven white again, never left as it was.
+  uint8_t white = 0xFF;
+  std::vector<uint8_t> sent;
+  epf::send_inverted_share(&white, 1, 1, epf::row_share(1, 1, 0), [&](uint8_t b) { sent.push_back(b); });
+  CHECK(sent.size() == 1 && sent[0] == 0x00, "a white byte's previous picture is black");
+}
+
 int main(int argc, char **argv) {
   if (argc < 2) {
     std::printf("usage: core_test <fixture-dir>\n");
@@ -710,6 +750,7 @@ int main(int argc, char **argv) {
   test_sleep();
   test_remote_alerts_and_fetches();
   test_power();
+  test_drive_every_pixel();
   test_aligned_fetches();
   if (failures) {
     std::printf("%d check(s) failed\n", failures);
