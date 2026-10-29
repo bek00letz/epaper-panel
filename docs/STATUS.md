@@ -95,8 +95,12 @@ Next one when a good amount of work has piled up since v0.15.0.
    `~/Developer/HomeAssistant/tools/fnirsi-logger` (`./fnirsi-log`; CSV with
    per-second average, min and max current). First 15 s, always on: 5.14 V,
    54 mA average (36 mA floor, 123 mA peaks), 0.28 W, about 6.7 Wh a day,
-   which matches the Anker emptying in about 6 days. Next: a longer always-on
-   run, then the same asleep.
+   which matches the Anker emptying in about 6 days. 10 minutes always on
+   (Update every minute): 51.9 mA average, 6.4 Wh a day. Each update is a
+   2 s burst at ~100 mA (peaks ~200 mA); between updates it sits at ~50 mA,
+   Wi-Fi up with ESPHome's default light power save. Updates are about 2% of
+   the energy: the awake idle is the cost, so sleeping is the whole lever.
+   Next: the same run asleep (half an hour, to catch several wakes).
 4. **The editor's new parts by eye**, in Safari and inside Home Assistant:
    the screen bar, Add a screen with power first, rename in place, and Fit
    in Safari (reasoned from screenshots, not reproduced).
