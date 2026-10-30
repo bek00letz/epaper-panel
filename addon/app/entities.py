@@ -192,6 +192,25 @@ NEEDS_YOU_NAMES = {"notifications": ("Notifications", "mdi:bell-outline"), "upda
                    "repairs": ("Repairs", "mdi:wrench-outline")}
 
 
+def place_suffixes(places) -> list[str]:
+    """Each aircraft place's sensor suffix, in order: none for the first, then its
+    label, its coordinates, or Home and its radius (a second Home place differs only
+    by radius), and a number on the end when two would share one."""
+    out: list[str] = []
+    for i, (lat, lon, radius, label, *_) in enumerate(places):
+        if i == 0:
+            out.append("")
+            continue
+        base = (re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")
+                or (f"{lat:.2f}_{lon:.2f}".replace("-", "m").replace(".", "_") if lat is not None
+                    else f"home_{radius:g}km".replace(".", "_")))
+        suffix, n = "_" + base, 2
+        while suffix in out:
+            suffix, n = f"_{base}_{n}", n + 1
+        out.append(suffix)
+    return out
+
+
 async def publish_needs_you(session, spec: dict) -> set[str]:
     """How many notifications, updates and Repairs issues Home Assistant has
     (sensor.epaper_notifications, _updates, _repairs), for a page's "only
@@ -261,9 +280,7 @@ async def publish_computed(session):
     if not places and ("epaper_flights_overhead" in spec_text or "epaper_closest_aircraft" in spec_text
                        or "overhead_aircraft_count" in spec_text):
         places.append((None, None, 35.0, "", ""))
-    for i, (lat, lon, radius, label, own) in enumerate(places):
-        suffix = "" if i == 0 else "_" + (re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")
-                                           or f"{lat:.2f}_{lon:.2f}".replace("-", "m").replace(".", "_"))
+    for (lat, lon, radius, label, own), suffix in zip(places, place_suffixes(places)):
         wanted |= {f"sensor.epaper_flights_overhead{suffix}", f"sensor.epaper_closest_aircraft{suffix}"}
         try:
             await publish_flights(session, lat, lon, radius, label, suffix, own)
