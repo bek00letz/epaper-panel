@@ -113,7 +113,7 @@ async def public_status(request):
     or why quiet hours are on: the reason can reveal whether anyone is home."""
     f = runtime.device(kinds.device_for(request)["id"]).frames
     return web.json_response({
-        "ok": f.error is None and f.rendered_at is not None,
+        "ok": f.error is None and not f.no_room and f.rendered_at is not None,
         "page_count": len(f.names),
         "rendered_at": f.rendered_at,
         "version": ADDON_VERSION,
@@ -148,6 +148,8 @@ async def status(request):
         "quiet_active": f.quiet_active,
         "quiet_reason": f.quiet_reason,
         "error": f.error,
+        # Not even one page fits what the panel holds (frames.NoRoom), in plain words.
+        "no_room": f.no_room,
         "refresh_seconds": REFRESH,
         "panel_interval": kinds.of(dev).update_minutes(dev),          # Update every (timing.py)
         "device": {"id": dev["id"], "name": dev.get("name"), "kind": dev.get("kind")},

@@ -145,16 +145,56 @@ async def _fetch_feed_items(session, elements):
                     pass
 
 
-def fit_counts(wants: list[int], page_bytes: int, capacity: int, extra_pages: int = 1) -> list[int]:
-    """How many items each page shows so the frame file fits the panel.
+class Fit:
+    """What a frame file for a panel carries (fit): how many items each page shows, and whether
+    the sleep screen goes in."""
+
+    def __init__(self, counts: list[int], sleep_screen: bool):
+        self.counts, self.sleep_screen = counts, sleep_screen
+
+
+class NoRoom(Exception):
+    """Not even one page fits what a panel holds: said in plain words (no_room_words), never as a
+    failed render."""
+
+
+def no_room_words(name: str, capacity: int, page_bytes: int) -> str:
+    need = epf.encoded_size(1, 1, page_bytes)
+    return (f"{name} has room for {capacity // 1024} KB of pages, and one page needs {-(-need // 1024)} KB, "
+            "so it keeps showing what it has.")
+
+
+def fit(wants: list[int], page_bytes: int, capacity: int, sleep_screen: bool = True) -> Fit:
+    """What fits a panel that holds `capacity` bytes of frame file, as the panel counts them
+    (epf.encoded_size; the firmware's frame_file_size is the same sum): the one rule for every
+    frame file of every page.
 
     Every page keeps its first item; then one more item per page, round by
     round in rotation order, while there is room. Items within a page are
     already in order of importance (your team, live games, the closest
     aircraft, the newest episode), so the ones left out are the least
     important. If even one item per page doesn't fit, pages at the end of the
-    rotation are left out. `extra_pages`: the sleep screen.
+    rotation are left out. `sleep_screen`: the file should have it (not with
+    an alert). With room for one page but not the sleep screen too (a board
+    without PSRAM: the Seeed XIAO 7.5"), that page alone: the panel stays
+    awake without a sleep screen (epf_core.h). Nothing only when not even one
+    page fits.
     """
+    extra = 1 if sleep_screen else 0
+    counts = _shared_out(wants, page_bytes, capacity, extra)
+    if extra and wants and not any(counts):
+        alone = _shared_out(wants, page_bytes, capacity, 0)
+        if any(alone):
+            return Fit(alone, False)
+    return Fit(counts, bool(extra))
+
+
+def fit_counts(wants: list[int], page_bytes: int, capacity: int, extra_pages: int = 1) -> list[int]:
+    """How many items each page shows so the frame file fits the panel (fit)."""
+    return fit(wants, page_bytes, capacity, sleep_screen=extra_pages > 0).counts
+
+
+def _shared_out(wants: list[int], page_bytes: int, capacity: int, extra_pages: int) -> list[int]:
     def fits(pages: int, cats: int) -> bool:
         return epf.encoded_size(pages + extra_pages, cats + extra_pages, page_bytes) <= capacity
 
@@ -693,6 +733,10 @@ async def _refresh_all(session) -> dict[str, Frames]:
                 st = states[dev["design"]] = await design_state(session, dev["design"], spec)
             with await device_words(session, dev):           # its words, in its language
                 out[dev["id"]] = await _refresh_device(session, dev, spec, st)
+        except NoRoom as exc:
+            # Not a failure of its pages: it has no room for one. Said plainly, kept until it has.
+            print(str(exc), flush=True)
+            runtime.device(dev["id"]).frames.no_room = str(exc)
         except Exception as exc:
             # One screen that can't be drawn must not cost the others.
             print(f"{dev['name']}: render failed: {health.describe(exc)}", flush=True)
@@ -727,7 +771,8 @@ async def _refresh_device(session, dev: dict, spec: dict, st: DesignState) -> Fr
     nxt.quiet_active = quiet_active
     nxt.quiet_reason = quiet_reason
     rt.frames = nxt
-    print(f"{dev['name']}: rendered {nxt.names} ({len(nxt.strip)}B strip, {nxt.cat_count} cats, "
+    print(f"{dev['name']}: rendered {nxt.names} ({len(nxt.strip)}B picture, {len(nxt.epf_strip or b'')}B frame file, "
+          f"{nxt.cat_count} cats, "
           f"offsets: {nxt.cat_offsets}, sizes: {nxt.cat_sizes}, rot: {nxt.rotate_seconds}s, "
           f"quiet: {quiet_active} [{quiet_reason}])", flush=True)
     shown = [n for n in nxt.names if n != SLEEP_PAGE]

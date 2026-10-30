@@ -193,6 +193,90 @@ class TestPanelCapacity(Base):
             config.FRAME_TOKEN = ""
 
 
+PAGE_750 = 100 * 480       # bytes per 7.5" page: frame files aren't compressed
+XIAO_83 = 83 * 1024        # what the first Seeed XIAO 7.5" said it holds (0.23.0, its log)
+
+
+class TestAPanelWithoutPsram(Base):
+    """The Seeed XIAO 7.5" holds about one page (0.23.0: it said 83 KB, the add-on fitted 0 of 17
+    pages and failed every render, so it showed nothing). One rule decides what fits, in bytes."""
+
+    def test_one_page_without_the_sleep_screen_when_only_one_fits(self):
+        got = frames.fit([1] * 17, PAGE_750, XIAO_83)
+        self.assertEqual(got.counts, [1] + [0] * 16, "the first page of the rotation")
+        self.assertFalse(got.sleep_screen, "no room for it too: the panel stays awake without one")
+        self.assertLessEqual(epf.encoded_size(1, 1, PAGE_750), XIAO_83)
+
+    def test_the_sleep_screen_comes_back_when_both_fit(self):
+        got = frames.fit([1] * 17, PAGE_750, epf.encoded_size(2, 2, PAGE_750))
+        self.assertEqual(got.counts, [1] + [0] * 16)
+        self.assertTrue(got.sleep_screen)
+
+    def test_nothing_only_when_not_even_one_page_fits(self):
+        got = frames.fit([1] * 3, PAGE_750, epf.encoded_size(1, 1, PAGE_750) - 1)
+        self.assertEqual(got.counts, [0, 0, 0])
+        self.assertIn("one page needs 47 KB", frames.no_room_words("Hall", 40 * 1024, PAGE_750))
+
+    def test_the_rule_is_the_panels(self):
+        # The firmware counts a frame file as epf.encoded_size does (epf_core.h frame_file_size):
+        # the same four sizes, and a real file is exactly that long.
+        core = (Path(__file__).resolve().parents[1] / "components" / "epf" / "epf_core.h").read_text()
+        for name in ("HEADER_SIZE", "CAT_RECORD_SIZE", "PAGE_RECORD_SIZE", "CRC_SIZE"):
+            self.assertIn(f"constexpr size_t {name} = {getattr(epf, name)};", core, name)
+        self.assertIn("return HEADER_SIZE + pages * (CAT_RECORD_SIZE + PAGE_RECORD_SIZE + page_bytes) + CRC_SIZE;", core)
+
+    async def render_xiao(self, capacity, **view):
+        dev = devices.add("crowpanel", "Hall", "seeed_xiao_750", copy_from=self.dev_id, **view)
+        runtime.set_panel_capacity(dev["id"], capacity)
+        async with aiohttp.ClientSession() as s:
+            await frames.refresh_frames(s)
+        return dev, runtime.device(dev["id"]).frames
+
+    async def test_always_on_with_83_kb_shows_a_page(self):
+        dev, f = await self.render_xiao(XIAO_83)
+        self.assertIsNone(f.error)
+        self.assertIsNone(f.no_room)
+        self.assertEqual(f.names, [self.spec["rotation"][0]], "its first page, no sleep screen")
+        self.assertLessEqual(len(f.epf_strip), XIAO_83, "what it gets fits what it holds")
+        self.assertEqual(epf.decode_epf(f.epf_strip).header.page_count, 1)
+
+    async def test_in_quiet_hours_its_one_page_is_the_sleep_screen(self):
+        async def quiet(session, spec, dev=None):
+            return True, "schedule"
+        with unittest.mock.patch.object(frames, "evaluate_quiet_hours", quiet):
+            dev, f = await self.render_xiao(XIAO_83)
+        self.assertEqual(f.names, [config.SLEEP_PAGE])
+        flags = epf.decode_epf(f.epf_strip).categories[0].flags
+        self.assertEqual(flags, epf.CAT_FLAG_SLEEP | epf.CAT_FLAG_SLEEP_AUTO, "so it goes to sleep by itself")
+
+    async def test_a_sleeping_one_gets_a_file_that_fits_on_any_wake(self):
+        # A press or a start gets the whole file, not one picked page: it must fit too.
+        dev, f = await self.render_xiao(XIAO_83, update_minutes=15)
+        self.assertIsNone(f.error)
+        self.assertLessEqual(len(f.epf_strip), XIAO_83)
+
+    async def test_no_room_is_said_plainly_not_as_a_failed_render(self):
+        dev, f = await self.render_xiao(32 * 1024)
+        self.assertIsNone(f.error, "not a failed render")
+        self.assertEqual(f.no_room, "Hall has room for 32 KB of pages, and one page needs 47 KB, "
+                                    "so it keeps showing what it has.")
+        _, editor = web.make_apps()
+        async with TestClient(TestServer(editor)) as c:
+            got = await (await c.get("/api/status", params={"device": dev["id"]})).json()
+        self.assertEqual(got["no_room"], f.no_room)
+
+    async def test_never_more_than_it_holds(self):
+        # Drawn before it said what it holds: refused, and its report sets off a render that fits.
+        dev, _ = await self.render_xiao(1 << 20)
+        runtime.device(dev["id"]).frames.epf_strip = bytes(200 * 1024)
+        panel, _ = web.make_apps()
+        q = {"token": devices.key_of(devices.get(dev["id"])), "cap": str(XIAO_83)}
+        async with TestClient(TestServer(panel)) as c:
+            r = await c.get("/frames.epf", params=q)
+        self.assertEqual(r.status, 503)
+        self.assertEqual(runtime.panel_capacity(dev["id"]), XIAO_83)
+
+
 class TestPushPolicy(Base):
     async def test_pages_changing_shape_waits_for_the_panel(self):
         pushes = []

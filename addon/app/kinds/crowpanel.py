@@ -198,11 +198,15 @@ class CrowPanel(Kind):
         # The panel holds a limited number of pages. Every page keeps its first
         # item; extra items are shared out fairly; the rest are left out, and
         # said so (DeviceRuntime.fit, /api/status, sensor.epaper_panel_pages).
+        # Sleeping or not: a wake that isn't the timer's (a press, a start) gets this whole file.
         plans = st.plans
         page_bytes, capacity = _memory(dev, display)
-        counts = frames.fit_counts([p["want"] for p in plans], page_bytes=page_bytes,
-                                   capacity=capacity, extra_pages=0 if alert else 1)
+        fitted = frames.fit([p["want"] for p in plans], page_bytes=page_bytes, capacity=capacity,
+                            sleep_screen=not alert)
+        counts = fitted.counts
         rt.fit = frames.record_fit(plans, counts, capacity, rt.fit, dev.get("name") or "the panel")
+        if plans and not any(counts):
+            raise frames.NoRoom(frames.no_room_words(dev.get("name") or "The panel", capacity, page_bytes))
 
         imgs = []
         cat_offsets, cat_sizes, cat_names, cat_pill_widths, cat_sub_keys = [], [], [], [], []
@@ -233,14 +237,19 @@ class CrowPanel(Kind):
         if not imgs:
             raise RuntimeError("no page could be drawn")
 
-        # The sleep screen always goes first, so the panel can fall asleep
+        # The sleep screen goes first, so the panel can fall asleep
         # instantly (dial centre held, or its Sleep switch) without asking us.
         # The panel never pages onto it. During quiet hours with the sleep screen
-        # on, it's also marked "auto": the panel goes to sleep by itself.
+        # on, it's also marked "auto": the panel goes to sleep by itself. With
+        # room for only one page (frames.fit), that one is the sleep screen while
+        # quiet hours want it, and the page otherwise.
         cat_flags = [0] * len(cat_offsets)
         qh = spec.get("quiet_hours") or {}
-        if not alert:
-            auto = quiet_active and qh.get("sleep_screen", True)
+        auto = quiet_active and qh.get("sleep_screen", True)
+        if not alert and not fitted.sleep_screen and auto:
+            imgs, cat_offsets, cat_sizes, cat_names, cat_pill_widths, cat_sub_keys, cat_flags, live = \
+                [], [], [], [], [], [], [], []
+        if not alert and (fitted.sleep_screen or auto):
             text = (sleep.wake_text(quiet_reason, qh.get("end") or "07:00") if quiet_active
                     else sleep.manual_text())
             sleep_img = await asyncio.to_thread(sleep.render_sleep_page, text, orient, display)
@@ -562,6 +571,10 @@ async def frames_epf(request):
         asleep = sleep_header(got)
     if not body:
         raise web.HTTPServiceUnavailable(text="no epf frame rendered yet", headers=asleep)
+    if len(body) > runtime.panel_capacity(dev["id"]):
+        # Drawn before it said what it holds (its first download, or it holds less now): never
+        # send more than it holds. Saying so set off a render that fits; it asks again soon.
+        raise web.HTTPServiceUnavailable(text="fitting the pages to what this panel holds", headers=asleep)
     if etag and request.headers.get("If-None-Match") == etag:
         raise web.HTTPNotModified(headers={**_cache_headers(f, etag), **asleep})
     h = {**_cache_headers(f, etag), **asleep}

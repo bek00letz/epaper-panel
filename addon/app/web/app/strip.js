@@ -55,6 +55,7 @@ export function statusSummary(app) {
   if (doc.saving === "error") { tone = "bad"; line1 = "Changes not saved"; }
   else if (app.sending) { tone = "wait"; line1 = "Sending…"; }
   else if (doc.dirty) { tone = "wait"; line1 = "Not sent yet"; }
+  else if (s.no_room) { tone = "bad"; line1 = "No room for a page"; }
   else if (s.error) { tone = "bad"; line1 = "Page didn't render"; }
   else if (s.panel_link?.pending_refresh) { tone = "wait"; line1 = "Panel not updated yet"; }
   if (s.active_alert) line1 = doc.dirty ? line1 : "Alert showing";

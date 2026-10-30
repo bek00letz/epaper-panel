@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+Add-on only: no new firmware to install.
+
+- **Fixed: an always-on Seeed XIAO 7.5" showed nothing.** It has room for
+  one page (a page isn't compressed: 47 KB on its screen), and the add-on
+  wouldn't send a page without the sleep screen next to it, so it sent
+  none and said "render failed". Now a device with room for one page gets
+  the first page of its rotation, or the sleep screen while quiet hours
+  want it asleep. It doesn't rotate on its own yet. A XIAO that sleeps
+  between updates also got nothing when it started or after a press; it
+  now does.
+- **When a device has no room for even one page**, the status says so in
+  plain words instead of "render failed", and it keeps what it shows.
+- **A device is never sent more than it said it holds.** Its first
+  download, before the add-on knew, could be too large to keep; it now
+  asks again a moment later and gets pages that fit.
+
 ## 0.23.0
 Eight new pages, and the Seeed XIAO 7.5" as a device of its own.
 **Firmware change for the Seeed only**: CrowPanels don't need installing
