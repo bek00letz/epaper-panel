@@ -253,7 +253,12 @@ machine) with no ESP-IDF in it, and is compiled and tested on the host by
   in. The dial, the buttons and the Home Assistant connection never wait on
   the network.
 - **The panel holds 2 MB of pages** (two 2 MB buffers in PSRAM, or 1 MB on a
-  board that can't spare it) and says so on every download (`?cap=`). The
+  board that can't spare it) and says so on every download (`?cap=`). A
+  board without PSRAM (the Seeed XIAO 7.5"'s ESP32-C3) keeps one buffer in
+  its own RAM, what's left once a download has what it needs (about 100 KB,
+  two 7.5" pages): a download fills it in place, so nothing is drawn from it
+  until it's done (`EpfClient::replacing`, `may_redraw`), and one that fails
+  halfway loses the frames, not the picture on screen. The
   add-on fits the frame file to it (`frames.fit_counts`): every page keeps its
   first item, extra items are shared out in rotation order, and pages at the
   end are left out only if one each doesn't fit. Items within a page are in
@@ -291,8 +296,18 @@ machine) with no ESP-IDF in it, and is compiled and tested on the host by
 - **The YAML has one source**: `addon/app/firmware/panel.yaml`, filled in by
   `firmware_gen.py`. Panel setup writes it into Home Assistant's ESPHome
   folder (keeping the previous file as `.previous`).
-  `esphome/crowpanel-epaper.yaml` is the same output for a reference setup,
-  and a test keeps them identical. The component is pinned to the add-on's
+  `esphome/crowpanel-epaper.yaml` and `esphome/xiao-epaper.yaml` are the same
+  output for a reference setup of each board, and a test keeps them identical.
+- **The board is part of the profile.** A size's profile names its board
+  (`theme.BOARDS`): the chip and ESPHome's board name, PSRAM, the display's
+  pins, the pin that powers it (or none), and the buttons by what they do,
+  upright and turned over. `firmware_gen.CHIPS` says which pins can wake
+  each chip (the ESP32-C3: GPIO 0-5 only). The template keeps every board's
+  parts once, switched by `@IF NAME@` … `@END@` lines (`firmware_gen.sections`):
+  PSRAM, the display's power switch, ghost clearing (not for a driver whose
+  every refresh is full, `always_full`), and one block per button role
+  (`next`, `prev`, `ok`, `top`, `bottom`, and `one` for a board with a single
+  button). A new board is an entry in `BOARDS`, never a second template. The component is pinned to the add-on's
   release tag, so panel and add-on always agree on the format.
 - **Wi-Fi**: one network connects straight away (`fast_connect`); several
   are scanned for, so a panel that travels joins whichever it finds. Where it

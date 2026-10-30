@@ -12,12 +12,63 @@ from functools import lru_cache
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
+# The boards the add-on's ESPHome firmware runs on (firmware_gen.py), named by a
+# display profile's "board": its chip (firmware_gen.CHIPS says what the chip can
+# do), ESPHome's name for the board, its PSRAM ("" for none), where the display
+# is wired, the pin that powers the display (None: always powered), and its
+# buttons by what they do, upright and turned over (180° or 270°), with a note
+# on them for the firmware file. Every pin is from the maker's own sources,
+# named next to it.
+BOARDS = {
+    # Every CrowPanel board has the same wiring (Elecrow's demo source for the
+    # 2.9", 4.2" and 5.79": EPD_SPI.h / spi.h and the *_key examples).
+    "crowpanel_s3": {
+        "chip": "esp32s3",
+        "esphome_board": "esp32-s3-devkitc-1",
+        "psram": "octal",                      # an N8R8 board (unconfirmed)
+        "spi": {"clk": 12, "mosi": 11},
+        "display_pins": {"cs": 45, "dc": 46, "reset": 47, "busy": 48},
+        "busy_inverted": False,
+        "display_power": 7,                    # nothing renders until it is high
+        # Five discrete push-buttons, all active-low (Elecrow's 5.79_key demo). Turning
+        # the panel over swaps which mean next/previous and top/bottom.
+        "buttons": {"next": 4, "prev": 6, "ok": 5, "top": 2, "bottom": 1},
+        "buttons_turned": {"next": 6, "prev": 4, "ok": 5, "top": 1, "bottom": 2},
+        "buttons_note": ("The five controls are discrete push-buttons (Elecrow's 5.79_key demo), all",
+                         'active-low. Which is "next" depends on how the panel is mounted.'),
+    },
+    # Seeed Studio's XIAO 7.5" ePaper Panel: a XIAO ESP32-C3 (no PSRAM) on Seeed's
+    # ePaper driver board. Display pins: Seeed's ESPHome cookbook for this panel
+    # (wiki xiao_075inch_epaper_panel_esphome: SCK GPIO8, MOSI GPIO10, CS GPIO3,
+    # DC GPIO5, reset GPIO2, busy GPIO4 inverted), the same as its driver board's
+    # schematic (ePaper_Driver_Board.pdf: D8, D10, D1, D3, D0, D2) through the XIAO
+    # ESP32-C3's pin map (wiki XIAO_ESP32C3_Getting_Started). The display is on the
+    # 3V3 rail with no switch, and the battery reaches only the charger, so there's
+    # no battery reading (the schematic; the XIAO ESP32-C3 wiki says the same of
+    # the board). Its one button is the XIAO's Boot, GPIO9 (the pin map); its Reset
+    # restarts it.
+    "xiao_c3": {
+        "chip": "esp32c3",
+        "esphome_board": "esp32-c3-devkitm-1",
+        "psram": "",
+        "spi": {"clk": 8, "mosi": 10},
+        "display_pins": {"cs": 3, "dc": 5, "reset": 2, "busy": 4},
+        "busy_inverted": True,
+        "display_power": None,
+        "buttons": {"one": 9},
+        "buttons_turned": {"one": 9},
+        "buttons_note": ("One button, the XIAO's Boot, behind the stand (active-low). Its Reset",
+                         "button restarts the panel, and wakes it from a sleep."),
+    },
+}
+
 DISPLAYS = {
     "crowpanel_579": {
         "kind": "crowpanel",
         "id": "crowpanel_579",
         "name": "CrowPanel 5.79\"",
         "sku": "DIS08792E",
+        "board": "crowpanel_s3",
         "w": 792,
         "h": 272,
         "mm_w": 139.1,
@@ -43,6 +94,7 @@ DISPLAYS = {
         "id": "crowpanel_420",
         "name": "CrowPanel 4.2\"",
         "sku": "DIS08042E",
+        "board": "crowpanel_s3",
         "w": 400,
         "h": 300,
         "mm_w": 84.8,
@@ -61,6 +113,7 @@ DISPLAYS = {
         "id": "crowpanel_290",
         "name": "CrowPanel 2.9\"",
         "sku": "DIS08029E",
+        "board": "crowpanel_s3",
         "w": 296,
         "h": 128,
         "mm_w": 66.9,
@@ -88,6 +141,7 @@ DISPLAYS = {
         "id": "crowpanel_750",
         "name": "CrowPanel 7.5\"",
         "sku": "DIS08075E",
+        "board": "crowpanel_s3",
         "w": 800,
         "h": 480,
         "mm_w": 163.2,
@@ -96,6 +150,8 @@ DISPLAYS = {
         "esphome_model": "7.50inv2",
         "frame_model": 0x0750,
         "mirrored": False,
+        "always_full": True,                   # its driver, as the Seeed XIAO 7.5"'s
+        "refresh_waits": True,
         "full_refresh": "",
         "keep_picture": "",
         "drive_every_pixel": "",
@@ -110,6 +166,7 @@ DISPLAYS = {
         "id": "crowpanel_102",
         "name": "CrowPanel 10.2\"",
         "sku": "DIS08102E",
+        "board": "crowpanel_s3",
         "w": 960,
         "h": 640,
         "mm_w": 215.0,
@@ -118,6 +175,30 @@ DISPLAYS = {
         "esphome_model": "10.2in",
         "frame_model": 0x1020,
         "mirrored": False,
+        "full_refresh": "",
+        "keep_picture": "",
+        "drive_every_pixel": "",
+        "esphome_component": "waveshare_epaper",
+    },
+    "seeed_xiao_750": {
+        "kind": "crowpanel",
+        "id": "seeed_xiao_750",
+        "name": "Seeed XIAO 7.5\"",
+        "sku": "114993635",
+        "board": "xiao_c3",
+        "w": 800,
+        "h": 480,
+        "mm_w": 163.2,                         # the 7.5" 800 x 480 panel, as the TRMNL OG's
+        "mm_h": 97.9,
+        "margin": 40,
+        "esphome_model": "7.50inv2",           # Seeed's ESPHome cookbook
+        "frame_model": 0x0751,
+        "mirrored": False,
+        # ESPHome's driver refreshes the whole screen every time, and returns only once
+        # the refresh is done: no call for a full refresh, nothing to keep through a
+        # sleep, and settled as soon as the redraw is.
+        "always_full": True,
+        "refresh_waits": True,
         "full_refresh": "",
         "keep_picture": "",
         "drive_every_pixel": "",

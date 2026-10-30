@@ -1,5 +1,25 @@
 # Changelog
 
+## Unreleased
+**Firmware change** (only for the new board; a CrowPanel's firmware file
+is the same as before).
+
+- **The Seeed Studio XIAO 7.5" ePaper Panel** is a device you can add, next
+  to the CrowPanels: Add new device › Model › Seeed XIAO 7.5". The add-on
+  builds its firmware the same way, so its pages, sleeping between updates,
+  quiet hours and Home Assistant's controls work as on a CrowPanel. What it
+  can't do, because of its hardware:
+  - It has no battery reading: the battery isn't wired to the chip.
+  - Its one button (Boot, behind the stand) shows the next page, and held
+    for a second downloads new pages. It can't wake the panel from a sleep;
+    its Reset button can.
+  - Every change is a full refresh, with the black-and-white flash, as
+    ESPHome's driver for this screen does.
+  - Without the extra memory a CrowPanel has, it holds about two pages:
+    always on, it shows the first page of the rotation (the editor says what
+    was left out). Sleeping between updates, it fetches each page in turn
+    as usual. Not yet tried on a real panel.
+
 ## 0.22.1
 A fix for panels that sleep between updates. **Firmware change**: after
 updating the add-on, Send to ESPHome and Install the panel again. No Home

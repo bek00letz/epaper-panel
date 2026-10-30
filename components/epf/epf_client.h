@@ -131,9 +131,16 @@ template <class Driver> inline void waveshare_drive_every_pixel(Driver *display)
 // Per buffer, in PSRAM. Two of the larger size fit an N8R8 board's 8 MB with
 // room to spare; a board that can't give that much gets the smaller one. The
 // panel tells the add-on which it got (?cap=), and the add-on fits the frame
-// file to it.
+// file to it. A board without PSRAM keeps one buffer in its own RAM instead
+// (epf_core.h, "Memory for the frames").
 constexpr size_t BUFFER_CAPACITY = 2 * 1048576;
 constexpr size_t BUFFER_CAPACITY_SMALL = 1048576;
+// What a download needs besides the buffer, kept free on a board without PSRAM:
+// its task's stack (8 KB), the HTTP client's buffers, Wi-Fi's and the network's,
+// and for https, TLS (its 16 KB record buffer and the handshake, about 32 KB more).
+// Estimates until measured on a XIAO ESP32-C3: the log says what it got.
+constexpr size_t RESERVE_HTTP = 32 * 1024;
+constexpr size_t RESERVE_HTTPS = 64 * 1024;
 
 // The answer's headers the panel reads.
 struct AnswerHeaders {
@@ -164,15 +171,19 @@ class EpfClient {
   // the buffers can't be allocated.
   bool start_fetch(const std::string &url, esphome::display::DisplayBuffer *epd) {
     if (state_.load(std::memory_order_acquire) != IDLE) return false;
-    if (!alloc_()) return false;
+    native_w_ = epd ? epd->get_native_width() : 0;
+    native_h_ = epd ? epd->get_native_height() : 0;
+    if (!alloc_(url.rfind("https://", 0) == 0)) return false;
     url_ = url + (url.find('?') == std::string::npos ? "?" : "&") + "cap=" + std::to_string(capacity_) + "&mac=" +
            mac_() + wake_query_;
     wake_query_.clear();                    // said once, on the first download after a start
     send_etag_ = current_etag_;
-    native_w_ = epd ? epd->get_native_width() : 0;
-    native_h_ = epd ? epd->get_native_height() : 0;
+    wrote_ = false;
     state_.store(RUNNING, std::memory_order_release);
-    if (xTaskCreate(&EpfClient::task_entry_, "epf_fetch", 8192, this, 3, nullptr) != pdPASS) {
+    // Below the main loop's priority only on a single core (the ESP32-C3), so the
+    // buttons answer while TLS works; with two, the task has a core of its own.
+    if (xTaskCreate(&EpfClient::task_entry_, "epf_fetch", 8192, this, portNUM_PROCESSORS > 1 ? 3 : 1, nullptr) !=
+        pdPASS) {
       ESP_LOGE(TAG, "Couldn't start the download task");
       state_.store(IDLE, std::memory_order_release);
       return false;
@@ -181,6 +192,13 @@ class EpfClient {
   }
 
   bool busy() const { return state_.load(std::memory_order_acquire) != IDLE; }
+
+  // One buffer (no PSRAM) and a download running into it: nothing may be drawn
+  // from it until poll() has the result.
+  bool replacing() const { return single_ && busy(); }
+  // One buffer, and a failed download wrote into it: the frames are gone, the
+  // picture on screen isn't, until a download succeeds.
+  bool lost_stream() const { return lost_; }
 
   // Why it's awake, for the first download (only firmware that can sleep says so).
   void set_wake(const char *wake, uint32_t awake_ms) {
@@ -208,13 +226,21 @@ class EpfClient {
     last_next_ = answer_.next;
     last_next_at_ms_ = answer_.next_at_ms;
     if (result == FetchResult::OK) {
-      std::swap(front_buf_, back_buf_);
+      std::swap(front_buf_, back_buf_);     // one buffer: both are the same
       stream_ = std::move(pending_);
       current_etag_ = answer_.etag;
       has_stream_ = true;
+      lost_ = false;
       ESP_LOGI(TAG, "New frames: %u pages in %u categories", stream_.header.page_count, stream_.header.cat_count);
     } else if (result != FetchResult::NOT_MODIFIED) {
       ESP_LOGW(TAG, "Download failed: %s. Keeping what's on screen", describe(result));
+      if (single_ && wrote_ && has_stream_) {
+        // It wrote over the only copy: download everything again, and keep the
+        // picture on screen until then (may_redraw).
+        has_stream_ = false;
+        lost_ = true;
+        current_etag_.clear();
+      }
     }
     state_.store(IDLE, std::memory_order_release);
     return true;
@@ -228,7 +254,7 @@ class EpfClient {
   // Copy one page into the display buffer. The file was checked against this
   // panel's size, so the copy is exactly one buffer long.
   bool blit(esphome::display::DisplayBuffer *epd, int page) {
-    if (!has_stream_ || !epd || page < 0 || page >= stream_.header.page_count) return false;
+    if (!has_stream_ || replacing() || !epd || page < 0 || page >= stream_.header.page_count) return false;
     uint8_t *dst = DisplayBufferAccessor::raw(epd);
     const Header &h = stream_.header;
     if (!dst || h.width != epd->get_native_width() || h.height != epd->get_native_height() || h.width % 8) return false;
@@ -238,7 +264,7 @@ class EpfClient {
   }
 
   void draw_overlays(esphome::display::DisplayBuffer *epd, const OverlayState &s) {
-    if (!has_stream_ || !epd) return;
+    if (!has_stream_ || replacing() || !epd) return;
     epf::draw_overlays(DisplayBufferAccessor::raw(epd), epd->get_native_width(), epd->get_native_height(),
                        stream_.geometry, s);
   }
@@ -248,22 +274,45 @@ class EpfClient {
 
   EpfClient() = default;
 
-  bool alloc_() {
+  bool alloc_(bool https) {
     if (front_buf_ && back_buf_) return true;
-    for (size_t cap : {BUFFER_CAPACITY, BUFFER_CAPACITY_SMALL}) {
-      front_buf_ = (uint8_t *) heap_caps_malloc(cap, MALLOC_CAP_SPIRAM);
-      back_buf_ = (uint8_t *) heap_caps_malloc(cap, MALLOC_CAP_SPIRAM);
-      if (front_buf_ && back_buf_) {
-        capacity_ = cap;
-        ESP_LOGI(TAG, "Frame buffers: 2 x %u KB in PSRAM", (unsigned) (cap / 1024));
-        return true;
+    if (heap_caps_get_total_size(MALLOC_CAP_SPIRAM) > 0) {
+      for (size_t cap : {BUFFER_CAPACITY, BUFFER_CAPACITY_SMALL}) {
+        front_buf_ = (uint8_t *) heap_caps_malloc(cap, MALLOC_CAP_SPIRAM);
+        back_buf_ = (uint8_t *) heap_caps_malloc(cap, MALLOC_CAP_SPIRAM);
+        if (front_buf_ && back_buf_) {
+          capacity_ = cap;
+          ESP_LOGI(TAG, "Frame buffers: 2 x %u KB in PSRAM", (unsigned) (cap / 1024));
+          return true;
+        }
+        heap_caps_free(front_buf_);
+        heap_caps_free(back_buf_);
+        front_buf_ = back_buf_ = nullptr;
       }
-      heap_caps_free(front_buf_);
-      heap_caps_free(back_buf_);
-      front_buf_ = back_buf_ = nullptr;
+      ESP_LOGE(TAG, "Couldn't allocate frame buffers in PSRAM");
+      return false;
     }
-    ESP_LOGE(TAG, "Couldn't allocate frame buffers in PSRAM");
-    return false;
+    // No PSRAM: one buffer in its own RAM (epf_core.h, "Memory for the frames").
+    const uint32_t caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT;
+    const size_t page_bytes = (size_t) ((native_w_ + 7) / 8) * (size_t) native_h_;
+    const size_t reserve = https ? RESERVE_HTTPS : RESERVE_HTTP;
+    const size_t free_bytes = heap_caps_get_free_size(caps);
+    size_t cap = internal_capacity(free_bytes, heap_caps_get_largest_free_block(caps), reserve, page_bytes,
+                                   BUFFER_CAPACITY_SMALL);
+    uint8_t *buf = cap ? (uint8_t *) heap_caps_malloc(cap, caps) : nullptr;
+    if (!buf) {
+      ESP_LOGE(TAG, "Not enough memory for a page: %u KB free, a page and a download need %u KB",
+               (unsigned) (free_bytes / 1024), (unsigned) ((frame_file_size(1, page_bytes) + reserve) / 1024));
+      return false;
+    }
+    front_buf_ = back_buf_ = buf;
+    single_ = true;
+    capacity_ = cap;
+    ESP_LOGI(TAG, "Frame buffer: 1 x %u KB in internal RAM, room for %u pages (%u KB were free; %u KB kept for downloads)",
+             (unsigned) (cap / 1024), (unsigned) ((cap - frame_file_size(0, page_bytes)) / (frame_file_size(1, page_bytes) -
+                                                                                           frame_file_size(0, page_bytes))),
+             (unsigned) (free_bytes / 1024), (unsigned) (reserve / 1024));
+    return true;
   }
 
   static void task_entry_(void *arg) {
@@ -311,6 +360,7 @@ class EpfClient {
           if (n < 0) { total = 0; break; }
           if (n == 0) break;
           total += (size_t) n;
+          wrote_ = true;
         }
         if (full) result = FetchResult::ERROR_BUFFER_FULL;
         else if (total > 0) result = parse_stream(back_buf_, total, native_w_, native_h_, pending_);
@@ -328,7 +378,10 @@ class EpfClient {
   std::atomic<uint8_t> state_{IDLE};
   FetchResult task_result_{FetchResult::OK};
   uint8_t *front_buf_{nullptr};
-  uint8_t *back_buf_{nullptr};
+  uint8_t *back_buf_{nullptr};             // the same as front_buf_ with one buffer
+  bool single_{false};
+  std::atomic<bool> wrote_{false};         // the running download has written into back_buf_
+  bool lost_{false};
   size_t capacity_{0};
   int native_w_{0}, native_h_{0};
   // Its Wi-Fi MAC address, as Home Assistant's ESPHome devices are known by: 12 lower-case hex digits.
@@ -378,7 +431,8 @@ inline void power_begin(int display_pin) {
   Wake wake = Wake::BOOT;
   switch (esp_sleep_get_wakeup_cause()) {
     case ESP_SLEEP_WAKEUP_TIMER: wake = Wake::TIMER; break;
-    case ESP_SLEEP_WAKEUP_EXT1: wake = Wake::BUTTON; break;
+    case ESP_SLEEP_WAKEUP_EXT1: wake = Wake::BUTTON; break;   // the ESP32-S3's buttons
+    case ESP_SLEEP_WAKEUP_GPIO: wake = Wake::BUTTON; break;   // the ESP32-C3's (GPIO 0-5)
     default: break;
   }
   uint32_t slept_ms = 0;
@@ -428,11 +482,19 @@ inline void note_next_fetch() {
 // picture but the frames aren't in memory yet, so a press before they arrive would
 // replace it with the "waiting for frames" screen. Their arrival redraws. After a
 // fresh start there's nothing on screen worth keeping.
+// With one buffer (no PSRAM), nothing is drawn while a download replaces it; a redraw
+// asked for meanwhile stays owed (PanelController::pending_redraw) and follows it.
 inline bool may_redraw() {
-  return EpfClient::instance().has_stream() || PowerPolicy::instance().wake() == Wake::BOOT;
+  auto &c = EpfClient::instance();
+  if (c.replacing()) {
+    ESP_LOGD(TAG, "A download is replacing the frames: drawing once it's done");
+    return false;
+  }
+  return c.has_stream() || (PowerPolicy::instance().wake() == Wake::BOOT && !c.lost_stream());
 }
 
-// Just before deep sleep: how long, and what wakes it. `buttons`: the button pins as a bit mask.
+// Just before deep sleep: how long, and what wakes it. `buttons`: the pins of the buttons that
+// can wake it, as a bit mask (0: none can; firmware_gen.wake_mask).
 // The display has finished refreshing (sleep_due waits for it). Its driver puts its
 // controller to sleep (on_safe_shutdown), and its power pin is held on. Its memory
 // of the picture is lost all the same (its reset line isn't held), so the next
@@ -448,8 +510,14 @@ inline uint32_t power_prepare_sleep(uint32_t now_ms, uint64_t buttons) {
   }
   p.before_sleep(now_ms, pin >= 0);
   uint32_t ms = p.sleep_ms(now_ms);
-  if (p.buttons_wake()) esp_sleep_enable_ext1_wakeup(buttons, ESP_EXT1_WAKEUP_ANY_LOW);
+#if SOC_PM_SUPPORT_EXT1_WAKEUP
+  if (p.buttons_wake() && buttons) esp_sleep_enable_ext1_wakeup(buttons, ESP_EXT1_WAKEUP_ANY_LOW);
   else esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT1);
+#elif SOC_GPIO_SUPPORT_DEEPSLEEP_WAKEUP
+  // The ESP32-C3 has no EXT1: its GPIO 0-5 wake it directly.
+  if (p.buttons_wake() && buttons) esp_deep_sleep_enable_gpio_wakeup(buttons, ESP_GPIO_WAKEUP_GPIO_LOW);
+  else esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_GPIO);
+#endif
   g_slept_at_us = rtc_now_us_();
   ESP_LOGI(TAG, "Sleeping %u s (awake %u ms)", (unsigned) (ms / 1000), (unsigned) now_ms);
   return ms;
