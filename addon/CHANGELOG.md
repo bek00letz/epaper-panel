@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.22.2
+Two fixes. No firmware change and no Home Assistant restart: updating the
+add-on is enough.
 
 - **Fixed: a second Planes page at Home stopped every device updating.** Two
   Planes pages watching Home at different distances made the add-on fail,
