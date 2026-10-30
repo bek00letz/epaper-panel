@@ -122,10 +122,18 @@ Next one when a good amount of work has piled up since v0.15.0.
    lever was the 6.27 mA asleep, and it's the board's own: with the display
    switched off in sleep (`power_begin(-1)`, 29 Oct) it sleeps at 6.21 mA,
    no lights are on, and the build already has ESP-IDF's PSRAM and flash
-   leakage workarounds. Most likely the always-on regulator. Settled as the
-   CrowPanel's draw (the user, 29 Oct): about 1 Wh a day at 5 minutes, about
-   10 days on a 2000 mAh battery, 2 weeks at most whatever the interval.
-   Nothing left to gain in firmware; keeping the display powered stays.
+   leakage workarounds. **Corrected 30 Oct:** it's the USB chip, and only on
+   USB. The user opened the board and Elecrow's schematic (DIS08792E v1.2)
+   confirms U1 is a CH340C with VCC on VBUS. A CH340C idles at about 5.4 mA
+   at 5 V with no computer to suspend it (DigiKey bench), which leaves about
+   0.8 mA for the rest, close to the Seeed's 0.58. The 4054 charger and the
+   serial level shifter's 5 V side are on VBUS too; the battery reaches the
+   RY3420 buck through a P-MOSFET that USB switches off. So on battery the
+   CH340C has no power, and the CrowPanel should sleep near 1 mA: months on
+   2000 mAh, not 10 days. Unmeasured (needs a battery and an inline meter on
+   its lead). Nothing in firmware can switch the CH340C, and nothing needs
+   to. The README should say plainly that on USB power it sleeps at about
+   6 mA because of the USB chip. Keeping the display powered stays.
 4. **The editor's new parts by eye**, in Safari and inside Home Assistant:
    the screen bar, Add a screen with power first, rename in place, and Fit
    in Safari (reasoned from screenshots, not reproduced).
