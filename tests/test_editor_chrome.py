@@ -252,3 +252,16 @@ class TestConditionRow(unittest.TestCase):
         self.assertNotRegex(src, r'class: "[^"]*\bcmp\b[^"]*" }, opSel')
         self.assertIn("flex: 0 0 auto", rule(".cond .cmprow select"))
         self.assertFalse(rules(".cmprow {"), "no card styles of its own")
+
+
+class TestButtonRow(unittest.TestCase):
+    """A row of buttons (the page's Duplicate, Save as preset, Share…, Delete) in a
+    narrow inspector: equal widths while every label fits, a new line when they
+    don't. A flex basis of 0 alone let them shrink under their labels, which then
+    spilled over each other."""
+
+    def test_a_button_never_shrinks_under_its_label(self):
+        body = rule(".btnrow > .btn.tinted")
+        self.assertIn("flex: 1 1 0", body)
+        self.assertIn("min-width: fit-content", body)
+        self.assertIn("flex-wrap: wrap", rule(".btnrow"))

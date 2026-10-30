@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- **Fixed: the page's buttons spilled over each other in a narrow editor.**
+  Duplicate, Save as preset, Share… and Delete now move to a second line
+  when their names don't fit.
+
 ## 0.22.1
 A fix for panels that sleep between updates. **Firmware change**: after
 updating the add-on, Send to ESPHome and Install the panel again. No Home

@@ -123,7 +123,7 @@ kbd { font: 12px var(--font); background: var(--surface); border-radius: 5px; pa
 .linkbtn.inline { padding: 0; min-height: 0; margin-left: auto; white-space: nowrap; }
 .btnrow { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
 .btnrow:first-child { margin-top: 0; }
-.btnrow > .btn.tinted { flex: 1; }
+.btnrow > .btn.tinted { flex: 1 1 0; min-width: fit-content; }   /* equal widths while the labels fit, a new line when they don't */
 .btnrow.icons > .btn { flex: none; }
 .btnrow.center { justify-content: center; }
 .btnrow.wrap > .btn { flex: 1 1 auto; }
