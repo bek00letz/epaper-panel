@@ -118,6 +118,21 @@ export const PRESETS = [
     ],
   },
 
+  {
+    // Travel times from Home Assistant (Waze Travel Time needs no key), each against its own usual.
+    id: "commute", group: "day", title: "Commute", kw: "travel time traffic waze google here route drive driving work school car",
+    desc: "How long the drive takes now, against the usual for this hour, from the travel times in Home Assistant. Waze Travel Time needs no account.",
+    asks: "", needs: "found", found: "commute",
+    looks: [{ id: "commute", name: "Commute", make: (_, x = {}) => [{ type: "commute", entities: x.entities || [], x: 24, y: 14, w: 744, h: 208 }] }],
+  },
+  {
+    // The next departures from any transit integration: the add-on reads each one's shape (sources/departures.py).
+    id: "departures", group: "day", title: "Departures", kw: "bus tram train metro subway transit public transport gtfs timetable stop station",
+    desc: "The next buses, trams or trains from your stop, from any transit integration in Home Assistant.",
+    asks: "", needs: "found", found: "departures",
+    looks: [{ id: "departures", name: "Departures", make: (_, x = {}) => [{ type: "departures", entities: x.entities || [], x: 24, y: 14, w: 744, h: 208 }] }],
+  },
+
   /* ---------- home ---------- */
   {
     id: "climate", group: "home", title: "Room temperature", desc: "A temperature with a 24-hour curve.", kw: "climate thermometer heat",
@@ -182,6 +197,28 @@ export const PRESETS = [
     asks: "",
     looks: [{ id: "updates", name: "Updates", tier: "when", widget: true,
       make: () => [{ type: "updates", x: 40, y: 14, w: 712, h: 220 }] }],
+  },
+
+  {
+    // Home Assistant's IMAP integration holds the password; the add-on hears the new mail it announces.
+    id: "mail", group: "home", title: "Mail", kw: "email e-mail inbox imap unread messages letters",
+    desc: "Your latest unread mail, who it's from and the subject, from Home Assistant's IMAP integration. Only shows while there's unread mail.",
+    asks: "", needs: "mail",
+    looks: [{ id: "mail", name: "Mail", tier: "when", widget: true,
+      make: (_, x = {}) => [{ type: "mail_list", entity: x.entity || "", x: 40, y: 14, w: 712, h: 220 }] }],
+  },
+  {
+    // A square per day (render/yeargrid.py): one widget, many sources; the grid never knows which.
+    id: "year_grid", group: "home", title: "Year grid", kw: "github contributions streak heatmap days year history statistics solar steps heating",
+    desc: "A square for each day of the past year, larger for more, with the total and streaks beside it: any daily number from Home Assistant, or someone's GitHub contributions.",
+    asks: "", choose: "From", prefer: { device_class: ["energy", "duration", "water", "gas"], units: ["kWh", "h", "min", "steps", "L", "m³"] },
+    example: "sensor.solar_today_production",
+    looks: [
+      { id: "year_grid_sensor", name: "A sensor", asks: "sensor",
+        make: (ent) => [{ type: "year_grid", source: "statistic", entity: ent || "", x: 24, y: 14, w: 744, h: 208 }] },
+      { id: "year_grid_github", name: "GitHub", needs: "github", exampleExtra: () => ({}),
+        make: (_, x = {}) => [{ type: "year_grid", source: "github", user: x.user || "", x: 24, y: 14, w: 744, h: 208 }] },
+    ],
   },
 
   /* ---------- energy ---------- */

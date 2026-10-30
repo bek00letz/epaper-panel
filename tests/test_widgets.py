@@ -800,10 +800,11 @@ class TestWidgetDescriptors(unittest.TestCase):
             self.assertTrue(d["name"] and d["icon"] and isinstance(d["box"], dict) and isinstance(d["fields"], list), t)
 
     def test_how_often_what_it_shows_changes(self):
-        # The user's list: planes, scores, races, what's playing, the grid now, a weather station.
+        # The user's list: planes, scores, races, what's playing, the grid now, a weather station; and
+        # (ha-pages, 30 Oct) travel times and departures, which change by the minute too.
         live = {t: w.changes_every() for t, w in widgets.WIDGETS.items() if w.changes_every()}
         self.assertEqual(live, {"now_playing": 10, "grid_now": 15, "flight_tracker": 30, "sports_racing": 30,
-                                "sports_match": 30, "weather_forecast": 60})
+                                "sports_match": 30, "weather_forecast": 60, "commute": 120, "departures": 60})
         weather = widgets.get("weather_forecast")
         self.assertIsNone(weather.changes_every({"entity": "weather.home"}), "a forecast alone changes slowly")
         self.assertEqual(weather.changes_every({"entity": "weather.home", "rain_sensor": "sensor.rain"}), 60)

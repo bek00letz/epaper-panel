@@ -58,6 +58,8 @@ Where things live in `addon/app/`:
 | `entities.py` / `mqtt_bridge.py` | The add-on's own values, and mirroring them into Home Assistant |
 | `notify.py` / `blueprints/notify.yaml` | Phone notifications for a page: its sensor, the shipped blueprint, the automation made from it |
 | `sources/` | Outside data (flights, sports, racing, weather, calendars, to-do lists, Home Assistant's notifications, updates and Repairs), always through `live_data.py` |
+| `sources/hass_read.py` / `ha_events.py` | Reading what Home Assistant already has, one way for every page built on it (the sensors an integration made, several states at once, long-term statistics); and its events, heard on one websocket once a page needs them |
+| `render/listing.py` | A heading and rows that fill their box: how Commute, Departures and Mail fit what they show |
 | `panel_link.py` / `panel_ops.py` | Finding a panel and asking it to refresh or step |
 | `panel_setup.py` / `firmware_gen.py` / `firmware/panel.yaml` | Panel setup, and the one source of the firmware YAML |
 | `web.py` | The device port (shared routes; each kind adds its own) and the Ingress-only editor API |
@@ -375,6 +377,36 @@ each on its own interval. The fetchers in `sources/` are decorated `@runtime.liv
 their own caches still stop them hitting a service more often than it allows.
 The editor's preview (and its aircraft list) wait for fresh data, because
 there a person asked.
+
+### Pages built on Home Assistant's own data
+
+The year grid, commute times, departures and the mail list are layouts over
+what Home Assistant keeps, so they read it one way (`sources/hass_read.py`)
+and fit it one way (`render/listing.py`, or the year grid's own `plan`):
+
+- **Nothing to pick on a first page.** With no sensors chosen, each shows
+  what the add-on finds by its own rule: every sensor the travel-time
+  integrations made, every sensor shaped like departures, the first IMAP
+  mailbox. New page lists the same through `GET /api/found`, so the editor
+  never has a second rule.
+- **One shape per page, whatever the source.** The year grid draws days
+  (`{"days": [[date, value or None]], "unit", "what"}`) and never knows whether
+  they came from long-term statistics or GitHub's contribution calendar.
+  Departures from any integration are read into `{at, line, destination,
+  delay, platform}` by the names integrations use, with the page's own names
+  for an unusual one (`list_key`, `time_key`, `line_key`, `to_key`).
+- **"Usual" is the sensor's own history:** the median of a route's hourly
+  means at this hour, weekdays and weekends apart, over four weeks of
+  long-term statistics.
+- **Events are heard, not polled** (`ha_events.py`). The IMAP integration
+  says what each new message is only as an `imap_content` event, so the add-on
+  keeps one websocket subscribed to the events a page needs (none until one
+  does), reconnecting with a growing wait. The mail page keeps the last few
+  senders, subjects and dates per mailbox in `/data/mail.json` (0600, never a
+  message's text) and lists as many as the unread count says. The add-on never
+  holds an email password.
+- **GitHub is asked at most four times a day** per user (`@runtime.live`
+  every six hours), through its address in `services.py`.
 
 ## Icons
 
