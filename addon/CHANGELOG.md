@@ -1,9 +1,10 @@
 # Changelog
 
-## Unreleased
-**Firmware change** for every panel on our firmware: install it again (Send
-to ESPHome, then Install) to get compressed pages. A panel that isn't
-installed again keeps working as before.
+## 0.23.1
+The Seeed XIAO 7.5" works always on. **Firmware change**: install the
+Seeed again (Send to ESPHome, then Install) so it holds its whole rotation.
+A CrowPanel works as before without it; installed again, it downloads far
+less. No Home Assistant restart.
 
 - **Pages are compressed on their way to the panel**, which unpacks each one
   as it shows it. A page of words and icons is about a twentieth of its
