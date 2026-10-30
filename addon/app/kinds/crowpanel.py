@@ -25,6 +25,11 @@ What a panel that can sleep says when it fetches `/frames.epf`:
 `wake=timer|button|boot` (why it's awake) and `awake_ms=` (how long it was
 awake last time). A timer wake while it sleeps between updates gets one
 page, picked; anything else gets every page, as always.
+
+Firmware that moves a window through the rotation says `window=1` and where
+it is (`at=`, `item=`, or `page=`): when its whole rotation doesn't fit, it
+gets the part around that page (window.py) instead of a trimmed rotation.
+Older firmware never says, and keeps today's trimming (frames.fit).
 """
 from __future__ import annotations
 
@@ -51,6 +56,7 @@ from config import HA_TOKEN, SLEEP_PAGE
 from kinds import Kind, device_for, of as kind_of, register
 from panel_link import PanelLink, mac_of
 from render import epf, sleep, stripmeta, subitems, theme as T
+from window import Sleep, Window
 
 
 def node_of(dev: dict) -> str:
@@ -159,8 +165,9 @@ class CrowPanel(Kind):
         return rt.link
 
     def room(self, dev):
-        # Asleep between updates it fetches one page a wake (paging.py), so it never runs out.
-        return None if self.sleeps(dev) else _memory(dev)
+        # Asleep between updates it fetches one page a wake (paging.py), and firmware that moves a
+        # window through the rotation is handed the rest as it goes (window.py): neither runs out.
+        return None if self.sleeps(dev) or moves_window(dev) else _memory(dev)
 
     async def render(self, session, dev, spec, st, quiet_active, quiet_reason) -> runtime.Frames:
         orient = int(spec.get("orientation") or 0)
@@ -200,6 +207,9 @@ class CrowPanel(Kind):
         # said so (DeviceRuntime.fit, /api/status, sensor.epaper_panel_pages).
         # Sleeping or not: a wake that isn't the timer's (a press, a start) gets this whole file.
         # A panel that inflates (inflates()) gets its pages deflated, each weighed as drawn.
+        # Firmware that moves a window (moves_window()) leaves nothing out: when not everything
+        # fits, every item of every page is drawn now, and each download gets the part around
+        # where the panel is (window.py).
         plans = st.plans
         page_bytes, capacity = _memory(dev, display)
         deflate = inflates(dev)
@@ -215,8 +225,15 @@ class CrowPanel(Kind):
             drawn_sleep = await asyncio.to_thread(sleep.render_sleep_page, sleep_text, orient, display)
             sleep_img = T.orient_for_panel(T.to_1bit(drawn_sleep), orient, display=display)
 
+        as_stored = {}
+
+        def stored_bytes(img) -> bytes:
+            if id(img) not in as_stored:
+                as_stored[id(img)] = (img, epf.stored_page(img, display, dw, dh, deflate))
+            return as_stored[id(img)][1]
+
         def stored(img) -> int:
-            return len(epf.stored_page(img, display, dw, dh, deflate))
+            return len(stored_bytes(img))
 
         def footer(counts):
             # One footer for the whole strip, drawn with the same numbers the panel
@@ -251,6 +268,10 @@ class CrowPanel(Kind):
             rt.fit = frames.record_fit(plans, counts, capacity, rt.fit, dev.get("name") or "the panel")
             need = epf.file_size(1, [await weigh(0, 0) if deflate else page_bytes])
             raise frames.NoRoom(frames.no_room_words(dev.get("name") or "The panel", capacity, need))
+        windowed = moves_window(dev) and counts != wants
+        if windowed:
+            counts = list(wants)                       # every item of every page, a window at a time
+            fitted = frames.Fit(counts, not alert)
 
         while True:
             imgs = []
@@ -279,13 +300,14 @@ class CrowPanel(Kind):
             # Weighed with every item's footer, drawn with the kept ones': if that came out larger,
             # the last item let in goes, until it fits. Not deflated, each page is page_bytes exactly.
             sleeping = [sleep_img] if fitted.sleep_screen else []
-            if not deflate or len(fitted.order) <= 1 or epf.file_size(
+            if windowed or not deflate or len(fitted.order) <= 1 or epf.file_size(
                     len(cat_offsets) + len(sleeping), [stored(im) for im in sleeping + imgs]) <= capacity:
                 break
             i, _ = fitted.order.pop()
             counts[i] -= 1
-        rt.fit = frames.record_fit(plans, counts, capacity, rt.fit, dev.get("name") or "the panel")
         live = cat_names
+        if not windowed:
+            rt.fit = frames.record_fit(plans, counts, capacity, rt.fit, dev.get("name") or "the panel")
         if not imgs:
             raise RuntimeError("no page could be drawn")
 
@@ -332,33 +354,52 @@ class CrowPanel(Kind):
             strip.paste(im, (0, i * dh))
         stripmeta.paint(strip, dh * len(imgs), payload)
 
-        epf_data = epf.encode_epf(
-            pages=imgs,
-            cat_ids=cat_ids,
-            cat_offsets=cat_offsets,
-            cat_sizes=cat_sizes,
-            cat_pill_widths=cat_pill_widths,
-            sub_ids=sub_ids,
-            display_model=display,
-            width=dw,
-            height=dh,
-            rotate_sec=rot_sec,
-            quiet_hours=quiet_active,
-            alert_interrupt=bool(alert),
-            orientation_180=(orient == 180),
-            content_hash=int.from_bytes(slices_digest[:8], "big"),
-            geometry=geo,
-            cat_flags=cat_flags,
-            deflate=deflate,
-        )
-        return _frames(frames._png(strip), slice_pngs[0], slice_pngs, live, cat_offsets, cat_sizes, cat_names,
-                       cat_pill_widths, rot_sec, cat_ids, sub_ids, epf_data, epf.extract_page_epf(epf_data, 0))
+        header = dict(display_model=display, width=dw, height=dh, rotate_sec=rot_sec, quiet_hours=quiet_active,
+                      alert_interrupt=bool(alert), orientation_180=(orient == 180),
+                      content_hash=int.from_bytes(slices_digest[:8], "big"), geometry=geo, deflate=deflate)
+        window = None
+        if windowed:
+            first = 1 if cat_names[0] == SLEEP_PAGE else 0
+            window = Window(
+                pages=[[stored_bytes(im) for im in imgs[o:o + n]] for o, n in zip(cat_offsets[first:], cat_sizes[first:])],
+                cat_ids=cat_ids[first:], sub_ids=[sub_ids[o:o + n] for o, n in zip(cat_offsets[first:], cat_sizes[first:])],
+                pill_widths=cat_pill_widths[first:], capacity=capacity, header=header, auto_sleep=auto,
+                sleep=Sleep(stored_bytes(imgs[0]), cat_ids[0], sub_ids[0], cat_flags[0]) if first else None)
+            epf_data = window.file()[0]
+            rt.fit = frames.record_fit(plans, counts, capacity, rt.fit, dev.get("name") or "the panel",
+                                       holds=window.holds())
+        else:
+            epf_data = epf.encode_epf(pages=imgs, cat_ids=cat_ids, cat_offsets=cat_offsets, cat_sizes=cat_sizes,
+                                      cat_pill_widths=cat_pill_widths, sub_ids=sub_ids, cat_flags=cat_flags, **header)
+        f = _frames(frames._png(strip), slice_pngs[0], slice_pngs, live, cat_offsets, cat_sizes, cat_names,
+                    cat_pill_widths, rot_sec, cat_ids, sub_ids, epf_data, epf.extract_page_epf(epf_data, 0))
+        f.window = window
+        return f
 
 
 def inflates(dev: dict) -> bool:
     """Whether its firmware asked for deflated pages (`deflate=1` with every download, 0.24 and
     later; epf.FLAG_DEFLATE). Older firmware never says, and gets every page as it is."""
     return bool(devices.state(dev["id"]).get("inflates"))
+
+
+def moves_window(dev: dict) -> bool:
+    """Whether its firmware moves a window through the rotation (`window=1` with every download,
+    0.24 and later; window.py). Older firmware never says, and has its rotation trimmed to fit."""
+    return bool(devices.state(dev["id"]).get("window"))
+
+
+def where(request) -> tuple[int, int, int | None]:
+    """Where a panel that moves a window is: (page, item) in the rotation, and Home Assistant's
+    show_page if it asked for one. Anything unreadable is the start."""
+    def number(key):
+        try:
+            got = int(request.query[key])
+        except (KeyError, ValueError):
+            return None
+        return got if abs(got) < 1_000_000 else None
+    page = number("page")
+    return number("at") or 0, number("item") or 0, page if page is not None and page >= 0 else None
 
 
 def _memory(dev: dict, display: str | None = None) -> tuple[int, int]:
@@ -600,6 +641,9 @@ async def frames_epf(request):
         # What its firmware reads, said with every download: the next render is for that.
         devices.set_state(dev["id"], inflates=request.query.get("deflate") == "1")
         runtime.LIVE._event().set()
+    if "cap" in request.query and (request.query.get("window") == "1") != moves_window(dev):
+        devices.set_state(dev["id"], window=request.query.get("window") == "1")
+        runtime.LIVE._event().set()
     wake = str(request.query.get("wake") or "").lower()
     if wake:
         # Only firmware that can sleep says why it woke.
@@ -611,6 +655,8 @@ async def frames_epf(request):
     sleeps = KIND.sleeps(dev)
     asleep = {} if sleeps else next_header()
     body, etag = f.epf_strip, f.epf_strip_etag
+    if f.window is not None and moves_window(dev):
+        body, etag = f.window.file(*where(request))       # the part around where it is, packed, not drawn
     if sleeps:
         if wake == "timer":
             got = await paging.wake(dev, person=False, art=ART)

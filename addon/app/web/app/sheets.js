@@ -131,6 +131,7 @@ export function openStatus(app, anchor) {
     if (s.panel_link?.pending_refresh) lines.push(`The panel hasn't picked up the last change yet${s.panel_link.last_error ? `: ${s.panel_link.last_error}` : ""}. It keeps trying.`);
     if (s.panel_link?.problem && !s.panel_link?.node) lines.push(`No panel found: ${s.panel_link.problem}.`);
     if (s.no_room) lines.push(s.no_room);
+    if (s.window) lines.push(`Holds ${s.window.holds} of ${s.window.of} pages; the rest arrive as it goes.`);
     if (s.error) lines.push(`The last render failed: ${s.error}`);
     const notes = lines.map((l) => h("p", { class: "fnote", text: l }));
     // What isn't sent comes right under the line that says so.

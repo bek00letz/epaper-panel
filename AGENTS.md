@@ -292,7 +292,12 @@ YAML comes only from `addon/app/firmware/panel.yaml`. After changing it, run
   firmware that says `deflate=1`). Read a page through `epf.EpfStream.page_slice`
   / `stored` or the firmware's `page_pixels`, never by offset times page size,
   and decide what fits only through `frames.fit` / `fit_weighed` (one rule, in
-  the file's own bytes).
+  the file's own bytes; `fit_window` is its moving-window mode).
+- **A panel that moves a window holds part of its rotation** (`window.py`,
+  firmware that says `window=1`). A request only packs pictures the render
+  drew; never draw in it. On the panel, a category's index in the file means
+  nothing from one file to the next: go by its place in the rotation
+  (`pos_of_`), and ask for what isn't held through `ask_`.
 - The CrowPanel needs the external component; stock `waveshare_epaper` has no model
   for it. `invert_colors: true` is required.
 - **`GPIO7` is the CrowPanel display's power rail.** Nothing renders until it is high.

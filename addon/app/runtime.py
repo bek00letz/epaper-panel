@@ -56,6 +56,7 @@ class Frames:
         self.rendered_at = None
         self.error = None
         self.no_room: str | None = None              # not even one page fits the panel (frames.NoRoom)
+        self.window = None                           # a moving window's pictures (window.Window), else None
 
 
 class DeviceRuntime:

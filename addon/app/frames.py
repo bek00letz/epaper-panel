@@ -147,10 +147,12 @@ async def _fetch_feed_items(session, elements):
 
 class Fit:
     """What a frame file for a panel carries (fit): how many items each page shows, whether the
-    sleep screen goes in, and the items in the order they were let in (the last is the first to go)."""
+    sleep screen goes in, and the items in the order they were let in (the last is the first to go).
+    `items`: a moving window's (fit_window), each page's items in the order the file holds them."""
 
-    def __init__(self, counts: list[int], sleep_screen: bool, order: list[tuple[int, int]] | None = None):
-        self.counts, self.sleep_screen, self.order = counts, sleep_screen, order or []
+    def __init__(self, counts: list[int], sleep_screen: bool, order: list[tuple[int, int]] | None = None,
+                 items: dict[int, list[int]] | None = None):
+        self.counts, self.sleep_screen, self.order, self.items = counts, sleep_screen, order or [], items or {}
 
 
 class NoRoom(Exception):
@@ -203,16 +205,47 @@ async def fit_weighed(wants: list[int], capacity: int, sleep_cost: int | None, c
         return done.value
 
 
+def fit_window(wants: list[int], at: int, item: int, capacity: int, sleep_cost: int | None, cost) -> Fit:
+    """What a panel holds around the page it shows, for firmware that moves a window through the
+    rotation (window=1) when the whole rotation doesn't fit: the same rule in the file's own bytes,
+    choosing whole pages instead of sharing items out, so nothing is ever left out, only later.
+
+    `wants`: every page of the rotation, in order; `at`, `item`: the page and item the panel asked
+    for. That page first, every item from `item` on (and round to the ones before it); then the
+    next page, the one before it (for scrolling back), and the pages after, each whole while it
+    fits. The window ends at the first page ahead that doesn't fit whole (the one before still
+    goes in if it fits); the one before is only left out. A page whose items don't fit even alone is a run of them from `item`, and nothing
+    else. `cost(page, item)` is what that picture takes as stored; `sleep_cost` the sleep screen's,
+    None for none. Fit.items says each held page's items in the file's order."""
+    sharing = _fitting(wants, capacity, sleep_cost, lambda w, c, s: _window(w, c, s, at, item))
+    try:
+        asked = sharing.send(None)
+        while True:
+            asked = sharing.send(cost(*asked))
+    except StopIteration as done:
+        return done.value
+
+
+def window_order(n: int, at: int) -> list[int]:
+    """The pages of a rotation of `n` by how much a panel showing `at` wants them: that page, the
+    next, the one before, then the rest ahead."""
+    order = [at % n, (at + 1) % n, (at - 1) % n] + [(at + k) % n for k in range(2, n)]
+    return list(dict.fromkeys(order))[:n]
+
+
 def fit_counts(wants: list[int], page_bytes: int, capacity: int, extra_pages: int = 1) -> list[int]:
     """How many items each page shows so the frame file fits the panel (fit)."""
     return fit(wants, page_bytes, capacity, sleep_screen=extra_pages > 0).counts
 
 
-def _fitting(wants: list[int], capacity: int, sleep: int | None):
-    """The rule, once: yields (page, item) to be told what that picture takes, returns the Fit."""
-    got = yield from _sharing(wants, capacity, sleep)
+def _fitting(wants: list[int], capacity: int, sleep: int | None, choose=None):
+    """The rule, once: yields (page, item) to be told what that picture takes, returns the Fit.
+    `choose`: how pages are let in, _sharing (every page its first item, then more each) or
+    _window (whole pages around one); both count the file by epf.file_size against `capacity`."""
+    choose = choose or _sharing
+    got = yield from choose(wants, capacity, sleep)
     if sleep is not None and wants and not any(got.counts):
-        alone = yield from _sharing(wants, capacity, None)
+        alone = yield from choose(wants, capacity, None)
         if any(alone.counts):
             return alone
     return got
@@ -252,6 +285,51 @@ def _sharing(wants: list[int], capacity: int, sleep: int | None):
     return Fit(counts, sleep is not None, order)
 
 
+def _window(wants: list[int], capacity: int, sleep: int | None, at: int, item: int):
+    sizes = [] if sleep is None else [sleep]
+    counts, order, items = [0] * len(wants), [], {}
+    if not wants:
+        return Fit(counts, sleep is not None, order, items)
+    n = len(wants)
+    at %= n
+
+    def fits(more: list[int], cats_after: int) -> bool:
+        return epf.file_size(cats_after, sizes + more) <= capacity
+
+    def let_in(i: int, ks: list[int], cs: list[int]) -> None:
+        sizes.extend(cs)
+        order.extend((i, k) for k in ks)
+        counts[i], items[i] = len(ks), ks
+
+    cats = len(sizes) + 1
+    first = item % max(1, wants[at])
+    ks, cs = [], []
+    for k in [(first + j) % wants[at] for j in range(wants[at])]:
+        c = yield (at, k)
+        if not fits(cs + [c], cats):
+            break
+        ks.append(k)
+        cs.append(c)
+    if not ks:
+        return Fit(counts, sleep is not None, order, items)
+    let_in(at, ks, cs)
+    if len(ks) < wants[at]:
+        return Fit(counts, sleep is not None, order, items)        # a run of it: nothing else fits
+    before, ahead = (at - 1) % n, True
+    for i in window_order(n, at)[1:]:
+        if i != before and not ahead:
+            continue                                  # past where the window ends ahead
+        cs = []
+        for k in range(wants[i]):
+            cs.append((yield (i, k)))
+        if fits(cs, cats + 1):
+            let_in(i, list(range(wants[i])), cs)
+            cats += 1
+        elif i != before:
+            ahead = False                             # the window ends here; the one before is only left out
+    return Fit(counts, sleep is not None, order, items)
+
+
 def items_word(plan: dict) -> str:
     """What a page's items are called, in its own words: games or matches (its league's sport),
     planes, players, titles (widgets.py's items_word, feeds.ITEM_WORDS); "items" otherwise."""
@@ -265,13 +343,19 @@ def items_word(plan: dict) -> str:
 
 
 def record_fit(plans: list[dict], counts: list[int], capacity: int, previous: dict | None = None,
-               device_name: str = "the panel") -> dict:
+               device_name: str = "the panel", holds: int | None = None) -> dict:
     """What was left out to fit a panel, for the editor (each page's tile and inspector say it, in
-    its own words) and Home Assistant."""
+    its own words) and Home Assistant. `holds`: a panel that moves a window through its rotation
+    holds that many of its pictures at a time and leaves nothing out (window.py)."""
     trimmed = [{"page": p["name"], "shown": c, "of": p["want"], "items": items_word(p)}
                for p, c in zip(plans, counts) if c < p["want"]]
     fit = {"capacity": capacity, "pages_shown": sum(counts),
            "pages_wanted": sum(p["want"] for p in plans), "trimmed": trimmed}
+    if holds is not None:
+        fit.update(pages_shown=holds, window={"holds": holds, "of": fit["pages_wanted"]})
+        if (previous or {}).get("window") != fit["window"]:
+            print(f"frames: {device_name} holds {holds} of {fit['pages_wanted']} pages at a time; "
+                  "the rest arrive as it goes", flush=True)
     if trimmed and fit["trimmed"] != (previous or {}).get("trimmed"):
         what = ", ".join(f"{t['page']} {t['shown']} of {t['of']}" for t in trimmed)
         print(f"frames: {device_name} holds {fit['pages_shown']} of {fit['pages_wanted']} pages; showing {what}", flush=True)

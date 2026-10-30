@@ -68,6 +68,24 @@ def footer_page(deg, pages=(("solar", 1), ("cat", 1), ("watch", 1))):
     return img, {**plan, "cat_w": w, "cat_x1": plan["cat_x0"] + w}
 
 
+def write_windows(tmp: Path, name: str, wants: list[int], room: int) -> None:
+    """A rotation's windows as the add-on packs them (window.Window), for core_test's AddOn."""
+    import window
+    pw, ph = T.panel_dims("crowpanel_290")
+    raw = ((pw + 7) // 8) * ph
+    pages = [[bytes([i, k]) * (raw // 2) for k in range(n)] for i, n in enumerate(wants)]
+    sleep = window.Sleep(b"\xff" * raw, 9000, 9001, epf.CAT_FLAG_SLEEP)
+    w = window.Window(pages, [100 + i for i in range(len(wants))], [[1000 * (i + 1) + k for k in range(n)]
+                      for i, n in enumerate(wants)], [0] * len(wants), epf.encoded_size(room + 1, room + 1, raw),
+                      sleep, dict(display_model="crowpanel_290", width=pw, height=ph))
+    (tmp / f"{name}.wants").write_text(" ".join(map(str, wants)))
+    for at, n in enumerate(wants):
+        for item in range(n):
+            (tmp / f"{name}_w_{at}_{item}.epf").write_bytes(w.file(at, item)[0])
+    for page in range(sum(wants)):
+        (tmp / f"{name}_p_{page}.epf").write_bytes(w.file(page=page)[0])
+
+
 def blank(n):
     return [Image.new("1", (792, 272), 1) for _ in range(n)]
 
@@ -274,6 +292,12 @@ class TestFirmwareCore(unittest.TestCase):
                 (tmp / f"{name}.epf").write_bytes(epf.encode_epf(
                     words, [1, 2, 3], [0, 1, 2], [1, 1, 1], [0, 0, 0], [11, 12, 13], display_model="seeed_xiao_750",
                     width=800, height=480, deflate=deflate))
+
+            # A moving window's files (window.py), every place, item and show_page, for two
+            # rotations too big to hold: 20 pages of one item with room for 10, and one with a
+            # page of nine items with room for six pictures.
+            for name, wants, room in (("wide", [1] * 20, 10), ("tall", [1, 1, 3, 1, 1, 9, 1, 1], 6)):
+                write_windows(tmp, name, wants, room)
 
             exe = tmp / "core_test"
             # With AddressSanitizer and UndefinedBehaviorSanitizer where the compiler has them,
@@ -702,6 +726,26 @@ class TestBoards(unittest.TestCase):
             self.assertIn("\nepf:\n  deflate: false\n", render_for("seeed_xiao_750"))
         finally:
             firmware_gen.DEFLATE_FRAMES = keep
+
+    def test_it_moves_a_window_unless_switched_back(self):
+        # On by default (the component's own default), so `epf:` stays as it was. The firmware
+        # says where it is on every download, and starts the download the window asks for.
+        self.assertIn("\nepf:\n", render_for(DISPLAY))
+        client = (ROOT / "components" / "epf" / "epf_client.h").read_text()
+        self.assertIn("+ window_query_();", client)
+        self.assertIn("#ifdef USE_EPF_WINDOW", client)
+        self.assertIn("cv.Optional(CONF_WINDOW, default=True)", (ROOT / "components" / "epf" / "__init__.py").read_text())
+        for display in (DISPLAY, "seeed_xiao_750"):
+            text = render_for(display)
+            self.assertIn("panel.take_window_fetch(id(redraw).is_running())", text)
+            self.assertIn("if (result != epf::FetchResult::OK) panel.window_unanswered();", text)
+        keep = firmware_gen.MOVING_WINDOW
+        try:
+            firmware_gen.MOVING_WINDOW = False
+            self.assertIn("\nepf:\n  window: false\n", render_for(DISPLAY))
+            self.assertIn("\nepf:\n  window: false\n", render_for("seeed_xiao_750"))
+        finally:
+            firmware_gen.MOVING_WINDOW = keep
 
     def test_the_way_back_is_a_full_refresh_every_time(self):
         # Until partial refresh is proven on a real XIAO: PARTIAL_REFRESH = False builds

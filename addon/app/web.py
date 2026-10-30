@@ -170,6 +170,9 @@ async def status(request):
         # How many pages the panel holds, and what was left out to fit: only for a device that keeps its
         # whole rotation in memory (Kind.room), which can run out. One that sleeps gets a page a wake.
         "fit": rt.fit if kinds.of(dev).room(dev) else None,
+        # A panel that moves a window through its rotation (window.py): how many pages it holds at a
+        # time, of how many; nothing is left out. None while it holds them all.
+        "window": (rt.fit or {}).get("window") if f.window is not None else None,
         "ha_entities": runtime.PUBLISHER.status() if runtime.PUBLISHER is not None else
                        {"mode": "off", "problem": "not started", "entities": 0},
         "version": ADDON_VERSION,

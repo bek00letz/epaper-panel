@@ -45,6 +45,16 @@ FLAG_DEFLATE = 0x0020           # each page is raw deflate; its page record's la
 # Category flags (EpfCategory.flags)
 CAT_FLAG_SLEEP = 0x0001         # the sleep screen (always category 0 when present)
 CAT_FLAG_SLEEP_AUTO = 0x0002    # quiet hours: the panel should be asleep now
+CAT_FLAG_AT = 0x0004            # a moving window's page the panel asked for (at=, page=): shown from its first item
+CAT_FLAG_PART = 0x0008          # a moving window holds a run of this page's items, not every one
+
+# A moving window (firmware that says window=1, window.py): each category record's last field
+# says where the page sits in the whole rotation, place(position, length). 0 in a file that is the
+# whole rotation, as before (and in the sleep screen's, which isn't in the rotation).
+
+
+def place(position: int, length: int) -> int:
+    return ((position & 0xFFFF) << 16) | (length & 0xFFFF)
 
 # Panels whose frame buffer stores each row right-to-left (the CrowPanel
 # driver's mirror_x; the profile's "mirrored"). Pages are flipped before
@@ -138,6 +148,15 @@ class EpfCategory:
     page_count: int
     pill_width: int = 110
     flags: int = 0
+    place: int = 0           # place(): where it sits in the whole rotation, in a moving window
+
+    @property
+    def rot_pos(self) -> int:
+        return self.place >> 16
+
+    @property
+    def rot_len(self) -> int:
+        return self.place & 0xFFFF
 
 
 @dataclass(frozen=True)
@@ -210,10 +229,47 @@ def encode_epf(
     geometry: OverlayGeometry | None = None,
     cat_flags: Sequence[int] | None = None,
     deflate: bool = False,
+    cat_places: Sequence[int] | None = None,
+    sub_indexes: Sequence[int] | None = None,
 ) -> bytes:
     """Encode layout pages and identity directories into an aligned .epf binary buffer.
     `deflate`: each page as raw deflate (FLAG_DEFLATE), for firmware that asked for it."""
-    num_pages = len(pages)
+    stored = [stored_page(img, display_model, width, height, deflate) for img in pages]
+    return pack_epf(stored, cat_ids, cat_offsets, cat_sizes, cat_pill_widths, sub_ids, display_model=display_model,
+                    width=width, height=height, rotate_sec=rotate_sec, quiet_hours=quiet_hours,
+                    alert_interrupt=alert_interrupt, force_full_waveform=force_full_waveform,
+                    orientation_180=orientation_180, content_hash=content_hash, geometry=geometry,
+                    cat_flags=cat_flags, deflate=deflate, cat_places=cat_places, sub_indexes=sub_indexes)
+
+
+def pack_epf(
+    stored: Sequence[bytes],
+    cat_ids: Sequence[int],
+    cat_offsets: Sequence[int],
+    cat_sizes: Sequence[int],
+    cat_pill_widths: Sequence[int],
+    sub_ids: Sequence[int],
+    *,
+    display_model: str = "crowpanel_579",
+    width: int = 792,
+    height: int = 272,
+    rotate_sec: int = 30,
+    quiet_hours: bool = False,
+    alert_interrupt: bool = False,
+    force_full_waveform: bool = False,
+    orientation_180: bool = False,
+    content_hash: int = 0,
+    geometry: OverlayGeometry | None = None,
+    cat_flags: Sequence[int] | None = None,
+    deflate: bool = False,
+    cat_places: Sequence[int] | None = None,
+    sub_indexes: Sequence[int] | None = None,
+) -> bytes:
+    """encode_epf, from pages already as a frame file stores them (stored_page): what a moving
+    window is packed from on each download, with nothing drawn (window.py). `cat_places`: each
+    category's place() in the whole rotation; `sub_indexes`: each page's own item number in its
+    page (a window may hold a run of them), else its place in its category."""
+    num_pages = len(stored)
     num_cats = len(cat_ids)
     if num_pages == 0:
         raise ValueError("Cannot encode EPF stream with zero pages")
@@ -241,9 +297,7 @@ def encode_epf(
     if deflate:
         flags |= FLAG_DEFLATE
 
-    # 1. The pixel payload, one page after another: each Pillow image in 1-bit raw
-    # scanlines, deflated when asked.
-    stored = [stored_page(img, display_model, width, height, deflate) for img in pages]
+    # 1. The pixel payload, one page after another, as stored.
     payload_size = sum(len(s) for s in stored)
 
     dir_offset = HEADER_SIZE
@@ -273,7 +327,7 @@ def encode_epf(
     assert len(header_bytes) == HEADER_SIZE, f"Header size mismatch: {len(header_bytes)}"
 
     # 2. Pack Category Directory
-    # struct EpfCategory: uint32 cat_id, uint16 offset, uint16 count, uint16 pill_w, uint16 flags, uint32 res
+    # struct EpfCategory: uint32 cat_id, uint16 offset, uint16 count, uint16 pill_w, uint16 flags, uint32 place
     cat_records = []
     for c in range(num_cats):
         cid = int(cat_ids[c]) & 0xFFFFFFFF
@@ -281,7 +335,8 @@ def encode_epf(
         sz = int(cat_sizes[c]) if c < len(cat_sizes) else 1
         pw = int(cat_pill_widths[c]) if c < len(cat_pill_widths) else 110
         cf = int(cat_flags[c]) if cat_flags and c < len(cat_flags) else 0
-        cat_records.append(struct.pack(">IHHHHI", cid, off, sz, pw, cf, 0))
+        pl = int(cat_places[c]) & 0xFFFFFFFF if cat_places and c < len(cat_places) else 0
+        cat_records.append(struct.pack(">IHHHHI", cid, off, sz, pw, cf, pl))
     cat_bytes = b"".join(cat_records)
 
     # 3. Pack Page Directory
@@ -301,6 +356,8 @@ def encode_epf(
                 s_idx = p - off
                 break
         parent_cid = int(cat_ids[c_idx]) & 0xFFFFFFFF if c_idx < num_cats else 0
+        if sub_indexes is not None:
+            s_idx = int(sub_indexes[p]) & 0xFFFF
         page_records.append(struct.pack(">IIHHI", sid, parent_cid, c_idx, s_idx, len(stored[p]) if deflate else 0))
     page_bytes = b"".join(page_records)
 
@@ -390,8 +447,8 @@ def decode_epf(data: bytes) -> EpfStream:
     categories = []
     pos = cat_dir_start
     for _ in range(header.cat_count):
-        cid, off, sz, pw, flg, _ = struct.unpack(">IHHHHI", data[pos : pos + CAT_RECORD_SIZE])
-        categories.append(EpfCategory(cat_id=cid, offset_page=off, page_count=sz, pill_width=pw, flags=flg))
+        cid, off, sz, pw, flg, pl = struct.unpack(">IHHHHI", data[pos : pos + CAT_RECORD_SIZE])
+        categories.append(EpfCategory(cat_id=cid, offset_page=off, page_count=sz, pill_width=pw, flags=flg, place=pl))
         pos += CAT_RECORD_SIZE
 
     # Unpack Pages

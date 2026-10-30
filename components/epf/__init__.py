@@ -11,12 +11,21 @@ epf_ns = cg.esphome_ns.namespace("epf")
 # Pages arrive deflated and are inflated as they're shown (epf_client.h): false is the way
 # back, every page as it is (firmware_gen.DEFLATE_FRAMES).
 CONF_DEFLATE = "deflate"
-CONFIG_SCHEMA = cv.Schema({cv.Optional(CONF_DEFLATE, default=True): cv.boolean})
+# A rotation too big for the panel's memory moves through it as a window, the add-on handing it
+# the next part as it goes (epf_core.h, "The moving window"): false is the way back, the add-on
+# trimming the rotation to fit (firmware_gen.MOVING_WINDOW).
+CONF_WINDOW = "window"
+CONFIG_SCHEMA = cv.Schema({
+    cv.Optional(CONF_DEFLATE, default=True): cv.boolean,
+    cv.Optional(CONF_WINDOW, default=True): cv.boolean,
+})
 
 
 async def to_code(config):
     if config[CONF_DEFLATE]:
         cg.add_define("USE_EPF_DEFLATE")
+    if config[CONF_WINDOW]:
+        cg.add_define("USE_EPF_WINDOW")
     # The client talks HTTP through ESP-IDF directly, and ESPHome leaves that
     # component out of the build unless something asks for it.
     esp32.include_builtin_idf_component("esp_http_client")

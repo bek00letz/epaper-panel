@@ -34,6 +34,17 @@
 #endif
 
 namespace epf {
+// Where the panel is, for an add-on that moves a window through a rotation too big to hold
+// (PanelController::window_query); without it (firmware_gen.MOVING_WINDOW off) the add-on
+// trims the rotation to fit, as before.
+#ifdef USE_EPF_WINDOW
+inline std::string window_query_() { return PanelController::instance().window_query(); }
+#else
+inline std::string window_query_() { return ""; }
+#endif
+}  // namespace epf
+
+namespace epf {
 
 #ifdef USE_EPF_DEFLATE
 // Pages arrive deflated (FLAG_DEFLATE) and are inflated straight into the display buffer as
@@ -223,7 +234,7 @@ class EpfClient {
     native_h_ = epd ? epd->get_native_height() : 0;
     if (!alloc_(url.rfind("https://", 0) == 0)) return false;
     url_ = url + (url.find('?') == std::string::npos ? "?" : "&") + "cap=" + std::to_string(capacity_) + "&mac=" +
-           mac_() + wake_query_ + (INFLATER ? "&deflate=1" : "");
+           mac_() + wake_query_ + (INFLATER ? "&deflate=1" : "") + window_query_();
     wake_query_.clear();                    // said once, on the first download after a start
     send_etag_ = current_etag_;
     wrote_ = false;

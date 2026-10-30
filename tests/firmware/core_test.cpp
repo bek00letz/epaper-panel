@@ -780,6 +780,158 @@ static void test_deflated_pages(const std::string &dir) {
   CHECK(epf::parse_stream(bad.data(), bad.size(), 800, 480, d) == epf::FetchResult::ERROR_LAYOUT, "lying page length");
 }
 
+// The moving window, as a conversation with the add-on's own files (window.Window, written by
+// test_firmware.py for every place, item and show_page): the panel asks with window_query and
+// loads what comes back, as the glue does.
+struct AddOn {
+  std::string dir, name;
+  std::vector<int> wants;
+  int downloads{0};
+  std::vector<uint8_t> file;               // kept: the stream points into the last one, as the panel's buffer
+  AddOn(const std::string &d, const std::string &n) : dir(d), name(n) {
+    std::ifstream f(dir + "/" + name + ".wants");
+    for (int w; f >> w;) wants.push_back(w);
+  }
+  static int number(const std::string &q, const char *key, int fallback) {
+    size_t at = q.find(key);
+    return at == std::string::npos ? fallback : std::atoi(q.c_str() + at + std::strlen(key));
+  }
+  epf::Stream answer(const std::string &q) {
+    downloads++;
+    int page = number(q, "&page=", -1), at = number(q, "&at=", 0), item = number(q, "&item=", 0);
+    int n = (int) wants.size();
+    at = ((at % n) + n) % n;
+    item = ((item % wants[at]) + wants[at]) % wants[at];
+    std::string path = page >= 0 ? dir + "/" + name + "_p_" + std::to_string(page) + ".epf"
+                                 : dir + "/" + name + "_w_" + std::to_string(at) + "_" + std::to_string(item) + ".epf";
+    file = read_file(path);
+    epf::Stream s;
+    CHECK(epf::parse_stream(file.data(), file.size(), 0, 0, s) == epf::FetchResult::OK, "%s parses", path.c_str());
+    return s;
+  }
+  // What the glue does after a move: start any download the panel wants, and load its answer.
+  void serve(epf::PanelController &pc) {
+    for (int i = 0; i < 4 && pc.take_window_fetch(false); i++) pc.on_stream_loaded(answer(pc.window_query()));
+  }
+};
+
+static void fresh_panel(epf::PanelController &pc) {
+  using A = epf::NavAction;
+  if (pc.pinned()) pc.dispatch(A::PIN_PAGE_TOGGLE);
+  if (pc.cat_pinned()) pc.dispatch(A::PIN_CAT_TOGGLE);
+  if (pc.sleeping()) pc.dispatch(A::WAKE);
+  if (pc.sub_mode()) pc.dispatch(A::MODE_TOGGLE);
+  pc.window_unanswered();
+}
+
+// One timed step of the rotation: the panel's own change, with nobody at it.
+static bool rotate(epf::PanelController &pc, AddOn &addon) {
+  pc.tick_seconds(30);
+  bool moved = pc.check_auto_rotate();
+  bool waited = pc.waiting_for_page();
+  addon.serve(pc);
+  return moved && !waited;
+}
+
+static void test_moving_window(const std::string &dir) {
+  auto &pc = epf::PanelController::instance();
+  using A = epf::NavAction;
+  fresh_panel(pc);
+
+  // 20 pages of one item, room for 10 at a time: the rotation never waits, every page shows in
+  // order, and the next part comes in batches, not a download a page.
+  AddOn wide(dir, "wide");
+  pc.on_stream_loaded(wide.answer("&window=1"));   // a start: it says nothing of where it is
+  CHECK(pc.window(), "a rotation too big to hold is a window");
+  CHECK(pc.rotation_place() == 0 && pc.page_count() == 11, "the start of the rotation, the sleep screen and 10 pages (%d, %d)",
+        pc.rotation_place(), pc.page_count());
+  wide.downloads = 0;
+  bool never_waited = true, in_order = true;
+  for (int step = 1; step <= 40; step++) {
+    never_waited &= rotate(pc, wide);
+    in_order &= pc.rotation_place() == step % 20;
+  }
+  CHECK(never_waited, "timed rotation never waits for a download");
+  CHECK(in_order, "every page in rotation order, none skipped");
+  CHECK(wide.downloads > 0 && wide.downloads <= 12, "two laps of 20 pages in batches: %d downloads", wide.downloads);
+
+  // A step past what it holds: asked for once, nothing changes until it arrives, then it shows
+  // with the window around it again (the one before held for scrolling back).
+  int here = pc.rotation_place(), page = pc.page();
+  wide.downloads = 0;
+  pc.step(12);
+  CHECK(pc.waiting_for_page() && pc.page() == page && pc.rotation_place() == here, "asked, not moved yet");
+  wide.serve(pc);
+  CHECK(wide.downloads == 1, "one download for it: %d", wide.downloads);
+  CHECK(pc.rotation_place() == (here + 12) % 20 && !pc.waiting_for_page(), "shown when it arrives (%d)", pc.rotation_place());
+  int at = pc.rotation_place();
+  pc.dispatch(A::PREV);
+  CHECK(pc.rotation_place() == (at + 19) % 20 && !pc.waiting_for_page(), "the one before is held: no download");
+  pc.dispatch(A::NEXT);
+  wide.serve(pc);
+
+  // Home Assistant's show_page counts every page of the rotation: the add-on finds it.
+  pc.remote(A::GOTO_PAGE, 3);
+  wide.serve(pc);
+  CHECK(pc.rotation_place() == 3, "show_page(3) shows the rotation's fourth page (%d)", pc.rotation_place());
+  pc.remote(A::GOTO_CAT_SUB, 4, 0);
+  CHECK(pc.rotation_place() == 4 && !pc.waiting_for_page(), "show_category of a held page: no download");
+
+  // A page with nine items, room for six pictures: a run of its items, and every item shows,
+  // a visit at a time, with nothing left out.
+  fresh_panel(pc);
+  AddOn tall(dir, "tall");
+  pc.on_stream_loaded(tall.answer("&window=1"));
+  std::set<std::pair<int, int>> seen;
+  bool tall_in_order = true;
+  for (int step = 1; step <= 8 * 10; step++) {
+    rotate(pc, tall);
+    tall_in_order &= pc.rotation_place() == step % 8;
+    seen.insert({pc.rotation_place(), pc.rotation_item()});
+  }
+  int all = 0;
+  for (int w : tall.wants) all += w;
+  CHECK(tall_in_order, "the rotation goes on in order past the page too big to hold");
+  CHECK((int) seen.size() == all, "every item of every page shown: %zu of %d", seen.size(), all);
+
+  // Stepping through the big page's items by hand: round the run, then the items past it.
+  while (pc.rotation_place() != 5) rotate(pc, tall);
+  pc.dispatch(A::MODE_TOGGLE);
+  CHECK(pc.sub_mode(), "into its items");
+  std::set<int> items;
+  tall.downloads = 0;
+  for (int k = 0; k < 9; k++) {
+    items.insert(pc.rotation_item());
+    pc.dispatch(A::NEXT);
+    tall.serve(pc);
+    CHECK(pc.rotation_place() == 5 && pc.sub_mode(), "still on its items (%d)", pc.rotation_place());
+  }
+  CHECK(items.size() == 9, "all nine items by hand: %zu", items.size());
+  CHECK(tall.downloads >= 1 && tall.downloads <= 3, "the items past the run, asked for: %d downloads", tall.downloads);
+  pc.dispatch(A::MODE_TOGGLE);
+
+  // A download that brings nothing: the page asked for isn't coming, and it stays put.
+  here = pc.rotation_place();
+  pc.step(4);
+  CHECK(pc.waiting_for_page(), "asked");
+  CHECK(pc.take_window_fetch(true), "a page asked for is fetched even while drawing");
+  pc.window_query();
+  pc.window_unanswered();
+  CHECK(!pc.waiting_for_page() && pc.rotation_place() == here, "nothing came: it stays");
+
+  // The whole rotation in one file (everything fits): no window, no downloads of its own.
+  epf::Stream whole = sleep_stream(false);
+  pc.on_stream_loaded(whole);
+  CHECK(!pc.window(), "a file without places is the whole rotation");
+  for (int i = 0; i < 4; i++) {
+    pc.dispatch(A::NEXT);
+    pc.tick_seconds(30);
+    pc.check_auto_rotate();
+  }
+  CHECK(!pc.take_window_fetch(false), "it never asks for more");
+  CHECK(pc.window_query().find("&at=") != std::string::npos, "it still says where it is");
+}
+
 // A board without PSRAM keeps one buffer in its own RAM: what's left once a download has
 // what it needs, in whole KB, and nothing when even one page wouldn't fit.
 static void test_internal_capacity() {
@@ -817,6 +969,7 @@ int main(int argc, char **argv) {
   test_aligned_fetches();
   test_internal_capacity();
   test_deflated_pages(argv[1]);
+  test_moving_window(argv[1]);
   if (failures) {
     std::printf("%d check(s) failed\n", failures);
     return 1;
