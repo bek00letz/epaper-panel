@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.23.3
+TRMNL devices are always there, and pairing one says how to flash its
+firmware first. No firmware change and no Home Assistant restart: updating
+the add-on is enough.
 
 - **Pairing a TRMNL says how to flash its firmware first.** A TRMNL comes
   with it; a device made to run it, like Seeed's XIAO 7.5" ePaper Panel or
