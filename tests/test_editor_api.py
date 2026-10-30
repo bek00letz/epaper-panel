@@ -89,8 +89,10 @@ class TestVersionCheck(EditorClient):
     async def test_a_size_elecrow_doesnt_make_isnt_offered(self):
         # The 7.5" and 10.2" CrowPanels don't exist (Elecrow makes 1.54" to 5.79"): a new
         # screen can't be one. A screen already set to one keeps sending and rendering.
+        # The Seeed XIAO 7.5" is a real board on the same firmware, offered after them.
         from kinds import KINDS
-        self.assertEqual(KINDS["crowpanel"].displays(), ["crowpanel_579", "crowpanel_420", "crowpanel_290"])
+        self.assertEqual(KINDS["crowpanel"].displays(),
+                         ["crowpanel_579", "crowpanel_420", "crowpanel_290", "seeed_xiao_750"])
         for hidden in ("crowpanel_750", "crowpanel_102"):
             r = await self.ed.post("/api/devices", json={"kind": "crowpanel", "name": "Hall", "display": hidden})
             self.assertEqual(r.status, 400, hidden)

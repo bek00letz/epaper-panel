@@ -139,6 +139,11 @@ def prune(cache: dict, max_age: float = CACHE_DAY) -> None:
         del cache[k]
 
 
+# The least a panel is taken to hold: no firmware says less, so a smaller number
+# isn't real.
+MIN_CAPACITY = 16 * 1024
+
+
 # How many bytes of frame file a panel can hold. New firmware says so on
 # every download (?cap=), remembered across restarts; older firmware holds 1 MiB.
 def panel_capacity(device_id: str) -> int:
@@ -151,9 +156,11 @@ def panel_capacity(device_id: str) -> int:
 
 
 def set_panel_capacity(device_id: str, value: int) -> bool:
-    """Remember what a panel says it holds. Returns whether it changed."""
+    """Remember what a panel says it holds. Returns whether it changed. A board without
+    PSRAM holds about 100 KB (epf_core.h, "Memory for the frames"): taken as said, so
+    the frame file is fitted to it, never rounded up past what it can hold."""
     import devices
-    value = max(256 * 1024, min(16 * 1024 * 1024, int(value)))
+    value = max(MIN_CAPACITY, min(16 * 1024 * 1024, int(value)))
     if value == panel_capacity(device_id):
         return False
     devices.set_state(device_id, capacity=value)

@@ -3,7 +3,8 @@ import esphome.config_validation as cv
 from esphome.components import esp32
 
 CODEOWNERS = ["@bek00letz"]
-DEPENDENCIES = ["esp32", "psram", "display"]
+# PSRAM when the board has it (two frame buffers there); without, one in its own RAM.
+DEPENDENCIES = ["esp32", "display"]
 
 epf_ns = cg.esphome_ns.namespace("epf")
 

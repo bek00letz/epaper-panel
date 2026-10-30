@@ -100,6 +100,27 @@ add-on is enough.
 - **Fixed: the page's buttons spilled over each other in a narrow editor.**
   Duplicate, Save as preset, Share… and Delete now move to a second line
   when their names don't fit.
+**Firmware change** (only for the new board; a CrowPanel's firmware file
+is the same as before).
+
+- **The Seeed Studio XIAO 7.5" ePaper Panel** is a device you can add, next
+  to the CrowPanels: Add new device › Model › Seeed XIAO 7.5". The add-on
+  builds its firmware the same way, so its pages, sleeping between updates,
+  quiet hours and Home Assistant's controls work as on a CrowPanel. What it
+  can't do, because of its hardware:
+  - It has no battery reading: the battery isn't wired to the chip.
+  - Its one button (Boot, behind the stand) shows the next page, and held
+    for a second downloads new pages and clears ghosting. It can't wake the
+    panel from a sleep; its Reset button can.
+  - Without the extra memory a CrowPanel has, it holds about two pages:
+    always on, it shows the first page of the rotation (the editor says what
+    was left out). Sleeping between updates, it fetches each page in turn
+    as usual. Not yet tried on a real panel.
+- **Its changes are quick refreshes, without the black-and-white flash**,
+  as on a CrowPanel: a full refresh clears ghosting now and then (Ghost
+  clearing in Home Assistant, as for a CrowPanel), and after a sleep the
+  first change is still a quick one. Not yet tried on a real panel; if it
+  misbehaves, the next release can go back to a full refresh every time.
 
 ## 0.22.1
 A fix for panels that sleep between updates. **Firmware change**: after

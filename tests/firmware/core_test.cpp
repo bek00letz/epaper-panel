@@ -735,6 +735,24 @@ static void test_drive_every_pixel() {
   CHECK(sent.size() == 1 && sent[0] == 0x00, "a white byte's previous picture is black");
 }
 
+// A board without PSRAM keeps one buffer in its own RAM: what's left once a download has
+// what it needs, in whole KB, and nothing when even one page wouldn't fit.
+static void test_internal_capacity() {
+  const size_t page = 800 / 8 * 480;          // the 7.5"
+  const size_t most = 1048576;
+  CHECK(epf::frame_file_size(1, page) == 64 + 16 + 16 + page + 4, "one page's file");
+  size_t cap = epf::internal_capacity(200 * 1024, 180 * 1024, 80 * 1024, page, most);
+  CHECK(cap == 120 * 1024, "what's free past the reserve: %zu", cap);
+  CHECK(cap % 1024 == 0, "whole KB");
+  cap = epf::internal_capacity(300 * 1024, 100 * 1024, 40 * 1024, page, most);
+  CHECK(cap == 99 * 1024, "no more than the largest piece the heap can hand out: %zu", cap);
+  CHECK(epf::internal_capacity(120 * 1024, 120 * 1024, 80 * 1024, page, most) == 0,
+        "40 KB left: not one 7.5\" page, so none at all");
+  CHECK(epf::internal_capacity(60 * 1024, 60 * 1024, 80 * 1024, page, most) == 0, "less free than the reserve");
+  CHECK(epf::internal_capacity(4u << 20, 4u << 20, 40 * 1024, page, most) == most, "never more than the most");
+  CHECK(epf::internal_capacity(200 * 1024, 512, 40 * 1024, page, most) == 0, "a heap in crumbs");
+}
+
 int main(int argc, char **argv) {
   if (argc < 2) {
     std::printf("usage: core_test <fixture-dir>\n");
@@ -752,6 +770,7 @@ int main(int argc, char **argv) {
   test_power();
   test_drive_every_pixel();
   test_aligned_fetches();
+  test_internal_capacity();
   if (failures) {
     std::printf("%d check(s) failed\n", failures);
     return 1;

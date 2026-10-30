@@ -280,9 +280,17 @@ YAML comes only from `addon/app/firmware/panel.yaml`. After changing it, run
 
 ## Firmware gotchas
 
-- The panel needs the external component; stock `waveshare_epaper` has no model
+- **Every pin is the board's** (`theme.BOARDS`, named by a size's profile),
+  and the template's board-dependent parts are `@IF NAME@` sections
+  (`firmware_gen.sections`). Never write a pin, a chip or PSRAM into
+  `panel.yaml` or `firmware_gen.py`; a new board is an entry in `BOARDS`.
+- **The ESP32-C3 has no PSRAM and wakes only on GPIO 0-5** (the Seeed XIAO
+  7.5": its display uses them, so no button wakes it; `firmware_gen.CHIPS`).
+  Its one frame buffer is in its own RAM (`epf_core.h`, "Memory for the
+  frames"): never assume two buffers or megabytes.
+- The CrowPanel needs the external component; stock `waveshare_epaper` has no model
   for it. `invert_colors: true` is required.
-- **`GPIO7` is the display's power rail.** Nothing renders until it is high.
+- **`GPIO7` is the CrowPanel display's power rail.** Nothing renders until it is high.
 - The panel draws overlays from the geometry in the frame file. **Never
   hard-code footer positions in firmware**; change `theme.footer_plan()`.
 - ESPHome leaves ESP-IDF's HTTP client out unless a component asks for it;

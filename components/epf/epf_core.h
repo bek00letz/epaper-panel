@@ -289,6 +289,34 @@ inline void draw_overlays(uint8_t *buf, int buf_w, int buf_h, const Geometry &g,
 }
 
 // ---------------------------------------------------------------------------
+// Memory for the frames (EpfClient in epf_client.h).
+//
+// With PSRAM (the CrowPanels), two buffers of up to 2 MB: a download lands in
+// one while the other is shown. Without it (the XIAO ESP32-C3's 400 KB), one
+// buffer in the chip's own RAM, of what's left once a download has what it
+// needs (`reserve`: TLS, its task, Wi-Fi). A download then replaces what's
+// shown, so nothing is drawn from it until it's done. Either way the panel
+// tells the add-on how much it holds (?cap=), and the add-on fits the frame
+// file to it.
+
+// The size of a frame file of `pages` pages, each in a category of its own.
+inline size_t frame_file_size(size_t pages, size_t page_bytes) {
+  return HEADER_SIZE + pages * (CAT_RECORD_SIZE + PAGE_RECORD_SIZE + page_bytes) + CRC_SIZE;
+}
+
+// The one buffer's size, in whole KB and at most `most`: 0 when it couldn't hold
+// even one page. `largest_block` is the largest piece the heap can hand out.
+inline size_t internal_capacity(size_t free_bytes, size_t largest_block, size_t reserve, size_t page_bytes,
+                                size_t most) {
+  if (free_bytes <= reserve || largest_block <= 1024) return 0;
+  size_t cap = free_bytes - reserve;
+  if (cap > largest_block - 1024) cap = largest_block - 1024;   // room for the heap's own bookkeeping
+  if (cap > most) cap = most;
+  cap -= cap % 1024;
+  return cap >= frame_file_size(1, page_bytes) ? cap : 0;
+}
+
+// ---------------------------------------------------------------------------
 // When to do a full (ghost-clearing) refresh instead of a quick partial one.
 //
 // A full refresh flashes black and white for ~1.8 s; partial ones are quick but

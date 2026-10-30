@@ -10,6 +10,8 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
+from render import theme as T
+
 TEMPLATE = Path(__file__).parent / "firmware" / "panel.yaml"
 REPO = "bek00letz/epaper-panel"
 
@@ -24,36 +26,87 @@ def component_ref(version: str) -> str:
     return f"v{v}" if re.fullmatch(r"\d+\.\d+\.\d+", v) else "main"
 
 
-def button_pins(orientation: int) -> dict[str, int]:
-    """Turning the panel over swaps which physical buttons mean next/previous and top/bottom."""
-    if int(orientation) in (180, 270):
-        return {"NEXT_PIN": 6, "PREV_PIN": 4, "TOP_PIN": 1, "BOTTOM_PIN": 2}
-    return {"NEXT_PIN": 4, "PREV_PIN": 6, "TOP_PIN": 2, "BOTTOM_PIN": 1}
+# What each chip can do, for the boards in theme.BOARDS: its name, and the pins
+# that can wake it from deep sleep (the ESP32-S3's RTC pins; on the ESP32-C3,
+# GPIO 0-5 only, as Espressif's datasheet and Seeed's XIAO ESP32-C3 wiki say).
+CHIPS = {
+    "esp32s3": {"name": "ESP32-S3", "wake_pins": range(0, 22)},
+    "esp32c3": {"name": "ESP32-C3", "wake_pins": range(0, 6)},
+}
+
+# What each button does is in the template, once per role (firmware/panel.yaml,
+# "@IF BUTTON_<ROLE>@"); a board says which roles it has and on which pins.
+BUTTON_ROLES = ("next", "prev", "ok", "top", "bottom", "one")
+
+
+def board_of(disp: dict) -> dict:
+    """The board a display profile is wired to (theme.BOARDS)."""
+    return T.BOARDS[disp["board"]]
+
+
+def button_pins(board: dict, orientation: int) -> dict[str, int]:
+    """Each button's pin by what it does. Turning the panel over (180° or 270°) swaps
+    which physical buttons mean what, as the board says."""
+    return dict(board["buttons_turned"] if int(orientation) in (180, 270) else board["buttons"])
+
+
+def wake_buttons(board: dict) -> list[int]:
+    """The buttons' pins that can wake the panel from deep sleep, lowest first."""
+    can = CHIPS[board["chip"]]["wake_pins"]
+    return sorted({p for p in board["buttons"].values() if p in can})
+
+
+def wake_mask(board: dict) -> str:
+    """The C++ bit mask of those pins, for epf::power_prepare_sleep ("0": none)."""
+    return " | ".join(f"(1ULL << {p})" for p in wake_buttons(board)) or "0"
+
+
+_COUNTS = {1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six"}
+
+
+def sleep_note(disp: dict) -> str:
+    """The comment over go_to_sleep: what wakes the panel, and how the display sleeps."""
+    board = board_of(disp)
+    chip, pins = CHIPS[board["chip"]], wake_buttons(board)
+    every = sorted(set(board["buttons"].values()))
+    listed = ", ".join(str(p) for p in pins)
+    if pins and pins == every:
+        lines = [f"check or a press of any of the {_COUNTS.get(len(pins), len(pins))} buttons (GPIO {listed}, all",
+                 f"RTC-capable on the {chip['name']}; active-low, so any one pressed wakes it)."]
+    elif pins:
+        lines = [f"check or a press of a button on GPIO {listed} (active-low); its other buttons",
+                 f"can't wake the {chip['name']}."]
+    else:
+        can = chip["wake_pins"]
+        lines = [f"check. Its buttons can't wake it (on the {chip['name']} only GPIO {can.start}-{can.stop - 1}",
+                 "can), so the add-on's next check or its Reset button does."]
+    if keeps_picture(disp):
+        lines.append("The display sleeps too, powered: the next wake's first change is partial.")
+    elif board["display_power"] is None:
+        lines.append("The display sleeps too, still powered; its first change after a wake is a full refresh.")
+    else:
+        lines.append("Its display is switched off: the first change after a wake is a full refresh.")
+    return "\n".join(f"  # {line}" for line in lines)
 
 
 def display_settled(disp: dict) -> str:
     """A C++ expression: the display has finished its last refresh, so the panel may sleep
     (deep sleep cuts the display's power). The CrowPanel driver refreshes in the
-    background and parks its loop when done; the Waveshare driver can't say, so the
-    panel waits long enough for a full refresh after its last redraw, and not at all
-    when nothing was redrawn since it woke."""
+    background and parks its loop when done. A Waveshare driver whose refresh returns
+    only once the screen is done (the profile's "refresh_waits") is settled when the
+    redraw is; one that can't say gets long enough for a full refresh after its last
+    redraw, and not at all when nothing was redrawn since it woke."""
     if disp["esphome_component"].startswith("github://"):
         return "id(epd).is_idle()"
+    if disp.get("refresh_waits"):
+        return "true"
     return "id(last_redraw_ms) == 0 || millis() - id(last_redraw_ms) > 6000"
 
-
-# Every CrowPanel board has the same wiring (Elecrow's demo source for the 2.9",
-# 4.2" and 5.79": EPD_SPI.h / spi.h and the *_key examples): the display on
-# SCK 12, MOSI 11, CS 45, DC 46, RES 47, BUSY 48, its power on GPIO 7, and the
-# five buttons on 1, 2, 4, 5, 6.
 
 # How the redraw script asks each driver for a full (ghost-clearing) refresh is
 # the profile's "full_refresh" (theme.DISPLAYS). Full refreshes are the panel's
 # policy (WaveformPolicy), so each driver's own count is set out of reach.
 
-
-# The display's power rail, the same on every board (Elecrow's demos).
-DISPLAY_POWER_PIN = 7
 
 # Low Power Mode, TRMNL's way (0.13): the display stays powered through deep
 # sleep, so the first change after a wake is a partial refresh, no flash. Its
@@ -71,43 +124,85 @@ KEEP_DISPLAY_ASLEEP = True
 # display off in deep sleep: a full refresh after every wake.
 
 
+def keeps_picture(disp: dict) -> bool:
+    """Whether the display keeps its picture through deep sleep, so the next wake's first
+    change is partial: powered through it (its pin held, or a board with no switch), and
+    its driver has both calls for it."""
+    return bool(KEEP_DISPLAY_ASLEEP and disp.get("keep_picture") and disp.get("drive_every_pixel"))
+
+
+# What epf::power_begin is told when the display is always powered, with no pin to hold
+# (epf_client.h); -1 is switched off in deep sleep.
+ALWAYS_POWERED = -2
+
+
 def keep_display_pin(disp: dict) -> int:
-    """The pin the firmware holds on through deep sleep, or -1 to switch the display off."""
-    kept = disp.get("keep_picture") and disp.get("drive_every_pixel")
-    return DISPLAY_POWER_PIN if KEEP_DISPLAY_ASLEEP and kept else -1
+    """The pin the firmware holds on through deep sleep; ALWAYS_POWERED when it keeps its
+    picture on a board with no pin for the display; -1 when it's switched off."""
+    if not keeps_picture(disp):
+        return -1
+    pin = board_of(disp)["display_power"]
+    return ALWAYS_POWERED if pin is None else pin
+
+
+def power_begin_arg(disp: dict) -> str:
+    """What the firmware's start-up passes to epf::power_begin, by name where it isn't a pin."""
+    pin = keep_display_pin(disp)
+    return "epf::DISPLAY_ALWAYS_POWERED" if pin == ALWAYS_POWERED else str(pin)
 
 
 def keep_picture(disp: dict) -> str:
     """The C++ statement run at start-up when the display kept its picture through sleep."""
-    return disp["keep_picture"] if keep_display_pin(disp) >= 0 else "{}"
+    return disp["keep_picture"] if keeps_picture(disp) else "{}"
 
 
 def drive_every_pixel(disp: dict) -> str:
     """The C++ statement run once the first picture after such a sleep is drawn, before
     its refresh: it makes that refresh drive every pixel."""
-    return disp["drive_every_pixel"] if keep_display_pin(disp) >= 0 else "{}"
+    return disp["drive_every_pixel"] if keeps_picture(disp) else "{}"
+
+
+# Partial refresh on a screen whose profile keeps a full-refresh way back ("full_only":
+# the Seeed XIAO 7.5", 30 Oct, untried on a real panel). False builds those screens as
+# first built: ESPHome's full-refresh driver, a flash on every change.
+PARTIAL_REFRESH = True
+
+
+def firmware_profile(disp: dict) -> dict:
+    """The profile the firmware is built from: the size's own, or its way back."""
+    if not PARTIAL_REFRESH and disp.get("full_only"):
+        return {**disp, **disp["full_only"]}
+    return disp
 
 
 def full_refresh(disp: dict) -> str:
     """The C++ statement that makes the display's next refresh a full one. A driver
-    not listed (only sizes the editor doesn't offer) is left to refresh as it does."""
+    not listed (one whose every refresh is full, "always_full", or a size the editor
+    doesn't offer) is left to refresh as it does."""
     return disp.get("full_refresh") or "{}"
 
 
+def _busy_pin(board: dict) -> str:
+    pin = board["display_pins"]["busy"]
+    return f"\n      number: {pin}\n      inverted: true" if board["busy_inverted"] else f" {pin}"
+
+
 def display_blocks(disp: dict) -> tuple[str, str]:
-    """(extra external component line, display: block without its lambda)."""
+    """(extra external component line, display: block without its lambda), wired as its board is."""
+    board = board_of(disp)
+    spi, pins = board["spi"], board["display_pins"]
     if disp["esphome_component"].startswith("github://"):
         component = f"  - source: {CROWPANEL_COMPONENT}\n"
         block = f"""display:
   - platform: crowpanel_epaper
     id: epd
     model: "{disp["esphome_model"]}"
-    clk_pin: 12
-    mosi_pin: 11
-    cs_pin: 45
-    dc_pin: 46
-    reset_pin: 47
-    busy_pin: 48
+    clk_pin: {spi["clk"]}
+    mosi_pin: {spi["mosi"]}
+    cs_pin: {pins["cs"]}
+    dc_pin: {pins["dc"]}
+    reset_pin: {pins["reset"]}
+    busy_pin:{_busy_pin(board)}
     invert_colors: true
     # Full refreshes are decided by the panel's ghost-clearing policy
     # (WaveformPolicy), not by a fixed count.
@@ -117,23 +212,31 @@ def display_blocks(disp: dict) -> tuple[str, str]:
     else:
         component = ""
         block = f"""spi:
-  clk_pin: 12
-  mosi_pin: 11
+  clk_pin: {spi["clk"]}
+  mosi_pin: {spi["mosi"]}
 
 display:
   - platform: waveshare_epaper
     id: epd
     model: "{disp["esphome_model"]}"
-    cs_pin: 45
-    dc_pin: 46
-    busy_pin: 48
-    reset_pin: 47
-    # Full refreshes are decided by the panel's ghost-clearing policy
-    # (WaveformPolicy), not by a fixed count.
-    full_update_every: 1000000
-    update_interval: never
+    cs_pin: {pins["cs"]}
+    dc_pin: {pins["dc"]}
+    busy_pin:{_busy_pin(board)}
+    reset_pin: {pins["reset"]}
+{_refresh_count(disp)}    update_interval: never
     auto_clear_enabled: false"""
     return component, block
+
+
+def _refresh_count(disp: dict) -> str:
+    """The Waveshare driver's own count of partial refreshes, set out of reach: the panel's
+    policy decides. A driver whose every refresh is full has no count (ESPHome refuses one)."""
+    if disp.get("always_full"):
+        return ""
+    return """    # Full refreshes are decided by the panel's ghost-clearing policy
+    # (WaveformPolicy), not by a fixed count.
+    full_update_every: 1000000
+"""
 
 
 def wifi_block(networks: list[tuple[str, str]], hotspot: tuple[str, str] | None = None) -> str:
@@ -174,6 +277,19 @@ def _hotspot_lines(hotspot: tuple[str, str]) -> list[str]:
     return ["  ap:", f"    ssid: {hotspot[0]}", f"    password: {hotspot[1]}", "", "captive_portal:"]
 
 
+_SECTION = re.compile(r"^@IF ([A-Z_]+)@\n(.*?)^@END@\n", re.M | re.S)
+
+
+def sections(text: str, flags: dict[str, bool]) -> str:
+    """The template's board-dependent parts: each "@IF NAME@" line up to its "@END@"
+    line is kept (without those two lines) when the flag is on, dropped when it's off."""
+    def keep(m):
+        if m.group(1) not in flags:
+            raise ValueError(f"firmware template has an unknown section: {m.group(1)}")
+        return m.group(2) if flags[m.group(1)] else ""
+    return _SECTION.sub(keep, text)
+
+
 def render(*, disp: dict, version: str, device_name: str, frames_url: str, ota_key: str,
            wifi_ssid: str, wifi_password: str, interval_min: int,
            orientation: int, friendly_name: str = '"E-paper panel"',
@@ -183,23 +299,38 @@ def render(*, disp: dict, version: str, device_name: str, frames_url: str, ota_k
     `friendly_name` is what Home Assistant calls the panel (the screen's name).
     `more_networks`: Wi-Fi networks besides the first, as (ssid, password).
     `hotspot`: (ssid, password) of its own setup Wi-Fi, or None for none."""
+    disp = firmware_profile(disp)
     component, block = display_blocks(disp)
+    board = board_of(disp)
+    buttons = button_pins(board, orientation)
+    flags = {
+        "PSRAM": bool(board["psram"]),
+        "DISPLAY_POWER": board["display_power"] is not None,
+        "GHOST": not disp.get("always_full"),
+        **{f"BUTTON_{role.upper()}": role in buttons for role in BUTTON_ROLES},
+    }
     values = {
         "DISPLAY_NAME": disp["name"], "SKU": disp["sku"], "W": str(disp["w"]), "H": str(disp["h"]),
         "VERSION": version or "dev", "DEVICE_NAME": device_name, "FRAMES_URL": frames_url,
         "COMPONENT_REF": component_ref(version), "DISPLAY_COMPONENT": component,
         "DISPLAY_BLOCK": block, "DISPLAY_SETTLED": display_settled(disp), "FULL_REFRESH": full_refresh(disp),
-        "DISPLAY_POWER_PIN": str(DISPLAY_POWER_PIN), "KEEP_DISPLAY_PIN": str(keep_display_pin(disp)),
+        "ESPHOME_BOARD": board["esphome_board"], "PSRAM_MODE": board["psram"],
+        "DISPLAY_POWER_PIN": str(board["display_power"]), "KEEP_DISPLAY_PIN": power_begin_arg(disp),
         "KEEP_PICTURE": keep_picture(disp), "DRIVE_EVERY_PIXEL": drive_every_pixel(disp), "OTA_KEY": ota_key,
         "WIFI_BLOCK": wifi_block([(wifi_ssid, wifi_password), *more_networks], hotspot),
         "FRIENDLY_NAME": friendly_name,
         "INTERVAL_MIN": str(max(1, min(60, int(interval_min)))),
-        **{k: str(v) for k, v in button_pins(orientation).items()},
+        "BUTTONS_NOTE": "\n".join(f"# {line}" for line in board["buttons_note"]),
+        "SLEEP_NOTE": sleep_note(disp), "WAKE_BUTTONS": wake_mask(board),
+        **{f"{role.upper()}_PIN": str(pin) for role, pin in buttons.items()},
     }
-    text = TEMPLATE.read_text()
+    unknown = set(buttons) - set(BUTTON_ROLES)
+    if unknown:
+        raise ValueError(f"{disp['board']} has buttons the template doesn't know: {sorted(unknown)}")
+    text = sections(TEMPLATE.read_text(), flags)
     for key, val in values.items():
         text = text.replace(f"@{key}@", val)
-    left = re.findall(r"@[A-Z][A-Z_]+@", text)
+    left = re.findall(r"@[A-Z][A-Z_]+@|@IF [A-Z_]+@", text)
     if left:
         raise ValueError(f"firmware template has unfilled placeholders: {sorted(set(left))}")
     return text

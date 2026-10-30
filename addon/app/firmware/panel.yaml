@@ -26,21 +26,25 @@ esphome:
           epf::power_begin(@KEEP_DISPLAY_PIN@);  // why it's awake, for the first download
           // Slept with the display powered: it still shows its picture, so no full refresh first.
           if (epf::PowerPolicy::instance().picture_kept()) @KEEP_PICTURE@
+@IF GHOST@
           auto &w = epf::PanelController::instance().waveform();
           w.set_threshold((int) id(ghost_clear_after).state);
           auto mode = id(ghost_mode).active_index();
           w.set_classic(mode.has_value() && mode.value() == 1);
+@END@
       - script.execute: refetch
 
 esp32:
-  board: esp32-s3-devkitc-1
+  board: @ESPHOME_BOARD@
   framework:
     type: esp-idf
 
+@IF PSRAM@
 psram:
-  mode: octal
+  mode: @PSRAM_MODE@
   speed: 80MHz
 
+@END@
 # Pinned to the add-on's release, so the panel and the add-on always speak the
 # same version of the frame format.
 external_components:
@@ -159,15 +163,19 @@ deep_sleep:
 
 @WIFI_BLOCK@
 
+@IF DISPLAY_POWER@
 # GPIO@DISPLAY_POWER_PIN@ powers the display; nothing renders until it is high. In Low
 # Power Mode it stays on through deep sleep (epf::power_prepare_sleep).
+@END@
 switch:
+@IF DISPLAY_POWER@
   - platform: gpio
     pin: @DISPLAY_POWER_PIN@
     id: epd_power
     restore_mode: ALWAYS_ON
     internal: true
 
+@END@
   # Asleep: the sleep screen, no rotation, no timed downloads. Also set by
   # holding the dial centre, and by quiet hours.
   - platform: template
@@ -206,9 +214,9 @@ switch:
       // remembers what's on screen, so this refresh drives every pixel (epf_client.h).
       if (epf::PowerPolicy::instance().take_first_refresh()) @DRIVE_EVERY_PIXEL@
 
-# The five controls are discrete push-buttons (Elecrow's 5.79_key demo), all
-# active-low. Which is "next" depends on how the panel is mounted.
+@BUTTONS_NOTE@
 binary_sensor:
+@IF BUTTON_NEXT@
   - platform: gpio
     id: key_next
     internal: true
@@ -221,6 +229,8 @@ binary_sensor:
           epf::PanelController::instance().dispatch(epf::NavAction::NEXT);
       - script.execute: redraw
 
+@END@
+@IF BUTTON_PREV@
   - platform: gpio
     id: key_prev
     internal: true
@@ -233,6 +243,8 @@ binary_sensor:
           epf::PanelController::instance().dispatch(epf::NavAction::PREV);
       - script.execute: redraw
 
+@END@
+@IF BUTTON_OK@
   # Dial centre: a press switches between categories and their items; holding
   # it for a second puts the panel to sleep (or wakes it). The dial tilts as
   # it turns and can press the centre by accident, so a click within 0.4 s of
@@ -240,7 +252,7 @@ binary_sensor:
   - platform: gpio
     id: key_ok
     internal: true
-    pin: {number: 5, mode: {input: true, pullup: true}, inverted: true}
+    pin: {number: @OK_PIN@, mode: {input: true, pullup: true}, inverted: true}
     filters: [delayed_on: 30ms, delayed_off: 30ms]
     on_press:
       - lambda: 'epf::PowerPolicy::instance().note_press(millis());'
@@ -262,6 +274,8 @@ binary_sensor:
           - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::SLEEP_TOGGLE);'
           - script.execute: redraw
 
+@END@
+@IF BUTTON_TOP@
   # Top button: click locks the category, hold locks the page.
   - platform: gpio
     id: key_top
@@ -282,6 +296,8 @@ binary_sensor:
           - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::PIN_PAGE_TOGGLE);'
           - script.execute: redraw
 
+@END@
+@IF BUTTON_BOTTOM@
   # Bottom button: click goes to the first page. Hold downloads new frames now
   # and clears ghosting with the same redraw: one flash, not two.
   - platform: gpio
@@ -303,6 +319,30 @@ binary_sensor:
           - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::CLEAR_GHOSTING);'
           - script.execute: refetch
 
+@END@
+@IF BUTTON_ONE@
+  # A board's only button: a click shows the next page; holding it for a second
+  # downloads new frames now and clears ghosting with the same redraw.
+  - platform: gpio
+    id: key_one
+    internal: true
+    pin: {number: @ONE_PIN@, mode: {input: true, pullup: true}, inverted: true}
+    filters: [delayed_on: 25ms, delayed_off: 25ms]
+    on_press:
+      - lambda: 'epf::PowerPolicy::instance().note_press(millis());'
+    on_click:
+      - min_length: 30ms
+        max_length: 750ms
+        then:
+          - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::NEXT);'
+          - script.execute: redraw
+      - min_length: 750ms
+        max_length: 6000ms
+        then:
+          - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::CLEAR_GHOSTING);'
+          - script.execute: refetch
+
+@END@
 sensor:
   - platform: wifi_signal
     id: wifi_rssi
@@ -333,6 +373,7 @@ number:
     unit_of_measurement: "min"
     mode: box
 
+@IF GHOST@
   # Ghost clearing (see WaveformPolicy in epf_core.h). Settings, not
   # controls: they live in the device's configuration section in Home
   # Assistant and survive reboots.
@@ -375,6 +416,7 @@ button:
       - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::CLEAR_GHOSTING);'
       - script.execute: redraw
 
+@END@
 script:
   - id: redraw
     mode: restart
@@ -431,16 +473,14 @@ script:
           }
 
   # Low Power Mode: everything on screen is done, so sleep until the next
-  # check or a press of any of the five buttons (GPIO 1, 2, 4, 5, 6, all
-  # RTC-capable on the ESP32-S3; active-low, so any one pressed wakes it).
-  # The display sleeps too, powered: the next wake's first change is partial.
+@SLEEP_NOTE@
   - id: go_to_sleep
     mode: single
     then:
       - deep_sleep.enter:
           id: deep_sleep_ctl
           sleep_duration: !lambda |-
-            return epf::power_prepare_sleep(millis(), (1ULL << 1) | (1ULL << 2) | (1ULL << 4) | (1ULL << 5) | (1ULL << 6));
+            return epf::power_prepare_sleep(millis(), @WAKE_BUTTONS@);
 
 interval:
   # Pick up a finished download. Cheap when there is none.
