@@ -227,4 +227,31 @@ def device_for(request, kind: str | None = None, *, always: bool = False) -> dic
     return dev
 
 
+async def _home_host() -> str:
+    """Home Assistant's name on the home network: what a panel's setup was given, or its own home
+    address. Never the browser's, which may be a tunnel's (reach.home_address)."""
+    import urllib.parse
+    import runtime
+    for dev in devices.all_devices():
+        raw = str((dev.get("setup") or {}).get("ha_host") or "").strip()
+        host = urllib.parse.urlsplit(raw if "://" in raw else f"//{raw}").hostname or ""
+        if reach.HOST_RE.fullmatch(host):
+            return host                                # what a panel's setup was given
+    return await reach.home_address(runtime.HASS, runtime.SESSION)
+
+
+async def device_port_addresses() -> list[dict]:
+    """Where something on the home network, and away from it, reaches the device port: what a TRMNL
+    is told when it pairs, and where an AI usage reporter sends (reporters.py). [{"where", "url"}],
+    home first, away only while Reaching home is on."""
+    import panel_setup
+    import runtime
+    port = await panel_setup._detect_external_port(runtime.SESSION)
+    out = [{"where": "home", "url": f"http://{await _home_host()}:{port}"}]
+    away = await reach.public_base(runtime.HASS)
+    if away:
+        out.append({"where": "away", "url": away})
+    return out
+
+
 from kinds import crowpanel, trmnl  # noqa: E402,F401  (register themselves)

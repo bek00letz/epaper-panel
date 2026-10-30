@@ -1,0 +1,4 @@
+{
+  "theme": "dark",
+  "statusLine": {"type": "command", "command": "echo mine", "padding": 0}
+}

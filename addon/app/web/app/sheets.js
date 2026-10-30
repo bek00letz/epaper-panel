@@ -13,6 +13,7 @@ import { SETTING_NAMES } from "./doc.js";
 import { paint } from "./glyphs.js";
 import { problemLines, servicesPane } from "./services.js";
 import { formNote } from "./data.js";
+import { reportersPane } from "./reporters.js";
 import { widgets as widgetDescriptors, catalog } from "./catalog.js";
 
 const thumbImg = (app, key, page) => {
@@ -452,6 +453,7 @@ export function openSettings(app, sectionName = "panel", focus = null) {
       quiet: ["Quiet hours", "moon", () => quietPane(app, pane)],
       reach: ["Reaching home", "globe", () => reachPane(app, pane)],
       sources: ["Data sources", "plug", () => sourcesPane(app, pane)],
+      usage: ["AI usage", "laptop", () => reportersPane(app, pane)],
       services: ["Services", "cloud", () => { servicesPane(app, pane, focus); focus = null; }],
       icons: ["Icons", "grid", () => iconsPane(app, pane)],
       time: ["Time and language", "clock", () => timePane(app, pane)],

@@ -56,6 +56,7 @@ Where things live in `addon/app/`:
 | `reach.py` / `companion.py` / `companion/epaper_panel/` | Reaching home: how screens away from home get in, and the Home Assistant integration that passes them on |
 | `frames.py` | Per design: which pages are live, their values, alerts. Per device: quiet hours, then its kind renders it |
 | `entities.py` / `mqtt_bridge.py` | The add-on's own values, and mirroring them into Home Assistant |
+| `usage.py` / `reporters.py` | AI usage: the one shape every provider's numbers come in (read, kept, merged, published as sensors), and the computers that report it (pairing, keys, their device-port routes). The reporter itself is `reporter/` at the repository's root ([AI usage](#ai-usage)) |
 | `notify.py` / `blueprints/notify.yaml` | Phone notifications for a page: its sensor, the shipped blueprint, the automation made from it |
 | `sources/` | Outside data (flights, sports, racing, weather, calendars, to-do lists, Home Assistant's notifications, updates and Repairs), always through `live_data.py` |
 | `sources/hass_read.py` / `ha_events.py` | Reading what Home Assistant already has, one way for every page built on it (the sensors an integration made, several states at once, long-term statistics); and its events, heard on one websocket once a page needs them |
@@ -407,6 +408,38 @@ and fit it one way (`render/listing.py`, or the year grid's own `plan`):
   holds an email password.
 - **GitHub is asked at most four times a day** per user (`@runtime.live`
   every six hours), through its address in `services.py`.
+
+## AI usage
+
+How much of someone's AI plans they've used, from a small reporter on their own computer
+(`reporter/`, Mac, Linux or Windows). The contract between the two halves, and why these
+providers, is [docs/ai-usage.md](docs/ai-usage.md).
+
+- **The reporter reads, the add-on draws.** Each provider is one reader module in the reporter
+  (`reporter/epaper_usage/readers/`); it reports in one shape (per provider and limit window: used,
+  when it resets, when it was read; a few extras for the day). The add-on (`usage.py`), the page
+  (`render/ai_usage.py`) and the sensors never name a provider.
+- **A reporter is not a device.** It shows nothing, so it lives in its own store
+  (`reporters.json`, 0600) with its own key. Pairing is the TRMNL's, with a six-letter code: the editor
+  opens a ten-minute window, the reporter sends the code once (`POST /api/usage/pair`) and is given its
+  key, which it keeps in the computer's own key store. Its key only sends usage (`POST /api/usage`,
+  `X-EPF-Key`, which the companion passes on): `devices.authenticate` never sees it. Wrong codes and
+  keys count as wrong keys (`kinds.WRONG_KEYS`).
+- **Kept per reporter, merged when read.** Each reporter's newest report is in `usage/<id>.json`.
+  Reading merges them: the newest reading of each window wins, the day's extras add up. A window that
+  has reset since it was read shows empty (`usage.window_now`). A report older than a week is let go.
+- **Sensors in the same shape** (`usage.sensors`, published by `entities.publish_computed` whether a
+  page shows them or not): `sensor.epaper_ai_<provider>_<window>`, the extras, and when each reporter
+  last reported.
+- **The page** tries every way of putting each provider's windows in columns, with the provider's
+  name on top or beside, and when each resets beside the number or under its bar, and keeps the one
+  with the largest numbers; when nothing reaches a fifth of the box's height, it says less (extras,
+  then a lone provider's name, then the resets, then windows past two). Asleep, it says when a window
+  resets instead of how long until (`clocktime.AGES`).
+- **Claude Code's limits come through its status line**, the one place it shares them (documented:
+  `rate_limits`): the reporter's status line saves them and runs the person's own status line inside
+  it. Its extras, and Codex's limits and extras, are read from the apps' own session files, each file
+  from where the last run stopped.
 
 ## Icons
 

@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+- **New page: AI usage.** How much of your AI plans you've used, each limit
+  as a calm bar with when it resets ("Weekly, 18%, resets Wed 09:05"), and a
+  few extras for the day: tokens, sessions, how much came from the cache,
+  your streak. One provider or several, at every size and in every screen
+  language. It says plainly when a computer hasn't reported for a while
+  ("Last heard from your Mac at 14:05"), and before any has, it shows the
+  steps to set one up.
+- **A small reporter for your own computer, Mac, Linux or Windows**
+  (`reporter/`). Every 5 minutes it reads Claude Code and Codex on that
+  computer and sends just the numbers to the add-on: no files, prompts or
+  keys leave it, and there's no account. Connect it in Settings › AI usage
+  (or New page › AI usage): pick your computer, paste one command, done. It
+  pairs with a code that works once for ten minutes, the way a TRMNL does,
+  and keeps its key in the computer's own key store. For Claude Code's
+  limits it adds a small status line, and keeps yours running inside it.
+- **Every number is a Home Assistant sensor too**, the same for every
+  provider (`sensor.epaper_ai_claude_week` and so on), so automations can use
+  them. The shape is written down in `docs/ai-usage.md`; a new provider is
+  one small reader in the reporter and nothing else.
+- No firmware change.
+
 - **A Planes page at Home and one at Home's own coordinates are the same
   place**, so they share one pair of sensors. A place is its coordinates,
   whether it's Home, an airport or anywhere else; a page's distance never

@@ -23,6 +23,7 @@ import frames
 import kinds
 import paging
 import web
+import reporters
 from kinds import trmnl
 from render import layout, sleep
 
@@ -123,6 +124,15 @@ class TestARequestNeverDraws(unittest.IsolatedAsyncioTestCase):
         await self.lan.post("/api/log", json={"logs": [{"message": "hello"}]}, headers=log_headers(self.desk_key))
         return {"/api/setup", "/api/display", "/api/log", "/api/image/{name}"}
 
+    async def drive_reporters(self):
+        """A computer that reports AI usage (reporters.py): it pairs and sends; nothing is drawn for it."""
+        code = reporters.open_pairing()["code"]
+        got = await (await self.lan.post("/api/usage/pair", json={"code": code, "platform": "macos"})).json()
+        r = await self.lan.post("/api/usage", headers={reporters.KEY_HEADER: got["key"]},
+                                json={"format": 1, "providers": []})
+        self.assertEqual(r.status, 200)
+        return {"/api/usage/pair", "/api/usage"}
+
     async def test_every_kinds_device_routes_only_hand_over_what_the_cycle_drew(self):
         drivers = {"crowpanel": self.drive_crowpanel, "trmnl": self.drive_trmnl}
         self.assertEqual(set(kinds.KINDS), set(drivers), "a new kind needs its routes driven here")
@@ -130,9 +140,12 @@ class TestARequestNeverDraws(unittest.IsolatedAsyncioTestCase):
         with Draws() as draws:
             for kind_id in kinds.KINDS:
                 driven |= await drivers[kind_id]()
+            driven |= await self.drive_reporters()
             r = await self.lan.get("/status", params={"token": devices.key_of(devices.primary())})
             self.assertEqual(r.status, 200)
         self.assertEqual(draws.seen, [], "something was drawn while a device waited for its answer")
+        for route in reporters.routes():
+            self.assertIn(route.path, driven, f"reporters: {route.path} isn't driven by this test")
         for kind in kinds.KINDS.values():
             for route in kind.routes():
                 path = route.path

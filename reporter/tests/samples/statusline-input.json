@@ -1,0 +1,4 @@
+{"session_id":"invented","model":{"id":"claude-sample","display_name":"Sample"},"workspace":{"current_dir":"/Users/someone/demo"},"cost":{"total_cost_usd":0.12},
+ "rate_limits":{"five_hour":{"used_percentage":23.5,"resets_at":1793376000},"seven_day":{"used_percentage":41.2,"resets_at":1793808000},
+ "spend_limit":{"used_percentage":62.8,"resets_at":1795046400,"used_usd":314.12,"limit_usd":500,"period":"monthly"},
+ "something_new":{"used_percentage":1}}}

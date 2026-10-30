@@ -48,6 +48,7 @@ from . import countdown
 from . import todo
 from . import units
 from . import worldclock
+from . import ai_usage
 from . import states as state_words
 from . import icons
 from . import vector
@@ -2438,6 +2439,7 @@ WIDGETS = {
     "markets": markets.draw,
     "place_of_day": place.draw,
     "flight_follow": follow.draw,
+    "ai_usage": ai_usage.draw,
 }
 DRAWERS.update({t: _widget(fn) for t, fn in WIDGETS.items()})
 

@@ -132,6 +132,14 @@ export const PRESETS = [
     asks: "", needs: "found", found: "departures",
     looks: [{ id: "departures", name: "Departures", make: (_, x = {}) => [{ type: "departures", entities: x.entities || [], x: 24, y: 14, w: 744, h: 208 }] }],
   },
+  {
+    // Your AI plans, from a small reporter on your own computer (docs/ai-usage.md). Its next step connects one;
+    // the page can be added before, and says how.
+    id: "ai_usage", group: "day", title: "AI usage", kw: "claude code codex openai anthropic limits plan tokens quota session weekly",
+    desc: "How much of your AI plans you've used: each limit as a bar, and when it resets. Read by a small reporter on your computer.",
+    asks: "", needs: "reporter",
+    looks: [{ id: "ai_usage", name: "AI usage", make: () => [{ type: "ai_usage", providers: "", extras: true, x: 24, y: 14, w: 744, h: 220 }] }],
+  },
 
   /* ---------- home ---------- */
   {

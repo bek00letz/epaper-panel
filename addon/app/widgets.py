@@ -409,6 +409,18 @@ async def _badge(session, el, ctx):
     return (await needs_you.counts(session, (counts,))).get(counts)
 
 
+async def _ai_usage(session, el, ctx):
+    """Your computers' AI usage (usage.py): nothing outside is asked, so it's never a wait."""
+    import reporters
+    import usage
+    return usage.for_page(usage.current(reporters.all_reporters()), el, ctx.home_tz)
+
+
+def _ai_usage_example(el, now):
+    import usage
+    return usage.for_page(usage.example(now), el, None, now)
+
+
 async def _flights(session, el, ctx):
     lat, lon, radius, _ = flights.place_of(el)
     return await flights.fetch_overhead_aircraft(session, radius_km=radius, lat=lat, lon=lon, own=shapes.own_source(el))
@@ -636,6 +648,13 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
                    {"kind": "note", "text": "Reads Home Assistant's IMAP integration, which holds the password: "
                                             "Settings › Devices & services › Add integration › IMAP. "
                                             "Messages show from the next one that arrives."}]),
+    # Each provider's limit windows as bars, from a reporter on your own computer (docs/ai-usage.md).
+    Widget("ai_usage", "AI usage", "chart", _ai_usage, _ai_usage_example,
+           asleep=True, defaults={"providers": "", "extras": True},
+           fields=[text("providers", "Providers", "All of them"),
+                   toggle("extras", "Tokens, sessions and streak", True),
+                   {"kind": "note", "text": "From the computers connected in Settings › AI usage. "
+                                            "Each provider's numbers are sensors in Home Assistant too."}]),
     # A number on an icon, as on an app's icon, for a corner of any page; nothing at all at zero.
     Widget("badge", "Badge", "badge", _badge, lambda el, now: examples.badge(needs_you.badge_counts(el)),
            box={"x": 672, "y": 14, "w": 96, "h": 96}, defaults={"counts": "updates"}, keeps_size=True,

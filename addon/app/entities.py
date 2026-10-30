@@ -424,6 +424,15 @@ async def publish_computed(session):
     # 5. What needs you in Home Assistant, counted, when a page shows it or waits for it.
     wanted |= await publish_needs_you(session, cur_spec)
 
+    # 6. AI usage from your own computers, in its one shape (usage.py), whether a page shows it or not:
+    #    a reporter was paired to report, and automations can use it.
+    try:
+        import reporters
+        import usage
+        wanted |= await usage.publish(session, reporters.all_reporters(), home_tz)
+    except Exception as exc:
+        print(f"publish AI usage failed: {health.describe(exc)}", flush=True)
+
     wanted |= retired_sensors_in_use(cur_spec)
     wanted |= publish_health()
     wanted |= notify.kept()                           # pages that notify a phone
