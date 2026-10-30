@@ -28,8 +28,8 @@ from typing import Any, Awaitable, Callable
 
 import examples
 import shapes
-from render import arrange, layout, sport, subitems
-from sources import HOURS_AROUND, batteries, energy, flights, ha_services, home, needs_you, racing, sports, station
+from render import arrange, clocktime, layout, sport, subitems
+from sources import HOURS_AROUND, batteries, energy, flights, ha_services, home, markets, needs_you, place, racing, sports, station
 
 # A default box: "fill" takes the content area less `inset` (from `y`); otherwise each size is clamped to it.
 FILL = {"fill": True, "y": 14, "inset": 20}
@@ -157,6 +157,9 @@ class Widget:
     # What it shows from outside, in the add-on's own fields (shapes.py): the editor shows them, and one
     # of your data sources that gives them can stand in for the add-on's services (el["data"]["source"]).
     shape: str = ""
+    # It draws differently on a device that sleeps between updates (clocktime marks it `asleep`): no
+    # time of day or "time left" that would stop.
+    asleep: bool = False
 
     def changes_every(self, el: dict | None = None) -> int | None:
         """Seconds: how often what it shows changes, for the editor's "changes faster than this device
@@ -216,6 +219,15 @@ async def _planes_near(session, el, home_tz):
     lat, lon, radius, _ = flights.place_of(el)
     return len(await flights.fetch_overhead_aircraft(session, radius_km=radius, lat=lat, lon=lon,
                                                      own=shapes.own_source(el)) or []) > 0
+
+
+async def _follow_in_air(session, el, home_tz):
+    got = await flights.fetch_followed(session, flights.ident_of(el.get("flight")))
+    return bool(got) and got.get("status") == "air"
+
+
+def _follows(el: dict) -> bool:
+    return bool(flights.ident_of(el.get("flight")))
 
 
 def _is_batteries(el: dict) -> bool:
@@ -400,6 +412,30 @@ async def _flights(session, el, ctx):
     return await flights.fetch_overhead_aircraft(session, radius_km=radius, lat=lat, lon=lon, own=shapes.own_source(el))
 
 
+async def _markets(session, el, ctx):
+    return await markets.fetch_rows(session, el, ctx.home_tz)
+
+
+async def _place(session, el, ctx):
+    """The day's place, the same on every device: the day is Home Assistant's. What its list knows
+    shows at once; the rest as it comes in (sources/place.py)."""
+    from render.todo import now_in
+    day = now_in(ctx.home_tz).date()
+    got = await place.fetch_place(session, day.isoformat())
+    return {**(got or place.offline(place.of_day(day))), "home_tz": ctx.home_tz}
+
+
+async def _followed(session, el, ctx):
+    ident = flights.ident_of(el.get("flight"))
+    if not ident:
+        return None
+    got = await flights.fetch_followed(session, ident)
+    failing = bool(flights.PACE_FR24.failures)
+    if got is None:
+        return {"ident": ident, "failing": True, "tz": ctx.home_tz} if failing else None
+    return {**got, "tz": ctx.home_tz, "failing": failing}
+
+
 async def _racing(session, el, ctx):
     # Its "Hours after" is its gate's (_race_on): a session's result shows as long as the page does.
     got = await racing.fetch_racing_data(session, el.get("entity") or el.get("series") or "f1", fallback=ctx.prev,
@@ -550,6 +586,26 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
                    {"kind": "place"}, num("radius", "Radius, km", "35", 5, 250),
                    {"kind": "window", "label": "Only show while a plane is near"},
                    toggle("show_sub_metrics", "Second units", True), BORDER, {"kind": "data"}, {"kind": "sensorid"}]),
+    # One flight by its number or callsign, anywhere: where it is while it flies, what it did when it doesn't.
+    Widget("flight_follow", "Follow a flight", "plane", _followed, lambda el, now: examples.followed(now),
+           live=(flights.fetch_followed,), asleep=True,
+           gate=Gate(check=_follow_in_air, applies=_follows, says="it's in the air"),
+           box={"x": 24, "y": 14, "w": 744, "h": 208}, defaults={"flight": ""},
+           fields=[text("flight", "Flight", "W43186 or BAW17R"),
+                   {"kind": "note", "text": "Its flight number or its callsign, as the airline or your booking says it."},
+                   {"kind": "window", "label": "Only show while it's in the air"}]),
+    # What you hold, on any market: stocks, indices and currencies by symbol, coins by name.
+    Widget("markets", "Stocks and coins", "chart", _markets, lambda el, now: examples.markets(el, now),
+           live=(markets.fetch_quotes, markets.fetch_coins),
+           box={"x": 24, "y": 14, "w": 744, "h": 208}, defaults={"holdings": []},
+           fields=[{"kind": "holdings", "key": "holdings", "most": markets.MOST, "label": "Holdings"},
+                   {"kind": "note", "text": "Prices come every five minutes at most, and not while every market here is closed."}]),
+    # A city or a wonder a day, the same everywhere: its story, its facts and its streets.
+    Widget("place_of_day", "Place of the day", "map", _place, lambda el, now: examples.place(), asleep=True,
+           box={"x": 24, "y": 14, "w": 744, "h": 208}, defaults={"show_map": True, "show_facts": True},
+           fields=[toggle("show_map", "Street map", True), toggle("show_facts", "Population, height and time", True),
+                   {"kind": "note", "text": "A new place every day, the same on every device. The add-on asks Wikipedia, "
+                                            "Wikidata and OpenStreetMap once a day, for that place only."}]),
     Widget("sports_racing", "Racing", "flag", _racing, lambda el, now: examples.race(el.get("series") or "f1"),
            live=(racing.fetch_racing_data,), breakable=True, shape="racing",
            # sensor.f1_status and sensor.formula_e_status: what 0.9 pages say.
@@ -588,6 +644,7 @@ subitems.WIDGET_ITEMS.update({t: w.items for t, w in WIDGETS.items() if w.items}
 subitems.WIDGET_BUSIEST.update({t: w.busiest for t, w in WIDGETS.items() if w.busiest})
 subitems.WIDGET_WORDS.update({t: w.items_word for t, w in WIDGETS.items() if w.items_word})
 arrange.KEEP_SIZE.update(t for t, w in WIDGETS.items() if w.keeps_size)
+clocktime.AGES.update(t for t, w in WIDGETS.items() if w.asleep)
 
 
 # A plain sensor whose value changes all the time (power, wind...), as Home Assistant describes it.

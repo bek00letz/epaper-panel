@@ -31,6 +31,7 @@ from . import binding
 from . import energy
 from . import media
 from . import needs_you
+from . import follow, markets, place
 from . import sport
 from . import race
 from . import sun
@@ -2425,6 +2426,9 @@ WIDGETS = {
     "notifications": needs_you.draw_notifications,
     "updates": needs_you.draw_updates,
     "badge": needs_you.draw_badge,
+    "markets": markets.draw,
+    "place_of_day": place.draw,
+    "flight_follow": follow.draw,
 }
 DRAWERS.update({t: _widget(fn) for t, fn in WIDGETS.items()})
 

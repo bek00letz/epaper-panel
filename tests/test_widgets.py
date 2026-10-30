@@ -803,7 +803,7 @@ class TestWidgetDescriptors(unittest.TestCase):
         # The user's list: planes, scores, races, what's playing, the grid now, a weather station.
         live = {t: w.changes_every() for t, w in widgets.WIDGETS.items() if w.changes_every()}
         self.assertEqual(live, {"now_playing": 10, "grid_now": 15, "flight_tracker": 30, "sports_racing": 30,
-                                "sports_match": 30, "weather_forecast": 60})
+                                "sports_match": 30, "weather_forecast": 60, "flight_follow": 60, "markets": 300})
         weather = widgets.get("weather_forecast")
         self.assertIsNone(weather.changes_every({"entity": "weather.home"}), "a forecast alone changes slowly")
         self.assertEqual(weather.changes_every({"entity": "weather.home", "rain_sensor": "sensor.rain"}), 60)

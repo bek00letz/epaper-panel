@@ -902,6 +902,8 @@ pre.formex:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px
 .zgrip { cursor: grab; touch-action: none; color: var(--fg-2); }
 .zrow.lifted { position: relative; z-index: 2; background: var(--surface); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.18); border-radius: var(--r-ctl); transition: none; }
 .zpick .optlist { max-height: 260px; overflow-y: auto; overscroll-behavior: contain; }
+/* Stocks and coins: each holding's symbol, as its exchange writes it, before the name you give it. */
+.zrow .hcode { flex: none; width: 6.5em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg-2); font-variant-numeric: tabular-nums; }
 /* Batteries: a long list scrolls in place; the number keeps its size beside its "%". */
 .batlist { max-height: 320px; overflow-y: auto; overscroll-behavior: contain; }
 .stepsec .inline > .inp[type="number"] { flex: 0 0 auto; }

@@ -6,6 +6,28 @@
   place**, so they share one pair of sensors. A place is its coordinates,
   whether it's Home, an airport or anywhere else; a page's distance never
   makes it a different place.
+- **New page: Stocks and coins.** What you hold, on any exchange: a
+  Bucharest, Frankfurt or Tokyo listing, an index, a currency pair or a
+  coin, found by name as you type. Each shows in its own currency, with the
+  day's change and the past week as a line. A market that's closed says so
+  ("At close Fri") instead of showing yesterday's change as live. Prices
+  come from Yahoo Finance and coins from CoinGecko, every five minutes at
+  most, and not at all while every market on the page is closed. Coins are
+  priced in your Home Assistant currency.
+- **New page: Place of the day.** A city or a wonder each day, the same on
+  every device, from the add-on's own list of places around the world: a
+  few lines about it from Wikipedia in the device's language, its
+  population, height and local time, and a small street map drawn from
+  OpenStreetMap. The add-on asks for each day's place once and keeps it.
+- **New page: Follow a flight.** Type a flight number or callsign (W4 3186
+  or WMT4ZZ). While it flies, the page shows from and to, how far along it
+  is, its height and speed, and the time left; before and after, it says
+  "Not in the air", "Landed" or "Out of view". It can show only while the
+  flight is in the air.
+- The five new services (Yahoo Finance, CoinGecko, Wikipedia, Wikidata and
+  OpenStreetMap) are in Settings › Services with Try again, and each one
+  that fails waits longer before it's asked again, keeping what it last
+  showed. No firmware change.
 
 ## 0.22.2
 Two fixes. No firmware change and no Home Assistant restart: updating the

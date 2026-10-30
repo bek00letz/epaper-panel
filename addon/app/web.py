@@ -784,6 +784,18 @@ async def api_airport(request):
     return web.json_response(found)
 
 
+async def api_markets_find(request):
+    """Stocks, indices, currencies and coins matching what a person typed in the editor (Stocks and
+    coins), from Yahoo Finance and CoinGecko: asked only as they type, never in the background."""
+    from sources import markets
+    try:
+        found = await markets.find(runtime.SESSION, request.query.get("q") or "")
+    except LookupError:
+        return web.json_response({"error": "Neither Yahoo Finance nor CoinGecko answered. Check that Home Assistant "
+                                           "is online, or try again in a minute."}, status=502)
+    return web.json_response({"found": found})
+
+
 async def api_aircraft(request):
     try:
         radius = float(request.query.get("radius") or 35.0)
@@ -1524,6 +1536,7 @@ def make_apps():
         web.post("/api/share/open", api_share_open),
         web.get("/api/aircraft", api_aircraft),
         web.get("/api/airport", api_airport),
+        web.get("/api/markets/find", api_markets_find),
         web.get("/api/changed", api_changed),
         web.get("/api/entity_states", api_entity_states),
         web.get("/api/energy", api_energy),

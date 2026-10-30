@@ -259,6 +259,29 @@ export const PRESETS = [
     })),
   },
 
+  {
+    id: "follow_flight", group: "outside", title: "Follow a flight", kw: "flight number callsign plane trip arrival landing airport track airline",
+    desc: "One flight by its number, anywhere in the world: where it is, how high and fast, and when it lands. Before and after the flight, it says so.",
+    asks: "", needs: "flight",
+    looks: [{ id: "follow_flight", name: "Follow a flight", exampleExtra: () => ({ flight: "W43186" }),
+      onSleeping: "This device sleeps between updates, so it shows when the flight lands rather than the time left.",
+      make: (_, x = {}) => [{ type: "flight_follow", flight: x.flight || "", x: 24, y: 14, w: 744, h: 208 }] }],
+  },
+  {
+    id: "markets", group: "outside", title: "Stocks and coins", kw: "stocks shares market exchange index currency forex crypto bitcoin price portfolio bvb dax",
+    desc: "What you hold, on any exchange: each in its own currency, with today's change and the past week as a line. A market that's closed says so.",
+    asks: "", needs: "holdings",
+    looks: [{ id: "markets", name: "Stocks and coins", make: (_, x = {}) => [{ type: "markets", holdings: x.holdings || [], x: 24, y: 14, w: 744, h: 208 }] }],
+  },
+  {
+    id: "place", group: "outside", title: "Place of the day", kw: "city travel world wonder map wikipedia geography town",
+    desc: "A city or a wonder each day, the same on every device: a few lines about it, its population, height and local time, and its streets.",
+    asks: "",
+    looks: [{ id: "place", name: "Place of the day",
+      onSleeping: "This device sleeps between updates, so it shows how many hours apart the place is, not a time that would stop.",
+      make: () => [{ type: "place_of_day", show_map: true, show_facts: true, x: 24, y: 14, w: 744, h: 208 }] }],
+  },
+
   /* ---------- sports ---------- */
   {
     id: "match", group: "sports", title: "Scores", was: "Match score",
@@ -429,6 +452,10 @@ export const presetChangesEvery = (p) => {
   const all = p.looks.map((l) => pageChangesEvery(examplePage(p, l).elements)).filter((m) => m != null);   // with real units
   return all.length ? Math.min(...all) : null;
 };
+
+/* A flight as typed, the way the add-on reads it (sources/flights.ident_of): three to eight
+   letters and digits, at least one digit, spaces and dashes left out; "" when it can't be one. */
+export const flightIdent = (raw) => { const s = String(raw || "").replace(/[\s-]/g, "").toUpperCase(); return /^[A-Z0-9]{3,8}$/.test(s) && /\d/.test(s) ? s : ""; };
 
 export const presetById = (id) => PRESETS.find((p) => p.id === id);
 export const groupName = (id) => (GROUPS.find(([g]) => g === id) || [id, id])[1];

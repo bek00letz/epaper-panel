@@ -98,11 +98,13 @@ def plain(text: str | None) -> str:
     return said[:1].upper() + said[1:] + "."
 
 
-async def _get(session, url: str, *, as_text: bool = False):
-    """A test answer from an address: its JSON (or text), or Refused saying why not."""
+async def _get(session, url: str, *, as_text: bool = False, polite: bool = False):
+    """A test answer from an address: its JSON (or text), or Refused saying why not. `polite`: the
+    add-on names itself with where to reach who runs it, as OpenStreetMap and Wikimedia ask."""
     import aiohttp
+    import pacing
     try:
-        async with session.get(url, headers=HEADERS, allow_redirects=False,
+        async with session.get(url, headers={"User-Agent": pacing.user_agent()} if polite else HEADERS, allow_redirects=False,
                                timeout=aiohttp.ClientTimeout(total=20, sock_connect=10),
                                trace_request_ctx=health.Ask(judged=True)) as r:
             if r.status != 200:
@@ -215,6 +217,68 @@ async def _probe_iconify_api(session, base: str) -> str:
     return "Icon previews"
 
 
+async def _probe_yahoo(session, base: str) -> str:
+    from sources import markets
+    data = await _get(session, f"{base}/v8/finance/spark?symbols=%5EGSPC,EURUSD%3DX&range=5d&interval=60m", polite=True)
+    try:
+        got = markets.read_spark(data)
+    except ValueError:
+        got = {}
+    if not got:
+        raise Refused("It answered, but not with prices the add-on can read.")
+    return f"Prices, {_many(len(got), 'symbol')} in the test"
+
+
+async def _probe_coingecko(session, base: str) -> str:
+    from sources import markets
+    data = await _get(session, f"{base}/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true", polite=True)
+    try:
+        got = markets.read_coin_prices(data)
+    except ValueError:
+        got = {}
+    if not (got.get("bitcoin") or {}).get("prices"):
+        raise Refused("It answered, but not with coin prices the add-on can read.")
+    return "Coin prices"
+
+
+# A page every Wikipedia has, by its title in each: what Try again reads.
+_EARTH = {"en": "Earth", "ro": "Pământ", "es": "Tierra", "de": "Erde", "fr": "Terre"}
+
+
+def _probe_wikipedia(lang: str):
+    async def probe(session, base: str) -> str:
+        from urllib.parse import quote
+        from sources import place
+        got = place.read_summary(await _get(session, f"{base}/{quote(_EARTH[lang])}", polite=True))
+        if not got:
+            raise Refused("It answered, but not with a summary the add-on can read.")
+        return f"Summaries in {_LANGUAGE_NAMES[lang]}"
+    return probe
+
+
+async def _probe_wikidata(session, base: str) -> str:
+    from sources import place
+    try:
+        got = place.read_labels(await _get(session, f"{base}?action=wbgetentities&ids=Q2&props=labels&languages=en&format=json",
+                                           polite=True), "Q2")
+    except ValueError:
+        got = {}
+    if not got:
+        raise Refused("It answered, but not with facts the add-on can read.")
+    return "Facts about places"
+
+
+async def _probe_overpass(session, base: str) -> str:
+    from urllib.parse import quote
+    data = await _get(session, f"{base}?data={quote('[out:json][timeout:10];node(1);out;')}", polite=True)
+    if not isinstance(data, dict) or not isinstance(data.get("elements"), list):
+        raise Refused("It answered, but not with map data the add-on can read.")
+    return "Map data"
+
+
+_LANGUAGE_NAMES = {"en": "English", "ro": "Romanian", "es": "Spanish", "de": "German", "fr": "French"}
+
+
 # ---------------------------------------------------------------- Try again for Home Assistant's own
 
 async def _retry_icons(session) -> str:
@@ -283,6 +347,30 @@ def _either(*tests):
     return lambda el: any(t(el) for t in tests)
 
 
+def _holds(kind: str):
+    """A Stocks and coins element that holds one of this kind ("quote", "coin")."""
+    def uses(el):
+        if el.get("type") != "markets":
+            return False
+        from sources import markets
+        return any(h.kind == kind for h in markets.holdings_of(el))
+    return uses
+
+
+def _forget(module: str, name: str):
+    def run():
+        import importlib
+        getattr(importlib.import_module(module), name)()
+    return run
+
+
+def _all(*runs):
+    def run():
+        for r in runs:
+            r()
+    return run
+
+
 # ---------------------------------------------------------------- the list
 
 SERVICES: tuple[Service, ...] = (
@@ -298,12 +386,28 @@ SERVICES: tuple[Service, ...] = (
     Service("formula_e_calendar", "Formula E calendar", "outside", "Formula E session times",
             (Address("main", "Calendars", "https://formulaecal.com/api/year", _probe_formulaecal),),
             uses=_on_calendar("formula_e_calendar"), forget=_forget_calendars),
-    Service("flightradar24", "Flightradar24", "outside", "Planes overhead",
+    Service("flightradar24", "Flightradar24", "outside", "Planes overhead, and a flight you follow",
             (Address("main", "Flight feed", "https://data-cloud.flightradar24.com/zones/fcgi/feed.js", _probe_flightradar24),),
-            uses=_outside("flight_tracker")),
+            uses=_either(_outside("flight_tracker"), _type("flight_follow")), forget=_forget("sources.flights", "forget_follow")),
     Service("opensky", "OpenSky", "outside", "Planes overhead, when Flightradar24 doesn't answer",
             (Address("main", "Flight feed", "https://opensky-network.org/api/states/all", _probe_opensky),),
             uses=_outside("flight_tracker")),
+    Service("yahoo_finance", "Yahoo Finance", "outside", "Stock, index and currency prices",
+            (Address("main", "Prices", "https://query1.finance.yahoo.com", _probe_yahoo),),
+            uses=_holds("quote"), forget=_forget("sources.markets", "forget")),
+    Service("coingecko", "CoinGecko", "outside", "Coin prices",
+            (Address("main", "Prices", "https://api.coingecko.com/api/v3", _probe_coingecko),),
+            uses=_holds("coin"), forget=_forget("sources.markets", "forget_coins")),
+    Service("wikipedia", "Wikipedia", "outside", "Place of the day's description",
+            tuple(Address(lang, f"Summaries in {name}", f"https://{lang}.wikipedia.org/api/rest_v1/page/summary", _probe_wikipedia(lang))
+                  for lang, name in _LANGUAGE_NAMES.items()),
+            uses=_type("place_of_day"), forget=_forget("sources.place", "forget")),
+    Service("wikidata", "Wikidata", "outside", "Place of the day's facts",
+            (Address("main", "Facts", "https://www.wikidata.org/w/api.php", _probe_wikidata),),
+            uses=_type("place_of_day"), forget=_forget("sources.place", "forget")),
+    Service("openstreetmap", "OpenStreetMap", "outside", "Place of the day's street map",
+            (Address("main", "Map data", "https://overpass-api.de/api/interpreter", _probe_overpass),),
+            uses=_type("place_of_day"), forget=_forget("sources.place", "forget")),
     Service("iconify", "Iconify", "outside", "Icon sets you add in Settings › Icons",
             (Address("main", "Icon sets", "https://raw.githubusercontent.com/iconify/icon-sets/master", _probe_iconify_sets),
              Address("api", "Previews", "https://api.iconify.design", _probe_iconify_api))),

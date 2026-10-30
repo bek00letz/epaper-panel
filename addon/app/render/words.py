@@ -142,6 +142,45 @@ def number(value, decimals: int | None = None, group: bool = False) -> str:
         "\x00", _GROUP.get(lang, "."))
 
 
+# Currencies as people write them: a sign where one is usual, else the code. Minor units (London's
+# pence, Johannesburg's cents, Tel Aviv's agorot) are Yahoo's own codes and say so.
+_SIGNS = {"EUR": "€", "USD": "$", "GBP": "£", "JPY": "¥", "CNY": "¥", "INR": "₹", "KRW": "₩", "RON": "lei",
+          "TRY": "₺", "UAH": "₴", "ILS": "₪", "PLN": "zł", "BRL": "R$", "CHF": "CHF"}
+_MINOR = {"GBp": "p", "GBX": "p", "ZAc": "c", "ILA": "ag."}
+_BEFORE = {"€", "$", "£", "¥", "₹", "₩", "₺", "₴", "₪", "R$"}       # in English, the sign goes first
+
+
+def money(value, currency: str, decimals: int = 2) -> str:
+    """A price as the language writes it, in its own currency: "€36.02" or "36,02 €", "36,02 lei",
+    "1.234,5 p"; a currency without a sign keeps its code ("12.50 CHF"). Grouped, never rounded
+    past `decimals`."""
+    code = str(currency or "")
+    num = number(value, decimals, group=True)
+    if num.startswith("-"):
+        num = "−" + num[1:]                 # a real minus sign
+    if code in _MINOR:
+        return f"{num} {_MINOR[code]}"
+    sign = _SIGNS.get(code.upper(), code.upper())
+    if not sign:
+        return num
+    if language() == "en" and sign in _BEFORE:
+        return f"−{sign}{num[1:]}" if num.startswith("−") else f"{sign}{num}"
+    return f"{num}\u00a0{sign}"
+
+
+def percent(value, decimals: int = 2, signed: bool = True) -> str:
+    """A share as the language writes it: "+0.39%" in English, "+0,39 %" in French, Spanish and
+    German, "+0,39%" in Romanian; a real minus sign, never a hyphen."""
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return ""
+    text = number(abs(v), decimals)
+    sign = ("+" if v > 0 else "−" if v < 0 else "") if signed else ("−" if v < 0 else "")
+    gap = "\u00a0" if language() in ("fr", "es", "de") else ""
+    return f"{sign}{text}{gap}%"
+
+
 # ---------------------------------------------------------------- names in dates
 
 def name(kind: str, i: int) -> str:

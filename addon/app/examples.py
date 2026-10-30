@@ -209,3 +209,70 @@ def badge(counts: str) -> int:
     """What a badge counts, from the samples above: 4 updates, 3 notifications, 1 repair, 8 in all."""
     n = {"updates": len(updates()), "notifications": len(notifications()), "repairs": REPAIRS}
     return sum(n.values()) if counts == "all" else n.get(counts, n["updates"])
+
+
+# ---------------------------------------------------------------- stocks and coins, a place, a flight
+
+# A week's line that looks like one: a walk from where it was to where it is, the same every time.
+def _week(start: float, end: float, n: int = 28) -> list[float]:
+    steps = [math.sin(k * 2.39) + 0.6 * math.sin(k * 0.61) for k in range(n)]
+    walk = [sum(steps[:k + 1]) for k in range(n)]
+    lo, hi = min(walk), max(walk)
+    wobble = [(v - lo) / ((hi - lo) or 1) - 0.5 for v in walk]
+    return [round(start + (end - start) * k / (n - 1) + abs(end - start) * 0.9 * wobble[k] * (1 - k / n), 4) for k in range(n)]
+
+
+def markets(el: dict, now: datetime | None = None) -> dict:
+    """Four holdings on three kinds of market: a Bucharest stock, an index, a currency, a coin. The
+    holdings are the element's own when it has some (the names its search found), else these."""
+    rows = [
+        {"kind": "quote", "symbol": "TLV.RO", "label": "Banca Transilvania", "price": 36.02, "currency": "RON",
+         "change_pct": 0.39, "decimals": 2, "trend": _week(35.4, 36.02), "open": True, "since": ""},
+        {"kind": "quote", "symbol": "^GDAXI", "label": "DAX", "price": 25842.65, "currency": "EUR",
+         "change_pct": -0.76, "decimals": 2, "trend": _week(26150, 25842), "open": True, "since": ""},
+        {"kind": "quote", "symbol": "EURRON=X", "label": "EUR / RON", "price": 5.0912, "currency": "RON",
+         "change_pct": 0.07, "decimals": 4, "trend": _week(5.084, 5.0912), "open": True, "since": ""},
+        {"kind": "coin", "symbol": "bitcoin", "label": "Bitcoin", "price": 69214, "currency": "EUR",
+         "change_pct": -3.67, "decimals": 0, "trend": _week(71900, 69214), "open": True, "since": "24h"},
+    ]
+    mine = el.get("holdings") if isinstance(el, dict) else None
+    if mine:
+        known = {r["symbol"]: r for r in rows}
+        out = []
+        for k, h in enumerate(mine[:8]):
+            sym = str(h.get("coin") or h.get("symbol") or "")
+            base = dict(known.get(sym) or rows[k % len(rows)])
+            out.append({**base, "symbol": sym or base["symbol"], "kind": "coin" if h.get("coin") else "quote",
+                        "label": str(h.get("label") or h.get("name") or base["label"])})
+        rows = out
+    return {"rows": rows, "at": None, "tz": None, "coins": any(r["kind"] == "coin" for r in rows)}
+
+
+def _example_map() -> dict:
+    """Streets of an old town, made up: a ring road round lanes, a road across, a river and a pond."""
+    lines = []
+    for k in range(-3, 4):                                    # lanes, slightly askew
+        lines.append(["minor", [[k * 230 - 60, -900], [k * 230 + 60, 900]]])
+        lines.append(["minor", [[-900, k * 200 + 40], [900, k * 200 - 40]]])
+    ring = [[round(480 * math.cos(a / 12 * math.pi)), round(360 * math.sin(a / 12 * math.pi))] for a in range(25)]
+    river = [[-900, -470], [-420, -390], [0, -440], [430, -520], [900, -460]]
+    return {"lines": [["river", river]] + lines + [["major", ring], ["major", [[-900, 520], [-150, 300], [900, 420]]]],
+            "areas": [["water", [[520, 120], [720, 160], [760, 330], [560, 360], [470, 240]]]]}
+
+
+def place() -> dict:
+    """A place of the day: Sibiu, as the add-on's own list and the services describe it."""
+    return {"id": "sibiu", "name": "Sibiu", "region": "Transylvania", "country": "RO", "lat": 45.7975, "lon": 24.152,
+            "tz": "Europe/Bucharest", "kind": "city", "km": 1.6, "names": {}, "regions": {},
+            "summary": {"en": "Sibiu is a city in central Romania, in the historical region of Transylvania. Once one of "
+                              "the most important fortified cities of the Transylvanian Saxons, its old town keeps its "
+                              "squares, towers and the roofs whose windows look like eyes."},
+            "population": 134308, "elevation": 415, "map": _example_map(), "home_tz": None}
+
+
+def followed(now: datetime | None = None) -> dict:
+    """A flight in the air, two thirds of the way."""
+    t = (now or datetime.now().astimezone()).timestamp()
+    return {"ident": "W43186", "status": "air", "flight": "W43186", "callsign": "WMT4ZZ", "from": "VLC", "to": "OTP",
+            "from_city": "Valencia", "to_city": "Bucharest", "seen_at": t, "altitude_m": 11278, "speed_kmh": 845,
+            "vertical_ms": 0, "left_km": 742, "total_km": 2296, "arrives": t + 742 / 845 * 3600, "tz": None}

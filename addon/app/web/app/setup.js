@@ -12,9 +12,10 @@ import { h, icon, api } from "./util.js";
 import { select, linkButton, seg } from "./ui.js";
 import { dateEditor, binsEditor, ready as countsReady } from "./countdown.js";
 import { zonesEditor } from "./zones.js";
+import { holdingsEditor } from "./holdings.js";
 import { busyNote } from "./busyday.js";
 import { sleepsBetweenUpdates, lookOf, asksOf, needsOf, pageFor, examplePage, rankSensors, groupName, sensorOf, freeSourceName, energyRoles, staleNote, presetChangesEvery,
-  batterySensors, preselectBatteries, batteriesPast, BATTERY_DEFAULT, batteryRule, chargedByYou, isLowSensor } from "./presets.js";
+  batterySensors, preselectBatteries, batteriesPast, BATTERY_DEFAULT, batteryRule, chargedByYou, isLowSensor, flightIdent } from "./presets.js";
 
 const WHAT = { calendar: "Which calendar should it show?", todo: "Which list should it show?", weather: "Which weather should it show?",
   binary_sensor: "Which sensor should it show?", sensor: "Which sensor should it show?", jellyfin: "Whose Jellyfin should it show?" };
@@ -164,7 +165,7 @@ export function setupStep(app, p, { thumb, add, foot, initialLook = 0, rememberL
 }
 
 /* ---------- what presets set up in place ---------- */
-export const SETUPS = { wifi: wifiSetup, jellyfin: jellyfinSetup, energy: energySetup, players: playersSetup, date: countSetup("date"), bins: countSetup("bins"), parts: partsSetup, zones: zonesSetup, batteries: batteriesSetup };
+export const SETUPS = { wifi: wifiSetup, jellyfin: jellyfinSetup, energy: energySetup, players: playersSetup, date: countSetup("date"), bins: countSetup("bins"), parts: partsSetup, zones: zonesSetup, holdings: holdingsSetup, flight: flightSetup, batteries: batteriesSetup };
 
 /* Guest Wi-Fi: the network goes into the code, so it's asked for. */
 function wifiSetup({ changed }) {
@@ -444,6 +445,40 @@ function zonesSetup({ changed }) {
     ready: () => el.zones.length > 0,
     shows: () => ({ mine: true, extra: extra(), caption: "With your cities." }),
     commit: async () => ({ extra: extra() }),
+  };
+}
+
+/* Stocks and coins: what it shows, found by name or symbol on any exchange. */
+function holdingsSetup({ changed }) {
+  const el = { holdings: [] };
+  const extra = () => ({ holdings: el.holdings.map((x) => ({ ...x })) });
+  return {
+    node: h("div", { class: "stepsec" }, h("h3", { class: "slab", text: "What you hold" }), holdingsEditor(el, changed, { live: true }),
+      h("p", { class: "fnote", text: "Each shows in its own currency. You can add more, rename them and change their order later." })),
+    ready: () => el.holdings.length > 0,
+    shows: () => ({ mine: el.holdings.length > 0, extra: extra(), caption: "With today's prices." }),
+    commit: async () => ({ extra: extra() }),
+  };
+}
+
+/* Follow a flight: its number or callsign, as the booking or the airline says it. */
+function flightSetup({ changed }) {
+  let typed = "";
+  const say = h("p", { class: "fnote", "aria-live": "polite" });
+  const inp = h("input", { class: "inp", autocomplete: "off", spellcheck: "false", autocapitalize: "characters", maxlength: "10",
+    placeholder: "W43186 or BAW17R", "aria-label": "Flight number or callsign" });
+  inp.addEventListener("input", () => {
+    typed = inp.value;
+    say.textContent = typed.trim() && !flightIdent(typed) ? "A flight number is the airline's code and a number, like W4 3186 or BA 117." : "";
+    changed();
+  });
+  return {
+    node: h("div", { class: "stepsec" }, h("h3", { class: "slab", text: "Which flight" }),
+      h("div", { class: "group" }, h("label", { class: "gr" }, h("span", { class: "gl" }, "Flight", h("small", { text: "Its number or its callsign" })), inp)),
+      say, h("p", { class: "fnote", text: "While it flies, the page shows where it is. Before and after, it says so." })),
+    ready: () => !!flightIdent(typed),
+    shows: () => ({ mine: false, extra: { flight: flightIdent(typed) } }),
+    commit: async () => ({ extra: { flight: flightIdent(typed) } }),
   };
 }
 
