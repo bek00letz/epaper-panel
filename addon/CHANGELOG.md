@@ -3,11 +3,10 @@
 ## Unreleased
 
 - **Fixed: a second Planes page at Home stopped every device updating.** Two
-  Planes pages watching Home at different distances, with no place name,
-  made the add-on fail while naming the second one's sensors, and every
-  device then showed "The last render failed". The second gets its own
-  sensors now, named after Home and its distance, for example
-  `sensor.epaper_flights_overhead_home_20km`.
+  Planes pages watching Home at different distances made the add-on fail,
+  and every device then showed "The last render failed". Pages at the same
+  place now share one pair of sensors, counted out to the largest distance
+  any of them watches; each page still shows the planes within its own.
 - **Fixed: the page's buttons spilled over each other in a narrow editor.**
   Duplicate, Save as preset, Share… and Delete now move to a second line
   when their names don't fit.

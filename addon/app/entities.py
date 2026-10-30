@@ -192,18 +192,37 @@ NEEDS_YOU_NAMES = {"notifications": ("Notifications", "mdi:bell-outline"), "upda
                    "repairs": ("Repairs", "mdi:wrench-outline")}
 
 
+def aircraft_places(flight_elements) -> list[tuple]:
+    """The places Planes pages watch, each once: (lat, lon, radius, label, own).
+
+    A place is where it is: pages at the same spot share it, whatever distance each
+    watches (each page still picks its own planes, widgets._planes_near). Its sensors
+    count out to the largest of those distances. Its name and its planes' source (the
+    add-on's feeds, or yours) come from the first page that names them."""
+    places: list[tuple] = []
+    for el in flight_elements:
+        lat, lon, radius, label = place_of(el)
+        own = shapes.own_source(el)
+        for i, (q_lat, q_lon, q_radius, q_label, q_own) in enumerate(places):
+            if (q_lat, q_lon) == (lat, lon):
+                places[i] = (lat, lon, max(radius, q_radius), q_label or label, q_own or own)
+                break
+        else:
+            places.append((lat, lon, radius, label, own))
+    return places
+
+
 def place_suffixes(places) -> list[str]:
     """Each aircraft place's sensor suffix, in order: none for the first, then its
-    label, its coordinates, or Home and its radius (a second Home place differs only
-    by radius), and a number on the end when two would share one."""
+    label, its coordinates, or "home", and a number on the end when two would share one."""
     out: list[str] = []
-    for i, (lat, lon, radius, label, *_) in enumerate(places):
+    for i, (lat, lon, _radius, label, *_) in enumerate(places):
         if i == 0:
             out.append("")
             continue
         base = (re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")
                 or (f"{lat:.2f}_{lon:.2f}".replace("-", "m").replace(".", "_") if lat is not None
-                    else f"home_{radius:g}km".replace(".", "_")))
+                    else "home"))
         suffix, n = "_" + base, 2
         while suffix in out:
             suffix, n = f"_{base}_{n}", n + 1
@@ -271,12 +290,7 @@ async def publish_computed(session):
     # 1. Aircraft overhead: one pair of sensors per distinct place. The first
     #    place keeps the original names, so existing pages and automations stay
     #    put; others get the place's label (or coordinates) as a suffix.
-    #    A place's planes come from where its first element says: the add-on's feeds, or your source.
-    places = []
-    for el in flight_elements:
-        p = (*place_of(el), shapes.own_source(el))
-        if all(p[:3] != q[:3] for q in places):
-            places.append(p)
+    places = aircraft_places(flight_elements)
     if not places and ("epaper_flights_overhead" in spec_text or "epaper_closest_aircraft" in spec_text
                        or "overhead_aircraft_count" in spec_text):
         places.append((None, None, 35.0, "", ""))
