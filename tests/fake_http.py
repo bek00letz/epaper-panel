@@ -20,7 +20,10 @@ class _Content:
         self.raw, self.piece = raw, piece
 
     async def read(self, n=-1):
-        return self.raw if n < 0 else self.raw[:n]
+        # Like a network's: what has arrived so far, one piece when the answer comes in pieces.
+        if n < 0:
+            return self.raw
+        return self.raw[:min(n, self.piece)] if self.piece else self.raw[:n]
 
     async def iter_chunked(self, n):
         n = self.piece or n

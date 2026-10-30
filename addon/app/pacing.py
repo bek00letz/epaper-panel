@@ -79,6 +79,17 @@ def user_agent() -> str:
 LIMIT = 8 * 1024 * 1024                 # no answer any of these services sends is bigger
 
 
+async def read_all(content, limit: int) -> bytes | None:
+    """A whole answer, to its end, or None when it's bigger than `limit`. `content.read(n)` alone
+    returns what has arrived so far: a large answer came back cut short and was read as broken."""
+    raw = b""
+    async for chunk in content.iter_chunked(64 * 1024):
+        raw += chunk
+        if len(raw) > limit:
+            return None
+    return raw
+
+
 class Missing(LookupError):
     """The service answered that it has no such thing (404): an answer, not a failure."""
 
@@ -102,18 +113,13 @@ async def get(session, url: str, pace: Pace, *, method: str = "GET", data=None, 
                 pace.failed(retry_after(r.headers))
                 health.fail(pace.service, f"HTTP {r.status} from {r.url.host}")
                 raise LookupError(f"HTTP {r.status}")
-            raw, too_big = b"", False
-            async for chunk in r.content.iter_chunked(64 * 1024):     # to the end: read(n) stops at what has arrived
-                raw += chunk
-                if len(raw) > LIMIT:
-                    too_big = True
-                    break
+            raw = await read_all(r.content, LIMIT)
     except (Missing, LookupError):
         raise
     except Exception as exc:            # noqa: BLE001 -- unreachable, timed out: the trace has said so
         pace.failed()
         raise LookupError(health.describe(exc)) from None
-    if too_big:
+    if raw is None:
         pace.failed()
         health.fail(pace.service, "it answered with far more than it should")
         raise LookupError("too big")

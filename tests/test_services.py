@@ -178,6 +178,18 @@ class TestTryAgain(unittest.IsolatedAsyncioTestCase):
         self.assertIn("error 404", got["error"])
         self.assertIsNotNone(next(e for e in health.status() if e["name"] == "Racing calendar")["failing_since"])
 
+    async def test_a_large_answer_is_read_to_its_end(self):
+        # A network delivers a large answer in pieces. Try again read only what had arrived, so a
+        # service that answered fine was reported as "not with data the add-on can read".
+        from fake_http import FakeSession
+        body = {"events": [{"name": f"Game {k}", "note": "x" * 200} for k in range(400)]}        # about 90 KB
+        whole = FakeSession(lambda m, u, d: (200, body, {}), piece=1500)
+        self.assertEqual(await services._get(whole, "https://example.test/scoreboard"), body)
+        huge = FakeSession(lambda m, u, d: (200, b"[" + b"0," * services.PROBE_LIMIT + b"0]", {}), piece=64 * 1024)
+        with self.assertRaises(services.Refused) as said:
+            await services._get(huge, "https://example.test/scoreboard")
+        self.assertIn("far more", str(said.exception))
+
     async def test_failed_live_values_are_asked_again(self):
         store = type(runtime.LIVE)(clock=lambda: 1000.0)
 

@@ -28,6 +28,10 @@
   are in Settings › Services with Try again, and each one
   that fails waits longer before it's asked again, keeping what it last
   showed. No firmware change.
+- **Fixed: Try again in Settings › Services could call a working service
+  unreadable.** It read only the part of a large answer that had arrived
+  so far, so a service that answered fine was said to answer "not with
+  data the add-on can read". It now reads the whole answer.
 
 ## 0.22.2
 Two fixes. No firmware change and no Home Assistant restart: updating the

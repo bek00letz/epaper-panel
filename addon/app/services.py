@@ -109,12 +109,12 @@ async def _get(session, url: str, *, as_text: bool = False, polite: bool = False
                                trace_request_ctx=health.Ask(judged=True)) as r:
             if r.status != 200:
                 raise Refused(_http_words(r.status))
-            raw = await r.content.read(PROBE_LIMIT + 1)
+            raw = await pacing.read_all(r.content, PROBE_LIMIT)     # to its end, not what has arrived so far
     except Refused:
         raise
     except Exception as exc:                    # noqa: BLE001 -- anything on the way is a reason, said plainly
         raise Refused(plain(health.describe(exc))) from None
-    if len(raw) > PROBE_LIMIT:
+    if raw is None:
         raise Refused("It answered with far more than the service it stands for sends.")
     text = raw.decode("utf-8", "replace")
     if as_text:
