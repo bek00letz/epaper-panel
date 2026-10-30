@@ -8,10 +8,15 @@ DEPENDENCIES = ["esp32", "display"]
 
 epf_ns = cg.esphome_ns.namespace("epf")
 
-CONFIG_SCHEMA = cv.Schema({})
+# Pages arrive deflated and are inflated as they're shown (epf_client.h): false is the way
+# back, every page as it is (firmware_gen.DEFLATE_FRAMES).
+CONF_DEFLATE = "deflate"
+CONFIG_SCHEMA = cv.Schema({cv.Optional(CONF_DEFLATE, default=True): cv.boolean})
 
 
 async def to_code(config):
+    if config[CONF_DEFLATE]:
+        cg.add_define("USE_EPF_DEFLATE")
     # The client talks HTTP through ESP-IDF directly, and ESPHome leaves that
     # component out of the build unless something asks for it.
     esp32.include_builtin_idf_component("esp_http_client")

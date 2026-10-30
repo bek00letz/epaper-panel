@@ -215,7 +215,7 @@ class TestAPanelWithoutPsram(Base):
     def test_nothing_only_when_not_even_one_page_fits(self):
         got = frames.fit([1] * 3, PAGE_750, epf.encoded_size(1, 1, PAGE_750) - 1)
         self.assertEqual(got.counts, [0, 0, 0])
-        self.assertIn("one page needs 47 KB", frames.no_room_words("Hall", 40 * 1024, PAGE_750))
+        self.assertIn("one page needs 47 KB", frames.no_room_words("Hall", 40 * 1024, epf.encoded_size(1, 1, PAGE_750)))
 
     def test_the_rule_is_the_panels(self):
         # The firmware counts a frame file as epf.encoded_size does (epf_core.h frame_file_size):
@@ -264,6 +264,54 @@ class TestAPanelWithoutPsram(Base):
         async with TestClient(TestServer(editor)) as c:
             got = await (await c.get("/api/status", params={"device": dev["id"]})).json()
         self.assertEqual(got["no_room"], f.no_room)
+
+    async def test_inflating_it_holds_the_whole_rotation(self):
+        # Firmware that inflates (deflate=1, 0.24) gets each page deflated, weighed by the same
+        # rule: every page and the sleep screen in 83 KB, where only one page fitted as they are.
+        dev, _ = await self.render_xiao(XIAO_83)
+        devices.set_state(dev["id"], inflates=True)
+        async with aiohttp.ClientSession() as s:
+            await frames.refresh_frames(s)
+        f = runtime.device(dev["id"]).frames
+        self.assertIsNone(f.error)
+        self.assertEqual(f.names, [config.SLEEP_PAGE] + self.spec["rotation"])
+        got = epf.decode_epf(f.epf_strip)
+        self.assertTrue(got.header.flags & epf.FLAG_DEFLATE)
+        self.assertLessEqual(len(f.epf_strip), XIAO_83)
+        self.assertEqual(len(f.epf_strip), epf.file_size(got.header.cat_count, [n for _, n in got.spans]))
+
+    async def test_a_tight_fit_is_weighed_not_guessed(self):
+        # Room for the sleep screen and one deflated page, by the file's own size.
+        dev, _ = await self.render_xiao(XIAO_83)
+        devices.set_state(dev["id"], inflates=True)
+        async with aiohttp.ClientSession() as s:
+            await frames.refresh_frames(s)
+        whole = epf.decode_epf(runtime.device(dev["id"]).frames.epf_strip)
+        two = epf.file_size(2, [n for _, n in whole.spans[:2]])
+        runtime.set_panel_capacity(dev["id"], max(two, runtime.MIN_CAPACITY))
+        async with aiohttp.ClientSession() as s:
+            await frames.refresh_frames(s)
+        f = runtime.device(dev["id"]).frames
+        self.assertEqual(f.names[0], config.SLEEP_PAGE)
+        self.assertLessEqual(len(f.epf_strip), max(two, runtime.MIN_CAPACITY))
+
+    def test_one_rule_whatever_the_pictures_weigh(self):
+        async def page_sized(i, k):
+            return PAGE_750
+        for cap in (XIAO_83, 2 * 1024 * 1024, epf.encoded_size(3, 3, PAGE_750)):
+            weighed = asyncio.run(frames.fit_weighed([2, 1, 3, 1], cap, PAGE_750, page_sized))
+            plain = frames.fit([2, 1, 3, 1], PAGE_750, cap)
+            self.assertEqual((weighed.counts, weighed.sleep_screen), (plain.counts, plain.sleep_screen), cap)
+
+    async def test_its_firmware_says_whether_it_inflates(self):
+        dev, _ = await self.render_xiao(XIAO_83)
+        panel, _ = web.make_apps()
+        q = {"token": devices.key_of(devices.get(dev["id"])), "cap": str(XIAO_83)}
+        async with TestClient(TestServer(panel)) as c:
+            await c.get("/frames.epf", params={**q, "deflate": "1"})
+            self.assertTrue(devices.state(dev["id"]).get("inflates"))
+            await c.get("/frames.epf", params=q)                  # the way back: as they are again
+            self.assertFalse(devices.state(dev["id"]).get("inflates"))
 
     async def test_never_more_than_it_holds(self):
         # Drawn before it said what it holds: refused, and its report sets off a render that fits.

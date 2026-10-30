@@ -1,14 +1,24 @@
 # Changelog
 
 ## Unreleased
-Add-on only: no new firmware to install.
+**Firmware change** for every panel on our firmware: install it again (Send
+to ESPHome, then Install) to get compressed pages. A panel that isn't
+installed again keeps working as before.
+
+- **Pages are compressed on their way to the panel**, which unpacks each one
+  as it shows it. A page of words and icons is about a twentieth of its
+  size, so a Seeed XIAO 7.5" now holds its whole rotation, with the sleep
+  screen, and pages from memory when always on, by itself, from its button
+  or from Home Assistant's page actions, like a CrowPanel. Every panel
+  downloads far less, which saves battery on one that sleeps between
+  updates. Not yet tried on a real panel.
 
 - **Fixed: an always-on Seeed XIAO 7.5" showed nothing.** It has room for
   one page (a page isn't compressed: 47 KB on its screen), and the add-on
   wouldn't send a page without the sleep screen next to it, so it sent
   none and said "render failed". Now a device with room for one page gets
   the first page of its rotation, or the sleep screen while quiet hours
-  want it asleep. It doesn't rotate on its own yet. A XIAO that sleeps
+  want it asleep. A XIAO that sleeps
   between updates also got nothing when it started or after a press; it
   now does.
 - **When a device has no room for even one page**, the status says so in

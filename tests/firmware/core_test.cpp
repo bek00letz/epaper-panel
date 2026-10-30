@@ -12,6 +12,22 @@
 #include <set>
 #include <sstream>
 
+#include <zlib.h>
+
+// The panel inflates with ESP32 ROM's tinfl; here, zlib, through the same hook (epf::Inflater).
+static bool inflate_zlib(const uint8_t *src, size_t len, uint8_t *out, size_t out_len) {
+  z_stream z{};
+  if (inflateInit2(&z, -15) != Z_OK) return false;
+  z.next_in = const_cast<Bytef *>(src);
+  z.avail_in = (uInt) len;
+  z.next_out = out;
+  z.avail_out = (uInt) out_len;
+  int r = inflate(&z, Z_FINISH);
+  size_t got = out_len - z.avail_out;
+  inflateEnd(&z);
+  return r == Z_STREAM_END && got == out_len;
+}
+
 static int failures = 0;
 #define CHECK(cond, ...)                         \
   do {                                           \
@@ -735,6 +751,35 @@ static void test_drive_every_pixel() {
   CHECK(sent.size() == 1 && sent[0] == 0x00, "a white byte's previous picture is black");
 }
 
+// Deflated pages (FLAG_DEFLATE): the server's own file loads, each page inflates to exactly the
+// pixels of the same page sent as it is, and a page that lies about its length is refused.
+static void test_deflated_pages(const std::string &dir) {
+  auto deflated = read_file(dir + "/deflated.epf"), as_is = read_file(dir + "/as_is.epf");
+  epf::Stream d, r;
+  CHECK(epf::parse_stream(deflated.data(), deflated.size(), 800, 480, d) == epf::FetchResult::OK, "deflated file loads");
+  CHECK(epf::parse_stream(as_is.data(), as_is.size(), 800, 480, r) == epf::FetchResult::OK, "the same pages as they are");
+  CHECK(d.header.flags & epf::FLAG_DEFLATE, "flagged");
+  CHECK(deflated.size() * 4 < as_is.size(), "a page of words is far smaller deflated: %zu vs %zu", deflated.size(),
+        as_is.size());
+  const size_t page_bytes = 100 * 480;
+  std::vector<uint8_t> a(page_bytes), b(page_bytes);
+  for (int p = 0; p < (int) d.pages.size(); p++) {
+    CHECK(epf::page_pixels(d, deflated.data(), p, a.data(), inflate_zlib), "page %d inflates", p);
+    CHECK(epf::page_pixels(r, as_is.data(), p, b.data(), nullptr), "page %d copies", p);
+    CHECK(a == b, "page %d: the same pixels either way", p);
+  }
+  CHECK(!epf::page_pixels(d, deflated.data(), 0, a.data(), nullptr), "no inflater: not drawn, never garbage");
+  CHECK(!epf::page_pixels(d, deflated.data(), 99, a.data(), inflate_zlib), "no such page");
+
+  // The first page says it's a byte longer than it is: the lengths no longer add up.
+  auto bad = deflated;
+  size_t rec = epf::HEADER_SIZE + d.header.cat_count * epf::CAT_RECORD_SIZE + 12;
+  uint32_t len = epf::be32(bad.data() + rec) + 1;
+  for (int i = 0; i < 4; i++) bad[rec + i] = (uint8_t) (len >> (24 - 8 * i));
+  fix_crc(bad);
+  CHECK(epf::parse_stream(bad.data(), bad.size(), 800, 480, d) == epf::FetchResult::ERROR_LAYOUT, "lying page length");
+}
+
 // A board without PSRAM keeps one buffer in its own RAM: what's left once a download has
 // what it needs, in whole KB, and nothing when even one page wouldn't fit.
 static void test_internal_capacity() {
@@ -771,6 +816,7 @@ int main(int argc, char **argv) {
   test_drive_every_pixel();
   test_aligned_fetches();
   test_internal_capacity();
+  test_deflated_pages(argv[1]);
   if (failures) {
     std::printf("%d check(s) failed\n", failures);
     return 1;
