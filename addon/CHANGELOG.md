@@ -40,6 +40,32 @@
   one-number page sat on top of the large one** (Energy cost, Sunrise and
   sunset and Countdown on the 4.2" and upright devices). It now sits under
   it.
+- **New page: Stocks and coins.** What you hold, on any exchange: a
+  Bucharest, Frankfurt or Tokyo listing, an index, a currency pair or a
+  coin, found by name as you type. Each shows in its own currency, with the
+  day's change and the past week as a line. A market that's closed says so
+  ("At close Fri") instead of showing yesterday's change as live. Prices
+  come from Yahoo Finance and coins from CoinGecko, every five minutes at
+  most, and not at all while every market on the page is closed. Coins are
+  priced in your Home Assistant currency.
+- **New page: Place of the day.** A city or a wonder each day, the same on
+  every device, from the add-on's own list of places around the world: a
+  few lines about it from Wikipedia in the device's language, and its
+  population, height and local time. The add-on asks for each day's place
+  once and keeps it.
+- **New page: Follow a flight.** Type a flight number or callsign (W4 3186
+  or WMT4ZZ). While it flies, the page shows from and to, how far along it
+  is, its height and speed, and the time left; before and after, it says
+  "Not in the air", "Landed" or "Out of view". It can show only while the
+  flight is in the air.
+- The four new services (Yahoo Finance, CoinGecko, Wikipedia and Wikidata)
+  are in Settings › Services with Try again, and each one
+  that fails waits longer before it's asked again, keeping what it last
+  showed. No firmware change.
+- **Fixed: Try again in Settings › Services could call a working service
+  unreadable.** It read only the part of a large answer that had arrived
+  so far, so a service that answered fine was said to answer "not with
+  data the add-on can read". It now reads the whole answer.
 
 ## 0.22.2
 Two fixes. No firmware change and no Home Assistant restart: updating the

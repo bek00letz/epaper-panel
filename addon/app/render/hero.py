@@ -185,3 +185,55 @@ def draw_pair(img, d, box: Box, left: Fact, right: Fact, *, scale: float = 1.0) 
     for fact, part in ((left, a), (right, b)):
         s = scale * size / max(1, _layout(fact, part[2], part[3], scale)[1])
         draw_fact(img, d, fact, part, scale=s, align="center")
+
+
+@dataclass
+class Line:
+    """A line of text a widget has placed: where, how large, and the room it was given (so a test
+    can check it fits). `anchor` as PIL's: "lt" top-left, "rt" top-right, "mt" top-centre."""
+    text: str
+    x: int
+    y: int
+    w: int
+    px: int
+    bold: bool = False
+    anchor: str = "lt"
+
+    def font(self):
+        return T.font(self.px, bold=self.bold, text=self.text)
+
+    def fits(self) -> bool:
+        return T.text_width(self.text, self.font()) <= self.w
+
+
+def place_line(text: str, x: int, y: int, w: int, px: int, *, bold=False, anchor="lt", floor=MIN_CAPTION) -> Line:
+    """A line of text at the largest size up to `px` (not under `floor`) that fits `w`, shortened
+    with an ellipsis when even `floor` doesn't."""
+    size = px
+    while size > floor and T.text_width(text, T.font(size, bold=bold, text=text)) > w:
+        size -= 1
+    f = T.font(size, bold=bold, text=text)
+    return Line(shorten(text, f, w), x, y, w, size, bold, anchor)
+
+
+def draw_lines(d, lines) -> None:
+    for ln in lines:
+        d.text((ln.x, ln.y), ln.text, font=ln.font(), fill=T.BLACK, anchor=ln.anchor)
+
+
+def wrap_into(text: str, x: int, y: int, w: int, h: int, px: int, *, floor=MIN_CAPTION) -> list[Line]:
+    """A paragraph in the box: as large as fits up to `px`, the last line ellipsized when even
+    `floor` doesn't hold it all."""
+    for size in range(max(floor, px), floor - 1, -1):
+        f = T.font(size, bold=False, text=text)
+        asc, desc = f.getmetrics()
+        lh = round((asc + desc) * 1.08)
+        lines = T.wrap_lines(text, f, w)
+        room = max(0, h // lh)
+        if len(lines) <= room or size == floor:
+            break
+    if not room:
+        return []
+    if len(lines) > room:
+        lines = lines[:room - 1] + [shorten(" ".join(lines[room - 1:]) + "…", f, w)]
+    return [Line(shorten(t, f, w), x, y + k * lh, w, size) for k, t in enumerate(lines)]

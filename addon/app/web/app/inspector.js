@@ -9,6 +9,7 @@ import { OPS, CHANGED_MINUTES, parseShowIf, compileShowIf, asTemplate, homeAssis
 import { explodeWidget, getWidgetSensorId, suggestIconForEntity } from "./legacy.js";
 import { dateEditor, binsEditor } from "./countdown.js";
 import { zonesEditor } from "./zones.js";
+import { holdingsEditor } from "./holdings.js";
 import { staleNote, changesEvery, pageChangesEvery, sleepsBetweenUpdates, batterySensors, ruleTicks, isLowSensor, NO_ANSWER_HOURS, NO_ANSWER_WAITS } from "./presets.js";
 import { busyNote, leftOutNote } from "./busyday.js";
 import { notifyRows } from "./notify.js";
@@ -504,6 +505,7 @@ function typeSections(app, el, set, i) {
     else if (f.kind === "zones") s.append(field(f.label || "Cities", zonesEditor(el, () => app.doc.commit(), { most: f.most || 4 }), { wide: true }));
     // Several sensors in order (a commute's routes, a board's stops); none: what the widget finds itself.
     else if (f.kind === "entities") s.append(field(f.label || "Sensors", entitiesEditor(app, el, f, set), { wide: true }));
+    else if (f.kind === "holdings") s.append(field(f.label || "Holdings", holdingsEditor(el, () => app.doc.commit(), { most: f.most || 8 }), { wide: true }));
   }
   return [s];
 }

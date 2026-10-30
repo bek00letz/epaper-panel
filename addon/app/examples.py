@@ -256,3 +256,58 @@ def mail(now: datetime | None = None) -> dict:
     return {"count": 3, "name": "", "more": 0,
             "messages": [{"entry": "", "uid": str(k), "sender": s, "subject": subj,
                           "date": (now - timedelta(minutes=ago)).isoformat()} for k, (s, subj, ago) in enumerate(rows)]}
+
+
+# ---------------------------------------------------------------- stocks and coins, a place, a flight
+
+# A week's line that looks like one: a walk from where it was to where it is, the same every time.
+def _week(start: float, end: float, n: int = 28) -> list[float]:
+    steps = [math.sin(k * 2.39) + 0.6 * math.sin(k * 0.61) for k in range(n)]
+    walk = [sum(steps[:k + 1]) for k in range(n)]
+    lo, hi = min(walk), max(walk)
+    wobble = [(v - lo) / ((hi - lo) or 1) - 0.5 for v in walk]
+    return [round(start + (end - start) * k / (n - 1) + abs(end - start) * 0.9 * wobble[k] * (1 - k / n), 4) for k in range(n)]
+
+
+def markets(el: dict, now: datetime | None = None) -> dict:
+    """Four holdings on three kinds of market: a Bucharest stock, an index, a currency, a coin. The
+    holdings are the element's own when it has some (the names its search found), else these."""
+    rows = [
+        {"kind": "quote", "symbol": "TLV.RO", "label": "Banca Transilvania", "price": 36.02, "currency": "RON",
+         "change_pct": 0.39, "decimals": 2, "trend": _week(35.4, 36.02), "open": True, "since": ""},
+        {"kind": "quote", "symbol": "^GDAXI", "label": "DAX", "price": 25842.65, "currency": "EUR",
+         "change_pct": -0.76, "decimals": 2, "trend": _week(26150, 25842), "open": True, "since": ""},
+        {"kind": "quote", "symbol": "EURRON=X", "label": "EUR / RON", "price": 5.0912, "currency": "RON",
+         "change_pct": 0.07, "decimals": 4, "trend": _week(5.084, 5.0912), "open": True, "since": ""},
+        {"kind": "coin", "symbol": "bitcoin", "label": "Bitcoin", "price": 69214, "currency": "EUR",
+         "change_pct": -3.67, "decimals": 0, "trend": _week(71900, 69214), "open": True, "since": "24h"},
+    ]
+    mine = el.get("holdings") if isinstance(el, dict) else None
+    if mine:
+        known = {r["symbol"]: r for r in rows}
+        out = []
+        for k, h in enumerate(mine[:8]):
+            sym = str(h.get("coin") or h.get("symbol") or "")
+            base = dict(known.get(sym) or rows[k % len(rows)])
+            out.append({**base, "symbol": sym or base["symbol"], "kind": "coin" if h.get("coin") else "quote",
+                        "label": str(h.get("label") or h.get("name") or base["label"])})
+        rows = out
+    return {"rows": rows, "at": None, "tz": None, "coins": any(r["kind"] == "coin" for r in rows)}
+
+
+def place() -> dict:
+    """A place of the day: Sibiu, as the add-on's own list and the services describe it."""
+    return {"id": "sibiu", "name": "Sibiu", "region": "Transylvania", "country": "RO",
+            "tz": "Europe/Bucharest", "names": {}, "regions": {},
+            "summary": {"en": "Sibiu is a city in central Romania, in the historical region of Transylvania. Once one of "
+                              "the most important fortified cities of the Transylvanian Saxons, its old town keeps its "
+                              "squares, towers and the roofs whose windows look like eyes."},
+            "population": 134308, "elevation": 415, "home_tz": None}
+
+
+def followed(now: datetime | None = None) -> dict:
+    """A flight in the air, two thirds of the way."""
+    t = (now or datetime.now().astimezone()).timestamp()
+    return {"ident": "W43186", "status": "air", "flight": "W43186", "callsign": "WMT4ZZ", "from": "VLC", "to": "OTP",
+            "from_city": "Valencia", "to_city": "Bucharest", "seen_at": t, "altitude_m": 11278, "speed_kmh": 845,
+            "vertical_ms": 0, "left_km": 742, "total_km": 2296, "arrives": t + 742 / 845 * 3600, "tz": None}

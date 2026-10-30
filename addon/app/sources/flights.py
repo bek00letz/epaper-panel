@@ -191,3 +191,131 @@ async def fetch_overhead_aircraft(session, radius_km=35.0, lat=None, lon=None, o
     # Both are down. live_data keeps the last good list for MAX_AGE, then the
     # widget says it has no data rather than showing planes long gone.
     raise LookupError("no aircraft service answered")
+
+
+# ---------------------------------------------------------------- following one flight
+
+# Flightradar24's feed finds a flight by its number (W43186) or its callsign (WMT4ZZ) anywhere in
+# the world, and says both, with its route: no second service is needed to turn one into the other.
+# A flight not in the air is looked for every few minutes, not every minute; after a failure, longer
+# and longer waits (pacing.py). Nobody's page follows it any more: live_data stops asking.
+import re as _re
+
+import pacing
+
+FOLLOW_EVERY = 60
+QUIET = 180                         # a flight that isn't in the air: looked for every 3 minutes
+REMEMBER = 6 * 3600                 # how long a flight seen in the air is remembered after it's gone
+LANDED_KM = 40                      # gone this near its destination, this low: it has landed
+LANDED_M = 1500
+PACE_FR24 = pacing.Pace("Flightradar24", first=FOLLOW_EVERY, most=1800)
+_IDENT = _re.compile(r"^[A-Z0-9]{3,8}$")
+_seen: dict[str, dict] = {}         # flight -> {"plane", "at", "absent_at", "result"}
+
+
+def ident_of(raw) -> str:
+    """A flight as typed ("W4 3186", "baw17r") -> "W43186", "BAW17R"; "" when it can't be one."""
+    s = _re.sub(r"[\s\-]", "", str(raw or "")).upper()
+    return s if _IDENT.match(s) and any(c.isdigit() for c in s) else ""
+
+
+def asks_by(ident: str) -> str:
+    """Callsigns start with their airline's three letters (BAW17R); flight numbers with two
+    characters, a digit among them or not, then digits (BA117, W43186)."""
+    return "callsign" if ident[:3].isalpha() else "flight"
+
+
+def read_follow(body, ident: str) -> dict | None:
+    """The plane in Flightradar24's answer whose flight number or callsign is `ident`, in the
+    add-on's own fields; None when it isn't there. Raises ValueError for another form of answer."""
+    if not isinstance(body, dict) or not ({"full_count", "version"} & set(body)):
+        raise ValueError("not a flight feed")
+    for k, v in body.items():
+        if not isinstance(v, list) or len(v) < 17:
+            continue
+        flight, callsign = str(v[13] or "").strip().upper(), str(v[16] or "").strip().upper()
+        if ident not in (flight, callsign) or v[1] is None or v[2] is None:
+            continue
+        return {"flight": flight, "callsign": callsign, "from": str(v[11] or "").strip().upper(),
+                "to": str(v[12] or "").strip().upper(), "latitude": float(v[1]), "longitude": float(v[2]),
+                "altitude_m": round(float(v[4] or 0) * 0.3048), "speed_kmh": round(float(v[5] or 0) * 1.852),
+                "track_deg": float(v[3] or 0), "vertical_ms": round(float(v[15] or 0) * 0.00508, 1),
+                "on_ground": v[14] == 1, "aircraft": str(v[8] or "").strip(), "at": float(v[10] or 0) or None}
+    return None
+
+
+def _place(code: str) -> dict | None:
+    import airports
+    return airports.lookup(code) if code else None
+
+
+def describe(ident: str, plane: dict | None, seen: dict | None, now: float) -> dict:
+    """Where the flight is, as a page shows it: status "air" (with its route, height, speed, how far
+    to go and when it arrives, when known), "landed", "lost" (gone mid-flight: last seen) or
+    "waiting" (not in the air: before it, or long after)."""
+    out = {"ident": ident, "status": "waiting", "flight": ident, "callsign": "", "from": "", "to": "",
+           "from_city": "", "to_city": "", "seen_at": None}
+    last = (seen or {}).get("plane")
+    if plane is None and last and now - (seen or {}).get("at", 0) <= REMEMBER:
+        dest = _place(last.get("to"))
+        near = dest and _haversine_km(last["latitude"], last["longitude"], dest["lat"], dest["lon"]) <= LANDED_KM
+        status = "landed" if near and last["altitude_m"] <= LANDED_M else "lost"
+        plane, out["status"] = last, status
+    elif plane is not None:
+        if plane["on_ground"]:
+            out["status"] = "landed" if last and not last.get("on_ground") else "waiting"
+        else:
+            out["status"] = "air"
+    if plane is None:
+        return out
+    a, b = _place(plane["from"]), _place(plane["to"])
+    out.update(flight=plane["flight"] or ident, callsign=plane["callsign"], **{"from": plane["from"], "to": plane["to"]},
+               from_city=(a or {}).get("city", ""), to_city=(b or {}).get("city", ""), seen_at=plane.get("at") or now,
+               latitude=plane["latitude"], longitude=plane["longitude"], altitude_m=plane["altitude_m"],
+               speed_kmh=plane["speed_kmh"], vertical_ms=plane["vertical_ms"], aircraft=plane["aircraft"])
+    if out["status"] == "air" and b:
+        left = _haversine_km(plane["latitude"], plane["longitude"], b["lat"], b["lon"])
+        out["left_km"] = round(left)
+        if a:
+            out["total_km"] = round(_haversine_km(a["lat"], a["lon"], b["lat"], b["lon"]))
+        if plane["speed_kmh"] >= 150:
+            out["arrives"] = (plane.get("at") or now) + left / plane["speed_kmh"] * 3600
+    return out
+
+
+def forget_follow() -> None:
+    """Try again: look at once."""
+    PACE_FR24.forget()
+    for s in _seen.values():
+        s.pop("absent_at", None)
+
+
+@runtime.live(FOLLOW_EVERY)
+async def fetch_followed(session, ident: str):
+    """One flight, as describe() says it. Asked every minute while it's in the air, every few
+    minutes while it isn't."""
+    ident = ident_of(ident)
+    if not ident:
+        return None
+    now = time.time()
+    seen = _seen.get(ident)
+    if seen and seen.get("absent_at") and now - seen["absent_at"] < QUIET and seen.get("result"):
+        return seen["result"]
+    url = (f"{services.url('flightradar24')}?{asks_by(ident)}={ident}"
+           "&faa=1&satellite=1&mlat=1&flarm=1&adsb=1&gnd=1&air=1&vehicles=0&estimated=1&maxage=14400&gliders=0&stats=0")
+    body = await pacing.get(session, url, PACE_FR24, timeout=10)
+    try:
+        plane = read_follow(body, ident)
+    except ValueError:
+        pacing.unreadable(PACE_FR24, "flight feed")
+        raise LookupError("not a flight feed") from None
+    pacing.answered(PACE_FR24)
+    result = describe(ident, plane, seen, now)
+    entry = _seen.setdefault(ident, {})
+    if plane is not None and not plane["on_ground"]:
+        entry.update(plane=plane, at=now)
+    entry["absent_at"] = None if result["status"] == "air" else now
+    entry["result"] = result
+    for k in [k for k, v in _seen.items() if now - (v.get("at") or v.get("absent_at") or now) > 2 * REMEMBER]:
+        del _seen[k]
+    return result

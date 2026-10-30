@@ -29,8 +29,10 @@ from . import theme as T
 TIME = re.compile(r"now\(\)[^}]*strftime\(\s*['\"]([^'\"]*%-?[HIklMp][^'\"]*)['\"]")
 FORMAT = re.compile(r"now\(\)[^}]*strftime\(\s*['\"]([^'\"]*)['\"]")
 DAY = re.compile(r"%-?[de]")
-# Widgets that say how long ago something happened, and the time it happened on a device that sleeps.
-AGES = ("notifications", "departures", "mail_list")
+# Widgets that draw differently on a device that sleeps (marked `asleep`): how long ago becomes when
+# it happened, a time of day that would stop becomes hours apart. Their descriptors say so
+# (widgets.Widget.asleep); notifications were the first.
+AGES = {"notifications"}
 # The other ways people write a clock in Home Assistant.
 IDIOMS = (
     TIME,

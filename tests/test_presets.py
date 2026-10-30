@@ -114,7 +114,8 @@ class TestCatalogue(unittest.TestCase):
 
     def test_planes_are_outside_with_the_weather(self):
         outside = [p["title"] for p in self.cat["presets"] if p["group"] == "outside"]
-        self.assertEqual(outside, ["Weather", "Sunrise and sunset", "Planes overhead"])
+        self.assertEqual(outside, ["Weather", "Sunrise and sunset", "Planes overhead", "Follow a flight", "Stocks and coins",
+                                   "Place of the day"])
 
     def test_sunrise_and_sunset_in_its_two_styles(self):
         p = self.by_id["sun_times"]
@@ -672,7 +673,7 @@ class TestNotedNeverHidden(unittest.TestCase):
         (ha-pages, 30 Oct), from each widget's descriptor and the watts rule."""
         got = run_js("console.log(JSON.stringify(P.PRESETS.filter((p) => P.presetChangesEvery(p) != null).map((p) => p.title)))")
         self.assertEqual(sorted(got), sorted(["Planes overhead", "Now playing", "Scores", "Race weekend", "Grid now", "Battery and solar",
-                                             "Commute", "Departures"]))
+                                             "Commute", "Departures", "Follow a flight", "Stocks and coins"]))
     def test_the_line_names_the_devices_own_interval(self):
         got = run_js(f"""const asleep = {json.dumps(self.ASLEEP)};
           console.log(JSON.stringify([P.staleNote(1, asleep), P.staleNote(1, asleep, {{ short: true }}),

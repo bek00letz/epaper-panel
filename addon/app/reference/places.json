@@ -1,0 +1,477 @@
+{
+ "about": "The places Place of the day shows, one a day for everyone (sources/place.py). Names and regions are the add-on's own words, the time zone says where in the world; the rest comes from Wikipedia and Wikidata when they answer.",
+ "places": [
+  {
+   "id": "sibiu",
+   "wiki": "Sibiu",
+   "name": "Sibiu",
+   "region": "Transylvania",
+   "country": "RO",
+   "tz": "Europe/Bucharest"
+  },
+  {
+   "id": "brasov",
+   "wiki": "Brașov",
+   "name": "Brașov",
+   "region": "Transylvania",
+   "country": "RO",
+   "tz": "Europe/Bucharest"
+  },
+  {
+   "id": "bucharest",
+   "wiki": "Bucharest",
+   "name": "Bucharest",
+   "region": "Muntenia",
+   "country": "RO",
+   "tz": "Europe/Bucharest"
+  },
+  {
+   "id": "lisbon",
+   "wiki": "Lisbon",
+   "name": "Lisbon",
+   "region": "Lisbon District",
+   "country": "PT",
+   "tz": "Europe/Lisbon"
+  },
+  {
+   "id": "seville",
+   "wiki": "Seville",
+   "name": "Seville",
+   "region": "Andalusia",
+   "country": "ES",
+   "tz": "Europe/Madrid"
+  },
+  {
+   "id": "paris",
+   "wiki": "Paris",
+   "name": "Paris",
+   "region": "Île-de-France",
+   "country": "FR",
+   "tz": "Europe/Paris"
+  },
+  {
+   "id": "amsterdam",
+   "wiki": "Amsterdam",
+   "name": "Amsterdam",
+   "region": "North Holland",
+   "country": "NL",
+   "tz": "Europe/Amsterdam"
+  },
+  {
+   "id": "prague",
+   "wiki": "Prague",
+   "name": "Prague",
+   "region": "Bohemia",
+   "country": "CZ",
+   "tz": "Europe/Prague"
+  },
+  {
+   "id": "vienna",
+   "wiki": "Vienna",
+   "name": "Vienna",
+   "region": "Vienna",
+   "country": "AT",
+   "tz": "Europe/Vienna"
+  },
+  {
+   "id": "rome",
+   "wiki": "Rome",
+   "name": "Rome",
+   "region": "Lazio",
+   "country": "IT",
+   "tz": "Europe/Rome"
+  },
+  {
+   "id": "venice",
+   "wiki": "Venice",
+   "name": "Venice",
+   "region": "Veneto",
+   "country": "IT",
+   "tz": "Europe/Rome"
+  },
+  {
+   "id": "dubrovnik",
+   "wiki": "Dubrovnik",
+   "name": "Dubrovnik",
+   "region": "Dalmatia",
+   "country": "HR",
+   "tz": "Europe/Zagreb"
+  },
+  {
+   "id": "edinburgh",
+   "wiki": "Edinburgh",
+   "name": "Edinburgh",
+   "region": "Scotland",
+   "country": "GB",
+   "tz": "Europe/London"
+  },
+  {
+   "id": "copenhagen",
+   "wiki": "Copenhagen",
+   "name": "Copenhagen",
+   "region": "Capital Region",
+   "country": "DK",
+   "tz": "Europe/Copenhagen"
+  },
+  {
+   "id": "stockholm",
+   "wiki": "Stockholm",
+   "name": "Stockholm",
+   "region": "Stockholm County",
+   "country": "SE",
+   "tz": "Europe/Stockholm"
+  },
+  {
+   "id": "reykjavik",
+   "wiki": "Reykjavík",
+   "name": "Reykjavík",
+   "region": "Capital Region",
+   "country": "IS",
+   "tz": "Atlantic/Reykjavik"
+  },
+  {
+   "id": "athens",
+   "wiki": "Athens",
+   "name": "Athens",
+   "region": "Attica",
+   "country": "GR",
+   "tz": "Europe/Athens"
+  },
+  {
+   "id": "istanbul",
+   "wiki": "Istanbul",
+   "name": "Istanbul",
+   "region": "Marmara",
+   "country": "TR",
+   "tz": "Europe/Istanbul"
+  },
+  {
+   "id": "krakow",
+   "wiki": "Kraków",
+   "name": "Kraków",
+   "region": "Lesser Poland",
+   "country": "PL",
+   "tz": "Europe/Warsaw"
+  },
+  {
+   "id": "bruges",
+   "wiki": "Bruges",
+   "name": "Bruges",
+   "region": "West Flanders",
+   "country": "BE",
+   "tz": "Europe/Brussels"
+  },
+  {
+   "id": "tallinn",
+   "wiki": "Tallinn",
+   "name": "Tallinn",
+   "region": "Harju County",
+   "country": "EE",
+   "tz": "Europe/Tallinn"
+  },
+  {
+   "id": "marrakesh",
+   "wiki": "Marrakesh",
+   "name": "Marrakesh",
+   "region": "Marrakesh-Safi",
+   "country": "MA",
+   "tz": "Africa/Casablanca"
+  },
+  {
+   "id": "chefchaouen",
+   "wiki": "Chefchaouen",
+   "name": "Chefchaouen",
+   "region": "Tanger-Tetouan-Al Hoceima",
+   "country": "MA",
+   "tz": "Africa/Casablanca"
+  },
+  {
+   "id": "giza",
+   "wiki": "Giza pyramid complex",
+   "name": "Pyramids of Giza",
+   "region": "Giza",
+   "country": "EG",
+   "tz": "Africa/Cairo"
+  },
+  {
+   "id": "cape_town",
+   "wiki": "Cape Town",
+   "name": "Cape Town",
+   "region": "Western Cape",
+   "country": "ZA",
+   "tz": "Africa/Johannesburg"
+  },
+  {
+   "id": "stone_town",
+   "wiki": "Stone Town",
+   "name": "Stone Town",
+   "region": "Zanzibar",
+   "country": "TZ",
+   "tz": "Africa/Dar_es_Salaam"
+  },
+  {
+   "id": "victoria_falls",
+   "wiki": "Victoria Falls",
+   "name": "Victoria Falls",
+   "region": "Matabeleland North",
+   "country": "ZW",
+   "tz": "Africa/Harare"
+  },
+  {
+   "id": "kyoto",
+   "wiki": "Kyoto",
+   "name": "Kyoto",
+   "region": "Kansai",
+   "country": "JP",
+   "tz": "Asia/Tokyo"
+  },
+  {
+   "id": "tokyo",
+   "wiki": "Tokyo",
+   "name": "Tokyo",
+   "region": "Kantō",
+   "country": "JP",
+   "tz": "Asia/Tokyo"
+  },
+  {
+   "id": "hoi_an",
+   "wiki": "Hội An",
+   "name": "Hội An",
+   "region": "Quảng Nam",
+   "country": "VN",
+   "tz": "Asia/Ho_Chi_Minh"
+  },
+  {
+   "id": "angkor_wat",
+   "wiki": "Angkor Wat",
+   "name": "Angkor Wat",
+   "region": "Siem Reap",
+   "country": "KH",
+   "tz": "Asia/Phnom_Penh"
+  },
+  {
+   "id": "taj_mahal",
+   "wiki": "Taj Mahal",
+   "name": "Taj Mahal",
+   "region": "Uttar Pradesh",
+   "country": "IN",
+   "tz": "Asia/Kolkata"
+  },
+  {
+   "id": "jaipur",
+   "wiki": "Jaipur",
+   "name": "Jaipur",
+   "region": "Rajasthan",
+   "country": "IN",
+   "tz": "Asia/Kolkata"
+  },
+  {
+   "id": "petra",
+   "wiki": "Petra",
+   "name": "Petra",
+   "region": "Ma'an",
+   "country": "JO",
+   "tz": "Asia/Amman"
+  },
+  {
+   "id": "samarkand",
+   "wiki": "Samarkand",
+   "name": "Samarkand",
+   "region": "Samarqand Region",
+   "country": "UZ",
+   "tz": "Asia/Samarkand"
+  },
+  {
+   "id": "singapore",
+   "wiki": "Singapore",
+   "name": "Singapore",
+   "region": "Central Region",
+   "country": "SG",
+   "tz": "Asia/Singapore"
+  },
+  {
+   "id": "luang_prabang",
+   "wiki": "Luang Prabang",
+   "name": "Luang Prabang",
+   "region": "Luang Prabang Province",
+   "country": "LA",
+   "tz": "Asia/Vientiane"
+  },
+  {
+   "id": "seoul",
+   "wiki": "Seoul",
+   "name": "Seoul",
+   "region": "Seoul",
+   "country": "KR",
+   "tz": "Asia/Seoul"
+  },
+  {
+   "id": "mutianyu",
+   "wiki": "Mutianyu",
+   "name": "Great Wall at Mutianyu",
+   "region": "Beijing",
+   "country": "CN",
+   "tz": "Asia/Shanghai"
+  },
+  {
+   "id": "kathmandu",
+   "wiki": "Kathmandu",
+   "name": "Kathmandu",
+   "region": "Bagmati",
+   "country": "NP",
+   "tz": "Asia/Kathmandu"
+  },
+  {
+   "id": "isfahan",
+   "wiki": "Isfahan",
+   "name": "Isfahan",
+   "region": "Isfahan Province",
+   "country": "IR",
+   "tz": "Asia/Tehran"
+  },
+  {
+   "id": "machu_picchu",
+   "wiki": "Machu Picchu",
+   "name": "Machu Picchu",
+   "region": "Cusco Region",
+   "country": "PE",
+   "tz": "America/Lima"
+  },
+  {
+   "id": "cusco",
+   "wiki": "Cusco",
+   "name": "Cusco",
+   "region": "Cusco Region",
+   "country": "PE",
+   "tz": "America/Lima"
+  },
+  {
+   "id": "havana",
+   "wiki": "Havana",
+   "name": "Havana",
+   "region": "Havana",
+   "country": "CU",
+   "tz": "America/Havana"
+  },
+  {
+   "id": "new_york",
+   "wiki": "New York City",
+   "name": "New York",
+   "region": "New York",
+   "country": "US",
+   "tz": "America/New_York"
+  },
+  {
+   "id": "new_orleans",
+   "wiki": "New Orleans",
+   "name": "New Orleans",
+   "region": "Louisiana",
+   "country": "US",
+   "tz": "America/Chicago"
+  },
+  {
+   "id": "quebec",
+   "wiki": "Quebec City",
+   "name": "Quebec City",
+   "region": "Quebec",
+   "country": "CA",
+   "tz": "America/Toronto"
+  },
+  {
+   "id": "mexico_city",
+   "wiki": "Mexico City",
+   "name": "Mexico City",
+   "region": "Mexico City",
+   "country": "MX",
+   "tz": "America/Mexico_City"
+  },
+  {
+   "id": "chichen_itza",
+   "wiki": "Chichen Itza",
+   "name": "Chichen Itza",
+   "region": "Yucatán",
+   "country": "MX",
+   "tz": "America/Merida"
+  },
+  {
+   "id": "rio",
+   "wiki": "Rio de Janeiro",
+   "name": "Rio de Janeiro",
+   "region": "Rio de Janeiro",
+   "country": "BR",
+   "tz": "America/Sao_Paulo"
+  },
+  {
+   "id": "buenos_aires",
+   "wiki": "Buenos Aires",
+   "name": "Buenos Aires",
+   "region": "Buenos Aires",
+   "country": "AR",
+   "tz": "America/Argentina/Buenos_Aires"
+  },
+  {
+   "id": "cartagena",
+   "wiki": "Cartagena, Colombia",
+   "name": "Cartagena",
+   "region": "Bolívar",
+   "country": "CO",
+   "tz": "America/Bogota"
+  },
+  {
+   "id": "valparaiso",
+   "wiki": "Valparaíso",
+   "name": "Valparaíso",
+   "region": "Valparaíso Region",
+   "country": "CL",
+   "tz": "America/Santiago"
+  },
+  {
+   "id": "grand_canyon",
+   "wiki": "Grand Canyon",
+   "name": "Grand Canyon",
+   "region": "Arizona",
+   "country": "US",
+   "tz": "America/Phoenix"
+  },
+  {
+   "id": "iguazu",
+   "wiki": "Iguazu Falls",
+   "name": "Iguazu Falls",
+   "region": "Misiones",
+   "country": "AR",
+   "tz": "America/Argentina/Buenos_Aires"
+  },
+  {
+   "id": "sydney",
+   "wiki": "Sydney",
+   "name": "Sydney",
+   "region": "New South Wales",
+   "country": "AU",
+   "tz": "Australia/Sydney"
+  },
+  {
+   "id": "wellington",
+   "wiki": "Wellington",
+   "name": "Wellington",
+   "region": "Wellington Region",
+   "country": "NZ",
+   "tz": "Pacific/Auckland"
+  },
+  {
+   "id": "uluru",
+   "wiki": "Uluru",
+   "name": "Uluru",
+   "region": "Northern Territory",
+   "country": "AU",
+   "tz": "Australia/Darwin"
+  },
+  {
+   "id": "rapa_nui",
+   "wiki": "Hanga Roa",
+   "name": "Hanga Roa",
+   "region": "Easter Island",
+   "country": "CL",
+   "tz": "Pacific/Easter"
+  }
+ ]
+}
