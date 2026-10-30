@@ -265,3 +265,21 @@ class TestButtonRow(unittest.TestCase):
         self.assertIn("flex: 1 1 0", body)
         self.assertIn("min-width: fit-content", body)
         self.assertIn("flex-wrap: wrap", rule(".btnrow"))
+
+
+class TestTrmnlFirmwareFirst(unittest.TestCase):
+    """A TRMNL arrives with its firmware; a screen made to run it (Seeed's XIAO 7.5", a DIY kit) needs it
+    flashed once before it can pair. The pairing sheet says how, folded away, and Add new device says
+    where TRMNL devices are turned on while nothing of them shows (the user's call, 30 Oct)."""
+
+    def test_pairing_offers_the_flashing_steps_before_its_own(self):
+        src = js("sheets.js")
+        self.assertIn('"Not running TRMNL\'s firmware yet?"', src)
+        self.assertIn('href: "https://usetrmnl.com/flash"', src)
+        self.assertIn("Erase flash + flash", src)
+        self.assertLess(src.index("flashFirst(),"), src.index("Open your TRMNL's Wi-Fi setup."))
+
+    def test_add_new_device_says_where_trmnl_is_turned_on_only_while_its_off(self):
+        src = js("sheets.js")
+        self.assertIn('kinds.some((k) => k.setup === "pair") ? null', src)
+        self.assertIn("Turn on TRMNL devices in the add-on's Configuration tab, then restart the add-on.", src)

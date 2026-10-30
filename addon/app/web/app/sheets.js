@@ -281,6 +281,9 @@ export function openAddScreen(app) {
           choice("same", "Same pages as another device", "Edits show on both. Each device keeps its own layout.", st.pages === "same" ? fromSel() : null)),
         qh?.enabled ? group(grow(`Same quiet hours as ${st.pages === "new" ? (app.screen || src).name : src.name}`, `${qh.start} to ${qh.end}. Change them any time.`,
           toggle(st.quiet, (v) => { st.quiet = v; }, "Same quiet hours"))) : "",
+        // While TRMNL devices are off nothing of them exists here (kinds.py), so say where they're turned on.
+        kinds.some((k) => k.setup === "pair") ? null
+          : h("p", { class: "fnote", text: "Have a TRMNL, or a device running its firmware? Turn on TRMNL devices in the add-on's Configuration tab, then restart the add-on." }),
         err);
     }
     async function submit() {
@@ -355,6 +358,7 @@ export function openPairing(app, id, listen = true) {
       }
       const away = info.addresses.find((a) => a.where === "away");
       body.replaceChildren(
+        flashFirst(),
         h("ol", { class: "steps" },
           h("li", { text: "Open your TRMNL's Wi-Fi setup. A new one starts there: join the network it shows, and a page opens." }),
           h("li", { text: away ? "Under Advanced, enter this as its API server. If it will travel, use the away address." : "Under Advanced, enter this as its API server." }),
@@ -365,6 +369,18 @@ export function openPairing(app, id, listen = true) {
       drawState();
       if (left <= 0) foot.append(h("button", { class: "btn primary", onclick: () => { since = null; info = null; call("POST"); start(); } }, "Listen again"));
       else foot.append(h("button", { class: "btn tinted", onclick: () => close() }, "Pair later"));
+    }
+    // A TRMNL arrives with its firmware; a screen made to run it (Seeed's XIAO 7.5" ePaper Panel, a DIY kit)
+    // needs it flashed once, before it can pair. Folded away, so a TRMNL's own steps stay the first thing read.
+    function flashFirst() {
+      return h("details", { class: "more flashfirst" }, h("summary", {}, icon("chev", "sm"), "Not running TRMNL's firmware yet?"),
+        h("p", { class: "fnote", text: "A TRMNL comes with it. A device made to run it, like Seeed's XIAO 7.5\" ePaper Panel or a DIY kit, needs it once before it can pair:" }),
+        h("ol", { class: "steps" },
+          h("li", { text: "Plug the device straight into a computer, with a USB cable that carries data." }),
+          h("li", {}, "In Chrome or Edge, open ", h("a", { class: "linkbtn inline", href: "https://usetrmnl.com/flash", target: "_blank", rel: "noopener noreferrer", text: "usetrmnl.com/flash" }),
+            ", pick your device's model, and choose Erase flash + flash, so it starts clean."),
+          h("li", { text: "If it offers builds for different hardware, pick the one made for your device: some only work on TRMNL's own." }),
+          h("li", { text: "Once it restarts, carry on with the steps below." })));
     }
     function drawState() {
       if (!info || done()) return;

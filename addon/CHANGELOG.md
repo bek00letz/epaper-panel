@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Pairing a TRMNL says how to flash its firmware first.** A TRMNL comes
+  with it; a device made to run it, like Seeed's XIAO 7.5" ePaper Panel or
+  a DIY kit, needs it once. Pair your TRMNL now has the steps, folded away
+  under "Not running TRMNL's firmware yet?". And while TRMNL devices are
+  turned off, Add new device says where to turn them on.
+
 ## 0.23.2
 The moving window. **Firmware change**: install a panel again (Send to
 ESPHome, then Install) to get it. A panel that isn't installed again keeps

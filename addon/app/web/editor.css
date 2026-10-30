@@ -375,6 +375,8 @@ details.more > summary .ic { transition: transform var(--t) var(--spring); }
 details.more[open] > summary .ic { transform: rotate(90deg); }
 details.more[open] > summary { margin-bottom: 6px; }
 details.more > :not(summary) { animation: fadein var(--t) var(--spring); }
+details.flashfirst { margin-bottom: 12px; }                 /* Pair your TRMNL: flashing it first, before its own steps */
+details.flashfirst .steps { margin-top: 6px; }
 .reps { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
 .rep { display: grid; grid-template-columns: 1fr 15px 1fr; gap: 4px; align-items: center; color: var(--fg-3); }
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
