@@ -146,6 +146,26 @@ Next one when a good amount of work has piled up since v0.15.0.
    TRMNL-compatible screens (a Seeed 7.5" reTerminal arrives in days or
    weeks, so they can be tried).
 
+8. **New pages, from TRMNL's recipes** (the user picked all eight, 30 Oct).
+   Learn from the recipes, build our own: each a page type or preset fed by
+   Home Assistant or a free public source, no browser in the add-on, no
+   accounts, no passwords held by the add-on.
+   - Fed by Home Assistant: a **year grid** widget (a square per day: GitHub
+     contributions by username, or any daily Home Assistant number);
+     **commute times** (Waze travel time, against the usual); a **departures
+     board** (any local transit integration); a **mail list** (Home
+     Assistant's IMAP integration, never the password).
+   - Public sources: **stocks and crypto** for every market, each holding in
+     its own currency (Stooq, CoinGecko; careful polling); **place of the
+     day** (Wikipedia summary, facts, street map); **follow one flight** by
+     number while airborne (our plane feeds).
+   - **AI usage**, for any provider, not only Claude: a small script on the
+     user's computer reports usage into Home Assistant sensors of one shape
+     (provider, window, used, resets at), so one page fits every provider.
+   - Not buildable: a traffic map (Google's map images have no traffic
+     layer); commute times cover the need.
+   Also found: no way to copy another device's pages onto an existing device.
+
 The New page presets plan shipped in 0.15.0.
 9. **The shipped fallback icon set is older than Home Assistant's** (7.4.47,
    no `mdi:cat-outline`). Since 0.18.0 the add-on copies Home Assistant's own
