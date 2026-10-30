@@ -1,5 +1,5 @@
 name: e-Paper Panel
-version: "0.22.2"
+version: "0.23.0"
 slug: epaper_panel
 description: 'An ambient display system for e-paper: calm screens that know what matters. For Elecrow CrowPanels and TRMNL devices.'
 url: https://github.com/bek00letz/epaper-panel

@@ -21,8 +21,8 @@ monitor, by the bed, on the wall, or across the room from the sofa.
 - **No account.** No sign-up and no cloud of ours. Your pages and settings
   stay in Home Assistant.
 
-It works with Elecrow's CrowPanel e-paper displays, and with TRMNL devices if
-you turn them on.
+It works with Elecrow's CrowPanel e-paper displays, Seeed's XIAO 7.5" ePaper
+Panel, and TRMNL devices if you turn them on.
 
 ![Pages the add-on draws](docs/pages.png)
 
@@ -90,11 +90,26 @@ worked and what didn't, so the table can say "tested" for more of them.
 | CrowPanel 5.79" | DIS08792E | 792 × 272 | Tested on the device |
 | CrowPanel 4.2" | DIS08042E | 400 × 300 | Builds, not tried on hardware |
 | CrowPanel 2.9" | DIS08029E | 296 × 128 | Builds, not tried on hardware |
+| Seeed XIAO 7.5" ePaper Panel | 114993635 | 800 × 480 | Builds, not tried on hardware with this firmware (works as a TRMNL) |
 
 The pins and display controllers come from Elecrow's own demo code for each
 board (SSD1683 on the 4.2" and 5.79", SSD1680 on the 2.9"). Some later 4.2"
 boards are said to carry a UC8276 controller instead; that version isn't
 supported yet. The 1.54", 2.13" and 3.7" CrowPanels aren't offered yet.
+
+The Seeed XIAO 7.5" (an XIAO ESP32-C3) is offered in the same list. Its pins
+come from Seeed's own ESPHome example and schematic. It can also run TRMNL's
+firmware and pair as a TRMNL instead. What it can't do, on any firmware:
+
+- **Report its battery.** The battery is wired only to its charger. Watch its
+  **Last seen** in Home Assistant instead: a panel that stops checking in is
+  flat or offline.
+- **Wake on a button.** The screen uses every pin the chip can wake on. Its
+  one button (Boot) shows the next page when it's awake; held for a second,
+  it fetches new pages.
+- **Hold many pages.** It has no extra memory, so it keeps only what's on
+  screen and fetches each page as it comes. The first download logs how many
+  fit.
 
 ## More than one device
 
@@ -508,10 +523,10 @@ measurements behind each decision.
   trust, something pretending to be your server could read its key. That key
   only fetches that device's pictures, and pairing it again replaces it. A
   CrowPanel does check, against the usual public certificate authorities.
-- **TRMNL support is built from its open-source firmware, not tried on one
-  yet.** Pairing end to end, which pictures its decoder takes in practice,
-  HTTPS through Cloudflare or Home Assistant Cloud, and real battery life are
-  still to be checked on a device. While pairing it briefly shows its own
+- **TRMNL support is tried on a Seeed XIAO 7.5" running TRMNL's firmware,
+  not yet on a TRMNL OG.** Pairing, pages and rotation work (30 Oct). HTTPS
+  through Cloudflare or Home Assistant Cloud and battery life on a real
+  battery are still to be checked. While pairing it briefly shows its own
   "visit trmnl.com/start" screen; that text is in its firmware. For devices
   other than the TRMNL OG, the physical size behind the legibility note is an
   estimate.
@@ -521,23 +536,23 @@ measurements behind each decision.
   If the rotation needs more, every page keeps its first item and the extra
   items are shared out; what was left out shows in
   `sensor.epaper_panel_pages`.
-- **No battery reading on a CrowPanel.** The stock 5.79" can't read its
-  battery; it would need a resistor divider soldered on. (A TRMNL reports its
-  own.)
-- **Low Power Mode hasn't been tried on a real panel yet.** It's built from
-  end to end, but how long a battery lasts and whether the buttons wake it
-  reliably are still to be measured. A panel installed before Low Power Mode
+- **No battery reading on a CrowPanel or the Seeed XIAO 7.5".** The stock
+  5.79" would need a resistor divider soldered on; the Seeed's battery isn't
+  wired to its chip at all. (A TRMNL OG reports its own.)
+- **Low Power Mode is measured on the 5.79" on USB, not on a battery yet.**
+  How long a real battery lasts and whether the buttons wake it reliably are
+  still to be checked. A panel installed before Low Power Mode
   existed stays connected until you install it again; the editor says so.
-- **No flash after a wake is untried too.** Since 0.13 a sleeping panel keeps
-  its display powered, in the display's own memory-keeping sleep, the way a
-  TRMNL does. A change after a wake is then a quick partial refresh; every
-  8th change, and every change when it checks only every 30 minutes or more,
-  is a full one that clears ghosting. Until it's confirmed on a real panel,
-  the sleep current with the display powered is unknown.
-- **Measuring through USB gives an upper bound.** A USB power meter on the
-  panel's USB port also counts the USB-to-serial chip, which stays powered,
-  and most meters can't read below about 1 mA. The battery's own draw is
-  lower; a reading on the battery itself is still to come.
+- **No flash after a wake.** A sleeping panel keeps its display powered, in
+  the display's own memory-keeping sleep, the way a TRMNL does. A change after
+  a wake is then a quick partial refresh; every 8th change, and every change
+  when it checks only every 30 minutes or more, is a full one that clears
+  ghosting. Seen working on the 5.79" (0.22.1), with faint ghosting only.
+- **On USB power a 5.79" sleeps at about 6 mA, nearly all of it the USB
+  chip.** Its USB-to-serial chip (a CH340C) runs from the USB socket and idles
+  at about 5 mA, and the panel can't switch it off. On a battery that chip
+  has no power, so it should sleep near 1 mA; a reading on a real battery is
+  still to come.
 
 ## Development
 

@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.23.0
+Eight new pages, and the Seeed XIAO 7.5" as a device of its own.
+**Firmware change for the Seeed only**: CrowPanels don't need installing
+again.
+No Home Assistant restart.
 
 - **New page: AI usage.** How much of your AI plans you've used, each limit
   as a calm bar with when it resets ("Weekly, 18%, resets Wed 09:05"), and a
@@ -87,22 +91,6 @@
   unreadable.** It read only the part of a large answer that had arrived
   so far, so a service that answered fine was said to answer "not with
   data the add-on can read". It now reads the whole answer.
-
-## 0.22.2
-Two fixes. No firmware change and no Home Assistant restart: updating the
-add-on is enough.
-
-- **Fixed: a second Planes page at Home stopped every device updating.** Two
-  Planes pages watching Home at different distances made the add-on fail,
-  and every device then showed "The last render failed". Pages at the same
-  place now share one pair of sensors, counted out to the largest distance
-  any of them watches; each page still shows the planes within its own.
-- **Fixed: the page's buttons spilled over each other in a narrow editor.**
-  Duplicate, Save as preset, Share… and Delete now move to a second line
-  when their names don't fit.
-**Firmware change** (only for the new board; a CrowPanel's firmware file
-is the same as before).
-
 - **The Seeed Studio XIAO 7.5" ePaper Panel** is a device you can add, next
   to the CrowPanels: Add new device › Model › Seeed XIAO 7.5". The add-on
   builds its firmware the same way, so its pages, sleeping between updates,
@@ -121,6 +109,19 @@ is the same as before).
   clearing in Home Assistant, as for a CrowPanel), and after a sleep the
   first change is still a quick one. Not yet tried on a real panel; if it
   misbehaves, the next release can go back to a full refresh every time.
+
+## 0.22.2
+Two fixes. No firmware change and no Home Assistant restart: updating the
+add-on is enough.
+
+- **Fixed: a second Planes page at Home stopped every device updating.** Two
+  Planes pages watching Home at different distances made the add-on fail,
+  and every device then showed "The last render failed". Pages at the same
+  place now share one pair of sensors, counted out to the largest distance
+  any of them watches; each page still shows the planes within its own.
+- **Fixed: the page's buttons spilled over each other in a narrow editor.**
+  Duplicate, Save as preset, Share… and Delete now move to a second line
+  when their names don't fit.
 
 ## 0.22.1
 A fix for panels that sleep between updates. **Firmware change**: after
