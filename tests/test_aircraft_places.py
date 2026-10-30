@@ -22,6 +22,18 @@ class TestAircraftPlaces(unittest.TestCase):
                                   {"lat": 44.43, "lon": 26.1, "radius": 30, "location_name": "Office"}])
         self.assertEqual(places, [(44.43, 26.1, 30.0, "Office", "")])
 
+    def test_home_and_its_own_coordinates_are_the_same_place(self):
+        home = (44.4268, 26.1025)
+        places = aircraft_places([{"type": "flights", "radius": 30},
+                                  {"lat": 44.42681, "lon": 26.10251, "radius": 10, "location_name": "Flat"}], home)
+        self.assertEqual(places, [(None, None, 30.0, "Flat", "")])
+
+    def test_an_airport_is_a_place_like_any_other(self):
+        lhr = {"lat": 51.47, "lon": -0.4543, "location_name": "Heathrow"}
+        places = aircraft_places([{"type": "flights"}, {**lhr, "radius": 5}, {**lhr, "radius": 80}], (44.43, 26.1))
+        self.assertEqual(places, [(None, None, 35.0, "", ""), (51.47, -0.4543, 80.0, "Heathrow", "")])
+        self.assertEqual(place_suffixes(places), ["", "_heathrow"])
+
     def test_different_spots_stay_apart(self):
         places = aircraft_places([{"type": "flights"}, {"lat": 44.43, "lon": 26.1, "location_name": "Office"}])
         self.assertEqual([p[:2] for p in places], [(None, None), (44.43, 26.1)])

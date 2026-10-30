@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **A Planes page at Home and one at Home's own coordinates are the same
+  place**, so they share one pair of sensors. A place is its coordinates,
+  whether it's Home, an airport or anywhere else; a page's distance never
+  makes it a different place.
+
 ## 0.22.2
 Two fixes. No firmware change and no Home Assistant restart: updating the
 add-on is enough.

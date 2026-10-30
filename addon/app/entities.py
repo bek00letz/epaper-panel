@@ -16,7 +16,7 @@ from ha import call_ha_service, ha_json
 from layouts_store import load_layouts, load_sources
 from sources.flights import fetch_overhead_aircraft, place_of
 from render import race as race_words, sport, todo, words
-from sources.geo import get_home_locale, get_home_timezone
+from sources.geo import get_home_coordinates, get_home_locale, get_home_timezone
 from sources import needs_you
 from sources.ha_services import fetch_todo_items, todo_list_id
 from sources.racing import SERIES, compute_racing_active_window, fetch_racing_data, series_slug
@@ -192,20 +192,27 @@ NEEDS_YOU_NAMES = {"notifications": ("Notifications", "mdi:bell-outline"), "upda
                    "repairs": ("Repairs", "mdi:wrench-outline")}
 
 
-def aircraft_places(flight_elements) -> list[tuple]:
+def aircraft_places(flight_elements, home=(None, None)) -> list[tuple]:
     """The places Planes pages watch, each once: (lat, lon, radius, label, own).
 
-    A place is where it is: pages at the same spot share it, whatever distance each
-    watches (each page still picks its own planes, widgets._planes_near). Its sensors
-    count out to the largest of those distances. Its name and its planes' source (the
-    add-on's feeds, or yours) come from the first page that names them."""
+    A place is its coordinates and nothing else: Home is where Home Assistant says
+    home is (`home`), so a page at Home and one at the same coordinates share it.
+    Distance never makes a place: each page picks its own planes by its own
+    (widgets._planes_near), and the place's sensors look out to the largest, so
+    every page's planes are in them. Its name and its planes' source (the add-on's
+    feeds, or yours) come from the first page that gives them."""
+    def spot(lat, lon):
+        if lat is None:
+            lat, lon = home
+        return None if lat is None else (round(lat, 4), round(lon, 4))   # about 10 m
+
     places: list[tuple] = []
     for el in flight_elements:
         lat, lon, radius, label = place_of(el)
         own = shapes.own_source(el)
         for i, (q_lat, q_lon, q_radius, q_label, q_own) in enumerate(places):
-            if (q_lat, q_lon) == (lat, lon):
-                places[i] = (lat, lon, max(radius, q_radius), q_label or label, q_own or own)
+            if spot(q_lat, q_lon) == spot(lat, lon):
+                places[i] = (q_lat, q_lon, max(radius, q_radius), q_label or label, q_own or own)
                 break
         else:
             places.append((lat, lon, radius, label, own))
@@ -290,7 +297,7 @@ async def publish_computed(session):
     # 1. Aircraft overhead: one pair of sensors per distinct place. The first
     #    place keeps the original names, so existing pages and automations stay
     #    put; others get the place's label (or coordinates) as a suffix.
-    places = aircraft_places(flight_elements)
+    places = aircraft_places(flight_elements, await get_home_coordinates(session) if flight_elements else (None, None))
     if not places and ("epaper_flights_overhead" in spec_text or "epaper_closest_aircraft" in spec_text
                        or "overhead_aircraft_count" in spec_text):
         places.append((None, None, 35.0, "", ""))
