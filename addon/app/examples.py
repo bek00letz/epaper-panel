@@ -248,26 +248,14 @@ def markets(el: dict, now: datetime | None = None) -> dict:
     return {"rows": rows, "at": None, "tz": None, "coins": any(r["kind"] == "coin" for r in rows)}
 
 
-def _example_map() -> dict:
-    """Streets of an old town, made up: a ring road round lanes, a road across, a river and a pond."""
-    lines = []
-    for k in range(-3, 4):                                    # lanes, slightly askew
-        lines.append(["minor", [[k * 230 - 60, -900], [k * 230 + 60, 900]]])
-        lines.append(["minor", [[-900, k * 200 + 40], [900, k * 200 - 40]]])
-    ring = [[round(480 * math.cos(a / 12 * math.pi)), round(360 * math.sin(a / 12 * math.pi))] for a in range(25)]
-    river = [[-900, -470], [-420, -390], [0, -440], [430, -520], [900, -460]]
-    return {"lines": [["river", river]] + lines + [["major", ring], ["major", [[-900, 520], [-150, 300], [900, 420]]]],
-            "areas": [["water", [[520, 120], [720, 160], [760, 330], [560, 360], [470, 240]]]]}
-
-
 def place() -> dict:
     """A place of the day: Sibiu, as the add-on's own list and the services describe it."""
-    return {"id": "sibiu", "name": "Sibiu", "region": "Transylvania", "country": "RO", "lat": 45.7975, "lon": 24.152,
-            "tz": "Europe/Bucharest", "kind": "city", "km": 1.6, "names": {}, "regions": {},
+    return {"id": "sibiu", "name": "Sibiu", "region": "Transylvania", "country": "RO",
+            "tz": "Europe/Bucharest", "names": {}, "regions": {},
             "summary": {"en": "Sibiu is a city in central Romania, in the historical region of Transylvania. Once one of "
                               "the most important fortified cities of the Transylvanian Saxons, its old town keeps its "
                               "squares, towers and the roofs whose windows look like eyes."},
-            "population": 134308, "elevation": 415, "map": _example_map(), "home_tz": None}
+            "population": 134308, "elevation": 415, "home_tz": None}
 
 
 def followed(now: datetime | None = None) -> dict:

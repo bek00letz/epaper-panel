@@ -275,11 +275,11 @@ export const PRESETS = [
   },
   {
     id: "place", group: "outside", title: "Place of the day", kw: "city travel world wonder map wikipedia geography town",
-    desc: "A city or a wonder each day, the same on every device: a few lines about it, its population, height and local time, and its streets.",
+    desc: "A city or a wonder each day, the same on every device: a few lines about it, and its population, height and local time.",
     asks: "",
     looks: [{ id: "place", name: "Place of the day",
       onSleeping: "This device sleeps between updates, so it shows how many hours apart the place is, not a time that would stop.",
-      make: () => [{ type: "place_of_day", show_map: true, show_facts: true, x: 24, y: 14, w: 744, h: 208 }] }],
+      make: () => [{ type: "place_of_day", show_facts: true, x: 24, y: 14, w: 744, h: 208 }] }],
   },
 
   /* ---------- sports ---------- */

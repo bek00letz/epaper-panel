@@ -1,5 +1,5 @@
 {
- "about": "The places Place of the day shows, one a day for everyone (sources/place.py). Names, regions and places are the add-on's own words; the rest comes from Wikipedia, Wikidata and OpenStreetMap when they answer.",
+ "about": "The places Place of the day shows, one a day for everyone (sources/place.py). Names and regions are the add-on's own words, the time zone says where in the world; the rest comes from Wikipedia and Wikidata when they answer.",
  "places": [
   {
    "id": "sibiu",
@@ -7,11 +7,7 @@
    "name": "Sibiu",
    "region": "Transylvania",
    "country": "RO",
-   "lat": 45.7975,
-   "lon": 24.152,
-   "tz": "Europe/Bucharest",
-   "kind": "city",
-   "km": 1.6
+   "tz": "Europe/Bucharest"
   },
   {
    "id": "brasov",
@@ -19,11 +15,7 @@
    "name": "Brașov",
    "region": "Transylvania",
    "country": "RO",
-   "lat": 45.6418,
-   "lon": 25.5887,
-   "tz": "Europe/Bucharest",
-   "kind": "city",
-   "km": 1.6
+   "tz": "Europe/Bucharest"
   },
   {
    "id": "bucharest",
@@ -31,11 +23,7 @@
    "name": "Bucharest",
    "region": "Muntenia",
    "country": "RO",
-   "lat": 44.4305,
-   "lon": 26.1003,
-   "tz": "Europe/Bucharest",
-   "kind": "city",
-   "km": 2.0
+   "tz": "Europe/Bucharest"
   },
   {
    "id": "lisbon",
@@ -43,11 +31,7 @@
    "name": "Lisbon",
    "region": "Lisbon District",
    "country": "PT",
-   "lat": 38.7108,
-   "lon": -9.1365,
-   "tz": "Europe/Lisbon",
-   "kind": "city",
-   "km": 1.6
+   "tz": "Europe/Lisbon"
   },
   {
    "id": "seville",
@@ -55,11 +39,7 @@
    "name": "Seville",
    "region": "Andalusia",
    "country": "ES",
-   "lat": 37.3858,
-   "lon": -5.993,
-   "tz": "Europe/Madrid",
-   "kind": "city",
-   "km": 1.6
+   "tz": "Europe/Madrid"
   },
   {
    "id": "paris",
@@ -67,11 +47,7 @@
    "name": "Paris",
    "region": "Île-de-France",
    "country": "FR",
-   "lat": 48.854,
-   "lon": 2.347,
-   "tz": "Europe/Paris",
-   "kind": "city",
-   "km": 2.0
+   "tz": "Europe/Paris"
   },
   {
    "id": "amsterdam",
@@ -79,11 +55,7 @@
    "name": "Amsterdam",
    "region": "North Holland",
    "country": "NL",
-   "lat": 52.3731,
-   "lon": 4.8922,
-   "tz": "Europe/Amsterdam",
-   "kind": "city",
-   "km": 1.6
+   "tz": "Europe/Amsterdam"
   },
   {
    "id": "prague",
@@ -91,11 +63,7 @@
    "name": "Prague",
    "region": "Bohemia",
    "country": "CZ",
-   "lat": 50.087,
-   "lon": 14.4208,
-   "tz": "Europe/Prague",
-   "kind": "city",
-   "km": 1.6
+   "tz": "Europe/Prague"
   },
   {
    "id": "vienna",
@@ -103,11 +71,7 @@
    "name": "Vienna",
    "region": "Vienna",
    "country": "AT",
-   "lat": 48.2085,
-   "lon": 16.3731,
-   "tz": "Europe/Vienna",
-   "kind": "city",
-   "km": 1.8
+   "tz": "Europe/Vienna"
   },
   {
    "id": "rome",
@@ -115,11 +79,7 @@
    "name": "Rome",
    "region": "Lazio",
    "country": "IT",
-   "lat": 41.8986,
-   "lon": 12.4769,
-   "tz": "Europe/Rome",
-   "kind": "city",
-   "km": 1.8
+   "tz": "Europe/Rome"
   },
   {
    "id": "venice",
@@ -127,11 +87,7 @@
    "name": "Venice",
    "region": "Veneto",
    "country": "IT",
-   "lat": 45.4371,
-   "lon": 12.3358,
-   "tz": "Europe/Rome",
-   "kind": "city",
-   "km": 1.6
+   "tz": "Europe/Rome"
   },
   {
    "id": "dubrovnik",
@@ -139,11 +95,7 @@
    "name": "Dubrovnik",
    "region": "Dalmatia",
    "country": "HR",
-   "lat": 42.641,
-   "lon": 18.11,
-   "tz": "Europe/Zagreb",
-   "kind": "city",
-   "km": 1.2
+   "tz": "Europe/Zagreb"
   },
   {
    "id": "edinburgh",
@@ -151,11 +103,7 @@
    "name": "Edinburgh",
    "region": "Scotland",
    "country": "GB",
-   "lat": 55.95,
-   "lon": -3.19,
-   "tz": "Europe/London",
-   "kind": "city",
-   "km": 1.8
+   "tz": "Europe/London"
   },
   {
    "id": "copenhagen",
@@ -163,11 +111,7 @@
    "name": "Copenhagen",
    "region": "Capital Region",
    "country": "DK",
-   "lat": 55.6786,
-   "lon": 12.5763,
-   "tz": "Europe/Copenhagen",
-   "kind": "city",
-   "km": 1.8
+   "tz": "Europe/Copenhagen"
   },
   {
    "id": "stockholm",
@@ -175,11 +119,7 @@
    "name": "Stockholm",
    "region": "Stockholm County",
    "country": "SE",
-   "lat": 59.3251,
-   "lon": 18.0711,
-   "tz": "Europe/Stockholm",
-   "kind": "city",
-   "km": 1.6
+   "tz": "Europe/Stockholm"
   },
   {
    "id": "reykjavik",
@@ -187,11 +127,7 @@
    "name": "Reykjavík",
    "region": "Capital Region",
    "country": "IS",
-   "lat": 64.1466,
-   "lon": -21.9426,
-   "tz": "Atlantic/Reykjavik",
-   "kind": "city",
-   "km": 1.6
+   "tz": "Atlantic/Reykjavik"
   },
   {
    "id": "athens",
@@ -199,11 +135,7 @@
    "name": "Athens",
    "region": "Attica",
    "country": "GR",
-   "lat": 37.9738,
-   "lon": 23.7275,
-   "tz": "Europe/Athens",
-   "kind": "city",
-   "km": 1.6
+   "tz": "Europe/Athens"
   },
   {
    "id": "istanbul",
@@ -211,11 +143,7 @@
    "name": "Istanbul",
    "region": "Marmara",
    "country": "TR",
-   "lat": 41.0086,
-   "lon": 28.9802,
-   "tz": "Europe/Istanbul",
-   "kind": "city",
-   "km": 1.8
+   "tz": "Europe/Istanbul"
   },
   {
    "id": "krakow",
@@ -223,11 +151,7 @@
    "name": "Kraków",
    "region": "Lesser Poland",
    "country": "PL",
-   "lat": 50.0614,
-   "lon": 19.9372,
-   "tz": "Europe/Warsaw",
-   "kind": "city",
-   "km": 1.6
+   "tz": "Europe/Warsaw"
   },
   {
    "id": "bruges",
@@ -235,11 +159,7 @@
    "name": "Bruges",
    "region": "West Flanders",
    "country": "BE",
-   "lat": 51.2089,
-   "lon": 3.2242,
-   "tz": "Europe/Brussels",
-   "kind": "city",
-   "km": 1.4
+   "tz": "Europe/Brussels"
   },
   {
    "id": "tallinn",
@@ -247,11 +167,7 @@
    "name": "Tallinn",
    "region": "Harju County",
    "country": "EE",
-   "lat": 59.437,
-   "lon": 24.745,
-   "tz": "Europe/Tallinn",
-   "kind": "city",
-   "km": 1.4
+   "tz": "Europe/Tallinn"
   },
   {
    "id": "marrakesh",
@@ -259,11 +175,7 @@
    "name": "Marrakesh",
    "region": "Marrakesh-Safi",
    "country": "MA",
-   "lat": 31.6258,
-   "lon": -7.9891,
-   "tz": "Africa/Casablanca",
-   "kind": "city",
-   "km": 1.6
+   "tz": "Africa/Casablanca"
   },
   {
    "id": "chefchaouen",
@@ -271,11 +183,7 @@
    "name": "Chefchaouen",
    "region": "Tanger-Tetouan-Al Hoceima",
    "country": "MA",
-   "lat": 35.1688,
-   "lon": -5.2636,
-   "tz": "Africa/Casablanca",
-   "kind": "city",
-   "km": 1.2
+   "tz": "Africa/Casablanca"
   },
   {
    "id": "giza",
@@ -283,11 +191,7 @@
    "name": "Pyramids of Giza",
    "region": "Giza",
    "country": "EG",
-   "lat": 29.9773,
-   "lon": 31.1325,
-   "tz": "Africa/Cairo",
-   "kind": "wonder",
-   "km": 2.0
+   "tz": "Africa/Cairo"
   },
   {
    "id": "cape_town",
@@ -295,11 +199,7 @@
    "name": "Cape Town",
    "region": "Western Cape",
    "country": "ZA",
-   "lat": -33.9249,
-   "lon": 18.4241,
-   "tz": "Africa/Johannesburg",
-   "kind": "city",
-   "km": 1.8
+   "tz": "Africa/Johannesburg"
   },
   {
    "id": "stone_town",
@@ -307,11 +207,7 @@
    "name": "Stone Town",
    "region": "Zanzibar",
    "country": "TZ",
-   "lat": -6.1622,
-   "lon": 39.1921,
-   "tz": "Africa/Dar_es_Salaam",
-   "kind": "city",
-   "km": 1.2
+   "tz": "Africa/Dar_es_Salaam"
   },
   {
    "id": "victoria_falls",
@@ -319,11 +215,7 @@
    "name": "Victoria Falls",
    "region": "Matabeleland North",
    "country": "ZW",
-   "lat": -17.9243,
-   "lon": 25.8572,
-   "tz": "Africa/Harare",
-   "kind": "wonder",
-   "km": 2.0
+   "tz": "Africa/Harare"
   },
   {
    "id": "kyoto",
@@ -331,11 +223,7 @@
    "name": "Kyoto",
    "region": "Kansai",
    "country": "JP",
-   "lat": 35.0037,
-   "lon": 135.775,
-   "tz": "Asia/Tokyo",
-   "kind": "city",
-   "km": 1.8
+   "tz": "Asia/Tokyo"
   },
   {
    "id": "tokyo",
@@ -343,11 +231,7 @@
    "name": "Tokyo",
    "region": "Kantō",
    "country": "JP",
-   "lat": 35.6812,
-   "lon": 139.7671,
-   "tz": "Asia/Tokyo",
-   "kind": "city",
-   "km": 1.8
+   "tz": "Asia/Tokyo"
   },
   {
    "id": "hoi_an",
@@ -355,11 +239,7 @@
    "name": "Hội An",
    "region": "Quảng Nam",
    "country": "VN",
-   "lat": 15.8801,
-   "lon": 108.338,
-   "tz": "Asia/Ho_Chi_Minh",
-   "kind": "city",
-   "km": 1.2
+   "tz": "Asia/Ho_Chi_Minh"
   },
   {
    "id": "angkor_wat",
@@ -367,11 +247,7 @@
    "name": "Angkor Wat",
    "region": "Siem Reap",
    "country": "KH",
-   "lat": 13.4125,
-   "lon": 103.867,
-   "tz": "Asia/Phnom_Penh",
-   "kind": "wonder",
-   "km": 2.0
+   "tz": "Asia/Phnom_Penh"
   },
   {
    "id": "taj_mahal",
@@ -379,11 +255,7 @@
    "name": "Taj Mahal",
    "region": "Uttar Pradesh",
    "country": "IN",
-   "lat": 27.1751,
-   "lon": 78.0421,
-   "tz": "Asia/Kolkata",
-   "kind": "wonder",
-   "km": 1.6
+   "tz": "Asia/Kolkata"
   },
   {
    "id": "jaipur",
@@ -391,11 +263,7 @@
    "name": "Jaipur",
    "region": "Rajasthan",
    "country": "IN",
-   "lat": 26.9239,
-   "lon": 75.8267,
-   "tz": "Asia/Kolkata",
-   "kind": "city",
-   "km": 1.8
+   "tz": "Asia/Kolkata"
   },
   {
    "id": "petra",
@@ -403,11 +271,7 @@
    "name": "Petra",
    "region": "Ma'an",
    "country": "JO",
-   "lat": 30.3285,
-   "lon": 35.4444,
-   "tz": "Asia/Amman",
-   "kind": "wonder",
-   "km": 2.0
+   "tz": "Asia/Amman"
   },
   {
    "id": "samarkand",
@@ -415,11 +279,7 @@
    "name": "Samarkand",
    "region": "Samarqand Region",
    "country": "UZ",
-   "lat": 39.6547,
-   "lon": 66.9758,
-   "tz": "Asia/Samarkand",
-   "kind": "city",
-   "km": 1.6
+   "tz": "Asia/Samarkand"
   },
   {
    "id": "singapore",
@@ -427,11 +287,7 @@
    "name": "Singapore",
    "region": "Central Region",
    "country": "SG",
-   "lat": 1.2868,
-   "lon": 103.8545,
-   "tz": "Asia/Singapore",
-   "kind": "city",
-   "km": 1.8
+   "tz": "Asia/Singapore"
   },
   {
    "id": "luang_prabang",
@@ -439,11 +295,7 @@
    "name": "Luang Prabang",
    "region": "Luang Prabang Province",
    "country": "LA",
-   "lat": 19.889,
-   "lon": 102.1347,
-   "tz": "Asia/Vientiane",
-   "kind": "city",
-   "km": 1.4
+   "tz": "Asia/Vientiane"
   },
   {
    "id": "seoul",
@@ -451,11 +303,7 @@
    "name": "Seoul",
    "region": "Seoul",
    "country": "KR",
-   "lat": 37.576,
-   "lon": 126.9769,
-   "tz": "Asia/Seoul",
-   "kind": "city",
-   "km": 1.8
+   "tz": "Asia/Seoul"
   },
   {
    "id": "mutianyu",
@@ -463,11 +311,7 @@
    "name": "Great Wall at Mutianyu",
    "region": "Beijing",
    "country": "CN",
-   "lat": 40.4319,
-   "lon": 116.5704,
-   "tz": "Asia/Shanghai",
-   "kind": "wonder",
-   "km": 2.0
+   "tz": "Asia/Shanghai"
   },
   {
    "id": "kathmandu",
@@ -475,11 +319,7 @@
    "name": "Kathmandu",
    "region": "Bagmati",
    "country": "NP",
-   "lat": 27.7046,
-   "lon": 85.3076,
-   "tz": "Asia/Kathmandu",
-   "kind": "city",
-   "km": 1.4
+   "tz": "Asia/Kathmandu"
   },
   {
    "id": "isfahan",
@@ -487,11 +327,7 @@
    "name": "Isfahan",
    "region": "Isfahan Province",
    "country": "IR",
-   "lat": 32.6575,
-   "lon": 51.6777,
-   "tz": "Asia/Tehran",
-   "kind": "city",
-   "km": 1.8
+   "tz": "Asia/Tehran"
   },
   {
    "id": "machu_picchu",
@@ -499,11 +335,7 @@
    "name": "Machu Picchu",
    "region": "Cusco Region",
    "country": "PE",
-   "lat": -13.1631,
-   "lon": -72.545,
-   "tz": "America/Lima",
-   "kind": "wonder",
-   "km": 1.6
+   "tz": "America/Lima"
   },
   {
    "id": "cusco",
@@ -511,11 +343,7 @@
    "name": "Cusco",
    "region": "Cusco Region",
    "country": "PE",
-   "lat": -13.5167,
-   "lon": -71.9785,
-   "tz": "America/Lima",
-   "kind": "city",
-   "km": 1.6
+   "tz": "America/Lima"
   },
   {
    "id": "havana",
@@ -523,11 +351,7 @@
    "name": "Havana",
    "region": "Havana",
    "country": "CU",
-   "lat": 23.1365,
-   "lon": -82.3536,
-   "tz": "America/Havana",
-   "kind": "city",
-   "km": 1.6
+   "tz": "America/Havana"
   },
   {
    "id": "new_york",
@@ -535,11 +359,7 @@
    "name": "New York",
    "region": "New York",
    "country": "US",
-   "lat": 40.7128,
-   "lon": -74.006,
-   "tz": "America/New_York",
-   "kind": "city",
-   "km": 1.8
+   "tz": "America/New_York"
   },
   {
    "id": "new_orleans",
@@ -547,11 +367,7 @@
    "name": "New Orleans",
    "region": "Louisiana",
    "country": "US",
-   "lat": 29.9584,
-   "lon": -90.0644,
-   "tz": "America/Chicago",
-   "kind": "city",
-   "km": 1.6
+   "tz": "America/Chicago"
   },
   {
    "id": "quebec",
@@ -559,11 +375,7 @@
    "name": "Quebec City",
    "region": "Quebec",
    "country": "CA",
-   "lat": 46.8123,
-   "lon": -71.2075,
-   "tz": "America/Toronto",
-   "kind": "city",
-   "km": 1.6
+   "tz": "America/Toronto"
   },
   {
    "id": "mexico_city",
@@ -571,11 +383,7 @@
    "name": "Mexico City",
    "region": "Mexico City",
    "country": "MX",
-   "lat": 19.4326,
-   "lon": -99.1332,
-   "tz": "America/Mexico_City",
-   "kind": "city",
-   "km": 1.8
+   "tz": "America/Mexico_City"
   },
   {
    "id": "chichen_itza",
@@ -583,11 +391,7 @@
    "name": "Chichen Itza",
    "region": "Yucatán",
    "country": "MX",
-   "lat": 20.6843,
-   "lon": -88.5678,
-   "tz": "America/Merida",
-   "kind": "wonder",
-   "km": 1.6
+   "tz": "America/Merida"
   },
   {
    "id": "rio",
@@ -595,11 +399,7 @@
    "name": "Rio de Janeiro",
    "region": "Rio de Janeiro",
    "country": "BR",
-   "lat": -22.9068,
-   "lon": -43.1729,
-   "tz": "America/Sao_Paulo",
-   "kind": "city",
-   "km": 1.8
+   "tz": "America/Sao_Paulo"
   },
   {
    "id": "buenos_aires",
@@ -607,11 +407,7 @@
    "name": "Buenos Aires",
    "region": "Buenos Aires",
    "country": "AR",
-   "lat": -34.6037,
-   "lon": -58.3816,
-   "tz": "America/Argentina/Buenos_Aires",
-   "kind": "city",
-   "km": 1.8
+   "tz": "America/Argentina/Buenos_Aires"
   },
   {
    "id": "cartagena",
@@ -619,11 +415,7 @@
    "name": "Cartagena",
    "region": "Bolívar",
    "country": "CO",
-   "lat": 10.4236,
-   "lon": -75.551,
-   "tz": "America/Bogota",
-   "kind": "city",
-   "km": 1.4
+   "tz": "America/Bogota"
   },
   {
    "id": "valparaiso",
@@ -631,11 +423,7 @@
    "name": "Valparaíso",
    "region": "Valparaíso Region",
    "country": "CL",
-   "lat": -33.0472,
-   "lon": -71.6127,
-   "tz": "America/Santiago",
-   "kind": "city",
-   "km": 1.6
+   "tz": "America/Santiago"
   },
   {
    "id": "grand_canyon",
@@ -643,11 +431,7 @@
    "name": "Grand Canyon",
    "region": "Arizona",
    "country": "US",
-   "lat": 36.0579,
-   "lon": -112.1401,
-   "tz": "America/Phoenix",
-   "kind": "wonder",
-   "km": 2.4
+   "tz": "America/Phoenix"
   },
   {
    "id": "iguazu",
@@ -655,11 +439,7 @@
    "name": "Iguazu Falls",
    "region": "Misiones",
    "country": "AR",
-   "lat": -25.6953,
-   "lon": -54.4367,
-   "tz": "America/Argentina/Buenos_Aires",
-   "kind": "wonder",
-   "km": 2.4
+   "tz": "America/Argentina/Buenos_Aires"
   },
   {
    "id": "sydney",
@@ -667,11 +447,7 @@
    "name": "Sydney",
    "region": "New South Wales",
    "country": "AU",
-   "lat": -33.86,
-   "lon": 151.21,
-   "tz": "Australia/Sydney",
-   "kind": "city",
-   "km": 1.8
+   "tz": "Australia/Sydney"
   },
   {
    "id": "wellington",
@@ -679,11 +455,7 @@
    "name": "Wellington",
    "region": "Wellington Region",
    "country": "NZ",
-   "lat": -41.2865,
-   "lon": 174.7762,
-   "tz": "Pacific/Auckland",
-   "kind": "city",
-   "km": 1.6
+   "tz": "Pacific/Auckland"
   },
   {
    "id": "uluru",
@@ -691,11 +463,7 @@
    "name": "Uluru",
    "region": "Northern Territory",
    "country": "AU",
-   "lat": -25.3444,
-   "lon": 131.0369,
-   "tz": "Australia/Darwin",
-   "kind": "wonder",
-   "km": 4.0
+   "tz": "Australia/Darwin"
   },
   {
    "id": "rapa_nui",
@@ -703,11 +471,7 @@
    "name": "Hanga Roa",
    "region": "Easter Island",
    "country": "CL",
-   "lat": -27.15,
-   "lon": -109.4333,
-   "tz": "Pacific/Easter",
-   "kind": "city",
-   "km": 1.6
+   "tz": "Pacific/Easter"
   }
  ]
 }

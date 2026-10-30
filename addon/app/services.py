@@ -100,7 +100,7 @@ def plain(text: str | None) -> str:
 
 async def _get(session, url: str, *, as_text: bool = False, polite: bool = False):
     """A test answer from an address: its JSON (or text), or Refused saying why not. `polite`: the
-    add-on names itself with where to reach who runs it, as OpenStreetMap and Wikimedia ask."""
+    add-on names itself with where to reach who runs it, as Wikimedia asks."""
     import aiohttp
     import pacing
     try:
@@ -268,14 +268,6 @@ async def _probe_wikidata(session, base: str) -> str:
     return "Facts about places"
 
 
-async def _probe_overpass(session, base: str) -> str:
-    from urllib.parse import quote
-    data = await _get(session, f"{base}?data={quote('[out:json][timeout:10];node(1);out;')}", polite=True)
-    if not isinstance(data, dict) or not isinstance(data.get("elements"), list):
-        raise Refused("It answered, but not with map data the add-on can read.")
-    return "Map data"
-
-
 _LANGUAGE_NAMES = {"en": "English", "ro": "Romanian", "es": "Spanish", "de": "German", "fr": "French"}
 
 
@@ -404,9 +396,6 @@ SERVICES: tuple[Service, ...] = (
             uses=_type("place_of_day"), forget=_forget("sources.place", "forget")),
     Service("wikidata", "Wikidata", "outside", "Place of the day's facts",
             (Address("main", "Facts", "https://www.wikidata.org/w/api.php", _probe_wikidata),),
-            uses=_type("place_of_day"), forget=_forget("sources.place", "forget")),
-    Service("openstreetmap", "OpenStreetMap", "outside", "Place of the day's street map",
-            (Address("main", "Map data", "https://overpass-api.de/api/interpreter", _probe_overpass),),
             uses=_type("place_of_day"), forget=_forget("sources.place", "forget")),
     Service("iconify", "Iconify", "outside", "Icon sets you add in Settings › Icons",
             (Address("main", "Icon sets", "https://raw.githubusercontent.com/iconify/icon-sets/master", _probe_iconify_sets),

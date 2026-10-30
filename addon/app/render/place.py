@@ -1,27 +1,28 @@
-"""Place of the day: its name, where it is, a few lines about it, a few facts, and its streets.
+"""Place of the day: its name, where it is, a few lines about it, and a few facts.
 
-Text on the left, the map on the right on a wide box (below it on a tall one, left out on a box
-too small to read one). The map is drawn from OpenStreetMap's lines (sources/place.py) with hard
-edges, as e-paper wants: main roads as hollow bands, other streets solid, rivers thick, lakes and
-the sea hatched, and the place marked at the centre. Its credits are drawn on it.
+On a wide box the place is on the left (its name large, where it is, its facts under them) and
+what Wikipedia says about it on the right, in text you can read across a room; on a narrow or
+tall box it's one column, the description between the place and its facts. A box too small for
+the description keeps the place and its facts. Wikipedia is credited under its words, as its
+licence asks.
 
 The facts are the ones known: population, elevation, local time. On a device that sleeps between
 updates a local time would stop, so there it shows how many hours apart the place is.
+
+There's no map: the user's call (30 Oct), small screens don't show one well.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from PIL import Image, ImageDraw
-
 from . import clock, hero
-from . import theme as T
 from .hero import Line, place_line, wrap_into
 from .todo import now_in
 from .words import language, number, say
 
-MAP_MIN = 120                   # a map smaller than this across is a smudge: left out
+DESC_MOST = 30                  # the description's largest size: a paragraph, not a headline
+WIDE = 480                      # narrower than this, one column
 
 
 def _texts(data: dict, now: datetime, asleep: bool) -> tuple[str, str, str, list[tuple[str, str]]]:
@@ -51,124 +52,108 @@ def _texts(data: dict, now: datetime, asleep: bool) -> tuple[str, str, str, list
     return name, where, text, facts
 
 
-def _map_box(data: dict, box, show_map: bool):
-    """(text box, map box or None)."""
-    x, y, w, h = box
-    if not show_map or not (data.get("map") or {}).get("lines"):
-        return box, None
-    gap = max(12, min(w, h) // 16)
-    if w >= h * 1.3:
-        mw = min(round(w * 0.42), round(h * 1.6))
-        if mw >= MAP_MIN and h >= MAP_MIN * 0.8 and w - mw - gap >= 220:
-            return (x, y, w - mw - gap, h), (x + w - mw, y, mw, h)
-    elif h >= w * 0.9:
-        mh = round(h * 0.45)
-        if mh >= MAP_MIN and w >= MAP_MIN:
-            return (x, y, w, h - mh - gap), (x, y + h - mh, w, mh)
-    return box, None
+def _sizes(start: int, name_fit: int, has_where: bool, has_facts: bool, room: int):
+    """(name, where, fact value, fact label, height they take, the size they follow): sized from the box (`start`), the
+    name no larger than fits its width (`name_fit`), all shrunk together until they take no more
+    than `room`. A long name doesn't make the rest small."""
+    base = max(hero.MIN_VALUE, start)
+    while True:
+        name_px = max(hero.MIN_VALUE, min(name_fit, base))
+        where_px = max(hero.MIN_CAPTION, round(base * 0.42))
+        value_px = max(hero.MIN_CAPTION, min(30, round(base * 0.4)))
+        label_px = max(hero.MIN_CAPTION, round(value_px * 0.72))
+        need = name_px + (_gap(base) + where_px if has_where else 0) + (2 * _gap(base) + label_px + 4 + value_px if has_facts else 0)
+        if need <= room or base <= hero.MIN_VALUE:
+            return name_px, where_px, value_px, label_px, need, base
+        base -= 2
+        name_fit = min(name_fit, base)
+
+
+def _gap(name_px: int) -> int:
+    """The space under the name, in step with it: roomy on a large screen, tight on the 2.9"."""
+    return max(4, round(name_px / 7))
+
+
+def _facts(facts, x, y, w, label_px, value_px) -> list[Line]:
+    """The facts side by side, every value at one size and every label at one, so they read as a row."""
+    cw = w // len(facts)
+    values = [place_line(v, 0, 0, cw - 10, value_px, bold=True) for _, v in facts]
+    labels = [place_line(lb, 0, 0, cw - 10, label_px) for lb, _ in facts]
+    vpx, lpx = min(v.px for v in values), min(lb.px for lb in labels)
+    out = []
+    for k, (label, value) in enumerate(facts):
+        out.append(place_line(label, x + k * cw, y, cw - 10, lpx))
+        out.append(place_line(value, x + k * cw, y + label_px + 4, cw - 10, vpx, bold=True))
+    return out
+
+
+def _description(text: str, x, y, w, h, start: int) -> list[Line]:
+    """What Wikipedia says, as large as it reads up to `start`, credited under it."""
+    if not text or h < 2 * hero.MIN_CAPTION + 6:
+        return []
+    credit_px = hero.MIN_CAPTION
+    lines = wrap_into(text, x, y, w, h - credit_px - 6, start)
+    if not lines:
+        return []
+    bottom = lines[-1].y + round(lines[-1].px * 1.25) + 4
+    return lines + [place_line(say("place.credit"), x, min(bottom, y + h - credit_px), w, credit_px)]
 
 
 def plan(el: dict, data, box, now: datetime | None = None, scale: float = 1.0):
-    """(lines of text, map box or None). None when there's nothing to draw yet."""
+    """The lines of text, where each goes and how large. None when there's nothing to draw yet."""
     if not isinstance(data, dict) or not data.get("name"):
         return None
     now = now or now_in(data.get("home_tz"))
     name, where, text, facts = _texts(data, now, bool(el.get("asleep")))
     if el.get("show_facts") is False:
         facts = []
-    tbox, mbox = _map_box(data, box, el.get("show_map") is not False)
-    x, y, w, h = tbox
-    name_px = max(hero.MIN_VALUE, min(round(h * 0.2 * scale), 64))
-    where_px = max(hero.MIN_CAPTION, round(name_px * 0.46))
-    fact_px = max(hero.MIN_CAPTION, round(name_px * 0.36))
-    label_px = max(hero.MIN_CAPTION, round(fact_px * 0.8))
-    facts_h = (label_px + 4 + fact_px) if facts else 0
-    # Shrink together until the name, where it is and the facts fit, leaving the rest to the text.
-    while name_px > hero.MIN_VALUE and name_px + 6 + where_px + (12 + facts_h if facts else 0) > h:
-        name_px -= 2
-        where_px = max(hero.MIN_CAPTION, round(name_px * 0.46))
-        fact_px = max(hero.MIN_CAPTION, round(name_px * 0.36))
-        label_px = max(hero.MIN_CAPTION, round(fact_px * 0.8))
-        facts_h = (label_px + 4 + fact_px) if facts else 0
-    if name_px + 6 + where_px + (12 + facts_h if facts else 0) > h:
-        facts, facts_h = [], 0
+    x, y, w, h = box
+    if w >= h * 1.6 and w >= WIDE and text:
+        # The place on the left, its story on the right.
+        gap = max(16, w // 30)
+        left = round(w * 0.4)
+        start = min(round(h * 0.34 * scale), 72)
+        fit = place_line(name, 0, 0, left, start, bold=True, floor=hero.MIN_VALUE).px          # as wide as it fits
+        name_px, where_px, value_px, label_px, need, base = _sizes(start, fit, bool(where), bool(facts), h)
+        if need > h:
+            facts = []
+            name_px, where_px, value_px, label_px, need, base = _sizes(start, fit, bool(where), False, h)
+        top = y + max(0, (h - need) // 2)
+        lines = [place_line(name, x, top, left, name_px, bold=True, floor=hero.MIN_VALUE)]
+        cy = top + name_px
+        if where:
+            lines.append(place_line(where, x, cy + _gap(base), left, where_px))
+            cy += _gap(base) + where_px
+        if facts:
+            lines += _facts(facts, x, cy + 2 * _gap(base), left, label_px, value_px)
+        desc = _description(text, x + left + gap, y, w - left - gap, h, min(DESC_MOST, round(h * 0.13 * scale)))
+        if desc:                                    # the paragraph sits level with the place, centred
+            used = desc[-1].y + desc[-1].px - y
+            shift = max(0, (h - used) // 2)
+            for ln in desc:
+                ln.y += shift
+        return lines + desc
+    # One column: the place, what it is, its facts at the foot.
+    start = min(round(h * 0.22 * scale), 64)
+    fit = place_line(name, 0, 0, w, start, bold=True, floor=hero.MIN_VALUE).px
+    name_px, where_px, value_px, label_px, need, base = _sizes(start, fit, bool(where), bool(facts), h)
+    if need > h:
+        facts = []
+        name_px, where_px, value_px, label_px, need, base = _sizes(start, fit, bool(where), False, h)
     lines = [place_line(name, x, y, w, name_px, bold=True, floor=hero.MIN_VALUE)]
-    cy = y + name_px + 6
+    cy = y + name_px
     if where:
-        lines.append(place_line(where, x, cy, w, where_px))
-        cy += where_px
-    room = y + h - (facts_h + 12 if facts else 0) - (cy + 12)
-    if text and room >= hero.MIN_CAPTION:
-        lines += wrap_into(text, x, cy + 12, w, room, max(hero.MIN_CAPTION, round(name_px * 0.36)))
+        lines.append(place_line(where, x, cy + _gap(base), w, where_px))
+        cy += _gap(base) + where_px
+    facts_h = (label_px + 4 + value_px) if facts else 0
+    room = y + h - (facts_h + 2 * _gap(base) if facts else 0) - (cy + 2 * _gap(base))
+    lines += _description(text, x, cy + 2 * _gap(base), w, room, min(DESC_MOST, max(hero.MIN_CAPTION, round(start * 0.42))))
     if facts:
-        fy = y + h - facts_h
-        cw = w // len(facts)
-        for k, (label, value) in enumerate(facts):
-            lines.append(place_line(label, x + k * cw, fy, cw - 10, label_px))
-            lines.append(place_line(value, x + k * cw, fy + label_px + 4, cw - 10, fact_px, bold=True))
-    return lines, mbox
-
-
-# ---------------------------------------------------------------- the map
-
-def draw_map(img, mbox, data: dict) -> None:
-    mx, my, mw, mh = mbox
-    m = data.get("map") or {}
-    km = float(data.get("km") or 1.6)
-    k = max(mw, mh) / (km * 1000.0)                 # pixels per metre: the box's longer side spans the map
-    cx, cy = mw / 2, mh / 2
-
-    def at(p):
-        return (cx + p[0] * k, cy - p[1] * k)
-
-    pic = Image.new("L", (mw, mh), T.WHITE)
-    d = ImageDraw.Draw(pic)
-    unit = max(1.0, min(mw, mh) / 110)
-    hatch = Image.new("L", (mw, mh), T.WHITE)
-    hd = ImageDraw.Draw(hatch)
-    for yy in range(0, mh, 6):                      # water: hatched, a hard-edged pattern, never grey
-        hd.rectangle([0, yy, mw, yy + 1], fill=T.BLACK)
-    for kind, pts in m.get("areas") or []:
-        poly = [at(p) for p in pts]
-        mask = Image.new("L", (mw, mh), 0)
-        ImageDraw.Draw(mask).polygon(poly, fill=255)
-        pic.paste(hatch, (0, 0), mask)
-        d.line(poly + [poly[0]], fill=T.BLACK, width=2)
-    widths = {"stream": max(3, round(unit * 1.5)), "river": max(5, round(unit * 3.5)), "path": 2,
-              "minor": max(3, round(unit * 1.3)), "major": max(8, round(unit * 3.6))}
-    for kind, pts in m.get("lines") or []:
-        xy = [at(p) for p in pts]
-        width = widths.get(kind, 2)
-        d.line(xy, fill=T.BLACK, width=width, joint="curve")
-    for kind, pts in m.get("lines") or []:          # main roads hollow: their insides cleared after all are drawn
-        if kind == "major":
-            d.line([at(p) for p in pts], fill=T.WHITE, width=max(3, widths["major"] - 5), joint="curve")
-    r = max(7, round(unit * 6))                     # the place itself
-    d.ellipse([cx - r - 4, cy - r - 4, cx + r + 4, cy + r + 4], fill=T.WHITE)
-    d.ellipse([cx - r, cy - r, cx + r, cy + r], outline=T.BLACK, width=max(3, r // 3))
-    d.ellipse([cx - r // 3, cy - r // 3, cx + r // 3, cy + r // 3], fill=T.BLACK)
-    # Credits, as OpenStreetMap's licence and Wikipedia's ask: the fullest that fits, bottom right.
-    px = max(hero.MIN_CAPTION, min(16, mh // 14))
-    f = T.font(px, bold=False)
-    credit = next((t for t in (say("place.credit"), say("place.credit_mid"), say("place.credit_short"))
-                   if T.text_width(t, f) <= mw - 24 - max(8, min(mw, mh) // 14)), say("place.credit_short"))
-    radius = max(8, min(mw, mh) // 14)              # rounded corners, and a frame round them
-    inset = 6 + radius // 3                         # clear of the rounded corner
-    tw = T.text_width(credit, f)
-    asc, desc = f.getmetrics()
-    d.rectangle([mw - tw - inset - 6, mh - asc - desc - 8, mw, mh], fill=T.WHITE)
-    d.text((mw - inset, mh - 4), credit, font=f, fill=T.BLACK, anchor="rd")
-    corners = Image.new("L", (mw, mh), 0)
-    ImageDraw.Draw(corners).rounded_rectangle([0, 0, mw - 1, mh - 1], radius=radius, fill=255)
-    img.paste(pic, (mx, my), corners)
-    ImageDraw.Draw(img).rounded_rectangle([mx, my, mx + mw - 1, my + mh - 1], radius=radius, outline=T.BLACK, width=2)
+        lines += _facts(facts, x, y + h - facts_h, w, label_px, value_px)
+    return lines
 
 
 def draw(img, d, box, el: dict, data, *, scale: float = 1.0) -> None:
-    got = plan(el, data, box, scale=scale)
-    if got is None:
-        return
-    lines, mbox = got
-    hero.draw_lines(d, lines)
-    if mbox:
-        draw_map(img, mbox, data)
+    lines = plan(el, data, box, scale=scale)
+    if lines is not None:
+        hero.draw_lines(d, lines)

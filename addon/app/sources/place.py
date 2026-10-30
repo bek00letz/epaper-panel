@@ -5,16 +5,14 @@ page works with nothing fetched: its name, region, country and local time are al
 day, for that day's place only, the add-on asks:
 
   * Wikipedia (its summary endpoint) for a short description, in each language a screen speaks;
-  * Wikidata for its facts: population, elevation, its region in each language, where it is;
-  * OpenStreetMap (the Overpass API) for the streets and water around it, drawn as lines
-    (render/place.py), never as map pictures: OpenStreetMap's tile servers don't allow fetching
-    tiles nobody is looking at, and e-paper wants hard edges, not dithered pictures.
+  * Wikidata for its facts: population, elevation, its region in each language.
 
 All of it is kept on disk for the day, so a restart asks nothing again, and each part is asked
 only until it's in (a part that fails is asked again within the hour, with longer waits after
-each failure: pacing.py). One place a day is about ten requests in all, far inside every one of
-these services' fair use. Their credits are drawn on the page: Wikipedia, © OpenStreetMap
-contributors (its licence asks for it).
+each failure: pacing.py). One place a day is about eight requests in all, far inside both
+services' fair use. Wikipedia is credited on the page, as its licence asks.
+
+There's no map: the user's call (30 Oct), small screens don't show one well.
 
 Every device with the page shows the same place on the same day: the day is Home Assistant's.
 """
@@ -22,7 +20,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 from datetime import date
 from functools import lru_cache
 from pathlib import Path
@@ -35,16 +32,12 @@ import services
 from render.words import LANGUAGES
 
 LIST = Path(__file__).resolve().parent.parent / "reference" / "places.json"
-WIKIPEDIA, WIKIDATA, OSM = "wikipedia", "wikidata", "openstreetmap"
+WIKIPEDIA, WIKIDATA = "wikipedia", "wikidata"
 RETRY = 1800                       # a part that didn't come in is asked again within half an hour (paced)
 PACE_WIKI = pacing.Pace("Wikipedia", first=RETRY, most=6 * 3600)
 PACE_DATA = pacing.Pace("Wikidata", first=RETRY, most=6 * 3600)
-PACE_OSM = pacing.Pace("OpenStreetMap", first=RETRY, most=6 * 3600)
 EXTRACT_MOST = 600                 # characters of description kept: more than any screen shows
 
-ROADS = {"motorway": "major", "trunk": "major", "primary": "major", "secondary": "major",
-         "tertiary": "minor", "unclassified": "minor", "residential": "minor", "living_street": "minor",
-         "pedestrian": "minor", "footway": "path", "path": "path", "track": "path", "steps": "path"}
 
 
 @lru_cache(maxsize=1)
@@ -78,23 +71,20 @@ def of_day(day: date) -> dict:
 def offline(place: dict) -> dict:
     """What the page knows with nothing fetched: the list's own facts."""
     return {"id": place["id"], "name": place["name"], "region": place["region"], "country": place["country"],
-            "lat": place["lat"], "lon": place["lon"], "tz": place["tz"], "kind": place["kind"], "km": place["km"],
-            "names": {}, "regions": {}, "summary": {}, "population": None, "elevation": None, "map": None}
+            "tz": place["tz"], "names": {}, "regions": {}, "summary": {}, "population": None, "elevation": None}
 
 
 # ---------------------------------------------------------------- reading the answers
 
 def read_summary(body) -> dict | None:
-    """Wikipedia's page summary -> {title, text, qid, lat, lon}; None for a page that isn't one
+    """Wikipedia's page summary -> {title, text, qid}; None for a page that isn't one
     (a disambiguation page, a missing one)."""
     if not isinstance(body, dict) or body.get("type") not in ("standard", None) or not body.get("extract"):
         return None
     text = " ".join(str(body.get("extract") or "").split())
     if len(text) > EXTRACT_MOST:
         text = text[:EXTRACT_MOST].rsplit(" ", 1)[0] + "…"
-    coords = body.get("coordinates") or {}
-    return {"title": str(body.get("title") or ""), "text": text, "qid": str(body.get("wikibase_item") or ""),
-            "lat": coords.get("lat"), "lon": coords.get("lon")}
+    return {"title": str(body.get("title") or ""), "text": text, "qid": str(body.get("wikibase_item") or "")}
 
 
 def _claims(entity: dict, prop: str) -> list:
@@ -132,7 +122,7 @@ FOOT = "http://www.wikidata.org/entity/Q3710"
 
 def read_entity(body, qid: str) -> dict:
     """Wikidata's entity -> {titles: {lang: title}, names: {lang: label}, population, elevation (m),
-    lat, lon, region: its region's id}. Raises ValueError for an answer of another form."""
+    region: its region's id}. Raises ValueError for an answer of another form."""
     try:
         e = body["entities"][qid]
     except (KeyError, TypeError):
@@ -150,15 +140,11 @@ def read_entity(body, qid: str) -> dict:
         elevation = _amount(v)
         if elevation is not None and isinstance(v, dict) and v.get("unit") == FOOT:
             elevation *= 0.3048
-    at = next(iter(_best(_claims(e, "P625"))), None)
-    lat = lon = None
-    if at and isinstance(_value(at), dict):
-        lat, lon = _value(at).get("latitude"), _value(at).get("longitude")
     # Its region now: preferred, else one that hasn't ended (P582), as Wikidata lists them.
     regions = [c for c in _best(_claims(e, "P131")) if not (c.get("qualifiers") or {}).get("P582")]
     region = (_value(regions[0]) or {}).get("id", "") if regions else ""
     return {"titles": titles, "names": names, "population": round(population) if population else None,
-            "elevation": round(elevation) if elevation is not None else None, "lat": lat, "lon": lon, "region": region}
+            "elevation": round(elevation) if elevation is not None else None, "region": region}
 
 
 def read_labels(body, qid: str) -> dict:
@@ -167,57 +153,6 @@ def read_labels(body, qid: str) -> dict:
     except (KeyError, TypeError):
         raise ValueError("no entity") from None
     return {k: v.get("value") for k, v in labels.items() if k in LANGUAGES and isinstance(v, dict) and v.get("value")}
-
-
-def _metres(lat0: float, lon0: float):
-    k = math.cos(math.radians(lat0))
-    return lambda lat, lon: (round((lon - lon0) * 111320.0 * k), round((lat - lat0) * 110540.0))
-
-
-def read_map(body, lat: float, lon: float) -> dict:
-    """OpenStreetMap's ways (Overpass, out geom) -> {"lines": [[kind, [[x, y], ...]]], "areas": [...]},
-    in metres east and north of the place, a point dropped when it's within 2 m of the last."""
-    if not isinstance(body, dict) or not isinstance(body.get("elements"), list):
-        raise ValueError("no elements")
-    to = _metres(lat, lon)
-    lines, areas = [], []
-    for el in body["elements"]:
-        if not isinstance(el, dict) or not isinstance(el.get("geometry"), list):
-            continue
-        tags = el.get("tags") or {}
-        pts = []
-        for g in el["geometry"]:
-            try:
-                p = to(float(g["lat"]), float(g["lon"]))
-            except (KeyError, TypeError, ValueError):
-                continue
-            if not pts or abs(p[0] - pts[-1][0]) + abs(p[1] - pts[-1][1]) > 2:
-                pts.append(list(p))
-        if len(pts) < 2:
-            continue
-        closed = pts[0] == pts[-1] or (el["geometry"][0] == el["geometry"][-1])
-        if tags.get("natural") == "water" or tags.get("waterway") == "riverbank" or (tags.get("water") and closed):
-            if len(pts) >= 3:
-                areas.append(["water", pts])
-        elif tags.get("waterway") in ("river", "canal"):
-            lines.append(["river", pts])
-        elif tags.get("waterway") == "stream":
-            lines.append(["stream", pts])
-        elif tags.get("highway") in ROADS:
-            lines.append([ROADS[tags["highway"]], pts])
-    order = {"stream": 0, "river": 1, "path": 2, "minor": 3, "major": 4}
-    lines.sort(key=lambda ln: order.get(ln[0], 0))
-    return {"lines": lines, "areas": areas}
-
-
-def overpass_query(lat: float, lon: float, km: float, paths: bool) -> str:
-    """The streets and water within a square `km` across, centred on the place."""
-    dy = km / 2 / 110.54
-    dx = km / 2 / (111.32 * max(0.05, math.cos(math.radians(lat))))
-    box = f"{lat - dy:.5f},{lon - dx:.5f},{lat + dy:.5f},{lon + dx:.5f}"
-    kinds = "|".join(k for k, v in ROADS.items() if paths or v != "path")
-    return (f'[out:json][timeout:25][bbox:{box}];(way["highway"~"^({kinds})$"];way["natural"="water"];'
-            f'way["waterway"~"^(river|canal|stream|riverbank)$"];);out geom qt;')
 
 
 # ---------------------------------------------------------------- the day's place, asked part by part
@@ -249,7 +184,7 @@ def _save(entry: dict) -> None:
 
 def forget() -> None:
     """Try again: every part not in yet is asked at once."""
-    for pace in (PACE_WIKI, PACE_DATA, PACE_OSM):
+    for pace in (PACE_WIKI, PACE_DATA):
         pace.forget()
 
 
@@ -288,8 +223,6 @@ async def fill(session, entry: dict, place: dict) -> bool:
             pacing.answered(PACE_DATA)
             entry.update(titles=facts["titles"], names=facts["names"], population=facts["population"],
                          elevation=facts["elevation"], region_id=facts["region"])
-            if facts["lat"] is not None and facts["lon"] is not None:
-                entry["lat"], entry["lon"] = facts["lat"], facts["lon"]
             done.add("facts")
             changed = True
         rid = entry.get("region_id") or ""
@@ -312,17 +245,6 @@ async def fill(session, entry: dict, place: dict) -> bool:
             if got:
                 entry["summary"][lang] = got["text"]
             done.add(f"summary:{lang}")
-            changed = True
-        if "map" not in done:
-            q = overpass_query(entry["lat"], entry["lon"], float(entry["km"]), paths=entry.get("kind") == "wonder")
-            body = await pacing.get(session, services.url(OSM), PACE_OSM, method="POST", data={"data": q}, timeout=40)
-            try:
-                entry["map"] = read_map(body, entry["lat"], entry["lon"])
-            except ValueError:
-                pacing.unreadable(PACE_OSM, "map data")
-                raise LookupError("map") from None
-            pacing.answered(PACE_OSM)
-            done.add("map")
             changed = True
     except LookupError:
         pass                                    # said by health; the rest waits for the next time
@@ -347,4 +269,4 @@ async def fetch_place(session, day: str):
 
 
 def complete(entry: dict | None) -> bool:
-    return bool(entry) and {"qid", "facts", "map"} <= set(entry.get("done") or [])
+    return bool(entry) and {"qid", "facts"} <= set(entry.get("done") or [])

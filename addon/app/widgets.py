@@ -600,12 +600,12 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
            box={"x": 24, "y": 14, "w": 744, "h": 208}, defaults={"holdings": []},
            fields=[{"kind": "holdings", "key": "holdings", "most": markets.MOST, "label": "Holdings"},
                    {"kind": "note", "text": "Prices come every five minutes at most, and not while every market here is closed."}]),
-    # A city or a wonder a day, the same everywhere: its story, its facts and its streets.
+    # A city or a wonder a day, the same everywhere: its story and its facts.
     Widget("place_of_day", "Place of the day", "map", _place, lambda el, now: examples.place(), asleep=True,
-           box={"x": 24, "y": 14, "w": 744, "h": 208}, defaults={"show_map": True, "show_facts": True},
-           fields=[toggle("show_map", "Street map", True), toggle("show_facts", "Population, height and time", True),
-                   {"kind": "note", "text": "A new place every day, the same on every device. The add-on asks Wikipedia, "
-                                            "Wikidata and OpenStreetMap once a day, for that place only."}]),
+           box={"x": 24, "y": 14, "w": 744, "h": 208}, defaults={"show_facts": True},
+           fields=[toggle("show_facts", "Population, height and time", True),
+                   {"kind": "note", "text": "A new place every day, the same on every device. The add-on asks Wikipedia "
+                                            "and Wikidata once a day, for that place only."}]),
     Widget("sports_racing", "Racing", "flag", _racing, lambda el, now: examples.race(el.get("series") or "f1"),
            live=(racing.fetch_racing_data,), breakable=True, shape="racing",
            # sensor.f1_status and sensor.formula_e_status: what 0.9 pages say.

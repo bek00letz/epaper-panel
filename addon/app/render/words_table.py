@@ -515,14 +515,8 @@ WORDS = {
     "place.elevation": {"en": "Elevation", "ro": "Altitudine", "es": "Altitud", "de": "Höhe", "fr": "Altitude"},
     "place.local_time": {"en": "Local time", "ro": "Ora locală", "es": "Hora local", "de": "Ortszeit", "fr": "Heure locale"},
     "place.time_apart": {"en": "Time", "ro": "Ora", "es": "Hora", "de": "Zeit", "fr": "Heure"},
-    "place.credit": {"en": "Wikipedia · © OpenStreetMap contributors", "ro": "Wikipedia · © contributorii OpenStreetMap",
-                     "es": "Wikipedia · © colaboradores de OpenStreetMap", "de": "Wikipedia · © OpenStreetMap-Mitwirkende",
-                     "fr": "Wikipédia · © contributeurs d’OpenStreetMap"},
-    "place.credit_mid": {"en": "Wikipedia · © OpenStreetMap", "ro": "Wikipedia · © OpenStreetMap",
-                         "es": "Wikipedia · © OpenStreetMap", "de": "Wikipedia · © OpenStreetMap",
-                         "fr": "Wikipédia · © OpenStreetMap"},
-    "place.credit_short": {"en": "© OpenStreetMap", "ro": "© OpenStreetMap", "es": "© OpenStreetMap",
-                           "de": "© OpenStreetMap", "fr": "© OpenStreetMap"},
+    "place.credit": {"en": "From Wikipedia", "ro": "Din Wikipedia", "es": "De Wikipedia", "de": "Aus Wikipedia",
+                     "fr": "D’après Wikipédia"},
     "place.metres": {"en": "{n} m", "ro": "{n} m", "es": "{n} m", "de": "{n} m", "fr": "{n} m"},
 
     # ------------------------------------------------------------ countries (Place of the day's, by ISO code)

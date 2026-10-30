@@ -16,16 +16,16 @@
   priced in your Home Assistant currency.
 - **New page: Place of the day.** A city or a wonder each day, the same on
   every device, from the add-on's own list of places around the world: a
-  few lines about it from Wikipedia in the device's language, its
-  population, height and local time, and a small street map drawn from
-  OpenStreetMap. The add-on asks for each day's place once and keeps it.
+  few lines about it from Wikipedia in the device's language, and its
+  population, height and local time. The add-on asks for each day's place
+  once and keeps it.
 - **New page: Follow a flight.** Type a flight number or callsign (W4 3186
   or WMT4ZZ). While it flies, the page shows from and to, how far along it
   is, its height and speed, and the time left; before and after, it says
   "Not in the air", "Landed" or "Out of view". It can show only while the
   flight is in the air.
-- The five new services (Yahoo Finance, CoinGecko, Wikipedia, Wikidata and
-  OpenStreetMap) are in Settings › Services with Try again, and each one
+- The four new services (Yahoo Finance, CoinGecko, Wikipedia and Wikidata)
+  are in Settings › Services with Try again, and each one
   that fails waits longer before it's asked again, keeping what it last
   showed. No firmware change.
 

@@ -2,10 +2,10 @@
 
 * The list is the add-on's own, spread across the world, and works with nothing fetched.
 * Every device shows the same place on the same day; the days hop between continents.
-* Wikipedia's, Wikidata's and OpenStreetMap's answers are read from saved samples (no network).
+* Wikipedia's and Wikidata's answers are read from saved samples (no network).
 * Each part is asked for until it's in, kept on disk for the day, never asked again that day; a
   part that fails waits longer each time, and the rest of the page shows meanwhile.
-* The map is OpenStreetMap's lines, never its tiles, and carries its credits.
+* No map (the user's call, 30 Oct): its room goes to the place; Wikipedia is credited.
 * Every word fits at every size offered, in every language; asleep, no local time that would stop.
 """
 import asyncio
@@ -33,9 +33,7 @@ class TestTheList(unittest.TestCase):
         for p in P.places():
             with self.subTest(place=p["id"]):
                 ZoneInfo(p["tz"])
-                self.assertTrue(-90 <= p["lat"] <= 90 and -180 <= p["lon"] <= 180)
-                self.assertIn(p["kind"], ("city", "wonder"))
-                self.assertTrue(0.8 <= p["km"] <= 5)
+                self.assertTrue(p["wiki"] and p["name"] and p["region"])
                 row = words.WORDS[f"country.{p['country']}"]
                 self.assertEqual([lang for lang in words.LANGUAGES if not row.get(lang)], [], "its country in every language")
 
@@ -84,26 +82,6 @@ class TestReading(unittest.TestCase):
         got = P.read_labels(sample("wikidata_labels.json"), "Q184797")
         self.assertEqual((got["en"], got["de"]), ("Sibiu County", "Kreis Sibiu"))
 
-    def test_the_map_is_lines_in_metres(self):
-        m = P.read_map(sample("overpass_sibiu.json"), 45.7975, 24.1520)
-        kinds = {k for k, _ in m["lines"]}
-        self.assertTrue({"major", "minor", "river"} <= kinds)
-        self.assertEqual([k for k, _ in m["lines"]][-1], "major", "main roads drawn last, over the rest")
-        inside = [p for _, pts in m["lines"] for p in pts if abs(p[0]) <= 800 and abs(p[1]) <= 800]
-        self.assertGreater(len(inside), 100, "the town is round the middle, in metres from it")
-        with self.assertRaises(ValueError):
-            P.read_map({"remark": "runtime error"}, 0, 0)
-
-    def test_the_query_asks_for_streets_and_water_round_it(self):
-        q = P.overpass_query(45.7975, 24.1520, 1.6, paths=False)
-        import re
-        s_, w_, n_, e_ = map(float, re.search(r"\[bbox:([^\]]+)\]", q).group(1).split(","))
-        self.assertAlmostEqual((n_ - s_) * 110.54, 1.6, places=2)          # 1.6 km north to south
-        self.assertAlmostEqual((e_ - w_) * 111.32 * math.cos(math.radians(45.7975)), 1.6, places=2)   # and east to west
-        self.assertNotIn("footway", q)
-        self.assertIn("footway", P.overpass_query(-13.1631, -72.545, 1.6, paths=True), "a wonder's paths are its streets")
-        self.assertIn('"natural"="water"', q)
-
 
 class Answers:
     """Every service's sample answer, by address; `fail` makes one answer 429."""
@@ -118,8 +96,6 @@ class Answers:
             return 200, sample("wikipedia_summary_ro.json" if url.startswith("https://ro.") else "wikipedia_summary_en.json"), {}
         if "wikidata.org" in url:
             return 200, sample("wikidata_labels.json" if "ids=Q184797" in url else "wikidata_entity.json"), {}
-        if "overpass" in url:
-            return 200, sample("overpass_sibiu.json"), {}
         return 404, "", {}
 
 
@@ -148,33 +124,31 @@ class TestAskedOnceADay(unittest.TestCase):
         self.assertEqual(got["population"], 134308)
         self.assertEqual(got["regions"]["de"], "Kreis Sibiu")
         self.assertIn("ro", got["summary"])
-        self.assertTrue(got["map"]["lines"])
-        asked = len(s.asked)
-        self.assertLessEqual(asked, 9, "one place a day is a handful of requests")
-        self.assertEqual(sum("overpass" in u for u in s.urls()), 1)
+        self.assertNotIn("map", got)
+        self.assertLessEqual(len(s.asked), 8, "one place a day is a handful of requests")
         self.assertTrue(all(h["User-Agent"].startswith("epaper-panel/") for *_, h in s.asked), "it names itself, as they ask")
         again = FakeSession(Answers())
         self.assertEqual(self.fetch(again)["population"], 134308)
         self.assertEqual(again.asked, [], "the day's place is on disk: nothing asked again, a restart included")
 
     def test_an_answer_in_pieces_is_read_whole(self):
-        # A network delivers a big answer (a town's streets) in pieces; reading only what had
-        # arrived made it "not in the form the add-on reads" on the first live try.
+        # A network delivers a big answer in pieces; reading only what had arrived made the
+        # first live try say "not in the form the add-on reads".
         s = FakeSession(Answers(), piece=1000)
         self.assertTrue(P.complete(self.fetch(s)))
 
     def test_a_failing_part_waits_and_the_rest_shows(self):
-        s = FakeSession(Answers(fail="overpass"))
+        s = FakeSession(Answers(fail="wikidata"))
         got = self.fetch(s)
-        self.assertIsNone(got["map"])
-        self.assertEqual(got["population"], 134308, "the facts came in all the same")
-        self.assertEqual(P.PACE_OSM.waiting(), 7200, "Retry-After honoured")
+        self.assertIsNone(got["population"])
+        self.assertTrue(got["summary"]["en"], "the description came in all the same")
+        self.assertEqual(P.PACE_DATA.waiting(), 7200, "Retry-After honoured")
         later = FakeSession(Answers())
         self.fetch(later)
-        self.assertFalse(any("overpass" in u for u in later.urls()), "not asked again while it waits")
+        self.assertFalse(any("wikidata" in u for u in later.urls()), "not asked again while it waits")
         self.clock += 7201
         self.assertTrue(P.complete(self.fetch(later)))
-        self.assertTrue(any(e["name"] == "OpenStreetMap" for e in health.status()))
+        self.assertTrue(any(e["name"] == "Wikidata" for e in health.status()))
 
     def test_nothing_fetched_still_shows_the_place(self):
         el, ctx = {"type": "place_of_day"}, widgets.Ctx(home_tz="Europe/Bucharest")
@@ -192,16 +166,14 @@ class TestAskedOnceADay(unittest.TestCase):
         self.assertEqual(got["id"], P.of_day(today)["id"])
         self.assertEqual(got["home_tz"], "Europe/Bucharest")
         with words.speaking("en"):
-            lines, _ = draw.plan(el, got, (24, 14, 744, 208))
+            lines = draw.plan(el, got, (24, 14, 744, 208))
         self.assertEqual(lines[0].text, P.of_day(today)["name"])
 
 
 class TestThePage(unittest.TestCase):
     def data(self):
         import examples
-        d = examples.place()
-        d["map"] = P.read_map(sample("overpass_sibiu.json"), 45.7975, 24.152)
-        return d
+        return examples.place()
 
     def boxes(self):
         base = arrange.canvas_key(792, 272)
@@ -218,30 +190,40 @@ class TestThePage(unittest.TestCase):
             for lang in words.LANGUAGES:
                 for asleep in (False, True):
                     with self.subTest(display=key, lang=lang, asleep=asleep), words.speaking(lang):
-                        lines, mbox = draw.plan({"asleep": asleep}, data, box)
+                        lines = draw.plan({"asleep": asleep}, data, box)
                         self.assertTrue(lines)
                         for ln in lines:
                             self.assertTrue(ln.fits(), (ln.text, ln.w))
                             self.assertGreaterEqual(ln.px, 12)
                             self.assertLessEqual(ln.x + ln.w, box[0] + box[2])
                             self.assertLessEqual(ln.y + ln.px, box[1] + box[3] + 4)
-                        if mbox:
-                            self.assertGreaterEqual(min(mbox[2], mbox[3]), draw.MAP_MIN * 0.8)
-                            self.assertLessEqual(mbox[0] + mbox[2], box[0] + box[2])
+                        texts = [ln.text for ln in lines]
+                        self.assertIn(words.say("place.local_time" if not asleep else "place.time_apart"), texts,
+                                      "the facts always fit")
+                        rows = sorted((ln.y, ln.y + ln.px, ln.x) for ln in lines)
+                        for (a0, a1, ax), (b0, b1, bx) in zip(rows, rows[1:]):
+                            if ax == bx:
+                                self.assertLessEqual(a1, b0 + 2, "lines in one column never overlap")
 
-    def test_a_small_box_leaves_the_map_out(self):
-        _, mbox = draw.plan({}, self.data(), (10, 10, 278, 78))
-        self.assertIsNone(mbox)
-        _, mbox = draw.plan({}, self.data(), (24, 14, 744, 208))
-        self.assertIsNotNone(mbox)
-        _, mbox = draw.plan({"show_map": False}, self.data(), (24, 14, 744, 208))
-        self.assertIsNone(mbox)
+    def test_the_room_goes_to_the_place(self):
+        # Wide: the place on the left, its description on the right in reading size; narrow: one column.
+        with words.speaking("en"):
+            wide = draw.plan({}, self.data(), (24, 14, 744, 208))
+            narrow = draw.plan({}, self.data(), (20, 14, 360, 240))
+            small = draw.plan({}, self.data(), (10, 10, 278, 78))
+        credit = words.WORDS["place.credit"]["en"]
+        desc = [ln for ln in wide if ln.x > 300 and ln.text != credit]
+        self.assertGreaterEqual(min(ln.px for ln in desc), 20, "a paragraph you can read across a room")
+        self.assertGreaterEqual(wide[0].px, 56, "the name large")
+        self.assertIn(credit, [ln.text for ln in wide], "Wikipedia credited under its words")
+        self.assertTrue(all(ln.x == 20 for ln in narrow[:-6]), "one column, the facts in a row at its foot")
+        self.assertNotIn(credit, [ln.text for ln in small], "no room for the description, so no credit")
 
     def test_names_and_facts_in_the_screens_language(self):
         data = {**self.data(), "names": {"de": "Hermannstadt"}, "regions": {"de": "Kreis Sibiu"}}
         now = datetime(2026, 10, 30, 12, 0, tzinfo=ZoneInfo("Europe/Bucharest"))
         with words.speaking("de"):
-            lines, _ = draw.plan({}, data, (24, 14, 744, 208), now=now)
+            lines = draw.plan({}, data, (24, 14, 744, 208), now=now)
             texts = [ln.text for ln in lines]
             self.assertEqual(texts[:2], ["Hermannstadt", "Kreis Sibiu, Rumänien"])
             self.assertIn("134.308", texts)
@@ -252,19 +234,19 @@ class TestThePage(unittest.TestCase):
         data = {**self.data(), "tz": "Asia/Tokyo"}
         now = datetime(2026, 10, 30, 12, 0, tzinfo=ZoneInfo("Europe/Bucharest"))
         with words.speaking("en"):
-            texts = [ln.text for ln in draw.plan({"asleep": True}, data, (24, 14, 744, 208), now=now)[0]]
+            texts = [ln.text for ln in draw.plan({"asleep": True}, data, (24, 14, 744, 208), now=now)]
         self.assertIn("+7 h", texts)
         self.assertNotIn("Local time", texts)
 
-    def test_the_map_carries_its_credits(self):
+    def test_it_draws_and_has_no_map(self):
         from PIL import Image, ImageDraw
+        import services
         img = Image.new("L", (800, 480), T.WHITE)
         with words.speaking("fr"):
             draw.draw(img, ImageDraw.Draw(img), (20, 14, 760, 420), {}, self.data())
-        self.assertLess(min(img.crop((440, 14, 780, 434)).tobytes()), 128, "a map was drawn")
-        for lang in words.LANGUAGES:
-            with words.speaking(lang):
-                self.assertIn("OpenStreetMap", words.say("place.credit_short"))
+        self.assertLess(min(img.tobytes()), 128)
+        self.assertNotIn("openstreetmap", services.BY_ID, "no map, so no map service")
+        self.assertNotIn("show_map", json.dumps(widgets.get("place_of_day").describe()))
 
     def test_the_widget_marks_itself_for_sleeping_devices(self):
         from render import clocktime

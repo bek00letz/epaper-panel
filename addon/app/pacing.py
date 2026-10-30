@@ -69,7 +69,7 @@ class Pace:
     forget = ok                        # a person's Try again: ask at once
 
 
-# How the add-on names itself to the free services that ask for it (OpenStreetMap, Wikimedia): a
+# How the add-on names itself to the free services that ask for it (Wikimedia does): a
 # stable name and where to find who runs it, never a browser's or a library's default.
 def user_agent() -> str:
     import config
