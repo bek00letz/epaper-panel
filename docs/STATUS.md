@@ -1,7 +1,7 @@
 # Status
 
 The one place the project's state lives. The coordinator updates it after
-every release and every finished piece of work. Last updated 29 Oct 2026.
+every release and every finished piece of work. Last updated 30 Oct 2026.
 Where we're going and why: [ROADMAP.md](ROADMAP.md).
 
 ## Released
@@ -11,6 +11,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Version | Date | What |
 |---|---|---|
+| 0.22.2 | 30 Oct | Two Planes pages at Home with different distances no longer stop every device rendering: a place is where it is, its sensors count out to the largest distance and each page keeps its own; the page's buttons wrap in a narrow inspector. Add-on only. |
 | 0.22.1 | 29 Oct | Sleeping panels no longer stack their pages: the first refresh after a wake drives every pixel, still without a flash (every CrowPanel size). **Firmware change**. Seen on the 5.79" (29 Oct, 4–5 rotations asleep): no stacking, only faint ghosting. |
 | 0.22.0 | 28 Oct | Share a page as a file (nothing private in it, opens in New page with your own sensors); the screen's words in English, Romanian, Spanish, German and French, per device ("Same as Home Assistant" by default); no key to paste: Home Assistant sets the panel's key, updates keep their own key. **Firmware change**; needs Home Assistant 2026.8. |
 | 0.21.2 | 26 Oct | Race pages name their session in the badge ("QUALIFYING · LIVE") for every series, show only that session's order, and move on to the next session's time after the page's Hours after; no made-up tyres; the race sensor says "Race", not "gp". Add-on only. |
@@ -37,7 +38,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Work | Where | State |
 |---|---|---|
-| Nothing in flight | | |
+| The Seeed XIAO 7.5" (ESP32-C3) on our own firmware | worker xiao-c3-board, branch `xiao-c3-board` (e682fb3) | Built and compiled, untried on the panel. Next: measure it on TRMNL's firmware, then flash ours and measure again. |
 
 Worker notes are in the notes folders (`break-it-0.12.0.md`,
 `timers-addon.md`, `firmware-013.md`, `fixes-0131.md`, `editor-polish.md`,
@@ -174,7 +175,7 @@ browser setup's open question), suspend_loop / loop_interval (#18136, power),
 and ESPHome's own epaper_spi driver (could replace the unlicensed ESPBoards
 driver where it supports our controllers).
 
-**Waiting on hardware:** a Seeed 7.5" (TRMNL firmware; on its way, 26 Oct);
+**Arrived:** the Seeed XIAO 7.5" (30 Oct). On TRMNL's firmware it paired with the add-on at the first try (reports `seeed_esp32c3`, 800 × 480); asleep on USB with its battery switched off it draws about 0.58 mA. **Waiting on hardware:**
 a TRMNL (pairing, pictures, HTTPS, battery); a
 second CrowPanel side by side; a 4.2" or 2.9" CrowPanel (they build, untried;
 the 4.2"'s UC8276 revision isn't supported); a battery reading on a CrowPanel
