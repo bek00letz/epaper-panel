@@ -144,7 +144,7 @@ the add-on itself lives in `addon/`.
 |---|---|
 | HA Sidebar (`:8080` via Ingress) | Drag-and-drop visual editor and JSON API. Answers only Home Assistant's Ingress proxy (`172.30.32.2`); any other app on the internal network gets 403 |
 | `<homeassistant>:8099` | The device port: what each device fetches, found by its key (`kinds.device_for`). For a CrowPanel: `/frames.epf` (`?cap=`, and from firmware that can sleep `wake=` and `awake_ms=`; while it sleeps between updates every answer has `X-EPF-Sleep`; always on, `X-EPF-Next`), `/frame.epf`, the PNG fallbacks, and a minimal `/status`. `POST /api/action/refresh|page` always need a key. The first panel's frames need it once that panel has used it (`frame_token.py`). Remappable in the add-on's network settings |
-| `<homeassistant>:8099` for a TRMNL | Only while the add-on option `trmnl` is on: `GET /api/setup` (pairing, only in the editor's ten-minute window), `GET /api/display` (one wake), `POST /api/log`, `GET /api/image/<hash>`. All but setup need its key in `Access-Token` |
+| `<homeassistant>:8099` for a TRMNL | Always (no option since 0.23.3): `GET /api/setup` (pairing, only in the editor's ten-minute window), `GET /api/display` (one wake), `POST /api/log`, `GET /api/image/<hash>`. All but setup need its key in `Access-Token` |
 | `<homeassistant>:8099` for an AI usage reporter | `POST /api/usage/pair` (only in the editor's ten-minute window, with its one-time code) and `POST /api/usage` (a report, its key in `X-EPF-Key`). A reporter's key sends usage and nothing else (`reporters.py`, docs/ai-usage.md) |
 | ESPHome node (`crowpanel-epaper`) | Exposes `refresh_now`, `show_page`, `page_step`, and `hold_toggle` actions over the encrypted ESPHome native API |
 

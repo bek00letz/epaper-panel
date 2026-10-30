@@ -281,9 +281,6 @@ export function openAddScreen(app) {
           choice("same", "Same pages as another device", "Edits show on both. Each device keeps its own layout.", st.pages === "same" ? fromSel() : null)),
         qh?.enabled ? group(grow(`Same quiet hours as ${st.pages === "new" ? (app.screen || src).name : src.name}`, `${qh.start} to ${qh.end}. Change them any time.`,
           toggle(st.quiet, (v) => { st.quiet = v; }, "Same quiet hours"))) : "",
-        // While TRMNL devices are off nothing of them exists here (kinds.py), so say where they're turned on.
-        kinds.some((k) => k.setup === "pair") ? null
-          : h("p", { class: "fnote", text: "Have a TRMNL, or a device running its firmware? Turn on TRMNL devices in the add-on's Configuration tab, then restart the add-on." }),
         err);
     }
     async function submit() {

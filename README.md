@@ -140,8 +140,10 @@ wakes on a timer or when you press its button, fetches one picture and sleeps
 again. Its own firmware can use a server of your choosing, and this add-on can
 be that server, so you design its pages in the same editor.
 
-1. Turn on **TRMNL devices** in the add-on's **Configuration** tab and restart
-   the add-on. While it's off, nothing of it exists.
+1. A device that isn't a TRMNL but is made to run its firmware, like Seeed's
+   XIAO 7.5" ePaper Panel or a DIY kit, needs that firmware flashed once:
+   in Chrome or Edge, open [usetrmnl.com/flash](https://usetrmnl.com/flash),
+   pick its model and choose **Erase flash + flash**. A TRMNL comes with it.
 2. In the editor, **Add new device…**, pick **TRMNL**, name it and choose its
    pages. **Add and pair** listens for it for ten minutes.
 3. On the TRMNL's Wi-Fi setup page, under **Advanced**, enter the address the

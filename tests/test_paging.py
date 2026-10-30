@@ -423,8 +423,6 @@ class TestTrmnlAwakeTime(unittest.IsolatedAsyncioTestCase):
         support.fresh_data_dir()
         kinds.WRONG_KEYS = kinds.WrongKeys()
         trmnl._PAIRING.clear()
-        self._on = config.TRMNL
-        config.TRMNL = True
         self.dev = devices.add("trmnl", "Desk", "trmnl_og")
         panel, editor = web.make_apps()
         self.lan = TestClient(TestServer(panel))
@@ -438,7 +436,6 @@ class TestTrmnlAwakeTime(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.lan.close()
         await self.ed.close()
-        config.TRMNL = self._on
         trmnl._PAIRING.clear()
         support.use_test_data_dir()
 

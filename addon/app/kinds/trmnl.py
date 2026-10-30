@@ -25,7 +25,6 @@ button wake goes to the next page). This file is only the protocol. It can't
 be woken early: alerts show at its next wake. Pairing happens only inside the
 10-minute window "Add new device" opens in the editor.
 
-Off unless the add-on option `trmnl` turns it on (config.TRMNL).
 """
 from __future__ import annotations
 
@@ -39,7 +38,6 @@ from datetime import datetime
 
 from aiohttp import web
 
-import config
 import devices
 import frames
 import health
@@ -80,9 +78,6 @@ class Trmnl(Kind):
     stays_on = False                    # it always sleeps between updates
     shortest_update = 5                 # its firmware's floor: it wakes no more often than this
     shortest_sleep = 60                 # refresh_rate under 60 isn't kept (TRMNL gotchas in AGENTS.md)
-
-    def enabled(self) -> bool:
-        return config.TRMNL
 
     def displays(self) -> list[str]:
         own = [k for k, d in T.DISPLAYS.items() if d.get("kind") == self.id]

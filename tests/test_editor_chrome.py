@@ -278,8 +278,3 @@ class TestTrmnlFirmwareFirst(unittest.TestCase):
         self.assertIn('href: "https://usetrmnl.com/flash"', src)
         self.assertIn("Erase flash + flash", src)
         self.assertLess(src.index("flashFirst(),"), src.index("Open your TRMNL's Wi-Fi setup."))
-
-    def test_add_new_device_says_where_trmnl_is_turned_on_only_while_its_off(self):
-        src = js("sheets.js")
-        self.assertIn('kinds.some((k) => k.setup === "pair") ? null', src)
-        self.assertIn("Turn on TRMNL devices in the add-on's Configuration tab, then restart the add-on.", src)

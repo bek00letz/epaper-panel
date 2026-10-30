@@ -5,8 +5,10 @@
 - **Pairing a TRMNL says how to flash its firmware first.** A TRMNL comes
   with it; a device made to run it, like Seeed's XIAO 7.5" ePaper Panel or
   a DIY kit, needs it once. Pair your TRMNL now has the steps, folded away
-  under "Not running TRMNL's firmware yet?". And while TRMNL devices are
-  turned off, Add new device says where to turn them on.
+  under "Not running TRMNL's firmware yet?".
+- **TRMNL devices are always there**, in Add new device: no option to turn
+  on in the add-on's Configuration tab, and no restart. What keeps others
+  out is the ten-minute pairing window you open and each device's own key.
 
 ## 0.23.2
 The moving window. **Firmware change**: install a panel again (Send to

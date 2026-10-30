@@ -8,8 +8,6 @@ bashio::config.has_value 'jellyfin_key'   && export JELLYFIN_KEY="$(bashio::conf
 bashio::config.has_value 'esphome_device' && export ESPHOME_DEVICE="$(bashio::config 'esphome_device')" || true
 bashio::config.has_value 'frame_token'    && export FRAME_TOKEN="$(bashio::config 'frame_token')"       || true
 export REFRESH_SECONDS="$(bashio::config 'refresh_seconds')"
-# TRMNL screens (kinds/trmnl.py): their routes exist only while this is on.
-bashio::config.true 'trmnl' && export TRMNL="true" || true
 export HA_BASE="http://supervisor/core"
 export HA_TOKEN="${SUPERVISOR_TOKEN}"
 export DATA_DIR="/data"

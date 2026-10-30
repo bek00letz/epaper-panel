@@ -66,8 +66,6 @@ class TestARequestNeverDraws(unittest.IsolatedAsyncioTestCase):
         support.fresh_data_dir()
         kinds.WRONG_KEYS = kinds.WrongKeys()
         trmnl._PAIRING.clear()
-        self._on = config.TRMNL
-        config.TRMNL = True
         # Device 1 stays connected (as every install's first panel), a second CrowPanel sleeps
         # between updates, and a TRMNL is paired. Several pages, so wakes move through them.
         self.hall = devices.add("crowpanel", "Hall", "crowpanel_579", copy_from="1", update_minutes=15)
@@ -85,7 +83,6 @@ class TestARequestNeverDraws(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.lan.close()
         await self.ed.close()
-        config.TRMNL = self._on
         trmnl._PAIRING.clear()
         kinds.WRONG_KEYS = kinds.WrongKeys()
         support.use_test_data_dir()

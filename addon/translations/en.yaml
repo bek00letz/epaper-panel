@@ -1,6 +1,0 @@
-configuration:
-  trmnl:
-    name: TRMNL devices
-    description: >-
-      Lets TRMNL devices pair with this add-on (in the editor, Add new device).
-      While it's off, nothing of it exists on the add-on's port or in the editor.

@@ -90,8 +90,6 @@ class TrmnlBase(unittest.IsolatedAsyncioTestCase):
         support.fresh_data_dir()
         kinds.WRONG_KEYS = kinds.WrongKeys()
         trmnl._PAIRING.clear()
-        self._on = config.TRMNL
-        config.TRMNL = True
         await frames.refresh_frames(None)
         panel, editor = web.make_apps()
         self.lan = TestClient(TestServer(panel))
@@ -102,7 +100,6 @@ class TrmnlBase(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.lan.close()
         await self.ed.close()
-        config.TRMNL = self._on
         trmnl._PAIRING.clear()
         kinds.WRONG_KEYS = kinds.WrongKeys()
         support.use_test_data_dir()
@@ -133,45 +130,31 @@ class TrmnlBase(unittest.IsolatedAsyncioTestCase):
         return await r.read()
 
 
-class TestOffByDefault(unittest.IsolatedAsyncioTestCase):
+class TestAlwaysOffered(unittest.IsolatedAsyncioTestCase):
+    """TRMNL devices are always there: no add-on option to turn on, no restart. What keeps
+    strangers out is the ten-minute pairing window and each device's own key, not hiding it
+    (the user's call, 30 Oct)."""
+
     async def asyncSetUp(self):
         support.fresh_data_dir()
-        self._on = config.TRMNL
 
     async def asyncTearDown(self):
-        config.TRMNL = self._on
         support.use_test_data_dir()
 
-    async def test_the_option_starts_off(self):
-        with mock.patch.dict("os.environ", {}, clear=False):
-            import importlib
-            import os
-            os.environ.pop("TRMNL", None)
-            self.assertFalse(importlib.reload(config).TRMNL)
-            os.environ["TRMNL"] = "true"
-            self.assertTrue(importlib.reload(config).TRMNL)
-            os.environ.pop("TRMNL", None)
-            importlib.reload(config)
-        support.use_test_data_dir()
-
-    async def test_off_its_routes_do_not_exist_and_the_editor_shows_nothing(self):
-        config.TRMNL = True
-        devices.add("trmnl", "Desk", "trmnl_og")              # paired while it was on
-        config.TRMNL = False
+    async def test_add_new_device_offers_it_and_its_routes_answer(self):
         await frames.refresh_frames(None)
         panel, editor = web.make_apps()
         async with TestClient(TestServer(panel)) as lan, TestClient(TestServer(editor)) as ed:
-            self.assertEqual((await lan.get("/api/setup", headers=setup_headers())).status, 404)
-            self.assertEqual((await lan.get("/api/display", headers=display_headers("x"))).status, 404)
             body = await (await ed.get("/api/devices")).json()
-            self.assertEqual([k["id"] for k in body["kinds"]], ["crowpanel"])
-            self.assertEqual([d["kind"] for d in body["devices"]], ["crowpanel"])
-            self.assertNotIn("trmnl_og", body["displays"])
-            self.assertEqual((await ed.post("/api/devices", json={"kind": "trmnl", "name": "Two",
-                                                                   "display": "trmnl_og"})).status, 400)
-            self.assertEqual((await ed.post("/api/devices/2/pair")).status, 404)
-            self.assertNotIn("trmnl_og", [d["id"] for d in (await (await ed.get("/api/displays")).json())["displays"]])
-        self.assertNotIn("2", [d for d in runtime._DEVICES], "a switched-off kind isn't drawn")
+            self.assertEqual([k["id"] for k in body["kinds"]], ["crowpanel", "trmnl"])
+            r = await lan.get("/api/setup", headers=setup_headers())
+            self.assertEqual(r.status, 200, "its routes exist; outside a pairing window it's told what to do")
+            self.assertNotIn("api_key", firmware_reads_setup(await r.json()))
+
+    def test_there_is_no_option_for_it(self):
+        text = (support.APP.parent / "config.yaml").read_text()
+        self.assertNotIn("trmnl", text)
+        self.assertNotIn("TRMNL", (support.APP.parent / "run.sh").read_text())
 
 
 class TestPairing(TrmnlBase):

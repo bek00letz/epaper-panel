@@ -173,7 +173,8 @@ every design.
   its wake interval, and the rotation time it kept with its pages is its own.
   They're never written or removed, so going back to 0.12 finds them as they
   were.
-- **A kind can be optional.** `Kind.enabled()` is its add-on option. While
+- **A kind can be optional.** `Kind.enabled()` says whether it's on (no kind uses this since 0.23.3: TRMNL
+  is always on). While
   it's off its routes aren't added (`web.make_apps`), its devices aren't drawn,
   and the editor lists none of them or their sizes (`kinds.shown`,
   `kinds.shown_devices`). They stay in `devices.json` for when it's on again.
@@ -694,8 +695,7 @@ only its protocol (how a wake asks, how the answer is said).
 
 ## TRMNL
 
-`kinds/trmnl.py`, off unless the add-on option `trmnl` is on
-(`config.TRMNL`). A TRMNL deep-sleeps, wakes on a timer or its button, asks
+`kinds/trmnl.py`, always on (an add-on option turned it on until 0.23.3). A TRMNL deep-sleeps, wakes on a timer or its button, asks
 for one picture and sleeps again. It speaks TRMNL's "bring your own server"
 protocol; everything here comes from its open-source firmware
 (`usetrmnl/firmware`, commit `383d6ff`), and `tests/test_trmnl.py` builds its
