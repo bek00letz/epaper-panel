@@ -11,6 +11,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Version | Date | What |
 |---|---|---|
+| 0.23.3 | 30 Oct | TRMNL devices always on (the add-on option is gone; the Supervisor ignores a saved one); Pair your TRMNL says how to flash its firmware first. Add-on only. The Seeed seen working always on with 0.23.1 (the user, 30 Oct). |
 | 0.23.2 | 30 Oct | The moving window: a rotation bigger than a panel's memory holds the pages around the one on screen and refills ahead, scrolling past it fetches once, a page too big holds a run of its items; nothing dropped. Old firmware keeps trimming. **Firmware change** (optional; panels not installed again work as before). Untried on hardware at release. |
 | 0.23.1 | 30 Oct | The Seeed XIAO 7.5" always on: one fit rule in compressed bytes (a device with room for one page gets one), pages deflated in the frame file and inflated on the panel, so its whole rotation fits and a BILRESA can scroll it. The Kind is "Our firmware". **Firmware change** (needed for the Seeed; optional for a CrowPanel). Untried on hardware at release. |
 | 0.23.0 | 30 Oct | Eight new pages (year grid, commute, departures, mail, stocks and coins, place of the day, follow a flight, AI usage with a reporter for Mac, Linux and Windows) and the Seeed XIAO 7.5" as an ESPHome device with partial refresh. **Firmware change for the Seeed only.** All untried on real Home Assistant and hardware at release. |
