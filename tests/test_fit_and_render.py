@@ -21,6 +21,7 @@ import feeds  # noqa: E402
 import frames  # noqa: E402
 import runtime  # noqa: E402
 import web  # noqa: E402
+import window  # noqa: E402
 from layouts_store import load_layouts, sanitize_layouts, save_layouts  # noqa: E402
 from render import epf, subitems  # noqa: E402
 from sources import sports  # noqa: E402
@@ -323,6 +324,163 @@ class TestAPanelWithoutPsram(Base):
             r = await c.get("/frames.epf", params=q)
         self.assertEqual(r.status, 503)
         self.assertEqual(runtime.panel_capacity(dev["id"]), XIAO_83)
+
+
+class TestMovingWindow(Base):
+    """Firmware that says window=1 (0.24) holds the part of its rotation around the page it shows
+    when the whole rotation doesn't fit, and is handed the rest as it goes (window.py; the user's
+    call, 30 Oct). Older firmware keeps today's trimming."""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.spec = sanitize_layouts(load_layouts())
+        self.spec["rotation"] = self.spec["rotation"][:2] * 3          # six pages of one item
+        save_layouts(self.spec)
+
+    async def render(self, capacity, window=True, inflates=False):
+        dev = devices.add("crowpanel", "Hall", "seeed_xiao_750", copy_from=self.dev_id)
+        devices.set_state(dev["id"], window=window, inflates=inflates)
+        runtime.set_panel_capacity(dev["id"], capacity)
+        async with aiohttp.ClientSession() as s:
+            await frames.refresh_frames(s)
+        return dev, runtime.device(dev["id"]).frames
+
+    THREE = epf.encoded_size(4, 4, PAGE_750)        # the sleep screen and three pages as they are
+
+    async def test_everything_fits_so_the_whole_rotation_as_before(self):
+        dev, f = await self.render(1 << 20)
+        self.assertIsNone(f.window, "no window while the rotation fits")
+        got = epf.decode_epf(f.epf_strip)
+        self.assertEqual(f.names, [config.SLEEP_PAGE] + self.spec["rotation"])
+        self.assertTrue(all(c.place == 0 and not c.flags & epf.CAT_FLAG_AT for c in got.categories),
+                        "the file a panel always had: no places, nothing for the firmware to move")
+        runtime.device(dev["id"]).frames = runtime.Frames()
+        devices.set_state(dev["id"], window=False)
+        async with aiohttp.ClientSession() as s:
+            await frames.refresh_frames(s)
+        old = epf.decode_epf(runtime.device(dev["id"]).frames.epf_strip)
+        self.assertEqual([(c.cat_id, c.page_count, c.flags) for c in old.categories],
+                         [(c.cat_id, c.page_count, c.flags) for c in got.categories], "the same as older firmware's")
+        _, editor = web.make_apps()
+        async with TestClient(TestServer(editor)) as c:
+            status = await (await c.get("/api/status", params={"device": dev["id"]})).json()
+        self.assertIsNone(status["window"])
+
+    async def test_more_than_fits_moves_a_window(self):
+        dev, f = await self.render(self.THREE)
+        self.assertIsNotNone(f.window)
+        self.assertIsNone(f.error)
+        self.assertEqual(f.names, [config.SLEEP_PAGE] + self.spec["rotation"], "every page, none left out")
+        self.assertLessEqual(len(f.epf_strip), self.THREE)
+        for at in range(6):
+            body, _ = f.window.file(at, 0)
+            self.assertLessEqual(len(body), self.THREE, at)
+            got = epf.decode_epf(body)
+            pages = [c for c in got.categories if not c.flags & epf.CAT_FLAG_SLEEP]
+            self.assertEqual([c.rot_pos for c in pages], [(at - 1) % 6, at, (at + 1) % 6],
+                             "the one before, the one it shows, the next, in rotation order")
+            self.assertEqual({c.rot_len for c in pages}, {6})
+            self.assertEqual([bool(c.flags & epf.CAT_FLAG_AT) for c in pages], [False, True, False])
+            self.assertTrue(got.categories[0].flags & epf.CAT_FLAG_SLEEP, "the sleep screen still goes first")
+        self.assertEqual(runtime.device(dev["id"]).fit["window"], {"holds": 3, "of": 6})
+        self.assertEqual(runtime.device(dev["id"]).fit["trimmed"], [], "nothing left out")
+
+    async def test_a_scroll_past_the_window_is_one_download_with_the_window_around_it(self):
+        dev, f = await self.render(self.THREE)
+        panel, _ = web.make_apps()
+        q = {"token": devices.key_of(devices.get(dev["id"])), "cap": str(self.THREE), "window": "1"}
+
+        async def never(*a, **k):
+            raise AssertionError("a download drew a page")
+        with unittest.mock.patch.object(frames, "draw_category", never):
+            async with TestClient(TestServer(panel)) as c:
+                r = await c.get("/frames.epf", params={**q, "at": "4", "item": "0"})
+                body = await r.read()
+                self.assertEqual(r.status, 200)
+                again = await c.get("/frames.epf", params={**q, "at": "4", "item": "0"},
+                                    headers={"If-None-Match": r.headers["ETag"]})
+                self.assertEqual(again.status, 304, "the same place, the same window")
+                shown = await (await c.get("/frames.epf", params={**q, "page": "1", "at": "4"})).read()
+        got = epf.decode_epf(body)
+        at = [c for c in got.categories if c.flags & epf.CAT_FLAG_AT]
+        self.assertEqual([c.rot_pos for c in at], [4], "the page it asked for")
+        self.assertIn(3, [c.rot_pos for c in got.categories if c.place], "with the one before, to scroll back")
+        self.assertEqual([c.rot_pos for c in epf.decode_epf(shown).categories if c.flags & epf.CAT_FLAG_AT], [1],
+                         "Home Assistant's show_page counts every page of the rotation")
+
+    def window(self, wants, room, sleep=True):
+        page = 1000
+        pages = [[bytes([i, k]) * (page // 2) for k in range(n)] for i, n in enumerate(wants)]
+        return window.Window(pages, [100 + i for i in range(len(wants))],
+                             [[1000 * (i + 1) + k for k in range(n)] for i, n in enumerate(wants)], [0] * len(wants),
+                             epf.file_size(room + sleep, [page] * (room + sleep)),
+                             window.Sleep(b"\xff" * page, 9, 90, epf.CAT_FLAG_SLEEP) if sleep else None,
+                             dict(display_model="crowpanel_290", width=page * 8, height=1))
+
+    def test_a_page_too_big_to_hold_is_a_run_of_its_items(self):
+        w = self.window([1, 9, 1], 4)
+        got = epf.decode_epf(w.file(1, 3)[0])
+        self.assertEqual(len(got.categories), 2, "the sleep screen and the run, nothing else")
+        run = got.categories[1]
+        self.assertEqual(run.flags, epf.CAT_FLAG_AT | epf.CAT_FLAG_PART)
+        self.assertEqual([p.sub_index for p in got.pages[1:]], [3, 4, 5, 6], "from the item it shows next")
+        self.assertEqual([p.sub_id for p in got.pages[1:]], [2003, 2004, 2005, 2006], "each item its own identity")
+        tail = epf.decode_epf(w.file(1, 7)[0])
+        self.assertEqual([p.sub_index for p in tail.pages[1:]], [7, 8, 0, 1], "the last ones, then round to the first")
+        whole = epf.decode_epf(w.file(0, 0)[0])
+        self.assertEqual([c.rot_pos for c in whole.categories[1:]], [2, 0], "a page too big is left out of a "
+                         "window ahead, and the window stops there")
+
+    def test_nothing_is_ever_dropped(self):
+        for wants, room in (([1] * 9, 4), ([1, 3, 1, 9, 1, 2], 5), ([2, 2], 3), ([5], 2)):
+            w = self.window(wants, room)
+            for at, n in enumerate(wants):
+                for item in range(n):
+                    got = epf.decode_epf(w.file(at, item)[0])
+                    held = {(c.rot_pos, p.sub_index) for c in got.categories if c.place
+                            for p in got.pages[c.offset_page:c.offset_page + c.page_count]}
+                    self.assertIn((at, item), held, f"{wants} at {at} item {item}: the page it asked for")
+                    self.assertLessEqual(len(w.file(at, item)[0]), w.capacity)
+
+    def test_the_window_is_the_fit_rule_in_the_files_own_bytes(self):
+        w = self.window([1, 2, 1, 3, 1], 4)
+        for at in range(5):
+            body = w.file(at, 0)[0]
+            got = epf.decode_epf(body)
+            self.assertEqual(len(body), epf.file_size(got.header.cat_count, [n for _, n in got.spans]))
+            self.assertLessEqual(len(body), w.capacity)
+        everything = frames.fit_window([1, 2, 1], 0, 0, 1 << 20, 10, lambda i, k: 10)
+        self.assertEqual(everything.counts, frames.fit([1, 2, 1], 10, 1 << 20).counts, "room for all: all")
+        self.assertEqual(frames.window_order(5, 0), [0, 1, 4, 2, 3])
+
+    async def test_older_firmware_still_gets_trimming(self):
+        dev, f = await self.render(self.THREE, window=False)
+        self.assertIsNone(f.window)
+        self.assertEqual(f.names, [config.SLEEP_PAGE] + self.spec["rotation"][:3], "the last pages left out, as before")
+        self.assertTrue(all(c.place == 0 for c in epf.decode_epf(f.epf_strip).categories))
+        self.assertNotIn("window", runtime.device(dev["id"]).fit)
+
+    async def test_its_firmware_says_whether_it_moves_a_window(self):
+        dev, _ = await self.render(self.THREE, window=False)
+        panel, _ = web.make_apps()
+        q = {"token": devices.key_of(devices.get(dev["id"])), "cap": str(self.THREE)}
+        async with TestClient(TestServer(panel)) as c:
+            await c.get("/frames.epf", params={**q, "window": "1"})
+            self.assertTrue(devices.state(dev["id"]).get("window"))
+            await c.get("/frames.epf", params=q)                  # the way back: trimmed again
+            self.assertFalse(devices.state(dev["id"]).get("window"))
+
+    async def test_the_status_says_it_calmly(self):
+        dev, f = await self.render(self.THREE)
+        _, editor = web.make_apps()
+        async with TestClient(TestServer(editor)) as c:
+            got = await (await c.get("/api/status", params={"device": dev["id"]})).json()
+        self.assertEqual(got["window"], {"holds": 3, "of": 6})
+        self.assertIsNone(got["error"])
+        self.assertIsNone(got["no_room"])
+        self.assertIsNone(got["fit"], "nothing left out, so nothing for a page's tile to say")
+        js = (Path(__file__).resolve().parents[1] / "addon" / "app" / "web" / "app" / "sheets.js").read_text()
+        self.assertIn("Holds ${s.window.holds} of ${s.window.of} pages; the rest arrive as it goes.", js)
 
 
 class TestPushPolicy(Base):

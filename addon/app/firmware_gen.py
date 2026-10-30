@@ -168,9 +168,16 @@ def drive_every_pixel(disp: dict) -> str:
 DEFLATE_FRAMES = True
 
 
+# A rotation too big for the panel's memory moves through it as a window: the panel holds the
+# pages around the one it shows and the add-on hands it the next ones as it goes (window.py,
+# 30 Oct). False is the way back: the add-on trims the rotation to fit, as before.
+MOVING_WINDOW = True
+
+
 def epf_options() -> str:
-    """What follows `epf:` in the firmware: nothing while it inflates (the component's default)."""
-    return "" if DEFLATE_FRAMES else "\n  deflate: false"
+    """What follows `epf:` in the firmware: nothing with the component's defaults (it inflates
+    and moves a window), else the way back that's switched on."""
+    return ("" if DEFLATE_FRAMES else "\n  deflate: false") + ("" if MOVING_WINDOW else "\n  window: false")
 
 
 # Partial refresh on a screen whose profile keeps a full-refresh way back ("full_only":

@@ -42,6 +42,10 @@ constexpr uint32_t FLAG_DEFLATE = 0x0020;
 
 constexpr uint16_t CAT_FLAG_SLEEP = 0x0001;       // category 0 is the sleep screen
 constexpr uint16_t CAT_FLAG_SLEEP_AUTO = 0x0002;  // ...and quiet hours want the panel asleep
+// A moving window (PanelController, "The moving window"): the page the panel asked for, shown
+// from its first item, and a page held as a run of its items rather than all of them.
+constexpr uint16_t CAT_FLAG_AT = 0x0004;
+constexpr uint16_t CAT_FLAG_PART = 0x0008;
 constexpr int SLEEP_RETURN_SEC = 120;             // quiet hours: back to sleep after this long untouched
 
 enum class FetchResult : uint8_t {
@@ -90,6 +94,11 @@ struct Geometry {
 struct Category {
   uint32_t cat_id{0};
   uint16_t offset_page{0}, page_count{0}, pill_width{0}, flags{0};
+  // In a moving window, where the page sits in the whole rotation: its position (high 16 bits)
+  // and the rotation's length (low 16). 0 in a file that is the whole rotation.
+  uint32_t place{0};
+  int rot_pos() const { return (int) (place >> 16); }
+  int rot_len() const { return (int) (place & 0xFFFF); }
 };
 
 struct Page {
@@ -176,10 +185,17 @@ inline FetchResult parse_stream(const uint8_t *buf, size_t len, int native_w, in
   Stream s;
   s.header = h;
   const uint8_t *cp = buf + h.dir_offset;
+  int ring = -1;                            // a moving window's rotation length, the same in every page's record
   for (uint16_t c = 0; c < h.cat_count; c++, cp += CAT_RECORD_SIZE) {
-    Category rec{be32(cp), be16(cp + 4), be16(cp + 6), be16(cp + 8), be16(cp + 10)};
+    Category rec{be32(cp), be16(cp + 4), be16(cp + 6), be16(cp + 8), be16(cp + 10), be32(cp + 12)};
     if (rec.page_count == 0 || (uint32_t) rec.offset_page + rec.page_count > h.page_count)
       return FetchResult::ERROR_LAYOUT;
+    if (!(rec.flags & CAT_FLAG_SLEEP)) {
+      if (ring < 0) ring = rec.rot_len();
+      if (rec.rot_len() != ring || (ring > 0 && rec.rot_pos() >= ring)) return FetchResult::ERROR_LAYOUT;
+    } else if (rec.place) {
+      return FetchResult::ERROR_LAYOUT;     // the sleep screen isn't in the rotation
+    }
     s.categories.push_back(rec);
   }
   const uint8_t *pp = cp;
@@ -492,6 +508,19 @@ inline const char *nav_name(NavAction a) {
 // ---------------------------------------------------------------------------
 // Navigation: which page is shown, locks, auto-rotation. One state machine for
 // the dial, the buttons, remotes and Home Assistant actions.
+//
+// The moving window. A panel whose whole rotation doesn't fit its memory holds
+// the part around the page it shows (the add-on's window.py): that page, the
+// next ones and the one before. Each category record says where its page sits in
+// the whole rotation (Category::place), so stepping goes by those places. A step
+// to a page it doesn't hold asks for it (window_query: at=, item=, or page= for
+// Home Assistant's show_page) and shows it when it arrives, with the window
+// around it again (CAT_FLAG_AT marks it). Once fewer than half the pages it holds
+// are ahead, it asks for the next part straight away, long before the rotation
+// gets there. A page too big to hold alone is a run of its items (CAT_FLAG_PART),
+// and the items past the run are asked for the same way. Every download says
+// where the panel is, so a timed download is a refill too. A file without places
+// is the whole rotation, and everything works as it always did.
 class PanelController {
  public:
   static PanelController &instance() {
@@ -539,6 +568,7 @@ class PanelController {
       case NavAction::CLEAR_GHOSTING: redraw_forced_ = true; pending_redraw_ = true; break;
       default: break;
     }
+    after_move_();
   }
 
  public:
@@ -606,35 +636,50 @@ class PanelController {
     touch_();
     int cats = cats_();
     if (cat_idx_ >= cats) cat_idx_ = 0;
-    if (sub_mode_ && size_(cat_idx_) > 1) {
-      int sz = size_(cat_idx_);
-      sub_idx_ = ((sub_idx_ + delta) % sz + sz) % sz;
-      remember_sub_(cat_idx_, sz);
-      go_(cat_idx_, sub_idx_);
-      ESP_LOGI(TAG, "Nav (sub): cat=%d/%d sub=%d/%d (page=%d/%d)", cat_idx_ + 1, cats, sub_idx_ + 1, sz, page_ + 1, page_count_);
+    if (sub_mode_ && has_items_(cat_idx_)) {
+      if (!item_step_(delta)) return;
+      ESP_LOGI(TAG, "Nav (sub): cat=%d/%d sub=%d/%d (page=%d/%d)", cat_idx_ + 1, cats, sub_idx_ + 1, size_(cat_idx_), page_ + 1, page_count_);
     } else {
-      enter_category_(step_category_(cat_idx_, delta));
+      int c = step_category_(cat_idx_, delta);
+      if (c < 0 || !enter_category_(c)) return;   // not held: asked for, shown when it arrives
       ESP_LOGI(TAG, "Nav (cat): cat=%d/%d sub=%d/%d (page=%d/%d)", cat_idx_ + 1, cats, sub_idx_ + 1, size_(cat_idx_), page_ + 1, page_count_);
     }
   }
 
   void category_step_(int delta) {
     touch_();
-    enter_category_(step_category_(cat_idx_, delta));
+    int c = step_category_(cat_idx_, delta);
+    if (c >= 0) enter_category_(c);
   }
 
   void sub_step_(int delta) {
     touch_();
+    if (has_items_(cat_idx_)) item_step_(delta);
+  }
+
+  // Through the shown page's items: round and round a page held whole; past either end of a
+  // run (a page too big to hold alone), by asking for the items beyond it. False when it asked.
+  bool item_step_(int delta) {
     int sz = size_(cat_idx_);
-    if (sz <= 1) return;
-    sub_idx_ = ((sub_idx_ + delta) % sz + sz) % sz;
+    if (part_of_(cat_idx_)) {
+      long long to = (long long) sub_idx_ + delta;
+      if (to < 0 || to >= sz) {
+        long long item = (long long) item_at_(cat_idx_, sub_idx_) + delta;   // the add-on goes round its items
+        ask_(pos_of_(cat_idx_), (int) (item > MAX_ITEM ? MAX_ITEM : (item < -MAX_ITEM ? -MAX_ITEM : item)), true);
+        return false;
+      }
+      sub_idx_ = (int) to;
+    } else {
+      sub_idx_ = ((sub_idx_ + delta) % sz + sz) % sz;
+    }
     remember_sub_(cat_idx_, sz);
     go_(cat_idx_, sub_idx_);
+    return true;
   }
 
   void mode_toggle_() {
     touch_();
-    sub_mode_ = size_(cat_idx_) > 1 ? !sub_mode_ : false;
+    sub_mode_ = has_items_(cat_idx_) ? !sub_mode_ : false;
     ESP_LOGI(TAG, "Navigation mode: %s", sub_mode_ ? "sub-items" : "categories");
   }
 
@@ -667,6 +712,14 @@ class PanelController {
   void reset_home_() {
     touch_();
     sub_mode_ = false;
+    if (ring_) {                            // the rotation's first page, its first item
+      int c = held_(0), s = c < 0 ? -1 : local_of_(c, 0);
+      if (s < 0) { ask_(0, 0, false); return; }
+      cat_idx_ = c;
+      sub_idx_ = s;
+      go_(c, s);
+      return;
+    }
     sub_idx_ = 0;
     cat_idx_ = first_cat_();
     go_(cat_idx_, 0);
@@ -674,6 +727,15 @@ class PanelController {
 
   void show_page_(int index) {
     touch_();
+    if (ring_) {                            // every item of every page counts: only the add-on knows them all
+      if (index < 0) return;
+      want_ = Want{};
+      want_.page = index;
+      want_.person = person_;
+      window_fetch_ = true;
+      ESP_LOGI(TAG, "Page %d isn't counted here: asking for it", index + 1);
+      return;
+    }
     if (has_sleep_) index += 1;             // Home Assistant counts your pages, not the sleep screen
     if (index < 0 || index >= page_count_) return;
     for (int c = (int) offsets_.size() - 1; c >= 0; c--) {
@@ -689,6 +751,16 @@ class PanelController {
 
   void show_category_(int category, int sub) {
     touch_();
+    if (ring_) {                            // Home Assistant's category is the page's place in the rotation
+      if (category < 0 || category >= ring_) return;
+      int c = held_(category), s = c < 0 ? -1 : local_of_(c, sub < 0 ? 0 : sub);
+      if (c >= 0 && s < 0 && !part_of_(c)) s = 0;   // no such item: its first, as ever
+      if (s < 0) { ask_(category, sub < 0 ? 0 : sub, false); return; }
+      cat_idx_ = c;
+      sub_idx_ = s;
+      go_(c, s);
+      return;
+    }
     if (has_sleep_) category += 1;
     if (category < 0 || category >= cats_()) return;
     int sz = size_(category);
@@ -717,25 +789,29 @@ class PanelController {
     if (quiet_ || pinned_ || user_cool_sec_ < 15) return false;
     if (idle_sec_ < (rotate_sec_ >= 5 ? rotate_sec_ : 30)) return false;
     idle_sec_ = 0;
-    int sz = size_(cat_idx_);
+    person_ = false;                        // the panel's own change: what it asks for is a visit
     if (cat_pinned_) {
-      if (sz <= 1) return false;
-      sub_idx_ = (sub_idx_ + 1) % sz;
-      remember_sub_(cat_idx_, sz);
-      go_(cat_idx_, sub_idx_);
+      if (!has_items_(cat_idx_)) return false;
+      if (!item_step_(1)) return false;     // past a run: shown when the next items arrive
     } else {
-      int c = step_category_(cat_idx_, 1);
+      int c = step_category_(cat_idx_, 1, true);
+      if (c < 0) return false;              // not held: shown when it arrives
       int csz = size_(c);
       if ((int) sub_pos_.size() <= c) sub_pos_.resize(cats_(), 0);
+      if (part_of_(c) && sub_pos_[c] >= csz) {
+        ask_(pos_of_(c), visit_item_(pos_of_(c)), false, true);
+        return false;
+      }
       int s = csz > 1 ? sub_pos_[c] % csz : 0;
-      if (csz > 1) sub_pos_[c] = (s + 1) % csz;
       sub_mode_ = false;
       cat_idx_ = c;
       sub_idx_ = s;
+      if (has_items_(c)) remember_sub_(c, csz);
       go_(c, s);
     }
     pending_redraw_ = true;
     redraw_automatic_ = true;
+    after_move_();
     return true;
   }
 
@@ -765,13 +841,44 @@ class PanelController {
     for (const auto &p : s.pages) sub_ids_.push_back(p.sub_id);
     has_sleep_ = !s.categories.empty() && (s.categories[0].flags & CAT_FLAG_SLEEP);
     auto_sleep_ = has_sleep_ && (s.categories[0].flags & CAT_FLAG_SLEEP_AUTO);
+    ring_ = 0;
+    at_cat_ = -1;
+    pos_.assign(cat_ids_.size(), -1);
+    part_.assign(cat_ids_.size(), 0);
+    for (size_t c = 0; c < s.categories.size(); c++) {
+      const Category &k = s.categories[c];
+      if (k.rot_len() > 0) {
+        ring_ = k.rot_len();
+        pos_[c] = k.rot_pos();
+      }
+      part_[c] = (k.flags & CAT_FLAG_PART) != 0;
+      if (k.flags & CAT_FLAG_AT) at_cat_ = (int) c;
+    }
+    item_.clear();
+    for (const auto &p : s.pages) item_.push_back(p.sub_index);
 
     sub_pos_.assign(cat_ids_.size(), 0);
     for (size_t i = 0; i < cat_ids_.size(); i++)
       for (size_t j = 0; j < old_ids.size() && j < old_pos.size(); j++)
         if (old_ids[j] == cat_ids_[i]) { sub_pos_[i] = old_pos[j]; break; }
+    // Which item each page shows next, by its place in the rotation, so a page that leaves the
+    // window and comes back goes on where it was. When the rotation changed length, the places
+    // moved: what each page kept by identity stands.
+    bool same_ring = (int) visit_.size() == ring_len_();
+    if (!same_ring) visit_.assign(ring_len_(), 0);
+    for (int c = 0; c < cats_(); c++) {
+      int at = pos_of_(c);
+      if (at < 0 || at >= (int) visit_.size() || c >= (int) sub_pos_.size()) continue;
+      if (ring_ && same_ring) {
+        int s = local_of_(c, visit_[at]);
+        sub_pos_[c] = s >= 0 ? s : (part_of_(c) ? size_(c) : 0);   // past a run: its next visit asks
+      } else {
+        visit_[at] = (uint16_t) item_at_(c, sub_pos_[c] % size_(c));
+      }
+    }
 
     if (s.header.flags & FLAG_ALERT_INTERRUPT) {
+      want_ = Want{};                       // an alert over a page asked for: that one's dropped
       // The alert owns the screen, even over sleep. Locks are kept and come
       // back with the rotation when the alert is over, and so does sleep:
       // a panel asleep before the alert goes back to sleep after it, unless
@@ -790,8 +897,10 @@ class PanelController {
     bool alert_ended = alert_;
     alert_ = false;
 
-    if (pinned_ && pinned_sub_id_ && find_page_(pinned_sub_id_)) {
-      sub_mode_ = size_(cat_idx_) > 1;
+    if (land_()) {
+      // A page it asked for: shown, and the locks follow it there as they follow any step.
+    } else if (pinned_ && pinned_sub_id_ && find_page_(pinned_sub_id_)) {
+      sub_mode_ = has_items_(cat_idx_);
     } else if (cat_pinned_ && pinned_cat_id_ && find_cat_(pinned_cat_id_)) {
     } else {
       if (pinned_ && pinned_sub_id_) {
@@ -805,9 +914,12 @@ class PanelController {
         pinned_cat_id_ = 0;
       }
       if (!(cur_sub_id_ && find_page_(cur_sub_id_)) && !(cur_cat_id_ && find_cat_(cur_cat_id_))) {
-        if (cat_idx_ < 0 || cat_idx_ >= cats_() || (has_sleep_ && cat_idx_ == 0)) cat_idx_ = first_cat_();
+        // In a moving window a place in the file means nothing from one file to the next: the
+        // page the window is around, from the item it starts at.
+        if (ring_ || cat_idx_ < 0 || cat_idx_ >= cats_() || (has_sleep_ && cat_idx_ == 0)) cat_idx_ = first_cat_();
         int sz = size_(cat_idx_);
-        if (sz <= 1) { sub_idx_ = 0; sub_mode_ = false; }
+        if (!has_items_(cat_idx_)) { sub_idx_ = 0; sub_mode_ = false; }
+        else if (ring_) sub_idx_ = cat_idx_ == at_cat_ ? 0 : sub_pos_[cat_idx_] % sz;
         else if (sub_idx_ < 0 || sub_idx_ >= sz) sub_idx_ = sub_pos_[cat_idx_] % sz;
         go_(cat_idx_, sub_idx_);
       }
@@ -838,10 +950,9 @@ class PanelController {
   OverlayState overlay_state() const {
     OverlayState o;
     if (sleeping_) return o;                // nothing drawn over the sleep screen
-    int sz = size_(cat_idx_);
     o.cat_pill_w = cat_idx_ < (int) pill_w_.size() ? pill_w_[cat_idx_] : 0;
-    o.has_sub = sz > 1;
-    o.highlight_sub = sub_mode_ && sz > 1;
+    o.has_sub = has_items_(cat_idx_);
+    o.highlight_sub = sub_mode_ && o.has_sub;
     o.cat_locked = cat_pinned_ && !alert_;
     o.panel_locked = pinned_ && !alert_;
     return o;
@@ -873,8 +984,144 @@ class PanelController {
   void set_pending_refetch(bool v) { pending_refetch_ = v; }
   bool pending_redraw() const { return pending_redraw_; }
 
+  // The moving window, for the glue (epf_client.h, the panel's YAML).
+  // What a download says about where the panel is: the page and item it asked for (and Home
+  // Assistant's show_page), else the ones it shows. Its whole rotation fits: where it is, all the
+  // same, so the add-on starts a window there if it stops fitting.
+  std::string window_query() {
+    std::string q = "&window=1";
+    int at = here_pos_(), item = here_item_();
+    if (want_.pos >= 0) {
+      at = want_.pos;
+      item = want_.item;
+    }
+    if (want_.pos >= 0 || want_.page >= 0) want_.asked = true;
+    if (want_.page >= 0) q += "&page=" + std::to_string(want_.page);
+    if (at >= 0) q += "&at=" + std::to_string(at) + "&item=" + std::to_string(item);
+    asked_pos_ = at;
+    asked_item_ = item;
+    return q;
+  }
+  // Whether to start a download for the window now: a page asked for at once, the next part
+  // only once the picture on screen is drawn (`drawing`: a redraw is still going), so a panel
+  // with one buffer never loses the page it's about to show.
+  bool take_window_fetch(bool drawing) {
+    if (!window_fetch_ || (drawing && want_.pos < 0 && want_.page < 0)) return false;
+    window_fetch_ = false;
+    return true;
+  }
+  // A download that brought no new file: a page asked for with it isn't coming. It stays where it is.
+  void window_unanswered() {
+    if (!want_.asked) return;
+    ESP_LOGW(TAG, "The page it asked for didn't arrive; staying here");
+    want_ = Want{};
+  }
+  bool window() const { return ring_ > 0; }
+  bool waiting_for_page() const { return want_.pos >= 0 || want_.page >= 0; }
+  int rotation_place() const { return here_pos_(); }
+  int rotation_item() const { return here_item_(); }
+
  private:
   PanelController() = default;
+
+  // A page it doesn't hold, asked for: shown when it arrives (land_). `items`: stepping through
+  // a page's items, which keeps item mode; `visit`: the rotation's own visit, which moves the
+  // page's next item on, as a visit does.
+  struct Want {
+    int pos{-1}, item{0}, page{-1};
+    bool items{false}, visit{false}, person{false}, asked{false};
+  };
+  static constexpr int MAX_ITEM = 999999;   // the add-on goes round a page's items itself
+
+  void ask_(int pos, int item, bool items, bool visit = false) {
+    if (pos < 0) return;
+    want_ = Want{};
+    want_.pos = pos;
+    want_.item = item;
+    want_.items = items;
+    want_.visit = visit;
+    want_.person = person_;
+    window_fetch_ = true;
+    ESP_LOGI(TAG, "Page %d item %d isn't held: asking for it", pos + 1, item + 1);
+  }
+
+  // The new file has the page asked for: show it from its first item (the add-on put the asked
+  // one first, CAT_FLAG_AT). A file that was already on its way when it asked: ask again.
+  bool land_() {
+    if (want_.pos < 0 && want_.page < 0) return false;
+    if (!want_.asked) {
+      window_fetch_ = true;
+      return false;
+    }
+    int c = at_cat_, s = 0;
+    if (c < 0 && want_.pos >= 0) {          // the whole rotation came back: it's held now
+      c = held_(want_.pos);
+      s = c < 0 ? 0 : local_of_(c, want_.item);
+      if (s < 0) s = 0;
+    } else if (c < 0 && want_.page >= 0) {  // ...or for show_page, counted the way it always was
+      int index = want_.page + (has_sleep_ ? 1 : 0);
+      for (int k = cats_() - 1; k >= 0 && index < page_count_; k--)
+        if (index >= offset_(k)) { c = k; s = index - offset_(k); break; }
+    }
+    Want w = want_;
+    want_ = Want{};
+    if (c < 0) return false;
+    cat_idx_ = c;
+    sub_idx_ = s;
+    if (!w.items) sub_mode_ = false;
+    go_(c, s);
+    if (w.visit && has_items_(c)) remember_sub_(c, size_(c));
+    if (w.person) redraw_by_person_ = true;   // a person's step is never a flash
+    return true;
+  }
+
+  // After the panel moved: with fewer than half the pages it holds still ahead, or of a run's
+  // items, ask for the next part now, long before the rotation gets there. Never twice for the
+  // same place: what it holds is that answer.
+  void after_move_() {
+    if (!ring_ || want_.pos >= 0 || want_.page >= 0 || sleeping_ || alert_) return;
+    int here = here_pos_();
+    if (here < 0) return;
+    int held = 0, ahead = 0;
+    for (int p : pos_) held += p >= 0;
+    while (ahead + 1 < ring_ && held_((here + ahead + 1) % ring_) >= 0) ahead++;
+    int sz = size_(cat_idx_);
+    bool run_low = part_of_(cat_idx_) && (sz - 1 - sub_idx_) * 2 < sz - 1;
+    if (!(ahead * 2 < held - 1 || run_low) || (here == asked_pos_ && here_item_() == asked_item_)) return;
+    window_fetch_ = true;
+    ESP_LOGI(TAG, "%d of the %d pages it holds are ahead: asking for the next ones", ahead, held);
+  }
+
+  int ring_len_() const { return ring_ ? ring_ : cats_() - (has_sleep_ && cats_() > 1 ? 1 : 0); }
+  // A category's place in the rotation: from the file in a moving window, else its own order
+  // (-1: the sleep screen).
+  int pos_of_(int c) const {
+    if (c < 0 || c >= cats_() || offsets_.empty()) return -1;
+    if (ring_) return c < (int) pos_.size() ? pos_[c] : -1;
+    if (has_sleep_ && cats_() > 1) return c - 1;
+    return c;
+  }
+  int held_(int pos) const {
+    for (int c = 0; c < (int) pos_.size(); c++)
+      if (pos_[c] == pos) return c;
+    return -1;
+  }
+  bool part_of_(int c) const { return c >= 0 && c < (int) part_.size() && part_[c]; }
+  // More than one item to step through: held, or past a run.
+  bool has_items_(int c) const { return size_(c) > 1 || part_of_(c); }
+  // A held page's own item number, and where a page holds an item (-1: not held).
+  int item_at_(int c, int local) const {
+    int p = offset_(c) + local;
+    return p >= 0 && p < (int) item_.size() ? item_[p] : local;
+  }
+  int local_of_(int c, int item) const {
+    for (int k = 0; k < size_(c); k++)
+      if (item_at_(c, k) == item) return k;
+    return -1;
+  }
+  int visit_item_(int pos) const { return pos >= 0 && pos < (int) visit_.size() ? visit_[pos] : 0; }
+  int here_pos_() const { return pos_of_(cat_idx_); }
+  int here_item_() const { return item_at_(cat_idx_, sub_idx_); }
 
   int cats_() const { return offsets_.empty() ? 1 : (int) offsets_.size(); }
   int size_(int c) const { return (c >= 0 && c < (int) sizes_.size() && sizes_[c] > 0) ? sizes_[c] : 1; }
@@ -889,16 +1136,32 @@ class PanelController {
   }
   void remember_sub_(int c, int sz) {
     if ((int) sub_pos_.size() <= c) sub_pos_.resize(cats_(), 0);
-    sub_pos_[c] = (sub_idx_ + 1) % sz;
+    // Past the end of a run, the next visit asks for the items after it.
+    sub_pos_[c] = part_of_(c) ? sub_idx_ + 1 : (sub_idx_ + 1) % sz;
+    int at = pos_of_(c);
+    if (at >= 0 && at < (int) visit_.size())
+      visit_[at] = (uint16_t) (sub_pos_[c] < sz ? item_at_(c, sub_pos_[c]) : item_at_(c, sub_idx_) + 1);
   }
   void go_(int c, int s) {
     int p = offset_(c) + s;
     page_ = (p >= 0 && p < page_count_) ? p : 0;
     update_ids_();
   }
-  int first_cat_() const { return (has_sleep_ && cats_() > 1) ? 1 : 0; }
-  // Step through categories, never landing on the sleep screen.
-  int step_category_(int from, int delta) const {
+  // Where it starts: the first page, or in a moving window the page the window is around.
+  int first_cat_() const {
+    if (ring_ && at_cat_ >= 0) return at_cat_;
+    return (has_sleep_ && cats_() > 1) ? 1 : 0;
+  }
+  // Step through categories, never landing on the sleep screen. In a moving window, by places in
+  // the rotation: one it doesn't hold is asked for, and -1 says so.
+  int step_category_(int from, int delta, bool visit = false) {
+    if (ring_) {
+      int here = pos_of_(from) < 0 ? 0 : pos_of_(from);
+      int to = (int) (((long long) here + delta % ring_ + ring_) % ring_);
+      int c = held_(to);
+      if (c < 0) ask_(to, visit_item_(to), false, visit);
+      return c;
+    }
     int cats = cats_(), c = from, n = delta < 0 ? -delta : delta, dir = delta < 0 ? -1 : 1;
     int ring = (has_sleep_ && cats > 1) ? cats - 1 : cats;    // the sleep screen isn't stepped onto
     n %= ring;                              // a huge step must not spin the main loop
@@ -933,13 +1196,19 @@ class PanelController {
     else { pending_redraw_ = true; redraw_automatic_ = true; }
     ESP_LOGI(TAG, "Awake");
   }
-  void enter_category_(int c) {
-    cat_idx_ = c;
+  // False when the item it shows next is past a run it holds: asked for instead.
+  bool enter_category_(int c) {
     int sz = size_(c);
     if ((int) sub_pos_.size() <= c) sub_pos_.resize(cats_(), 0);
+    if (part_of_(c) && sub_pos_[c] >= sz) {
+      ask_(pos_of_(c), visit_item_(pos_of_(c)), false);
+      return false;
+    }
+    cat_idx_ = c;
     sub_idx_ = sz > 1 ? sub_pos_[c] % sz : 0;
     sub_mode_ = false;
     go_(c, sub_idx_);
+    return true;
   }
   bool find_page_(uint32_t id) {
     for (size_t p = 0; p < sub_ids_.size(); p++) {
@@ -960,7 +1229,7 @@ class PanelController {
       if (cat_ids_[c] != id) continue;
       cat_idx_ = (int) c;
       int sz = size_(cat_idx_);
-      if (sz <= 1) { sub_idx_ = 0; sub_mode_ = false; }
+      if (!has_items_(cat_idx_)) { sub_idx_ = 0; sub_mode_ = false; }
       else if (sub_idx_ < 0 || sub_idx_ >= sz) sub_idx_ = sub_pos_[cat_idx_] % sz;
       page_ = offset_(cat_idx_) + sub_idx_;
       if (page_ >= page_count_) page_ = 0;
@@ -992,6 +1261,15 @@ class PanelController {
   WaveformPolicy waveform_;
   std::vector<int> offsets_, sizes_, pill_w_, sub_pos_;
   std::vector<uint32_t> cat_ids_, sub_ids_;
+  // The moving window: the rotation's length (0: the file is all of it), each category's place
+  // in it and whether it's a run, each page's own item number, the item each place shows next,
+  // the category asked for (CAT_FLAG_AT), what it's waiting for and where its last download said it was.
+  int ring_{0}, at_cat_{-1}, asked_pos_{-1}, asked_item_{0};
+  std::vector<int> pos_;
+  std::vector<uint8_t> part_;
+  std::vector<uint16_t> item_, visit_;
+  Want want_;
+  bool window_fetch_{false};
 };
 
 // ---------------------------------------------------------------- Low Power Mode

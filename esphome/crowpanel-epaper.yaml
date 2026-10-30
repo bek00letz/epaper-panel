@@ -472,6 +472,7 @@ interval:
           if (client.poll(result)) {
             epf::power_note_download(millis(), result);   // whether the answer says to sleep
             epf::note_next_fetch();                       // always on: when to fetch next
+            if (result != epf::FetchResult::OK) panel.window_unanswered();   // a page it asked for isn't coming
             if (result == epf::FetchResult::OK) {
               panel.note_fetch(true);
               panel.on_stream_loaded(client.stream());
@@ -491,6 +492,10 @@ interval:
             }
           }
           if (panel.take_wake_fetch()) id(refetch).execute();   // just woke: get fresh frames
+          // A rotation too big to hold: a page it doesn't hold, asked for at once, or the next
+          // part once the page on screen is drawn (epf_core.h, "The moving window").
+          if (!client.busy() && !id(refetch).is_running() && panel.take_window_fetch(id(redraw).is_running()))
+            id(refetch).execute();
           // Low Power Mode: sleep once the download and the picture are done.
           bool busy = client.busy() || id(refetch).is_running() || id(redraw).is_running() || !(id(epd).is_idle());
           if (epf::PowerPolicy::instance().sleep_due(millis(), busy) && !id(go_to_sleep).is_running())

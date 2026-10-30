@@ -295,6 +295,32 @@ machine) with no ESP-IDF in it, and is compiled and tested on the host by
   says when it could pass what the device holds. Both only for a device that
   keeps its whole rotation in memory (`Kind.room`: an always-on CrowPanel);
   one that sleeps fetches a page a wake and never runs out.
+- **A rotation too big to hold moves through the panel as a window** (the
+  user's call, 30 Oct; `window.py`, epf_core.h "The moving window").
+  Firmware that can says `window=1` with every download
+  (`crowpanel.moves_window`) and where it is: `at=<page>&item=<item>` (the
+  page's place in the rotation), or `page=<n>` for Home Assistant's
+  show_page (every item of every page counted). It never runs out
+  (`Kind.room` is None), so nothing is trimmed: when the whole rotation
+  doesn't fit, the render cycle draws every item of every page and keeps
+  them as stored (`Window`), and each download packs the window around
+  where the panel is, drawing nothing. The window is the same rule in the
+  file's own bytes, choosing whole pages (`frames.fit_window`, `_window`
+  beside `_sharing`): the page asked for (from its item, round to the ones
+  before; `CAT_FLAG_AT`), the next, the one before, then the pages ahead,
+  each whole while it fits; it ends at the first page ahead that doesn't
+  fit. A page too big to hold alone is a run of its items and nothing else
+  (`CAT_FLAG_PART`, each page record's `sub_index` its own item). Each
+  category record's last field says where its page sits
+  (`epf.place(position, length)`; 0 in a whole file). The firmware steps
+  by those places; a page or item it doesn't hold is asked for once and
+  shown when it arrives (`ask_`, `land_`), and once fewer than half the
+  pages it holds are ahead it asks for the next part (`after_move_`), only
+  after the picture on screen is drawn (one buffer on the XIAO). Each
+  place's next item is kept (`visit_`), so a multi-item page goes on where
+  it was each lap. A rotation that fits is sent whole, as before.
+  `firmware_gen.MOVING_WINDOW = False` is the way back (`epf: window:
+  false`): the add-on trims to fit, as it does for firmware before 0.24.
 - **A failed download is owed** (`note_fetch`, `fetch_due`): retried after
   30 s, doubling to 10 min, even while resting, because only a download can
   tell a sleeping panel that quiet hours are over. A refresh asked for while a

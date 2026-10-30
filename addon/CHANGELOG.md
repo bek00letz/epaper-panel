@@ -2,8 +2,21 @@
 
 ## Unreleased
 **Firmware change** for every panel on our firmware: install it again (Send
-to ESPHome, then Install) to get compressed pages. A panel that isn't
-installed again keeps working as before.
+to ESPHome, then Install) to get compressed pages and the moving window. A
+panel that isn't installed again keeps working as before.
+
+- **A rotation bigger than a panel's memory no longer loses pages.** The
+  panel holds the pages around the one it shows (the next ones and the one
+  before, for scrolling back), and the add-on hands it the next ones well
+  before the rotation gets there, so timed rotation never waits. Scrolling
+  past what it holds, with its buttons, a remote or Home Assistant's page
+  actions, fetches that page once (well under a second at home) and shows
+  it. A page with many items, like a busy day of scores, keeps every item:
+  if they don't all fit at once, the rest arrive as its visits go on. The
+  status says calmly how much it holds ("Holds 15 of 22 pages; the rest
+  arrive as it goes"). A rotation that fits, as on a CrowPanel almost
+  always, is held whole as before. Panels not installed again keep trimming
+  the rotation to fit. Not yet tried on a real panel.
 
 - **Pages are compressed on their way to the panel**, which unpacks each one
   as it shows it. A page of words and icons is about a twentieth of its
