@@ -11,6 +11,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Version | Date | What |
 |---|---|---|
+| 0.23.0 | 30 Oct | Eight new pages (year grid, commute, departures, mail, stocks and coins, place of the day, follow a flight, AI usage with a reporter for Mac, Linux and Windows) and the Seeed XIAO 7.5" as an ESPHome device with partial refresh. **Firmware change for the Seeed only.** All untried on real Home Assistant and hardware at release. |
 | 0.22.2 | 30 Oct | Two Planes pages at Home with different distances no longer stop every device rendering: a place is where it is, its sensors count out to the largest distance and each page keeps its own; the page's buttons wrap in a narrow inspector. Add-on only. |
 | 0.22.1 | 29 Oct | Sleeping panels no longer stack their pages: the first refresh after a wake drives every pixel, still without a flash (every CrowPanel size). **Firmware change**. Seen on the 5.79" (29 Oct, 4–5 rotations asleep): no stacking, only faint ghosting. |
 | 0.22.0 | 28 Oct | Share a page as a file (nothing private in it, opens in New page with your own sensors); the screen's words in English, Romanian, Spanish, German and French, per device ("Same as Home Assistant" by default); no key to paste: Home Assistant sets the panel's key, updates keep their own key. **Firmware change**; needs Home Assistant 2026.8. |
@@ -38,7 +39,7 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Work | Where | State |
 |---|---|---|
-| The Seeed XIAO 7.5" (ESP32-C3) on our own firmware | worker xiao-c3-board, branch `xiao-c3-board` (e682fb3) | Built and compiled, untried on the panel. Next: measure it on TRMNL's firmware, then flash ours and measure again. |
+| Trying 0.23.0: the Seeed on our firmware (flash over USB, then the meter), then the new pages in Home Assistant | coordinator, with the user | Released; nothing tried yet. Afterwards the Seeed goes back to TRMNL's firmware (Erase flash) as a gift. |
 
 Worker notes are in the notes folders (`break-it-0.12.0.md`,
 `timers-addon.md`, `firmware-013.md`, `fixes-0131.md`, `editor-polish.md`,
@@ -155,7 +156,7 @@ Next one when a good amount of work has piled up since v0.15.0.
    TRMNL-compatible screens (a Seeed 7.5" reTerminal arrives in days or
    weeks, so they can be tried).
 
-8. **New pages, from TRMNL's recipes** (the user picked all eight, 30 Oct).
+8. **New pages, from TRMNL's recipes** (the user picked all eight, 30 Oct; shipped in 0.23.0, untried live).
    Learn from the recipes, build our own: each a page type or preset fed by
    Home Assistant or a free public source, no browser in the add-on, no
    accounts, no passwords held by the add-on.
@@ -173,7 +174,10 @@ Next one when a good amount of work has piled up since v0.15.0.
      (provider, window, used, resets at), so one page fits every provider.
    - Not buildable: a traffic map (Google's map images have no traffic
      layer); commute times cover the need.
-   Also found: no way to copy another device's pages onto an existing device.
+   Also found: no way to copy another device's pages onto an existing device;
+   one unexplained test error at the 0.23.0 release (test_firmware +
+   test_no_key_paste, errors=1 once, then OK in five runs; also once in a
+   partial run during the merge). Watch for it.
 
 The New page presets plan shipped in 0.15.0.
 9. **The shipped fallback icon set is older than Home Assistant's** (7.4.47,
