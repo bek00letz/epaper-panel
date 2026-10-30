@@ -264,11 +264,22 @@ class TestFirmwareCore(unittest.TestCase):
             (tmp / "nav_alert.epf").write_bytes(epf.encode_epf(
                 blank(1), [900], [0], [1], [110], [90], display_model=DISPLAY, alert_interrupt=True))
 
+            # The same 800 x 480 pages of words, deflated and as they are.
+            words = []
+            for n in range(3):
+                pg, draw = T.new_canvas(0, display="seeed_xiao_750")
+                draw.text((40, 40 + 30 * n), f"Page {n}: 21.5 degrees, rain at 16:00", fill=0, font=T.font(48))
+                words.append(T.to_1bit(pg))
+            for name, deflate in (("deflated", True), ("as_is", False)):
+                (tmp / f"{name}.epf").write_bytes(epf.encode_epf(
+                    words, [1, 2, 3], [0, 1, 2], [1, 1, 1], [0, 0, 0], [11, 12, 13], display_model="seeed_xiao_750",
+                    width=800, height=480, deflate=deflate))
+
             exe = tmp / "core_test"
             # With AddressSanitizer and UndefinedBehaviorSanitizer where the compiler has them,
             # so the parser fuzzer in core_test catches memory errors, not only wrong answers.
             source = str(ROOT / "tests" / "firmware" / "core_test.cpp")
-            flags = ["c++", "-std=c++17", "-O1", "-Wall", "-Wextra", "-o", str(exe), source]
+            flags = ["c++", "-std=c++17", "-O1", "-Wall", "-Wextra", "-o", str(exe), source, "-lz"]
             build = subprocess.run(flags[:1] + ["-fsanitize=address,undefined", "-fno-sanitize-recover=all",
                                                 "-fno-omit-frame-pointer"] + flags[1:], capture_output=True, text=True)
             if build.returncode != 0:
@@ -677,6 +688,20 @@ class TestBoards(unittest.TestCase):
         self.assertEqual(firmware_gen.ALWAYS_POWERED, -2, "the generator and the firmware agree")
         self.assertIn("s->command(0x10);", client.split("uc8179_drive_every_pixel", 1)[1].split("Ram::seed", 1)[0],
                       "the UC8179's previous-picture memory")
+
+    def test_it_asks_for_deflated_pages_unless_switched_back(self):
+        # On by default (the component's own default), so a CrowPanel's file doesn't change.
+        self.assertIn("\nepf:\n", render_for(DISPLAY))
+        client = (ROOT / "components" / "epf" / "epf_client.h").read_text()
+        self.assertIn('(INFLATER ? "&deflate=1" : "")', client, "asks only when it can inflate")
+        self.assertIn("cv.Optional(CONF_DEFLATE, default=True)", (ROOT / "components" / "epf" / "__init__.py").read_text())
+        keep = firmware_gen.DEFLATE_FRAMES
+        try:
+            firmware_gen.DEFLATE_FRAMES = False
+            self.assertIn("\nepf:\n  deflate: false\n", render_for(DISPLAY))
+            self.assertIn("\nepf:\n  deflate: false\n", render_for("seeed_xiao_750"))
+        finally:
+            firmware_gen.DEFLATE_FRAMES = keep
 
     def test_the_way_back_is_a_full_refresh_every_time(self):
         # Until partial refresh is proven on a real XIAO: PARTIAL_REFRESH = False builds

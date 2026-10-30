@@ -261,7 +261,23 @@ machine) with no ESP-IDF in it, and is compiled and tested on the host by
   its own RAM, what's left once a download has what it needs (about 100 KB,
   two 7.5" pages): a download fills it in place, so nothing is drawn from it
   until it's done (`EpfClient::replacing`, `may_redraw`), and one that fails
-  halfway loses the frames, not the picture on screen. The
+  halfway loses the frames, not the picture on screen.
+- **Pages can arrive deflated** (`epf.FLAG_DEFLATE`): firmware that can
+  inflate says `deflate=1` with every download (`crowpanel.inflates`), and
+  each page is then raw deflate, its length in its page record, inflated
+  straight into the display buffer as it's shown (ESP32 ROM's tinfl,
+  `epf::page_pixels`; zlib in the host tests). A page of words is about 2 KB
+  instead of 48 KB on the 7.5". `firmware_gen.DEFLATE_FRAMES = False` is the
+  way back (`epf: deflate: false`).
+- **One rule decides what fits** (`frames.fit`, `frames.fit_weighed`), in
+  the file's own bytes (`epf.file_size`, the firmware's `frame_file_size`):
+  every page with the sleep screen while they fit, then extra items; with
+  room for one page only, that page alone (or the sleep screen while quiet
+  hours want it); nothing only when not even one fits, said plainly
+  (`frames.NoRoom`, the status's `no_room`). Deflated, each picture is
+  weighed as it's drawn, with every item's footer; drawn again with the kept
+  ones' footer, the last item let in goes until the file fits. The device
+  port never sends more than a panel said it holds. The
   add-on fits the frame file to it (`frames.fit_counts`): every page keeps its
   first item, extra items are shared out in rotation order, and pages at the
   end are left out only if one each doesn't fit. Items within a page are in

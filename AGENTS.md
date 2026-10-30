@@ -288,6 +288,11 @@ YAML comes only from `addon/app/firmware/panel.yaml`. After changing it, run
   7.5": its display uses them, so no button wakes it; `firmware_gen.CHIPS`).
   Its one frame buffer is in its own RAM (`epf_core.h`, "Memory for the
   frames"): never assume two buffers or megabytes.
+- **A page in a frame file may be deflated** (`epf.FLAG_DEFLATE`, for
+  firmware that says `deflate=1`). Read a page through `epf.EpfStream.page_slice`
+  / `stored` or the firmware's `page_pixels`, never by offset times page size,
+  and decide what fits only through `frames.fit` / `fit_weighed` (one rule, in
+  the file's own bytes).
 - The CrowPanel needs the external component; stock `waveshare_epaper` has no model
   for it. `invert_colors: true` is required.
 - **`GPIO7` is the CrowPanel display's power rail.** Nothing renders until it is high.

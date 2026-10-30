@@ -190,7 +190,7 @@ class CrowPanel(Kind):
                 pages=[one], cat_ids=cat_ids, cat_offsets=[0], cat_sizes=[1], cat_pill_widths=[0], sub_ids=sub_ids,
                 display_model=display, width=dw, height=dh, rotate_sec=rot_sec, quiet_hours=quiet_active,
                 alert_interrupt=False, orientation_180=(orient == 180),
-                geometry=frames.panel_geometry(fg, orient, display),
+                geometry=frames.panel_geometry(fg, orient, display), deflate=inflates(dev),
             )
             return _frames(png, png, [png], ["empty"], [0], [1], ["empty"], [110], rot_sec, cat_ids, sub_ids,
                            epf_data, epf_data)
@@ -198,58 +198,114 @@ class CrowPanel(Kind):
         # The panel holds a limited number of pages. Every page keeps its first
         # item; extra items are shared out fairly; the rest are left out, and
         # said so (DeviceRuntime.fit, /api/status, sensor.epaper_panel_pages).
+        # Sleeping or not: a wake that isn't the timer's (a press, a start) gets this whole file.
+        # A panel that inflates (inflates()) gets its pages deflated, each weighed as drawn.
         plans = st.plans
         page_bytes, capacity = _memory(dev, display)
-        counts = frames.fit_counts([p["want"] for p in plans], page_bytes=page_bytes,
-                                   capacity=capacity, extra_pages=0 if alert else 1)
-        rt.fit = frames.record_fit(plans, counts, capacity, rt.fit, dev.get("name") or "the panel")
-
-        imgs = []
-        cat_offsets, cat_sizes, cat_names, cat_pill_widths, cat_sub_keys = [], [], [], [], []
+        deflate = inflates(dev)
+        wants = [p["want"] for p in plans]
         clock = clock_text(datetime.now())             # one clock for the whole strip
-        kept = [(p, c) for p, c in zip(plans, counts) if c > 0]
         today = await frames.date_for_time(self.sleeps(dev))    # it sleeps: the date where a time would be
-        # One footer for the whole strip, drawn with the same numbers the panel
-        # draws its highlight and padlocks with, in every orientation.
-        fg = T.footer_plan(clock=clock, pages=[(p["name"], c) for p, c in kept], orientation=orient, display=display)
-        geo = frames.panel_geometry(fg, orient, display)
+        qh = spec.get("quiet_hours") or {}
+        auto = quiet_active and qh.get("sleep_screen", True)
+        sleep_text = (sleep.wake_text(quiet_reason, qh.get("end") or "07:00") if quiet_active
+                      else sleep.manual_text())
+        sleep_img = None
+        if not alert:
+            drawn_sleep = await asyncio.to_thread(sleep.render_sleep_page, sleep_text, orient, display)
+            sleep_img = T.orient_for_panel(T.to_1bit(drawn_sleep), orient, display=display)
 
-        for cat_i, (plan, sub_count) in enumerate(kept):
-            cat_name = plan["name"]
-            try:
-                page_imgs = await frames.draw_category(plan, sub_count, cat_i, footer=fg,
-                                                       page_def=spec["pages"][cat_name], orient=orient,
-                                                       display=display, today=today)
-            except Exception as exc:
-                print(f"page {cat_name} left out: {health.describe(exc)}", flush=True)
-                continue
-            cat_offsets.append(len(imgs))
-            cat_sizes.append(sub_count)
-            cat_names.append(cat_name)
-            cat_pill_widths.append(fg["pages"][cat_i]["w"])
-            cat_sub_keys.append(plan["sub_keys"][:sub_count])
-            imgs.extend(page_imgs)
+        def stored(img) -> int:
+            return len(epf.stored_page(img, display, dw, dh, deflate))
+
+        def footer(counts):
+            # One footer for the whole strip, drawn with the same numbers the panel
+            # draws its highlight and padlocks with, in every orientation.
+            return T.footer_plan(clock=clock, pages=[(p["name"], c) for p, c in zip(plans, counts) if c > 0],
+                                 orientation=orient, display=display)
+
+        drawn = {}                                     # (page, item) -> its picture with every item's footer
+        everything = footer(wants)
+
+        async def picture(i, k):
+            if (i, k) not in drawn:
+                try:
+                    got = await frames.draw_category(plans[i], wants[i], i, footer=everything,
+                                                     page_def=spec["pages"][plans[i]["name"]], orient=orient,
+                                                     display=display, only=k, today=today)
+                    drawn[(i, k)] = got[0]
+                except Exception:
+                    drawn[(i, k)] = None               # left out below, and said so there
+            return drawn[(i, k)]
+
+        async def weigh(i, k):
+            img = await picture(i, k)
+            return 0 if img is None else stored(img)
+
+        if deflate:
+            fitted = await frames.fit_weighed(wants, capacity, None if alert else stored(sleep_img), weigh)
+        else:
+            fitted = frames.fit(wants, page_bytes=page_bytes, capacity=capacity, sleep_screen=not alert)
+        counts = fitted.counts
+        if plans and not any(counts):
+            rt.fit = frames.record_fit(plans, counts, capacity, rt.fit, dev.get("name") or "the panel")
+            need = epf.file_size(1, [await weigh(0, 0) if deflate else page_bytes])
+            raise frames.NoRoom(frames.no_room_words(dev.get("name") or "The panel", capacity, need))
+
+        while True:
+            imgs = []
+            cat_offsets, cat_sizes, cat_names, cat_pill_widths, cat_sub_keys = [], [], [], [], []
+            fg = footer(counts)
+            geo = frames.panel_geometry(fg, orient, display)
+            kept = [(p, c) for p, c in zip(plans, counts) if c > 0]
+            for cat_i, (plan, sub_count) in enumerate(kept):
+                cat_name = plan["name"]
+                try:
+                    if fg == everything and all(drawn.get((cat_i, k)) is not None for k in range(sub_count)):
+                        page_imgs = [drawn[(cat_i, k)] for k in range(sub_count)]     # as weighed
+                    else:
+                        page_imgs = await frames.draw_category(plan, sub_count, cat_i, footer=fg,
+                                                               page_def=spec["pages"][cat_name], orient=orient,
+                                                               display=display, today=today)
+                except Exception as exc:
+                    print(f"page {cat_name} left out: {health.describe(exc)}", flush=True)
+                    continue
+                cat_offsets.append(len(imgs))
+                cat_sizes.append(sub_count)
+                cat_names.append(cat_name)
+                cat_pill_widths.append(fg["pages"][cat_i]["w"])
+                cat_sub_keys.append(plan["sub_keys"][:sub_count])
+                imgs.extend(page_imgs)
+            # Weighed with every item's footer, drawn with the kept ones': if that came out larger,
+            # the last item let in goes, until it fits. Not deflated, each page is page_bytes exactly.
+            sleeping = [sleep_img] if fitted.sleep_screen else []
+            if not deflate or len(fitted.order) <= 1 or epf.file_size(
+                    len(cat_offsets) + len(sleeping), [stored(im) for im in sleeping + imgs]) <= capacity:
+                break
+            i, _ = fitted.order.pop()
+            counts[i] -= 1
+        rt.fit = frames.record_fit(plans, counts, capacity, rt.fit, dev.get("name") or "the panel")
         live = cat_names
         if not imgs:
             raise RuntimeError("no page could be drawn")
 
-        # The sleep screen always goes first, so the panel can fall asleep
+        # The sleep screen goes first, so the panel can fall asleep
         # instantly (dial centre held, or its Sleep switch) without asking us.
         # The panel never pages onto it. During quiet hours with the sleep screen
-        # on, it's also marked "auto": the panel goes to sleep by itself.
+        # on, it's also marked "auto": the panel goes to sleep by itself. With
+        # room for only one page (frames.fit), that one is the sleep screen while
+        # quiet hours want it, and the page otherwise.
         cat_flags = [0] * len(cat_offsets)
-        qh = spec.get("quiet_hours") or {}
-        if not alert:
-            auto = quiet_active and qh.get("sleep_screen", True)
-            text = (sleep.wake_text(quiet_reason, qh.get("end") or "07:00") if quiet_active
-                    else sleep.manual_text())
-            sleep_img = await asyncio.to_thread(sleep.render_sleep_page, text, orient, display)
-            imgs.insert(0, T.orient_for_panel(T.to_1bit(sleep_img), orient, display=display))
+        if not alert and not fitted.sleep_screen and auto:
+            imgs, cat_offsets, cat_sizes, cat_names, cat_pill_widths, cat_sub_keys, cat_flags, live = \
+                [], [], [], [], [], [], [], []
+        if not alert and (fitted.sleep_screen or auto):
+            imgs.insert(0, sleep_img)
             cat_offsets = [0] + [o + 1 for o in cat_offsets]
             cat_sizes = [1] + cat_sizes
             cat_names = [SLEEP_PAGE] + cat_names
             cat_pill_widths = [0] + cat_pill_widths
-            cat_sub_keys = [[f"{SLEEP_PAGE}:{text}"]] + cat_sub_keys     # new text, new identity: the panel redraws it
+            cat_sub_keys = [[f"{SLEEP_PAGE}:{sleep_text}"]] + cat_sub_keys     # new text, new identity: the panel redraws it
             cat_flags = [epf.CAT_FLAG_SLEEP | (epf.CAT_FLAG_SLEEP_AUTO if auto else 0)] + cat_flags
             live = [SLEEP_PAGE] + list(live)
 
@@ -293,9 +349,16 @@ class CrowPanel(Kind):
             content_hash=int.from_bytes(slices_digest[:8], "big"),
             geometry=geo,
             cat_flags=cat_flags,
+            deflate=deflate,
         )
         return _frames(frames._png(strip), slice_pngs[0], slice_pngs, live, cat_offsets, cat_sizes, cat_names,
                        cat_pill_widths, rot_sec, cat_ids, sub_ids, epf_data, epf.extract_page_epf(epf_data, 0))
+
+
+def inflates(dev: dict) -> bool:
+    """Whether its firmware asked for deflated pages (`deflate=1` with every download, 0.24 and
+    later; epf.FLAG_DEFLATE). Older firmware never says, and gets every page as it is."""
+    return bool(devices.state(dev["id"]).get("inflates"))
 
 
 def _memory(dev: dict, display: str | None = None) -> tuple[int, int]:
@@ -333,7 +396,7 @@ def _single_epf(img, *, dev: dict, name: str, sub_key: str, spec: dict, fg: dict
         sub_ids=[sub_id], display_model=display, width=T.panel_dims(display)[0], height=T.panel_dims(display)[1],
         rotate_sec=timing.rotate_seconds(dev), quiet_hours=quiet, alert_interrupt=False,
         orientation_180=(orient == 180), content_hash=int.from_bytes(digest[:8], "big"),
-        geometry=frames.panel_geometry(fg, orient, display), cat_flags=[cat_flags])
+        geometry=frames.panel_geometry(fg, orient, display), cat_flags=[cat_flags], deflate=inflates(dev))
 
 
 def _orient(spec: dict) -> int:
@@ -533,6 +596,10 @@ async def frames_epf(request):
             runtime.LIVE._event().set()                # render to the new size now
     except ValueError:
         pass
+    if "cap" in request.query and (request.query.get("deflate") == "1") != inflates(dev):
+        # What its firmware reads, said with every download: the next render is for that.
+        devices.set_state(dev["id"], inflates=request.query.get("deflate") == "1")
+        runtime.LIVE._event().set()
     wake = str(request.query.get("wake") or "").lower()
     if wake:
         # Only firmware that can sleep says why it woke.
@@ -562,6 +629,10 @@ async def frames_epf(request):
         asleep = sleep_header(got)
     if not body:
         raise web.HTTPServiceUnavailable(text="no epf frame rendered yet", headers=asleep)
+    if len(body) > runtime.panel_capacity(dev["id"]):
+        # Drawn before it said what it holds (its first download, or it holds less now): never
+        # send more than it holds. Saying so set off a render that fits; it asks again soon.
+        raise web.HTTPServiceUnavailable(text="fitting the pages to what this panel holds", headers=asleep)
     if etag and request.headers.get("If-None-Match") == etag:
         raise web.HTTPNotModified(headers={**_cache_headers(f, etag), **asleep})
     h = {**_cache_headers(f, etag), **asleep}

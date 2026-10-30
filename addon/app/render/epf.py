@@ -1,8 +1,12 @@
 """Binary E-Paper Frame (.epf) Protocol v3.0
 
-High-performance, zero-decode binary container format for CrowPanel displays.
+High-performance binary container format for the panels our firmware drives.
 Provides stride-aligned 1-bit scanline memory layout for direct DMA/memcpy
-streaming on microcontrollers with zero CPU decompression overhead.
+streaming on microcontrollers with zero CPU decompression overhead, or, for
+firmware that asks (`deflate=1`, FLAG_DEFLATE), each page as raw deflate, which
+the panel inflates into its display buffer as it shows the page (ESP32 ROM's
+tinfl): a 1-bit page of words and icons is about a tenth of its size, so a
+panel without PSRAM holds a whole rotation.
 """
 from __future__ import annotations
 
@@ -36,6 +40,7 @@ FLAG_QUIET_HOURS = 0x0002
 FLAG_FORCE_FULL = 0x0004
 FLAG_ORIENTATION_180 = 0x0008
 FLAG_GEOMETRY = 0x0010          # the reserved header bytes carry an OverlayGeometry
+FLAG_DEFLATE = 0x0020           # each page is raw deflate; its page record's last field is its length
 
 # Category flags (EpfCategory.flags)
 CAT_FLAG_SLEEP = 0x0001         # the sleep screen (always category 0 when present)
@@ -55,9 +60,28 @@ GEOMETRY_FMT = ">HHBBHHHHH4x"             # 20 bytes in the reserved area
 DEFAULT_CAPACITY = 1024 * 1024
 
 
+def file_size(cats: int, page_sizes: Sequence[int]) -> int:
+    """The size of a frame file with this many categories and pages of these sizes, as stored
+    (deflated or not): the one sum the add-on fits a panel's memory by (frames.fit)."""
+    return HEADER_SIZE + cats * CAT_RECORD_SIZE + len(page_sizes) * PAGE_RECORD_SIZE + sum(page_sizes) + CRC_SIZE
+
+
 def encoded_size(pages: int, cats: int, page_bytes: int) -> int:
-    """The size of a frame file with this many pages and categories."""
-    return HEADER_SIZE + cats * CAT_RECORD_SIZE + pages * (PAGE_RECORD_SIZE + page_bytes) + CRC_SIZE
+    """The size of a frame file with this many pages and categories, none deflated."""
+    return file_size(cats, [page_bytes] * pages)
+
+
+def deflate_page(raw: bytes) -> bytes:
+    """One page as it's stored with FLAG_DEFLATE: raw deflate (no zlib header), as small as it goes."""
+    z = zlib.compressobj(9, zlib.DEFLATED, -15, 9)
+    return z.compress(raw) + z.flush()
+
+
+def inflate_page(data: bytes, page_bytes: int) -> bytes:
+    out = zlib.decompressobj(-15).decompress(data, page_bytes + 1)
+    if len(out) != page_bytes:
+        raise ValueError(f"A deflated page holds {len(out)} bytes, not {page_bytes}")
+    return out
 
 
 @dataclass(frozen=True)
@@ -150,14 +174,21 @@ class EpfStream:
     pages: tuple[EpfPage, ...]
     pixel_data: bytes
     crc32: int
+    spans: tuple[tuple[int, int], ...] = ()     # each page's (start, length) in pixel_data, as stored
+
+    def stored(self, page_index: int) -> bytes:
+        """A page's bytes as the file holds them (deflated with FLAG_DEFLATE)."""
+        if page_index < 0 or page_index >= self.header.page_count:
+            raise IndexError(f"Page index {page_index} out of range [0..{self.header.page_count-1}]")
+        start, length = self.spans[page_index]
+        return self.pixel_data[start : start + length]
 
     def page_slice(self, page_index: int) -> bytes:
         """Return raw scanline bytes for a specific page."""
-        if page_index < 0 or page_index >= self.header.page_count:
-            raise IndexError(f"Page index {page_index} out of range [0..{self.header.page_count-1}]")
-        bytes_per_page = self.header.stride * self.header.height
-        start = page_index * bytes_per_page
-        return self.pixel_data[start : start + bytes_per_page]
+        data = self.stored(page_index)
+        if self.header.flags & FLAG_DEFLATE:
+            return inflate_page(data, self.header.stride * self.header.height)
+        return data
 
 
 def encode_epf(
@@ -178,8 +209,10 @@ def encode_epf(
     content_hash: int = 0,
     geometry: OverlayGeometry | None = None,
     cat_flags: Sequence[int] | None = None,
+    deflate: bool = False,
 ) -> bytes:
-    """Encode layout pages and identity directories into an aligned .epf binary buffer."""
+    """Encode layout pages and identity directories into an aligned .epf binary buffer.
+    `deflate`: each page as raw deflate (FLAG_DEFLATE), for firmware that asked for it."""
     num_pages = len(pages)
     num_cats = len(cat_ids)
     if num_pages == 0:
@@ -190,8 +223,6 @@ def encode_epf(
         raise ValueError(f"sub_ids count ({len(sub_ids)}) does not match pages count ({num_pages})")
 
     stride = (width + 7) // 8
-    bytes_per_page = stride * height
-    payload_size = bytes_per_page * num_pages
     if display_model not in MODEL_MAP:
         raise ValueError(f"unknown display model {display_model!r}")
     model_id = MODEL_MAP[display_model]
@@ -207,6 +238,13 @@ def encode_epf(
         flags |= FLAG_ORIENTATION_180
     if geometry is not None:
         flags |= FLAG_GEOMETRY
+    if deflate:
+        flags |= FLAG_DEFLATE
+
+    # 1. The pixel payload, one page after another: each Pillow image in 1-bit raw
+    # scanlines, deflated when asked.
+    stored = [stored_page(img, display_model, width, height, deflate) for img in pages]
+    payload_size = sum(len(s) for s in stored)
 
     dir_offset = HEADER_SIZE
     cat_dir_size = num_cats * CAT_RECORD_SIZE
@@ -247,7 +285,8 @@ def encode_epf(
     cat_bytes = b"".join(cat_records)
 
     # 3. Pack Page Directory
-    # struct EpfPage: uint32 sub_id, uint32 cat_id, uint16 cat_idx, uint16 sub_idx, uint32 res
+    # struct EpfPage: uint32 sub_id, uint32 cat_id, uint16 cat_idx, uint16 sub_idx,
+    # uint32 length (FLAG_DEFLATE: the page's deflated bytes; otherwise 0, reserved)
     page_records = []
     for p in range(num_pages):
         sid = int(sub_ids[p]) & 0xFFFFFFFF
@@ -262,31 +301,11 @@ def encode_epf(
                 s_idx = p - off
                 break
         parent_cid = int(cat_ids[c_idx]) & 0xFFFFFFFF if c_idx < num_cats else 0
-        page_records.append(struct.pack(">IIHHI", sid, parent_cid, c_idx, s_idx, 0))
+        page_records.append(struct.pack(">IIHHI", sid, parent_cid, c_idx, s_idx, len(stored[p]) if deflate else 0))
     page_bytes = b"".join(page_records)
 
-    # 4. Pack Scanline Pixel Payload
-    # Each Pillow Image must be converted to 1-bit and raw scanlines extracted
-    scanline_parts = []
-    for p, img in enumerate(pages):
-        if img.mode != "1":
-            img_1bit = img.convert("1")
-        else:
-            img_1bit = img
-        if img_1bit.size != (width, height):
-            padded = Image.new("1", (width, height), 1)
-            padded.paste(img_1bit, (0, 0))
-            img_1bit = padded
-        # CrowPanel hardware scanline orientation for direct DisplayBuffer memcpy:
-        # CrowPanel 5.79" (and other mirror_x displays) stores rows in FLIP_LEFT_RIGHT
-        # so that a direct std::memcpy into the display buffer matches draw_pixel_at.
-        if display_model in MIRRORED_MODELS:
-            packed_img = img_1bit.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
-        else:
-            packed_img = img_1bit
-        raw = packed_img.tobytes()
-        scanline_parts.append(raw)
-    pixel_bytes = b"".join(scanline_parts)
+    # 4. The payload
+    pixel_bytes = b"".join(stored)
 
     body = header_bytes + cat_bytes + page_bytes + pixel_bytes
 
@@ -295,6 +314,23 @@ def encode_epf(
     crc_bytes = struct.pack(">I", crc_val)
 
     return body + crc_bytes
+
+
+def stored_page(img: Image.Image, display_model: str, width: int, height: int, deflate: bool = False) -> bytes:
+    """One page as a frame file stores it: 1-bit raw scanlines, deflated when asked. What a page
+    takes in the panel's memory is the length of this (frames.fit_weighed)."""
+    img_1bit = img if img.mode == "1" else img.convert("1")
+    if img_1bit.size != (width, height):
+        padded = Image.new("1", (width, height), 1)
+        padded.paste(img_1bit, (0, 0))
+        img_1bit = padded
+    # CrowPanel hardware scanline orientation for direct DisplayBuffer memcpy:
+    # CrowPanel 5.79" (and other mirror_x displays) stores rows in FLIP_LEFT_RIGHT
+    # so that a direct std::memcpy into the display buffer matches draw_pixel_at.
+    if display_model in MIRRORED_MODELS:
+        img_1bit = img_1bit.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
+    raw = img_1bit.tobytes()
+    return deflate_page(raw) if deflate else raw
 
 
 def decode_epf(data: bytes) -> EpfStream:
@@ -343,9 +379,9 @@ def decode_epf(data: bytes) -> EpfStream:
         raise ValueError("Malformed directory offsets in header")
 
     bytes_per_page = header.stride * header.height
-    expected_payload_size = bytes_per_page * header.page_count
-    if header.payload_size != expected_payload_size:
-        raise ValueError(f"Payload size mismatch: {header.payload_size} != {expected_payload_size}")
+    deflated = bool(header.flags & FLAG_DEFLATE)
+    if not deflated and header.payload_size != bytes_per_page * header.page_count:
+        raise ValueError(f"Payload size mismatch: {header.payload_size} != {bytes_per_page * header.page_count}")
 
     if len(body) != header.data_offset + header.payload_size:
         raise ValueError("Corrupt stream length")
@@ -359,12 +395,19 @@ def decode_epf(data: bytes) -> EpfStream:
         pos += CAT_RECORD_SIZE
 
     # Unpack Pages
-    pages = []
+    pages, spans, start = [], [], 0
     pos = page_dir_start
     for _ in range(header.page_count):
-        sid, cid, c_idx, s_idx, _ = struct.unpack(">IIHHI", data[pos : pos + PAGE_RECORD_SIZE])
+        sid, cid, c_idx, s_idx, length = struct.unpack(">IIHHI", data[pos : pos + PAGE_RECORD_SIZE])
         pages.append(EpfPage(sub_id=sid, cat_id=cid, cat_index=c_idx, sub_index=s_idx))
+        length = length if deflated else bytes_per_page
+        if deflated and length == 0:
+            raise ValueError("A deflated page with no bytes")
+        spans.append((start, length))
+        start += length
         pos += PAGE_RECORD_SIZE
+    if start != header.payload_size:
+        raise ValueError(f"Pages hold {start} bytes, the payload {header.payload_size}")
 
     pixel_data = body[header.data_offset :]
     geometry = OverlayGeometry.unpack(data[44:HEADER_SIZE]) if header.flags & FLAG_GEOMETRY else None
@@ -375,6 +418,7 @@ def decode_epf(data: bytes) -> EpfStream:
         pages=tuple(pages),
         pixel_data=pixel_data,
         crc32=computed_crc,
+        spans=tuple(spans),
     )
 
 
@@ -390,8 +434,9 @@ def extract_page_epf(stream: EpfStream | bytes, page_index: int) -> bytes:
     # Find matching category
     target_cat = stream.categories[target_page.cat_index]
 
-    raw_page_bytes = stream.page_slice(page_index)
+    raw_page_bytes = stream.stored(page_index)         # as stored: deflated stays deflated
     bytes_per_page = len(raw_page_bytes)
+    deflated = bool(stream.header.flags & FLAG_DEFLATE)
 
     dir_offset = HEADER_SIZE
     cat_dir_size = 1 * CAT_RECORD_SIZE
@@ -432,7 +477,7 @@ def extract_page_epf(stream: EpfStream | bytes, page_index: int) -> bytes:
         target_page.cat_id,
         0,  # cat_index = 0
         0,  # sub_index = 0
-        0,
+        bytes_per_page if deflated else 0,
     )
 
     body = header_bytes + cat_bytes + page_bytes + raw_page_bytes

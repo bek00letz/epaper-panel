@@ -36,6 +36,9 @@ constexpr uint32_t FLAG_QUIET_HOURS = 0x0002;
 constexpr uint32_t FLAG_FORCE_FULL = 0x0004;
 constexpr uint32_t FLAG_ORIENTATION_180 = 0x0008;
 constexpr uint32_t FLAG_GEOMETRY = 0x0010;
+// Each page is raw deflate, its page record's last field its length: what firmware that can
+// inflate asks for (deflate=1), so a board without PSRAM holds a whole rotation (render/epf.py).
+constexpr uint32_t FLAG_DEFLATE = 0x0020;
 
 constexpr uint16_t CAT_FLAG_SLEEP = 0x0001;       // category 0 is the sleep screen
 constexpr uint16_t CAT_FLAG_SLEEP_AUTO = 0x0002;  // ...and quiet hours want the panel asleep
@@ -92,6 +95,7 @@ struct Category {
 struct Page {
   uint32_t sub_id{0}, cat_id{0};
   uint16_t cat_index{0}, sub_index{0};
+  uint32_t data_at{0}, data_len{0};        // where its pixels are in the file, as stored
 };
 
 struct Stream {
@@ -165,7 +169,8 @@ inline FetchResult parse_stream(const uint8_t *buf, size_t len, int native_w, in
   uint64_t dir_end = (uint64_t) HEADER_SIZE + (uint64_t) h.cat_count * CAT_RECORD_SIZE +
                      (uint64_t) h.page_count * PAGE_RECORD_SIZE;
   if (h.dir_offset != HEADER_SIZE || h.data_offset != dir_end ||
-      h.payload_size != page_bytes * h.page_count || (uint64_t) h.data_offset + h.payload_size != body_len)
+      (!(h.flags & FLAG_DEFLATE) && h.payload_size != page_bytes * h.page_count) ||
+      (uint64_t) h.data_offset + h.payload_size != body_len)
     return FetchResult::ERROR_LAYOUT;
 
   Stream s;
@@ -178,11 +183,20 @@ inline FetchResult parse_stream(const uint8_t *buf, size_t len, int native_w, in
     s.categories.push_back(rec);
   }
   const uint8_t *pp = cp;
+  uint64_t at = h.data_offset;
   for (uint16_t p = 0; p < h.page_count; p++, pp += PAGE_RECORD_SIZE) {
     Page rec{be32(pp), be32(pp + 4), be16(pp + 8), be16(pp + 10)};
     if (rec.cat_index >= h.cat_count) return FetchResult::ERROR_LAYOUT;
+    // Deflated, a page is never more than its raw size and deflate's own framing.
+    uint64_t len = (h.flags & FLAG_DEFLATE) ? be32(pp + 12) : page_bytes;
+    if (len == 0 || len > page_bytes + page_bytes / 8 + 1024 || at + len > (uint64_t) h.data_offset + h.payload_size)
+      return FetchResult::ERROR_LAYOUT;
+    rec.data_at = (uint32_t) at;
+    rec.data_len = (uint32_t) len;
+    at += len;
     s.pages.push_back(rec);
   }
+  if (at != (uint64_t) h.data_offset + h.payload_size) return FetchResult::ERROR_LAYOUT;
 
   if (h.flags & FLAG_GEOMETRY) {
     const uint8_t *g = buf + 44;
@@ -286,6 +300,24 @@ inline void draw_overlays(uint8_t *buf, int buf_w, int buf_h, const Geometry &g,
   else if (s.cat_pill_w > 0) invert_pill(g.cat_x0, y0, cat_x1, y1);
   if (s.cat_locked && s.cat_pill_w > 0) padlock(cat_x1 + 8, y0 + 2);
   if (s.panel_locked) padlock(s.has_sub ? (g.sub_x0 - 8 - 22) : (g.sub_x1 - 22), y0 + 2);
+}
+
+// Inflates `len` bytes of raw deflate at `src` into exactly `out_len` bytes at `out`, and says
+// whether it did: ESP32 ROM's tinfl on the panel (epf_client.h), zlib in the host tests.
+using Inflater = bool (*)(const uint8_t *src, size_t len, uint8_t *out, size_t out_len);
+
+// One page's pixels into `out` (a display buffer of exactly stride x height bytes): copied, or
+// inflated with FLAG_DEFLATE. False when it can't be: no inflater, or the page doesn't inflate
+// to exactly one page (the screen then keeps what it shows).
+inline bool page_pixels(const Stream &s, const uint8_t *file, int page, uint8_t *out, Inflater inflate) {
+  if (page < 0 || page >= (int) s.pages.size()) return false;
+  const Page &p = s.pages[page];
+  const size_t page_bytes = (size_t) s.header.stride * s.header.height;
+  if (!(s.header.flags & FLAG_DEFLATE)) {
+    std::memcpy(out, file + p.data_at, page_bytes);
+    return true;
+  }
+  return inflate != nullptr && inflate(file + p.data_at, p.data_len, out, page_bytes);
 }
 
 // ---------------------------------------------------------------------------

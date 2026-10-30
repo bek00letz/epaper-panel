@@ -145,33 +145,111 @@ async def _fetch_feed_items(session, elements):
                     pass
 
 
-def fit_counts(wants: list[int], page_bytes: int, capacity: int, extra_pages: int = 1) -> list[int]:
-    """How many items each page shows so the frame file fits the panel.
+class Fit:
+    """What a frame file for a panel carries (fit): how many items each page shows, whether the
+    sleep screen goes in, and the items in the order they were let in (the last is the first to go)."""
+
+    def __init__(self, counts: list[int], sleep_screen: bool, order: list[tuple[int, int]] | None = None):
+        self.counts, self.sleep_screen, self.order = counts, sleep_screen, order or []
+
+
+class NoRoom(Exception):
+    """Not even one page fits what a panel holds: said in plain words (no_room_words), never as a
+    failed render."""
+
+
+def no_room_words(name: str, capacity: int, need: int) -> str:
+    """`need`: the bytes of a frame file of its first page."""
+    return (f"{name} has room for {capacity // 1024} KB of pages, and one page needs {-(-need // 1024)} KB, "
+            "so it keeps showing what it has.")
+
+
+def fit(wants: list[int], page_bytes: int, capacity: int, sleep_screen: bool = True) -> Fit:
+    """What fits a panel that holds `capacity` bytes of frame file, as the file is stored
+    (epf.file_size; the firmware's frame_file_size is the same sum): the one rule for every
+    frame file of every page, each page `page_bytes` (not deflated). fit_weighed is the same
+    rule with each picture weighed as it's drawn.
 
     Every page keeps its first item; then one more item per page, round by
     round in rotation order, while there is room. Items within a page are
     already in order of importance (your team, live games, the closest
     aircraft, the newest episode), so the ones left out are the least
     important. If even one item per page doesn't fit, pages at the end of the
-    rotation are left out. `extra_pages`: the sleep screen.
+    rotation are left out. `sleep_screen`: the file should have it (not with
+    an alert). With room for one page but not the sleep screen too (a board
+    without PSRAM: the Seeed XIAO 7.5"), that page alone: the panel stays
+    awake without a sleep screen (epf_core.h). Nothing only when not even one
+    page fits.
     """
-    def fits(pages: int, cats: int) -> bool:
-        return epf.encoded_size(pages + extra_pages, cats + extra_pages, page_bytes) <= capacity
+    sharing = _fitting(wants, capacity, page_bytes if sleep_screen else None)
+    try:
+        sharing.send(None)
+        while True:
+            sharing.send(page_bytes)
+    except StopIteration as done:
+        return done.value
 
-    n = len(wants)
-    while n and not fits(n, n):
-        n -= 1
-    counts = [1] * n + [0] * (len(wants) - n)
-    total = n
+
+async def fit_weighed(wants: list[int], capacity: int, sleep_cost: int | None, cost) -> Fit:
+    """fit, for a panel whose pictures differ in size (deflated, epf.FLAG_DEFLATE): `await
+    cost(page, item)` is what that picture takes as stored, asked only for the pictures the rule
+    considers; `sleep_cost` the sleep screen's, None for none (an alert)."""
+    sharing = _fitting(wants, capacity, sleep_cost)
+    try:
+        asked = sharing.send(None)
+        while True:
+            asked = sharing.send(await cost(*asked))
+    except StopIteration as done:
+        return done.value
+
+
+def fit_counts(wants: list[int], page_bytes: int, capacity: int, extra_pages: int = 1) -> list[int]:
+    """How many items each page shows so the frame file fits the panel (fit)."""
+    return fit(wants, page_bytes, capacity, sleep_screen=extra_pages > 0).counts
+
+
+def _fitting(wants: list[int], capacity: int, sleep: int | None):
+    """The rule, once: yields (page, item) to be told what that picture takes, returns the Fit."""
+    got = yield from _sharing(wants, capacity, sleep)
+    if sleep is not None and wants and not any(got.counts):
+        alone = yield from _sharing(wants, capacity, None)
+        if any(alone.counts):
+            return alone
+    return got
+
+
+def _sharing(wants: list[int], capacity: int, sleep: int | None):
+    sizes = [] if sleep is None else [sleep]
+    cats = len(sizes)
+    counts, order, weighed = [0] * len(wants), [], {}
+
+    def fits(c: int, cats_after: int) -> bool:
+        return epf.file_size(cats_after, sizes + [c]) <= capacity
+
+    def let_in(i: int, c: int) -> None:
+        sizes.append(c)
+        order.append((i, counts[i]))
+        counts[i] += 1
+
+    n = 0
+    for i in range(len(wants)):                   # a first item each, from the start of the rotation
+        c = weighed.setdefault((i, 0), (yield (i, 0)))
+        if not fits(c, cats + 1):
+            break
+        let_in(i, c)
+        cats, n = cats + 1, n + 1
     grew = True
-    while grew:
+    while grew:                                   # then one more each, round by round
         grew = False
         for i in range(n):
-            if counts[i] < wants[i] and fits(total + 1, n):
-                counts[i] += 1
-                total += 1
+            if counts[i] >= wants[i]:
+                continue
+            key = (i, counts[i])
+            c = weighed[key] if key in weighed else weighed.setdefault(key, (yield key))
+            if fits(c, cats):
+                let_in(i, c)
                 grew = True
-    return counts
+    return Fit(counts, sleep is not None, order)
 
 
 def items_word(plan: dict) -> str:
@@ -693,6 +771,10 @@ async def _refresh_all(session) -> dict[str, Frames]:
                 st = states[dev["design"]] = await design_state(session, dev["design"], spec)
             with await device_words(session, dev):           # its words, in its language
                 out[dev["id"]] = await _refresh_device(session, dev, spec, st)
+        except NoRoom as exc:
+            # Not a failure of its pages: it has no room for one. Said plainly, kept until it has.
+            print(str(exc), flush=True)
+            runtime.device(dev["id"]).frames.no_room = str(exc)
         except Exception as exc:
             # One screen that can't be drawn must not cost the others.
             print(f"{dev['name']}: render failed: {health.describe(exc)}", flush=True)
@@ -727,7 +809,8 @@ async def _refresh_device(session, dev: dict, spec: dict, st: DesignState) -> Fr
     nxt.quiet_active = quiet_active
     nxt.quiet_reason = quiet_reason
     rt.frames = nxt
-    print(f"{dev['name']}: rendered {nxt.names} ({len(nxt.strip)}B strip, {nxt.cat_count} cats, "
+    print(f"{dev['name']}: rendered {nxt.names} ({len(nxt.strip)}B picture, {len(nxt.epf_strip or b'')}B frame file, "
+          f"{nxt.cat_count} cats, "
           f"offsets: {nxt.cat_offsets}, sizes: {nxt.cat_sizes}, rot: {nxt.rotate_seconds}s, "
           f"quiet: {quiet_active} [{quiet_reason}])", flush=True)
     shown = [n for n in nxt.names if n != SLEEP_PAGE]

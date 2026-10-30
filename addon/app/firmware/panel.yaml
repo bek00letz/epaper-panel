@@ -51,7 +51,7 @@ external_components:
   - source: github://bek00letz/epaper-panel@@COMPONENT_REF@
     components: [epf]
 @DISPLAY_COMPONENT@
-epf:
+epf:@EPF_OPTIONS@
 
 globals:
   - id: last_dial_ms

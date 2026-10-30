@@ -207,6 +207,35 @@ class TestEpfProtocol(unittest.TestCase):
         dec_single = epf.decode_epf(single)
         self.assertTrue(dec_single.header.flags & epf.FLAG_ORIENTATION_180)
 
+    def test_deflated_pages_round_trip(self):
+        # For firmware that asked (deflate=1): each page raw deflate, its length in its page
+        # record, and the file exactly the size the fit rule counts (file_size).
+        args = dict(cat_ids=[1, 2], cat_offsets=[0, 1], cat_sizes=[1, len(self.pages) - 1],
+                    cat_pill_widths=[100, 100], sub_ids=list(range(len(self.pages))))
+        plain = epf.encode_epf(pages=self.pages, **args)
+        enc = epf.encode_epf(pages=self.pages, deflate=True, **args)
+        dec = epf.decode_epf(enc)
+        self.assertTrue(dec.header.flags & epf.FLAG_DEFLATE)
+        self.assertLess(len(enc), len(plain))
+        for i in range(len(self.pages)):
+            self.assertEqual(dec.page_slice(i), epf.decode_epf(plain).page_slice(i), "the same pixels")
+        self.assertEqual(len(enc), epf.file_size(2, [length for _, length in dec.spans]))
+        # One page of it stays deflated, and still reads.
+        single = epf.decode_epf(epf.extract_page_epf(enc, 1))
+        self.assertTrue(single.header.flags & epf.FLAG_DEFLATE)
+        self.assertEqual(single.page_slice(0), dec.page_slice(1))
+
+    def test_a_deflated_page_that_lies_is_refused(self):
+        enc = bytearray(epf.encode_epf(pages=self.pages[:1], cat_ids=[1], cat_offsets=[0], cat_sizes=[1],
+                                       cat_pill_widths=[100], sub_ids=[2], deflate=True))
+        rec = epf.HEADER_SIZE + epf.CAT_RECORD_SIZE + 12
+        enc[rec + 3] += 1
+        body = bytes(enc[:-4])
+        import zlib
+        enc[-4:] = (zlib.crc32(body) & 0xFFFFFFFF).to_bytes(4, "big")
+        with self.assertRaises(ValueError):
+            epf.decode_epf(bytes(enc))
+
 
 if __name__ == "__main__":
     unittest.main()

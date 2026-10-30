@@ -55,6 +55,7 @@ class Frames:
         self.last_modified: str = ""
         self.rendered_at = None
         self.error = None
+        self.no_room: str | None = None              # not even one page fits the panel (frames.NoRoom)
 
 
 class DeviceRuntime:
@@ -63,7 +64,7 @@ class DeviceRuntime:
     def __init__(self, device_id: str):
         self.id = device_id
         self.frames = Frames()
-        self.fit: dict | None = None             # what frames.fit_counts left out, for the editor
+        self.fit: dict | None = None             # what frames.fit left out, for the editor
         self.link: PanelLink | None = None       # set by the device's kind when it can be reached
         self.kind: dict = {}                     # what the device's kind keeps between requests
 

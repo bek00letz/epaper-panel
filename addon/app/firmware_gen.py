@@ -162,6 +162,17 @@ def drive_every_pixel(disp: dict) -> str:
     return disp["drive_every_pixel"] if keeps_picture(disp) else "{}"
 
 
+# Pages arrive deflated and the panel inflates each as it shows it (epf.FLAG_DEFLATE, 30 Oct):
+# a board without PSRAM (the Seeed XIAO 7.5") holds a whole rotation, and every panel downloads
+# a tenth as much. False is the way back: every page as it is, as before.
+DEFLATE_FRAMES = True
+
+
+def epf_options() -> str:
+    """What follows `epf:` in the firmware: nothing while it inflates (the component's default)."""
+    return "" if DEFLATE_FRAMES else "\n  deflate: false"
+
+
 # Partial refresh on a screen whose profile keeps a full-refresh way back ("full_only":
 # the Seeed XIAO 7.5", 30 Oct, untried on a real panel). False builds those screens as
 # first built: ESPHome's full-refresh driver, a flash on every change.
@@ -314,7 +325,7 @@ def render(*, disp: dict, version: str, device_name: str, frames_url: str, ota_k
         "VERSION": version or "dev", "DEVICE_NAME": device_name, "FRAMES_URL": frames_url,
         "COMPONENT_REF": component_ref(version), "DISPLAY_COMPONENT": component,
         "DISPLAY_BLOCK": block, "DISPLAY_SETTLED": display_settled(disp), "FULL_REFRESH": full_refresh(disp),
-        "ESPHOME_BOARD": board["esphome_board"], "PSRAM_MODE": board["psram"],
+        "EPF_OPTIONS": epf_options(), "ESPHOME_BOARD": board["esphome_board"], "PSRAM_MODE": board["psram"],
         "DISPLAY_POWER_PIN": str(board["display_power"]), "KEEP_DISPLAY_PIN": power_begin_arg(disp),
         "KEEP_PICTURE": keep_picture(disp), "DRIVE_EVERY_PIXEL": drive_every_pixel(disp), "OTA_KEY": ota_key,
         "WIFI_BLOCK": wifi_block([(wifi_ssid, wifi_password), *more_networks], hotspot),

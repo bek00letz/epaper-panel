@@ -29,7 +29,32 @@
 
 #include <sys/time.h>
 
+#ifdef USE_EPF_DEFLATE
+#include "miniz.h"                         // ESP32 ROM's tinfl: inflating costs no flash
+#endif
+
 namespace epf {
+
+#ifdef USE_EPF_DEFLATE
+// Pages arrive deflated (FLAG_DEFLATE) and are inflated straight into the display buffer as
+// they're shown. tinfl's state (about 11 KB) is on the heap, once: never on the main loop's
+// stack. Only the main loop inflates.
+inline tinfl_decompressor *&inflater_state_() {
+  static tinfl_decompressor *state = nullptr;
+  return state;
+}
+inline bool inflate_rom(const uint8_t *src, size_t len, uint8_t *out, size_t out_len) {
+  tinfl_decompressor *r = inflater_state_();
+  if (!r) return false;
+  tinfl_init(r);
+  size_t in = len, written = out_len;
+  tinfl_status st = tinfl_decompress(r, src, &in, out, out, &written, TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF);
+  return st == TINFL_STATUS_DONE && written == out_len;
+}
+constexpr Inflater INFLATER = inflate_rom;
+#else
+constexpr Inflater INFLATER = nullptr;     // firmware_gen.DEFLATE_FRAMES off: every page as it is
+#endif
 
 class DisplayBufferAccessor : public esphome::display::DisplayBuffer {
  public:
@@ -198,7 +223,7 @@ class EpfClient {
     native_h_ = epd ? epd->get_native_height() : 0;
     if (!alloc_(url.rfind("https://", 0) == 0)) return false;
     url_ = url + (url.find('?') == std::string::npos ? "?" : "&") + "cap=" + std::to_string(capacity_) + "&mac=" +
-           mac_() + wake_query_;
+           mac_() + wake_query_ + (INFLATER ? "&deflate=1" : "");
     wake_query_.clear();                    // said once, on the first download after a start
     send_etag_ = current_etag_;
     wrote_ = false;
@@ -281,9 +306,9 @@ class EpfClient {
     uint8_t *dst = DisplayBufferAccessor::raw(epd);
     const Header &h = stream_.header;
     if (!dst || h.width != epd->get_native_width() || h.height != epd->get_native_height() || h.width % 8) return false;
-    size_t page_bytes = (size_t) h.stride * h.height;
-    std::memcpy(dst, front_buf_ + h.data_offset + (size_t) page * page_bytes, page_bytes);
-    return true;
+    if (page_pixels(stream_, front_buf_, page, dst, INFLATER)) return true;
+    ESP_LOGW(TAG, "Page %d didn't inflate", page);
+    return false;
   }
 
   void draw_overlays(esphome::display::DisplayBuffer *epd, const OverlayState &s) {
@@ -299,6 +324,15 @@ class EpfClient {
 
   bool alloc_(bool https) {
     if (front_buf_ && back_buf_) return true;
+#ifdef USE_EPF_DEFLATE
+    // Before the frames' share is measured, so they never take what inflating needs.
+    if (!inflater_state_())
+      inflater_state_() = (tinfl_decompressor *) heap_caps_malloc(sizeof(tinfl_decompressor), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (!inflater_state_()) {
+      ESP_LOGE(TAG, "Not enough memory to inflate pages");
+      return false;
+    }
+#endif
     if (heap_caps_get_total_size(MALLOC_CAP_SPIRAM) > 0) {
       for (size_t cap : {BUFFER_CAPACITY, BUFFER_CAPACITY_SMALL}) {
         front_buf_ = (uint8_t *) heap_caps_malloc(cap, MALLOC_CAP_SPIRAM);
@@ -331,7 +365,8 @@ class EpfClient {
     front_buf_ = back_buf_ = buf;
     single_ = true;
     capacity_ = cap;
-    ESP_LOGI(TAG, "Frame buffer: 1 x %u KB in internal RAM, room for %u pages (%u KB were free; %u KB kept for downloads)",
+    ESP_LOGI(TAG, "Frame buffer: 1 x %u KB in internal RAM, %u pages as they are, many more deflated "
+             "(%u KB were free; %u KB kept for downloads)",
              (unsigned) (cap / 1024), (unsigned) ((cap - frame_file_size(0, page_bytes)) / (frame_file_size(1, page_bytes) -
                                                                                            frame_file_size(0, page_bytes))),
              (unsigned) (free_bytes / 1024), (unsigned) (reserve / 1024));
