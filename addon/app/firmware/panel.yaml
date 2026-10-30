@@ -322,7 +322,7 @@ binary_sensor:
 @END@
 @IF BUTTON_ONE@
   # A board's only button: a click shows the next page; holding it for a second
-  # downloads new frames now and redraws the page.
+  # downloads new frames now and clears ghosting with the same redraw.
   - platform: gpio
     id: key_one
     internal: true

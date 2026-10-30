@@ -11,14 +11,17 @@ is the same as before).
   can't do, because of its hardware:
   - It has no battery reading: the battery isn't wired to the chip.
   - Its one button (Boot, behind the stand) shows the next page, and held
-    for a second downloads new pages. It can't wake the panel from a sleep;
-    its Reset button can.
-  - Every change is a full refresh, with the black-and-white flash, as
-    ESPHome's driver for this screen does.
+    for a second downloads new pages and clears ghosting. It can't wake the
+    panel from a sleep; its Reset button can.
   - Without the extra memory a CrowPanel has, it holds about two pages:
     always on, it shows the first page of the rotation (the editor says what
     was left out). Sleeping between updates, it fetches each page in turn
     as usual. Not yet tried on a real panel.
+- **Its changes are quick refreshes, without the black-and-white flash**,
+  as on a CrowPanel: a full refresh clears ghosting now and then (Ghost
+  clearing in Home Assistant, as for a CrowPanel), and after a sleep the
+  first change is still a quick one. Not yet tried on a real panel; if it
+  misbehaves, the next release can go back to a full refresh every time.
 
 ## 0.22.1
 A fix for panels that sleep between updates. **Firmware change**: after

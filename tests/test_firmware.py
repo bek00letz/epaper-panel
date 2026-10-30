@@ -520,8 +520,13 @@ class TestFirmwareYaml(unittest.TestCase):
                 self.assertIn("epf::power_begin(-1);", boot, display)
                 self.assertEqual(firmware_gen.keep_picture(disp), "{}", display)
                 continue
-            self.assertIn(f"epf::power_begin({pin});", boot, display)
             self.assertNotEqual(firmware_gen.keep_picture(disp), "{}", display)
+            if pin is None:
+                # Always powered (the Seeed XIAO 7.5"): it keeps its picture with nothing to hold.
+                self.assertIn("epf::power_begin(epf::DISPLAY_ALWAYS_POWERED);", boot, display)
+                self.assertNotIn("id: epd_power", text, display)
+                continue
+            self.assertIn(f"epf::power_begin({pin});", boot, display)
             self.assertIn(f"switch:\n  - platform: gpio\n    pin: {pin}\n", text, "the pin it holds is the display's power")
 
     def test_the_first_refresh_after_a_sleep_drives_every_pixel(self):
@@ -544,6 +549,7 @@ class TestFirmwareYaml(unittest.TestCase):
         self.assertIn("crowpanel_drive_every_pixel(id(epd), 2)", T.get_display("crowpanel_579")["drive_every_pixel"])
         self.assertIn("crowpanel_drive_every_pixel(id(epd), 1)", T.get_display("crowpanel_420")["drive_every_pixel"])
         self.assertIn("waveshare_drive_every_pixel(id(epd))", T.get_display("crowpanel_290")["drive_every_pixel"])
+        self.assertIn("uc8179_drive_every_pixel(id(epd))", T.get_display("seeed_xiao_750")["drive_every_pixel"])
 
     def test_a_size_that_cant_drive_every_pixel_switches_its_display_off(self):
         # Without a way to make its first refresh after a wake drive every pixel, a partial
@@ -601,6 +607,13 @@ def render_for(display, **kw):
 class TestBoards(unittest.TestCase):
     """The board is part of a size's profile (theme.BOARDS): one template, switched by it."""
 
+    def test_a_way_back_overrides_only_firmware_facts(self):
+        for d, p in T.DISPLAYS.items():
+            back = p.get("full_only")
+            if back:
+                self.assertLessEqual(set(back), {"esphome_model", "always_full", "full_refresh", "keep_picture",
+                                                 "drive_every_pixel", "refresh_waits"}, d)
+
     def test_every_esphome_size_names_a_board_the_generator_knows(self):
         for d, p in T.DISPLAYS.items():
             if p.get("kind") != "crowpanel":
@@ -632,20 +645,58 @@ class TestBoards(unittest.TestCase):
         self.assertIn("esp32:\n  board: esp32-c3-devkitm-1\n  framework:\n    type: esp-idf\n", text)
         self.assertNotIn("psram:", text, "no PSRAM on the XIAO ESP32-C3")
         self.assertNotIn("id: epd_power", text, "its display is always powered")
-        self.assertIn("epf::power_begin(-1);", text)
-        # Seeed's ESPHome cookbook for this panel.
-        self.assertIn('  - platform: waveshare_epaper\n    id: epd\n    model: "7.50inv2"\n    cs_pin: 3\n    dc_pin: 5\n'
+        # Seeed's ESPHome cookbook for this panel's pins; ESPHome's partial-refresh driver for its screen.
+        self.assertIn('  - platform: waveshare_epaper\n    id: epd\n    model: "7.50inv2p"\n    cs_pin: 3\n    dc_pin: 5\n'
                       "    busy_pin:\n      number: 4\n      inverted: true\n    reset_pin: 2\n", text)
         self.assertIn("\nspi:\n  clk_pin: 8\n  mosi_pin: 10\n", text)
         # One button, the XIAO's Boot, and it counts as a press.
         self.assertIn("pin: {number: 9, mode: {input: true, pullup: true}, inverted: true}", text)
         self.assertEqual(text.count("- platform: gpio\n    id: key_"), 1)
         self.assertEqual(text.count("epf::PowerPolicy::instance().note_press(millis());"), 1)
-        # Every refresh is full: no ghost clearing to set, and asleep as soon as it's drawn.
-        for setting in ('name: "Ghost clear after"', 'name: "Ghost clearing"', 'name: "Clear ghosting"', "id(ghost_"):
-            self.assertNotIn(setting, text)
+        # Its refresh returns once the screen is done: asleep as soon as it's drawn.
         self.assertIn("|| !(true);", text)
         self.assertNotRegex(text, r"@[A-Z][A-Z_]+@|@IF ")
+
+    def test_the_xiao_refreshes_partially_by_the_panels_policy(self):
+        # Partial refresh, as on a CrowPanel: the ghost-clearing policy decides when a
+        # refresh is full (the driver's own count restarts), the driver's count is out of
+        # reach, and a sleep keeps the picture with the display always powered, its first
+        # refresh after a wake driving every pixel.
+        text = render_for("seeed_xiao_750")
+        redraw = text.split("  - id: redraw\n", 1)[1].split("\n\n", 1)[0]
+        self.assertIn("begin_redraw()) epf::full_refresh_next(id(epd));", redraw)
+        self.assertIn("    full_update_every: 1000000\n", text)
+        for setting in ('name: "Ghost clear after"', 'name: "Ghost clearing"', 'name: "Clear ghosting"'):
+            self.assertIn(setting, text)
+        self.assertIn("epf::power_begin(epf::DISPLAY_ALWAYS_POWERED);", text)
+        self.assertIn("picture_kept()) epf::waveshare_picture_kept(id(epd));", text)
+        self.assertIn("take_first_refresh()) epf::uc8179_drive_every_pixel(id(epd));", text)
+        self.assertIn("first change is partial", text.split("  - id: go_to_sleep\n", 1)[0].rsplit("script:", 1)[1])
+        client = (ROOT / "components" / "epf" / "epf_client.h").read_text()
+        self.assertIn("constexpr int DISPLAY_ALWAYS_POWERED = -2;", client)
+        self.assertEqual(firmware_gen.ALWAYS_POWERED, -2, "the generator and the firmware agree")
+        self.assertIn("s->command(0x10);", client.split("uc8179_drive_every_pixel", 1)[1].split("Ram::seed", 1)[0],
+                      "the UC8179's previous-picture memory")
+
+    def test_the_way_back_is_a_full_refresh_every_time(self):
+        # Until partial refresh is proven on a real XIAO: PARTIAL_REFRESH = False builds
+        # it as first built (ESPHome's 7.50inv2, a flash on every change). CrowPanels don't change.
+        crow = render_for(DISPLAY)
+        keep = firmware_gen.PARTIAL_REFRESH
+        try:
+            firmware_gen.PARTIAL_REFRESH = False
+            text = render_for("seeed_xiao_750")
+            self.assertEqual(render_for(DISPLAY), crow, "only a screen with a way back")
+        finally:
+            firmware_gen.PARTIAL_REFRESH = keep
+        self.assertIn('model: "7.50inv2"\n', text)
+        self.assertNotIn("full_update_every", text, "ESPHome refuses a count for a full-only driver")
+        self.assertIn("epf::power_begin(-1);", text)
+        self.assertIn("picture_kept()) {}", text)
+        self.assertIn("take_first_refresh()) {}", text)
+        self.assertIn("begin_redraw()) {}", text)
+        for setting in ('name: "Ghost clear after"', 'name: "Ghost clearing"', 'name: "Clear ghosting"', "id(ghost_"):
+            self.assertNotIn(setting, text)
 
     def test_the_crowpanel_keeps_everything_it_had(self):
         text = render_for(DISPLAY)

@@ -191,17 +191,29 @@ DISPLAYS = {
         "mm_w": 163.2,                         # the 7.5" 800 x 480 panel, as the TRMNL OG's
         "mm_h": 97.9,
         "margin": 40,
-        "esphome_model": "7.50inv2",           # Seeed's ESPHome cookbook
+        # ESPHome's driver for this screen (Seeed's cookbook names 7.50inv2) with partial
+        # refresh: a UC8179 controller. Its refresh returns only once the screen is done,
+        # so it's settled as soon as the redraw is. Its own count of partial refreshes
+        # restarts for a full one (full_refresh_next), starts past it when the picture
+        # survived a sleep, and after that sleep its first refresh drives every pixel
+        # (epf_client.h, uc8179_drive_every_pixel). The display is always powered on this
+        # board, so it keeps its picture with no pin to hold.
+        "esphome_model": "7.50inv2p",
         "frame_model": 0x0751,
         "mirrored": False,
-        # ESPHome's driver refreshes the whole screen every time, and returns only once
-        # the refresh is done: no call for a full refresh, nothing to keep through a
-        # sleep, and settled as soon as the redraw is.
-        "always_full": True,
         "refresh_waits": True,
-        "full_refresh": "",
-        "keep_picture": "",
-        "drive_every_pixel": "",
+        "full_refresh": "epf::full_refresh_next(id(epd));",
+        "keep_picture": "epf::waveshare_picture_kept(id(epd));",
+        "drive_every_pixel": "epf::uc8179_drive_every_pixel(id(epd));",
+        # The way back (firmware_gen.PARTIAL_REFRESH = False): ESPHome's full-refresh
+        # driver, every change a full refresh with a flash, as first built (30 Oct).
+        "full_only": {
+            "esphome_model": "7.50inv2",
+            "always_full": True,
+            "full_refresh": "",
+            "keep_picture": "",
+            "drive_every_pixel": "",
+        },
         "esphome_component": "waveshare_epaper",
     },
     # TRMNL's own 7.5" screen. A TRMNL says its size on every wake; any other

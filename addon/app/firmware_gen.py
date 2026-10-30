@@ -80,7 +80,7 @@ def sleep_note(disp: dict) -> str:
         can = chip["wake_pins"]
         lines = [f"check. Its buttons can't wake it (on the {chip['name']} only GPIO {can.start}-{can.stop - 1}",
                  "can), so the add-on's next check or its Reset button does."]
-    if keep_display_pin(disp) >= 0:
+    if keeps_picture(disp):
         lines.append("The display sleeps too, powered: the next wake's first change is partial.")
     elif board["display_power"] is None:
         lines.append("The display sleeps too, still powered; its first change after a wake is a full refresh.")
@@ -124,23 +124,55 @@ KEEP_DISPLAY_ASLEEP = True
 # display off in deep sleep: a full refresh after every wake.
 
 
+def keeps_picture(disp: dict) -> bool:
+    """Whether the display keeps its picture through deep sleep, so the next wake's first
+    change is partial: powered through it (its pin held, or a board with no switch), and
+    its driver has both calls for it."""
+    return bool(KEEP_DISPLAY_ASLEEP and disp.get("keep_picture") and disp.get("drive_every_pixel"))
+
+
+# What epf::power_begin is told when the display is always powered, with no pin to hold
+# (epf_client.h); -1 is switched off in deep sleep.
+ALWAYS_POWERED = -2
+
+
 def keep_display_pin(disp: dict) -> int:
-    """The pin the firmware holds on through deep sleep, or -1: the display is switched off
-    then, or its board has no pin for it (always powered, nothing to hold)."""
-    kept = disp.get("keep_picture") and disp.get("drive_every_pixel")
+    """The pin the firmware holds on through deep sleep; ALWAYS_POWERED when it keeps its
+    picture on a board with no pin for the display; -1 when it's switched off."""
+    if not keeps_picture(disp):
+        return -1
     pin = board_of(disp)["display_power"]
-    return pin if KEEP_DISPLAY_ASLEEP and kept and pin is not None else -1
+    return ALWAYS_POWERED if pin is None else pin
+
+
+def power_begin_arg(disp: dict) -> str:
+    """What the firmware's start-up passes to epf::power_begin, by name where it isn't a pin."""
+    pin = keep_display_pin(disp)
+    return "epf::DISPLAY_ALWAYS_POWERED" if pin == ALWAYS_POWERED else str(pin)
 
 
 def keep_picture(disp: dict) -> str:
     """The C++ statement run at start-up when the display kept its picture through sleep."""
-    return disp["keep_picture"] if keep_display_pin(disp) >= 0 else "{}"
+    return disp["keep_picture"] if keeps_picture(disp) else "{}"
 
 
 def drive_every_pixel(disp: dict) -> str:
     """The C++ statement run once the first picture after such a sleep is drawn, before
     its refresh: it makes that refresh drive every pixel."""
-    return disp["drive_every_pixel"] if keep_display_pin(disp) >= 0 else "{}"
+    return disp["drive_every_pixel"] if keeps_picture(disp) else "{}"
+
+
+# Partial refresh on a screen whose profile keeps a full-refresh way back ("full_only":
+# the Seeed XIAO 7.5", 30 Oct, untried on a real panel). False builds those screens as
+# first built: ESPHome's full-refresh driver, a flash on every change.
+PARTIAL_REFRESH = True
+
+
+def firmware_profile(disp: dict) -> dict:
+    """The profile the firmware is built from: the size's own, or its way back."""
+    if not PARTIAL_REFRESH and disp.get("full_only"):
+        return {**disp, **disp["full_only"]}
+    return disp
 
 
 def full_refresh(disp: dict) -> str:
@@ -267,6 +299,7 @@ def render(*, disp: dict, version: str, device_name: str, frames_url: str, ota_k
     `friendly_name` is what Home Assistant calls the panel (the screen's name).
     `more_networks`: Wi-Fi networks besides the first, as (ssid, password).
     `hotspot`: (ssid, password) of its own setup Wi-Fi, or None for none."""
+    disp = firmware_profile(disp)
     component, block = display_blocks(disp)
     board = board_of(disp)
     buttons = button_pins(board, orientation)
@@ -282,7 +315,7 @@ def render(*, disp: dict, version: str, device_name: str, frames_url: str, ota_k
         "COMPONENT_REF": component_ref(version), "DISPLAY_COMPONENT": component,
         "DISPLAY_BLOCK": block, "DISPLAY_SETTLED": display_settled(disp), "FULL_REFRESH": full_refresh(disp),
         "ESPHOME_BOARD": board["esphome_board"], "PSRAM_MODE": board["psram"],
-        "DISPLAY_POWER_PIN": str(board["display_power"]), "KEEP_DISPLAY_PIN": str(keep_display_pin(disp)),
+        "DISPLAY_POWER_PIN": str(board["display_power"]), "KEEP_DISPLAY_PIN": power_begin_arg(disp),
         "KEEP_PICTURE": keep_picture(disp), "DRIVE_EVERY_PIXEL": drive_every_pixel(disp), "OTA_KEY": ota_key,
         "WIFI_BLOCK": wifi_block([(wifi_ssid, wifi_password), *more_networks], hotspot),
         "FRIENDLY_NAME": friendly_name,

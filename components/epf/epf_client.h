@@ -128,6 +128,29 @@ template <class Driver> inline void waveshare_drive_every_pixel(Driver *display)
   Ram::seed(display);
 }
 
+// ESPHome's Waveshare driver for the 7.5" V2 with partial refresh (7.50inv2p, a UC8179
+// controller; the Seeed XIAO 7.5"): its previous-picture memory is 0x10, written
+// whole, the inverse of what its partial refresh then writes to 0x13, as its own
+// fast full refresh does. No RAM counters on this controller; a write fills it from
+// the top-left, and its partial window, when set, is the whole screen.
+template <class Driver> inline void uc8179_drive_every_pixel(Driver *display) {
+  struct Ram : Driver {
+    static void seed(Driver *d) {
+      auto *s = static_cast<Ram *>(d);
+      if (!s->wait_until_idle_()) {
+        full_refresh_next(d);
+        return;
+      }
+      const size_t row_bytes = (size_t) s->get_width_internal() / 8, rows = (size_t) s->get_height_internal();
+      s->command(0x10);
+      s->start_data_();
+      send_inverted_share(s->buffer_, row_bytes, rows, row_share(row_bytes, 1, 0), [s](uint8_t b) { s->write_byte(b); });
+      s->end_data_();
+    }
+  };
+  Ram::seed(display);
+}
+
 // Per buffer, in PSRAM. Two of the larger size fit an N8R8 board's 8 MB with
 // room to spare; a board that can't give that much gets the smaller one. The
 // panel tells the add-on which it got (?cap=), and the add-on fits the frame
@@ -413,16 +436,26 @@ inline int64_t rtc_now_us_() {
   return (int64_t) tv.tv_sec * 1000000 + tv.tv_usec;
 }
 
-// The display's power pin, held on through deep sleep; -1 when the display is
-// switched off in deep sleep (the way it was before 0.13).
+// What power_begin is told about the display through deep sleep, besides a pin to
+// hold on: switched off (the way it was before 0.13), or always powered, on a board
+// with no switch for it (the Seeed XIAO 7.5"), so it keeps its picture with nothing
+// to hold.
+constexpr int DISPLAY_OFF_IN_SLEEP = -1;
+constexpr int DISPLAY_ALWAYS_POWERED = -2;
+
+// The display's power pin, held on through deep sleep, or one of the two above.
 inline int &power_display_pin_() {
-  static int pin = -1;
+  static int pin = DISPLAY_OFF_IN_SLEEP;
   return pin;
 }
+// Whether the display keeps its picture through deep sleep, so the next wake's first
+// change can be partial (TRMNL's way).
+inline bool display_kept_() { return power_display_pin_() != DISPLAY_OFF_IN_SLEEP; }
 
 // At start-up, before the first download: why it's awake and what it remembers.
 // `display_pin`: the display's power pin, to keep it on through deep sleep (TRMNL's
-// way: the first change after a wake is partial), or -1 to switch it off.
+// way: the first change after a wake is partial), DISPLAY_ALWAYS_POWERED when the
+// board keeps it on by itself, or -1 (DISPLAY_OFF_IN_SLEEP) to switch it off.
 inline void power_begin(int display_pin) {
   power_display_pin_() = display_pin;
   // Held on through the sleep it just woke from. The pin is an output, already
@@ -449,7 +482,7 @@ inline void power_begin(int display_pin) {
     EpfClient::instance().set_etag(g_remembered.etag);
   }
   EpfClient::instance().set_wake(wake_name(wake), wake == Wake::BOOT ? 0 : awake_ms);
-  if (display_pin >= 0) choose_waveform(PanelController::instance().waveform(), PowerPolicy::instance(), g_remembered);
+  if (display_kept_()) choose_waveform(PanelController::instance().waveform(), PowerPolicy::instance(), g_remembered);
   ESP_LOGI(TAG, "Awake: %s%s", wake_name(wake), PowerPolicy::instance().picture_kept() ? ", picture kept" : "");
 }
 
@@ -464,7 +497,7 @@ inline void power_note_download(uint32_t now_ms, FetchResult result) {
   bool has = !c.sleep_header().empty() && parse_sleep_order(c.sleep_header().c_str(), order);
   if (!c.sleep_header().empty() && !has) ESP_LOGW(TAG, "Ignored an X-EPF-Sleep it can't read: %s", c.sleep_header().c_str());
   PowerPolicy::instance().on_answer(c.status(), has, order, now_ms);
-  if (power_display_pin_() >= 0)
+  if (display_kept_())
     choose_waveform(PanelController::instance().waveform(), PowerPolicy::instance(), g_remembered);
 }
 
@@ -496,9 +529,10 @@ inline bool may_redraw() {
 // Just before deep sleep: how long, and what wakes it. `buttons`: the pins of the buttons that
 // can wake it, as a bit mask (0: none can; firmware_gen.wake_mask).
 // The display has finished refreshing (sleep_due waits for it). Its driver puts its
-// controller to sleep (on_safe_shutdown), and its power pin is held on. Its memory
-// of the picture is lost all the same (its reset line isn't held), so the next
-// wake's first refresh drives every pixel (PowerPolicy::take_first_refresh).
+// controller to sleep (on_safe_shutdown), and its power pin is held on (or it has
+// none, always powered). Its memory of the picture is lost all the same (its reset
+// line isn't held, and the controller is reset as the panel starts again), so the
+// next wake's first refresh drives every pixel (PowerPolicy::take_first_refresh).
 inline uint32_t power_prepare_sleep(uint32_t now_ms, uint64_t buttons) {
   auto &p = PowerPolicy::instance();
   int pin = power_display_pin_();
@@ -508,7 +542,7 @@ inline uint32_t power_prepare_sleep(uint32_t now_ms, uint64_t buttons) {
     gpio_deep_sleep_hold_en();
 #endif
   }
-  p.before_sleep(now_ms, pin >= 0);
+  p.before_sleep(now_ms, display_kept_());
   uint32_t ms = p.sleep_ms(now_ms);
 #if SOC_PM_SUPPORT_EXT1_WAKEUP
   if (p.buttons_wake() && buttons) esp_sleep_enable_ext1_wakeup(buttons, ESP_EXT1_WAKEUP_ANY_LOW);

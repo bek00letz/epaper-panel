@@ -307,7 +307,15 @@ machine) with no ESP-IDF in it, and is compiled and tested on the host by
   PSRAM, the display's power switch, ghost clearing (not for a driver whose
   every refresh is full, `always_full`), and one block per button role
   (`next`, `prev`, `ok`, `top`, `bottom`, and `one` for a board with a single
-  button). A new board is an entry in `BOARDS`, never a second template. The component is pinned to the add-on's
+  button). A new board is an entry in `BOARDS`, never a second template.
+- **Partial refresh is per driver, in the profile.** Each size's
+  `full_refresh`, `keep_picture` and `drive_every_pixel` are its driver's own
+  calls (`epf_client.h`): the CrowPanel driver's, the Waveshare SSD1680's (the
+  2.9"), and the UC8179's (the Seeed XIAO 7.5", ESPHome's `7.50inv2p`, whose
+  previous-picture memory is 0x10). The XIAO's display is always powered, so
+  it keeps its picture through a sleep with no pin to hold
+  (`epf::DISPLAY_ALWAYS_POWERED`). A profile can keep a full-refresh way back
+  (`full_only`), built while `firmware_gen.PARTIAL_REFRESH` is False. The component is pinned to the add-on's
   release tag, so panel and add-on always agree on the format.
 - **Wi-Fi**: one network connects straight away (`fast_connect`); several
   are scanned for, so a panel that travels joins whichever it finds. Where it

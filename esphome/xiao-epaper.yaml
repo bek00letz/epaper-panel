@@ -23,9 +23,13 @@ esphome:
     priority: -100
     then:
       - lambda: |-
-          epf::power_begin(-1);  // why it's awake, for the first download
+          epf::power_begin(epf::DISPLAY_ALWAYS_POWERED);  // why it's awake, for the first download
           // Slept with the display powered: it still shows its picture, so no full refresh first.
-          if (epf::PowerPolicy::instance().picture_kept()) {}
+          if (epf::PowerPolicy::instance().picture_kept()) epf::waveshare_picture_kept(id(epd));
+          auto &w = epf::PanelController::instance().waveform();
+          w.set_threshold((int) id(ghost_clear_after).state);
+          auto mode = id(ghost_mode).active_index();
+          w.set_classic(mode.has_value() && mode.value() == 1);
       - script.execute: refetch
 
 esp32:
@@ -176,13 +180,16 @@ spi:
 display:
   - platform: waveshare_epaper
     id: epd
-    model: "7.50inv2"
+    model: "7.50inv2p"
     cs_pin: 3
     dc_pin: 5
     busy_pin:
       number: 4
       inverted: true
     reset_pin: 2
+    # Full refreshes are decided by the panel's ghost-clearing policy
+    # (WaveformPolicy), not by a fixed count.
+    full_update_every: 1000000
     update_interval: never
     auto_clear_enabled: false
     lambda: |-
@@ -206,13 +213,13 @@ display:
       }
       // The first picture after a deep sleep that kept it: the display no longer
       // remembers what's on screen, so this refresh drives every pixel (epf_client.h).
-      if (epf::PowerPolicy::instance().take_first_refresh()) {}
+      if (epf::PowerPolicy::instance().take_first_refresh()) epf::uc8179_drive_every_pixel(id(epd));
 
 # One button, the XIAO's Boot, behind the stand (active-low). Its Reset
 # button restarts the panel, and wakes it from a sleep.
 binary_sensor:
   # A board's only button: a click shows the next page; holding it for a second
-  # downloads new frames now and redraws the page.
+  # downloads new frames now and clears ghosting with the same redraw.
   - platform: gpio
     id: key_one
     internal: true
@@ -262,6 +269,48 @@ number:
     unit_of_measurement: "min"
     mode: box
 
+  # Ghost clearing (see WaveformPolicy in epf_core.h). Settings, not
+  # controls: they live in the device's configuration section in Home
+  # Assistant and survive reboots.
+  - platform: template
+    name: "Ghost clear after"
+    id: ghost_clear_after
+    entity_category: config
+    icon: "mdi:ghost-outline"
+    optimistic: true
+    min_value: 2
+    max_value: 60
+    step: 1
+    initial_value: 10
+    restore_value: true
+    unit_of_measurement: "refreshes"
+    mode: box
+    on_value:
+      - lambda: 'epf::PanelController::instance().waveform().set_threshold((int) x);'
+
+select:
+  - platform: template
+    name: "Ghost clearing"
+    id: ghost_mode
+    entity_category: config
+    icon: "mdi:ghost-outline"
+    optimistic: true
+    restore_value: true
+    options:
+      - "On automatic changes"
+      - "Every Nth refresh"
+    initial_option: "On automatic changes"
+    on_value:
+      - lambda: 'epf::PanelController::instance().waveform().set_classic(i == 1);'
+
+button:
+  - platform: template
+    name: "Clear ghosting"
+    icon: "mdi:ghost-off-outline"
+    on_press:
+      - lambda: 'epf::PanelController::instance().dispatch(epf::NavAction::CLEAR_GHOSTING);'
+      - script.execute: redraw
+
 script:
   - id: redraw
     mode: restart
@@ -278,7 +327,7 @@ script:
               return false;
           then:
             - lambda: |-
-                if (epf::PanelController::instance().begin_redraw()) {}
+                if (epf::PanelController::instance().begin_redraw()) epf::full_refresh_next(id(epd));
                 id(last_redraw_ms) = millis();
             - component.update: epd
 
@@ -320,7 +369,7 @@ script:
   # Low Power Mode: everything on screen is done, so sleep until the next
   # check. Its buttons can't wake it (on the ESP32-C3 only GPIO 0-5
   # can), so the add-on's next check or its Reset button does.
-  # The display sleeps too, still powered; its first change after a wake is a full refresh.
+  # The display sleeps too, powered: the next wake's first change is partial.
   - id: go_to_sleep
     mode: single
     then:
