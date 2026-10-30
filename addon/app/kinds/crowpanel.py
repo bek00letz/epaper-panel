@@ -69,7 +69,7 @@ def _span(minutes: int) -> str:
 
 class CrowPanel(Kind):
     id = "crowpanel"
-    name = "CrowPanel"
+    name = "Our firmware"             # the Kind picker: CrowPanels and the Seeed XIAO 7.5", against TRMNL
     picks_page = "device"
     owns_interval = "device"
 

@@ -201,7 +201,7 @@ async def api_layouts_put(request):
     spec.setdefault("display", dev.get("display"))
     kind = kinds.of(dev)
     if T.get_display(spec.get("display")).get("kind") != kind.id:
-        raise web.HTTPBadRequest(text=f"Pick one of the {kind.name} sizes.")
+        raise web.HTTPBadRequest(text="Pick one of the models this kind of device offers.")
     try:
         clean = sanitize_layouts(spec)
     except ValueError as exc:
@@ -963,7 +963,7 @@ async def api_devices_add(request):
         raise web.HTTPBadRequest(text="That isn't a kind of device this add-on knows.")
     display = str(body.get("display") or "")
     if display not in kind.displays():
-        raise web.HTTPBadRequest(text=f"Pick one of the {kind.name} sizes.")
+        raise web.HTTPBadRequest(text="Pick one of the models this kind of device offers.")
     name = _clean_name(body.get("name"))
     try:
         orientation = int(body.get("orientation") or 0)

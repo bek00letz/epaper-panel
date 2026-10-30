@@ -980,7 +980,7 @@ async function reachPane(app, pane) {
     }
     if (r.mode !== "home") {
       if (r.token_short) parts.push(h("p", { class: "note warn" }, icon("warn", "sm"), h("span", { text: "The frame token in the add-on's options is short, so someone on the internet could guess it. Make it at least 16 characters, or clear it and the add-on makes a long one." })));
-      parts.push(h("p", { class: "fnote", text: "Install each CrowPanel again once (Install or update) so it uses this address. Until then it keeps working at home." }));
+      parts.push(h("p", { class: "fnote", text: "Install each panel on our firmware again once (Install or update) so it uses this address. Until then it keeps working at home." }));
     }
     box.replaceChildren(...parts);
   }

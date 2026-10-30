@@ -77,7 +77,7 @@ class TestVersionCheck(EditorClient):
         spec["display"] = "trmnl_og"
         r = await self.ed.put("/api/layouts", json=spec, headers={"If-Match": tag})
         self.assertEqual(r.status, 400)
-        self.assertIn("CrowPanel sizes", await r.text())
+        self.assertIn("Pick one of the models this kind of device offers.", await r.text())
         await frames.refresh_frames(None)
         self.assertIsNone(support.first_frames().error, "it still draws")
         spec.pop("display")
@@ -96,7 +96,7 @@ class TestVersionCheck(EditorClient):
         for hidden in ("crowpanel_750", "crowpanel_102"):
             r = await self.ed.post("/api/devices", json={"kind": "crowpanel", "name": "Hall", "display": hidden})
             self.assertEqual(r.status, 400, hidden)
-            self.assertIn("CrowPanel sizes", await r.text())
+            self.assertIn("Pick one of the models this kind of device offers.", await r.text())
         spec, tag = await self.spec_and_tag()
         spec["display"] = "crowpanel_750"
         r = await self.ed.put("/api/layouts", json=spec, headers={"If-Match": tag})
