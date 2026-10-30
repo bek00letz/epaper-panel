@@ -195,7 +195,7 @@ browser setup's open question), suspend_loop / loop_interval (#18136, power),
 and ESPHome's own epaper_spi driver (could replace the unlicensed ESPBoards
 driver where it supports our controllers).
 
-**Arrived:** the Seeed XIAO 7.5" (30 Oct). On TRMNL's firmware it paired with the add-on at the first try (reports `seeed_esp32c3`, 800 × 480); asleep on USB with its battery switched off it draws about 0.58 mA. **Waiting on hardware:**
+**Arrived:** the Seeed XIAO 7.5" (30 Oct). On TRMNL's firmware it paired with the add-on at the first try (reports `seeed_esp32c3`, 800 × 480); asleep on USB with its battery switched off it draws 0.58 mA (CrowPanel 6.2 mA). A 1-hour run at 5-minute updates: each wake 12–13 s, 0.16 mAh (peaks about 200 mA, Wi-Fi), the same before and after its pages changed; average 2.51 mA. On 2000 mAh that's about a month at 5 minutes, two months at 15, three at 30 (measured at 5 V on USB, so an estimate for the battery). Its battery isn't wired to the chip, so no firmware can report it. Next on it: our firmware, then partial refresh for its screen (worker xiao-c3-board) so it can run always on without flashing. **Waiting on hardware:**
 a TRMNL (pairing, pictures, HTTPS, battery); a
 second CrowPanel side by side; a 4.2" or 2.9" CrowPanel (they build, untried;
 the 4.2"'s UC8276 revision isn't supported); a battery reading on a CrowPanel
