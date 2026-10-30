@@ -824,6 +824,9 @@ pre.formex:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px
 .addr:last-child { border-bottom: 0; }
 .addr small { display: block; color: var(--fg-2); font-size: 11.5px; margin-top: 1px; }
 .addr .addrtext { flex: 1; min-width: 0; padding: 7px 10px; border-radius: 8px; font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; }
+/* Connecting a computer that reports AI usage (reporters.js): the command, in the system's monospace, selectable whole */
+.connect .segc { margin: 4px 0 2px; }
+.addr .addrtext.cmd { font: 12px/1.45 var(--mono); user-select: all; -webkit-user-select: all; }
 .pairstate { display: flex; align-items: center; gap: 6px; margin-top: 12px; font-variant-numeric: tabular-nums; }
 .led.listening { animation: listen 1.6s ease-in-out infinite; }
 @keyframes listen { 50% { opacity: 0.35; } }

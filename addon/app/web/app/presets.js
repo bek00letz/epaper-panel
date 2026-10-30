@@ -118,6 +118,15 @@ export const PRESETS = [
     ],
   },
 
+  {
+    // Your AI plans, from a small reporter on your own computer (docs/ai-usage.md). Its next step connects one;
+    // the page can be added before, and says how.
+    id: "ai_usage", group: "day", title: "AI usage", kw: "claude code codex openai anthropic limits plan tokens quota session weekly",
+    desc: "How much of your AI plans you've used: each limit as a bar, and when it resets. Read by a small reporter on your computer.",
+    asks: "", needs: "reporter",
+    looks: [{ id: "ai_usage", name: "AI usage", make: () => [{ type: "ai_usage", providers: "", extras: true, x: 24, y: 14, w: 744, h: 220 }] }],
+  },
+
   /* ---------- home ---------- */
   {
     id: "climate", group: "home", title: "Room temperature", desc: "A temperature with a 24-hour curve.", kw: "climate thermometer heat",

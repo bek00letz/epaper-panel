@@ -34,7 +34,6 @@ import re
 import secrets
 import time
 import unicodedata
-import urllib.parse
 from collections import OrderedDict, deque
 from datetime import datetime
 
@@ -45,11 +44,10 @@ import devices
 import frames
 import health
 import paging
-import panel_setup
 import reach
 import runtime
 from entities import publish_entity
-from kinds import WRONG_KEYS, Kind, device_for, of as kind_of, register, shown
+from kinds import WRONG_KEYS, Kind, device_for, device_port_addresses, of as kind_of, register, shown
 from render import sleep, theme as T, words
 from sources.geo import get_home_locale
 
@@ -448,23 +446,8 @@ def _trmnl_by_path(request) -> dict:
     return dev
 
 
-async def _home_host() -> str:
-    """Home Assistant's name on the home network: what a panel's setup was given, or its own home
-    address. Never the browser's, which may be a tunnel's (reach.home_address)."""
-    for dev in devices.all_devices():
-        raw = str((dev.get("setup") or {}).get("ha_host") or "").strip()
-        host = urllib.parse.urlsplit(raw if "://" in raw else f"//{raw}").hostname or ""
-        if reach.HOST_RE.fullmatch(host):
-            return host                                # what a panel's setup was given
-    return await reach.home_address(runtime.HASS, runtime.SESSION)
-
-
 async def _pairing(request, dev: dict) -> dict:
-    port = await panel_setup._detect_external_port(runtime.SESSION)
-    addresses = [{"where": "home", "url": f"http://{await _home_host()}:{port}"}]
-    away = await reach.public_base(runtime.HASS)
-    if away:
-        addresses.append({"where": "away", "url": away})
+    addresses = await device_port_addresses()
     dev = devices.get(dev["id"])
     return {"device": dev["id"], **KIND.describe(dev), "update_minutes": KIND.update_minutes(dev), "addresses": addresses,
             "reach": reach.settings()["mode"]}

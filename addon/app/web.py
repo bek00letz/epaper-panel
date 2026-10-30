@@ -25,6 +25,7 @@ import iconsets
 import kinds
 import notify
 import reach
+import reporters
 import runtime
 import services
 import share
@@ -1497,6 +1498,7 @@ def make_apps():
     ])
     for kind in kinds.enabled_kinds():                 # each kind of device adds its own; one that's off, none
         panel.add_routes(kind.routes())
+    panel.add_routes(reporters.routes())               # AI usage from your own computers (docs/ai-usage.md)
 
     editor = web.Application(client_max_size=1024 * 1024, middlewares=[ingress_only])
     editor.add_routes([
@@ -1577,6 +1579,7 @@ def make_apps():
     ])
     for kind in kinds.enabled_kinds():
         editor.add_routes(kind.editor_routes())
+    editor.add_routes(reporters.editor_routes())
     if WEB_DIR.exists():
         editor.router.add_static("/static/", WEB_DIR)
 

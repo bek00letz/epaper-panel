@@ -13,6 +13,7 @@ import { select, linkButton, seg } from "./ui.js";
 import { dateEditor, binsEditor, ready as countsReady } from "./countdown.js";
 import { zonesEditor } from "./zones.js";
 import { busyNote } from "./busyday.js";
+import { connectPart, computerName, heardWords } from "./reporters.js";
 import { sleepsBetweenUpdates, lookOf, asksOf, needsOf, pageFor, examplePage, rankSensors, groupName, sensorOf, freeSourceName, energyRoles, staleNote, presetChangesEvery,
   batterySensors, preselectBatteries, batteriesPast, BATTERY_DEFAULT, batteryRule, chargedByYou, isLowSensor } from "./presets.js";
 
@@ -164,7 +165,41 @@ export function setupStep(app, p, { thumb, add, foot, initialLook = 0, rememberL
 }
 
 /* ---------- what presets set up in place ---------- */
-export const SETUPS = { wifi: wifiSetup, jellyfin: jellyfinSetup, energy: energySetup, players: playersSetup, date: countSetup("date"), bins: countSetup("bins"), parts: partsSetup, zones: zonesSetup, batteries: batteriesSetup };
+export const SETUPS = { wifi: wifiSetup, jellyfin: jellyfinSetup, energy: energySetup, players: playersSetup, date: countSetup("date"), bins: countSetup("bins"), parts: partsSetup, zones: zonesSetup, reporter: reporterSetup, batteries: batteriesSetup };
+
+/* AI usage: a computer that reports it, connected here (reporters.js, the same part Settings › AI usage
+   shows). One already connected is enough: the page reads every one. It can be added before any is,
+   and then the page itself says how. */
+function reporterSetup({ changed }) {
+  let view = null, part = null;
+  const node = h("div", { class: "stepsec" });
+  const slow = setTimeout(() => { if (!view) node.replaceChildren(h("p", { class: "fnote", text: "Looking for your computers…" })); }, 300);
+  const heard = () => (view?.reporters || []).filter((r) => r.heard_at);
+  async function load() {
+    try { view = (await api("api/reporters")).body || { reporters: [] }; } catch (_) { view = { reporters: [], providers: [] }; }
+    clearTimeout(slow); draw(); changed();
+  }
+  function draw() {
+    const reps = view.reporters || [];
+    if (!reps.length) {
+      part = part || connectPart({ onJoined: () => setTimeout(load, 1500) });
+      node.replaceChildren(part.node, h("p", { class: "fnote", text: "You can add the page now: until a computer reports, it says how to connect one." }));
+      return;
+    }
+    node.replaceChildren(h("h3", { class: "slab", text: "From your computers" }),
+      h("div", { class: "group" }, ...reps.map((r) => h("div", { class: "gr" },
+        h("span", { class: "gl" }, computerName(r), h("small", { text: heardWords(r.heard_at) + "." }))))),
+      h("p", { class: "fnote", text: "Connect another, or rename one, in Settings › AI usage." }));
+  }
+  load();
+  return {
+    node,
+    ready: () => true,
+    shows: () => (heard().length ? { mine: true, caption: "With your usage." } : { mine: false }),
+    commit: async () => ({}),
+    dispose: () => { clearTimeout(slow); part?.dispose(); },
+  };
+}
 
 /* Guest Wi-Fi: the network goes into the code, so it's asked for. */
 function wifiSetup({ changed }) {

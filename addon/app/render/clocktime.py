@@ -30,7 +30,7 @@ TIME = re.compile(r"now\(\)[^}]*strftime\(\s*['\"]([^'\"]*%-?[HIklMp][^'\"]*)['\
 FORMAT = re.compile(r"now\(\)[^}]*strftime\(\s*['\"]([^'\"]*)['\"]")
 DAY = re.compile(r"%-?[de]")
 # Widgets that say how long ago something happened, and the time it happened on a device that sleeps.
-AGES = ("notifications",)
+AGES = ("notifications", "ai_usage")       # ai_usage: when each window resets, not how long until
 # The other ways people write a clock in Home Assistant.
 IDIOMS = (
     TIME,

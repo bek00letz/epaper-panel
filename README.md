@@ -56,6 +56,10 @@ you turn them on.
   episode at a time with its name and when it arrived, or everything new on
   one screen.
 - **Guests.** A QR code they point their phone at to join your Wi-Fi.
+- **Your AI plans.** How much of Claude Code's and Codex's limits you've
+  used and when they reset, read by a small reporter on your own Mac, Linux
+  or Windows computer ([reporter/](reporter/README.md)). Only the numbers
+  leave it.
 - **Anything else in Home Assistant.** Any entity: its value, one of its
   details, when it last changed, days until a date, in your own words.
 

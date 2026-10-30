@@ -61,6 +61,7 @@ export const ICONS = {
   wave: P('<path d="M3 15c3 0 3-6 6-6s3 8 6 8 3-6 6-6"/>'),
   gauge: P('<rect x="3" y="8" width="18" height="8" rx="2"/><path d="M7 8v8M11 8v8"/>'),
   chart: P('<path d="M5 20V10M10 20V4M15 20v-8M20 20v-5"/>'),
+  laptop: P('<rect x="4.5" y="5" width="15" height="10.5" rx="2"/><path d="M2.5 19h19"/>'),
   cloud: P('<path d="M7 18h10a4 4 0 0 0 .5-8 6 6 0 0 0-11.4 1.5A3.3 3.3 0 0 0 7 18z"/>'),
   calendar: P('<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/>'),
   list: P('<path d="M9 6h11M9 12h11M9 18h11M4.5 6h.01M4.5 12h.01M4.5 18h.01"/>', ' stroke-width="2"'),

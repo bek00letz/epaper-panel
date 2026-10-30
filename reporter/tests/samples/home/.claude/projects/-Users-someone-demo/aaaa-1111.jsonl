@@ -1,0 +1,6 @@
+{"type":"user","sessionId":"s-one","timestamp":"2026-10-30T09:00:00.000Z","message":{"role":"user","content":"An invented question."}}
+{"type":"assistant","sessionId":"s-one","requestId":"req_1","uuid":"u1","timestamp":"2026-10-30T09:00:05.120Z","message":{"id":"msg_A","role":"assistant","model":"claude-sample","content":[{"type":"text","text":"An invented answer, first part."}],"usage":{"input_tokens":100,"cache_creation_input_tokens":1000,"cache_read_input_tokens":9000,"output_tokens":400}}}
+{"type":"assistant","sessionId":"s-one","requestId":"req_1","uuid":"u2","timestamp":"2026-10-30T09:00:06.000Z","message":{"id":"msg_A","role":"assistant","model":"claude-sample","content":[{"type":"tool_use","name":"Read"}],"usage":{"input_tokens":100,"cache_creation_input_tokens":1000,"cache_read_input_tokens":9000,"output_tokens":400}}}
+{"type":"api-request-blob","sessionId":"s-one","timestamp":"2026-10-30T09:00:07.000Z","blob":"a long body that isn't an answer and is never parsed"}
+not json at all, as a half-written line would be
+{"type":"assistant","sessionId":"s-one","requestId":"req_2","uuid":"u3","timestamp":"2026-10-30T10:30:00.5Z","message":{"id":"msg_B","role":"assistant","model":"claude-sample","content":[],"usage":{"input_tokens":50,"cache_creation_input_tokens":0,"cache_read_input_tokens":4950,"output_tokens":1000}}}
