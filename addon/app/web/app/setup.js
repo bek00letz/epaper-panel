@@ -164,7 +164,8 @@ export function setupStep(app, p, { thumb, add, foot, initialLook = 0, rememberL
 }
 
 /* ---------- what presets set up in place ---------- */
-export const SETUPS = { wifi: wifiSetup, jellyfin: jellyfinSetup, energy: energySetup, players: playersSetup, date: countSetup("date"), bins: countSetup("bins"), parts: partsSetup, zones: zonesSetup, batteries: batteriesSetup };
+export const SETUPS = { wifi: wifiSetup, jellyfin: jellyfinSetup, energy: energySetup, players: playersSetup, date: countSetup("date"), bins: countSetup("bins"), parts: partsSetup, zones: zonesSetup,
+  found: foundSetup, mail: mailSetup, github: githubSetup, batteries: batteriesSetup };
 
 /* Guest Wi-Fi: the network goes into the code, so it's asked for. */
 function wifiSetup({ changed }) {
@@ -528,5 +529,124 @@ function batteriesSetup({ app, changed }) {
     ready: () => chosen.size > 0,
     shows: () => (chosen.size ? { mine: true, extra: extra(), caption: "With your batteries." } : { mine: false }),
     commit: async () => ({ extra: extra() }),
+  };
+}
+
+/* ---------- pages built on Home Assistant's own data ---------- */
+
+/* What the add-on finds by itself, asked once per editor session per kind (GET /api/found): the
+   same rules a page with nothing picked follows (sources/commute.py, departures.py, mail.py). */
+const finding = {};
+function found(what) {
+  if (!finding[what]) finding[what] = api("api/found?what=" + what).then((r) => ({ ok: true, list: r.body?.found || [] }),
+    (e) => { delete finding[what]; return { ok: false, list: [], error: e.message }; });
+  return finding[what];
+}
+
+/* Where to set each up in Home Assistant, when it has none yet: plain steps, nothing to copy. */
+const FOUND = {
+  commute: { title: "Routes", all: "Shows every travel time in Home Assistant, and any you add there later.", some: "Shows the routes ticked.",
+    none: "No travel times in Home Assistant yet. Add Waze Travel Time there (Settings › Devices & services › Add integration › Waze Travel Time): it needs no account or key, just where from and where to. Add a route for each trip; this page shows them all.",
+    unit: (st) => (st == null || st === "" || isNaN(Number(st)) ? "" : `${Math.round(Number(st))} min`) },
+  departures: { title: "Stops", all: "Shows every stop Home Assistant gives departures for.", some: "Shows the stops ticked.",
+    none: "Nothing in Home Assistant gives departures yet. Add your transit there first (Settings › Devices & services › Add integration): GTFS works for most cities, or your operator's own integration. Then this page finds it by itself.",
+    unit: () => "" },
+};
+
+/* Commute and Departures: what the add-on finds is ticked; none unticked keeps following what Home
+   Assistant has (a route added next month shows too). Unticking one stores the ticked ones. */
+function foundSetup({ app, p, changed }) {
+  const words = FOUND[p.found];
+  let got = null, chosen = null;
+  const node = h("div", { class: "stepsec" });
+  const looking = setTimeout(() => { if (!got) node.replaceChildren(h("p", { class: "fnote", text: "Looking in Home Assistant…" })); }, 300);
+  found(p.found).then((r) => { clearTimeout(looking); got = r; chosen = new Set(r.list.map((e) => e.entity)); draw(); changed(); });
+  const all = () => !got || chosen.size === got.list.length;
+  const entities = () => (all() ? [] : got.list.map((e) => e.entity).filter((id) => chosen.has(id)));
+  function draw() {
+    if (!got.ok) { node.replaceChildren(h("p", { class: "note warn" }, icon("info", "sm"), h("span", { text: `${got.error}. Add the page anyway: it shows what it finds once Home Assistant answers.` }))); return; }
+    if (!got.list.length) { node.replaceChildren(h("h3", { class: "slab", text: words.title }), h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: words.none }))); return; }
+    const list = h("div", { class: "optlist", role: "group", "aria-label": words.title }, ...got.list.map((e) => h("button", { class: "opt", role: "checkbox", "aria-checked": String(chosen.has(e.entity)),
+      onclick: () => { chosen.has(e.entity) ? chosen.delete(e.entity) : chosen.add(e.entity); draw(); changed(); } },
+      h("span", { class: "ock", "aria-hidden": "true" }, chosen.has(e.entity) ? icon("check", "sm") : null),
+      h("span", { class: "otext" }, h("span", { class: "o1", text: e.name || e.entity }), h("span", { class: "o2", text: e.entity })),
+      h("span", { class: "ov", text: words.unit(e.state) }))));
+    node.replaceChildren(h("h3", { class: "slab", text: words.title }), list,
+      h("p", { class: "fnote", role: "status", "aria-live": "polite", text: chosen.size ? (all() ? words.all : words.some) : "Tick at least one." }));
+  }
+  return {
+    node,
+    ready: () => !!got && (!got.list.length || chosen.size > 0),
+    shows: () => (got?.list.length && chosen.size ? { mine: true, extra: { entities: entities() }, caption: "With yours." } : { mine: false }),
+    commit: async () => ({ extra: { entities: got?.list.length ? entities() : [] } }),
+    dispose: () => clearTimeout(looking),
+  };
+}
+
+/* Mail: the add-on never holds an email password. Home Assistant's IMAP integration logs in; this
+   says so, and what to set up there, then picks the mailbox when there are several. */
+const MAIL_HOW = "Home Assistant's IMAP integration reads your mailbox, and the add-on reads what it says: the unread count, and who each new message is from and its subject. Your password stays in Home Assistant.";
+const MAIL_SETUP = "To set it up in Home Assistant: Settings › Devices & services › Add integration › IMAP, with your mail server and an app password from your mail provider. Then come back: this page finds it.";
+function mailSetup({ app, changed }) {
+  let got = null, picked = "";
+  const node = h("div", { class: "stepsec" });
+  const looking = setTimeout(() => { if (!got) node.replaceChildren(h("p", { class: "fnote", text: "Looking for your mail in Home Assistant…" })); }, 300);
+  found("mail").then((r) => { clearTimeout(looking); got = r; picked = r.list[0]?.entity || ""; draw(); changed(); });
+  function draw() {
+    const parts = [h("h3", { class: "slab", text: "Your mail" }), h("p", { class: "fnote", text: MAIL_HOW })];
+    if (!got.ok) parts.push(h("p", { class: "note warn" }, icon("info", "sm"), h("span", { text: `${got.error}. Add the page anyway: it shows your mail once Home Assistant answers.` })));
+    else if (!got.list.length) parts.push(h("p", { class: "note info" }, icon("info", "sm"), h("span", { text: MAIL_SETUP })));
+    else {
+      if (got.list.length > 1) parts.push(h("div", { class: "optlist", role: "radiogroup", "aria-label": "Which mailbox" }, ...got.list.map((e) => h("button", { class: "opt", role: "radio", "aria-checked": String(picked === e.entity),
+        onclick: () => { picked = e.entity; draw(); changed(); } },
+        h("span", { class: "ock", "aria-hidden": "true" }, picked === e.entity ? icon("check", "sm") : null),
+        h("span", { class: "otext" }, h("span", { class: "o1", text: e.name || e.entity }), h("span", { class: "o2", text: e.entity })),
+        h("span", { class: "ov", text: e.state ?? "" })))));
+      else parts.push(h("p", { class: "note good" }, icon("check", "sm"), h("span", { text: `Found ${got.list[0].name || got.list[0].entity}.` })));
+      parts.push(h("p", { class: "fnote", text: "Messages show from the next one that arrives; the unread count is right from the start." }));
+    }
+    node.replaceChildren(...parts);
+  }
+  return {
+    node,
+    ready: () => !!got,
+    shows: () => ({ mine: false }),
+    commit: async () => ({ extra: { entity: got?.list.length > 1 ? picked : "" } }),
+    dispose: () => clearTimeout(looking),
+  };
+}
+
+/* A GitHub user, checked with GitHub when typed (a person asked, so it's asked now). */
+function githubSetup({ changed }) {
+  let user = "", checked = null, checking = false, timer = 0;
+  const say = h("p", { class: "fnote", role: "status", "aria-live": "polite" });
+  const inp = h("input", { class: "inp", placeholder: "A GitHub username", autocomplete: "off", spellcheck: "false", autocapitalize: "off", "aria-label": "GitHub username", maxlength: "39" });
+  async function check() {
+    const asked = user.trim().replace(/^@/, "");
+    if (!asked) { checked = null; draw(); changed(); return; }
+    checking = true; draw();
+    try { checked = { user: asked, ...((await api("api/github/check?user=" + encodeURIComponent(asked))).body || {}) }; }
+    catch (e) { checked = { user: asked, ok: false, error: e.message }; }
+    checking = false;
+    if (asked === user.trim().replace(/^@/, "")) { draw(); changed(); }
+  }
+  inp.addEventListener("input", () => { user = inp.value; checked = null; clearTimeout(timer); timer = setTimeout(check, 600); draw(); changed(); });
+  inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { clearTimeout(timer); check(); } });
+  function draw() {
+    const ok = checked?.ok;
+    say.textContent = checking ? "Asking GitHub…" : !checked ? "Public contributions only: no account or token. GitHub is asked at most four times a day."
+      : ok ? (checked.total != null ? `${checked.total.toLocaleString()} contributions in the past year.` : "Found. GitHub gave levels, not counts, so the totals are left out.")
+      : checked.error;
+    say.classList.toggle("bad", !!checked && !ok && !checking);
+  }
+  draw();
+  const node = h("div", { class: "stepsec" }, h("h3", { class: "slab", text: "Whose contributions" }),
+    h("div", { class: "group" }, h("label", { class: "gr" }, h("span", { class: "gl", text: "GitHub user" }), inp)), say);
+  return {
+    node,
+    ready: () => !!checked?.ok,
+    shows: () => (checked?.ok ? { mine: true, extra: { user: checked.user }, caption: `${checked.user} on GitHub.` } : { mine: false }),
+    commit: async () => ({ extra: { user: checked?.user || "" } }),
+    dispose: () => clearTimeout(timer),
   };
 }

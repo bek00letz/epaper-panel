@@ -309,8 +309,10 @@ class TestTheLongestWordsFit(unittest.TestCase):
     words fit their boxes, at every size offered, in every language."""
 
     def test_every_widget_stays_in_its_box(self):
+        import test_ha_pages
         import test_widgets as tw
-        cases = [c for c in vars(tw).values() if isinstance(c, type) and issubclass(c, tw.Sizes) and c is not tw.Sizes]
+        cases = [c for m in (tw, test_ha_pages) for c in vars(m).values()
+                 if isinstance(c, type) and issubclass(c, tw.Sizes) and c is not tw.Sizes]
         self.assertGreater(len(cases), 5)
         for lang in OTHERS:
             for case in cases:
@@ -373,7 +375,20 @@ class TestTheLongestWordsFit(unittest.TestCase):
                 ({"type": "todo_list", "entity": "todo.x"}, {"items": []}),
                 ({"type": "todo_list", "entity": "todo.x", "show": "due"}, {"items": []}),
                 ({"type": "notifications"}, {"items": []}), ({"type": "updates"}, {"items": []}),
-                ({"type": "calendar_agenda", "entity": "calendar.x"}, []), ({"type": "flight_tracker"}, [])]
+                ({"type": "calendar_agenda", "entity": "calendar.x"}, []), ({"type": "flight_tracker"}, []),
+                ({"type": "year_grid"}, {"days": [], "missing": "choose"}),
+                ({"type": "year_grid"}, {"days": [], "missing": "user", "user": "a-rather-long-username"}),
+                ({"type": "year_grid"}, {"days": [], "missing": "statistics", "name": "Heating hours today"}),
+                ({"type": "year_grid"}, {"days": [["2026-10-30", None]]}),
+                ({"type": "commute"}, {"routes": [], "missing": "integration"}),
+                ({"type": "commute"}, {"routes": [{"name": "Work", "minutes": None}]}),
+                ({"type": "departures"}, {"departures": [], "missing": "integration"}),
+                ({"type": "departures"}, {"departures": [], "missing": "unavailable"}),
+                ({"type": "departures"}, {"departures": []}),
+                ({"type": "mail_list"}, {"messages": [], "missing": "integration"}),
+                ({"type": "mail_list"}, {"messages": [], "missing": "unavailable", "name": "Work mail"}),
+                ({"type": "mail_list"}, {"messages": [], "count": 0}),
+                ({"type": "mail_list"}, {"messages": [], "count": 12, "more": 12})]
 
     def test_every_message_fits(self):
         for lang in words.LANGUAGES:

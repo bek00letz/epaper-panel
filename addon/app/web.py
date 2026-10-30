@@ -725,6 +725,55 @@ async def api_energy(request):
     return web.json_response(got)
 
 
+async def api_found(request):
+    """What a page built on Home Assistant's data shows by itself, before anything is picked, by the
+    add-on's own rules (the one place they live): ?what=commute (every travel time), departures
+    (every sensor that looks like departures) or mail (every IMAP mailbox). {"found": [{"entity",
+    "name", "state"}]}; 502 when Home Assistant didn't answer."""
+    from config import HA_TOKEN
+    from sources import commute, departures, hass_read
+    what = request.query.get("what", "")
+    if what not in ("commute", "departures", "mail"):
+        return web.json_response({"error": "Ask for commute, departures or mail."}, status=400)
+    if not HA_TOKEN:
+        import examples
+        from datetime import datetime
+        ex = {"commute": [(r["entity"], r["name"], str(r["minutes"])) for r in examples.commute(datetime.now())["routes"]],
+              "departures": [("sensor.example_stop", "Example stop", "")], "mail": [("sensor.imap_example", "Mail", "3")]}[what]
+        return web.json_response({"found": [{"entity": e, "name": n, "state": st} for e, n, st in ex]})
+    try:
+        if what == "commute":
+            ids = await hass_read.found_by(runtime.SESSION, commute.INTEGRATIONS)
+        elif what == "departures":
+            ids = await departures.found(runtime.SESSION)
+        else:
+            ids = await hass_read.found_by(runtime.SESSION, ("imap",))
+        rows = await hass_read.states_of(runtime.SESSION, ids)
+    except Exception as exc:                      # noqa: BLE001 -- said plainly, the step offers Skip
+        return web.json_response({"error": f"Home Assistant didn't answer: {health.describe(exc)}"}, status=502)
+    return web.json_response({"found": [{"entity": r["entity"], "name": r["name"], "state": r["state"]} for r in rows]})
+
+
+async def api_github_check(request):
+    """Whether GitHub has this user, asked because a person typed it in New page or the inspector:
+    {"ok": true, "days": n, "total": contributions} or {"ok": false, "error": words}."""
+    from sources import yeargrid
+    user = yeargrid.clean_user(request.query.get("user"))
+    if not user:
+        return web.json_response({"ok": False, "error": "That isn't a GitHub username: letters, digits and single hyphens, 39 at most."})
+    try:
+        with live_data.waiting_for_fresh():
+            got = await yeargrid.fetch_github(runtime.SESSION, user)
+    except Exception as exc:                      # noqa: BLE001
+        return web.json_response({"ok": False, "error": f"GitHub didn't answer: {health.describe(exc)}. Try again later."})
+    if not got:
+        return web.json_response({"ok": False, "error": "GitHub didn't answer. Try again in a minute."})
+    if got.get("missing") == "user":
+        return web.json_response({"ok": False, "error": f"GitHub has no user called {user}."})
+    days = [v for _, v in got.get("days") or [] if v is not None]
+    return web.json_response({"ok": True, "days": len(days), "total": None if got.get("levels_only") else int(sum(days))})
+
+
 async def api_batteries(request):
     """Which battery sensors you charge yourself, by their device (sources.batteries):
     {"batteries": {entity: true|false|null}} (null for one with no device, {} offline), and "kinds":
@@ -1528,6 +1577,8 @@ def make_apps():
         web.get("/api/entity_states", api_entity_states),
         web.get("/api/energy", api_energy),
         web.get("/api/batteries", api_batteries),
+        web.get("/api/found", api_found),
+        web.get("/api/github/check", api_github_check),
         web.get("/api/catalog", api_catalog),
         web.get("/api/timezones", api_timezones),
         web.post("/api/shows-time", api_shows_time),

@@ -6,6 +6,40 @@
   place**, so they share one pair of sensors. A place is its coordinates,
   whether it's Home, an airport or anywhere else; a page's distance never
   makes it a different place.
+- **Four new pages built on what Home Assistant already has**, in New page.
+  No firmware change.
+  - **Year grid:** a square for each day of the past year, larger for more,
+    with the total, the current and longest streaks, the busiest day and the
+    daily average beside it. It shows any daily number Home Assistant keeps
+    statistics of (solar, heating hours, steps), or someone's public GitHub
+    contributions by username, with no account or token; GitHub is asked at
+    most four times a day. A smaller device shows as many weeks as stay easy
+    to see, and a tall one wraps the year into rows.
+  - **Commute:** how long each drive takes now against the usual for this
+    hour, weekdays and weekends apart, worked out from each route's own last
+    four weeks. It finds your travel times by itself (Waze Travel Time needs
+    no account; Google's and HERE's work too), and a route much slower than
+    usual is inverted.
+  - **Departures:** the next buses, trams or trains from any transit
+    integration (GTFS and many others), soonest first, with the line, where
+    it goes and any delay. If yours keeps its times somewhere unusual, its
+    inspector lets you say which detail is which.
+  - **Mail:** your latest unread mail, who it's from and the subject, from
+    Home Assistant's IMAP integration. The add-on never holds your email
+    password; New page says what to set up in Home Assistant. It shows only
+    while there's unread mail. Messages show from the first one that arrives
+    after the page is made.
+  - Each says plainly what's missing when there's nothing to show yet (no
+    travel times, no transit, no mailbox, no such GitHub user), in all five
+    languages.
+- **Commute and Departures change by the minute**, so on a device that sleeps
+  between updates the editor notes they can be as old as its last update, as
+  it does for planes and scores. A departure board on such a device says
+  when each one leaves (14:05), not how many minutes away.
+- **Fixed: on a box taller than it is wide, the smaller number of a
+  one-number page sat on top of the large one** (Energy cost, Sunrise and
+  sunset and Countdown on the 4.2" and upright devices). It now sits under
+  it.
 
 ## 0.22.2
 Two fixes. No firmware change and no Home Assistant restart: updating the

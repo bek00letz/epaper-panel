@@ -215,6 +215,15 @@ async def _probe_iconify_api(session, base: str) -> str:
     return "Icon previews"
 
 
+async def _probe_github(session, base: str) -> str:
+    from sources import yeargrid
+    try:
+        got = yeargrid.read_github(await _get(session, f"{base}/octocat/contributions", as_text=True))
+    except ValueError:
+        raise Refused("It answered, but not with a contribution calendar the add-on can read.") from None
+    return f"A contribution calendar, {_many(len(got['days']), 'day')}"
+
+
 # ---------------------------------------------------------------- Try again for Home Assistant's own
 
 async def _retry_icons(session) -> str:
@@ -304,6 +313,9 @@ SERVICES: tuple[Service, ...] = (
     Service("opensky", "OpenSky", "outside", "Planes overhead, when Flightradar24 doesn't answer",
             (Address("main", "Flight feed", "https://opensky-network.org/api/states/all", _probe_opensky),),
             uses=_outside("flight_tracker")),
+    Service("github", "GitHub", "outside", "Contributions for a year grid, by username",
+            (Address("main", "Contribution calendars", "https://github.com/users", _probe_github),),
+            uses=lambda el: el.get("type") == "year_grid" and el.get("source") == "github"),
     Service("iconify", "Iconify", "outside", "Icon sets you add in Settings › Icons",
             (Address("main", "Icon sets", "https://raw.githubusercontent.com/iconify/icon-sets/master", _probe_iconify_sets),
              Address("api", "Previews", "https://api.iconify.design", _probe_iconify_api))),
@@ -312,6 +324,11 @@ SERVICES: tuple[Service, ...] = (
     Service("energy_dashboard", "Energy dashboard", "home", "Energy totals, the grid now and energy cost",
             uses=_type("energy_total", "grid_now", "energy_cost"),
             retry=_direct("sources.energy", "fetch_dashboard", lambda got: "Read the Energy dashboard")),
+    Service("home_assistant_statistics", "Home Assistant statistics", "home",
+            "Year grids from your sensors, and each route's usual travel time",
+            uses=lambda el: (el.get("type") == "year_grid" and el.get("source") != "github") or el.get("type") == "commute"),
+    Service("home_assistant_mail", "Home Assistant mail", "home", "New mail its IMAP integration announces",
+            uses=_type("mail_list")),
     Service("home_assistant_notifications", "Home Assistant notifications", "home", "Its notifications",
             uses=_either(_type("notifications"), _counts("notifications")),
             retry=_direct("sources.needs_you", "fetch_notifications", lambda got: _many(len(got or []), "notification"))),

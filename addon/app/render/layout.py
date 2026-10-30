@@ -28,7 +28,12 @@ from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from . import theme as T
 from . import binding
+from . import commute
+from . import departures
 from . import energy
+from . import listing  # noqa: F401  (the list pages' rows)
+from . import mail
+from . import yeargrid
 from . import media
 from . import needs_you
 from . import sport
@@ -2425,6 +2430,10 @@ WIDGETS = {
     "notifications": needs_you.draw_notifications,
     "updates": needs_you.draw_updates,
     "badge": needs_you.draw_badge,
+    "year_grid": yeargrid.draw,
+    "commute": commute.draw,
+    "departures": departures.draw,
+    "mail_list": mail.draw,
 }
 DRAWERS.update({t: _widget(fn) for t, fn in WIDGETS.items()})
 

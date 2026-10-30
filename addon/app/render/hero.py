@@ -162,7 +162,8 @@ def draw(img, d, box: Box, main: Fact, *, aside: Fact | None = None,
         beside(side_box)
     else:
         _, value_px, _ = _layout(main, main_box[2], main_box[3], scale)
-        draw_aside(img, d, aside, side_box, round(value_px * ASIDE), top=top)
+        # Level with the main value only beside it; stacked under it, the aside is centred in its own part.
+        draw_aside(img, d, aside, side_box, round(value_px * ASIDE), top=top if side_box[1] == main_box[1] else None)
 
 
 def draw_pair(img, d, box: Box, left: Fact, right: Fact, *, scale: float = 1.0) -> None:

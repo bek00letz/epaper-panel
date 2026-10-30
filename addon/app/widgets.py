@@ -30,6 +30,8 @@ import examples
 import shapes
 from render import arrange, layout, sport, subitems
 from sources import HOURS_AROUND, batteries, energy, flights, ha_services, home, needs_you, racing, sports, station
+from sources import commute, departures, mail
+from sources import yeargrid as year_days
 
 # A default box: "fill" takes the content area less `inset` (from `y`); otherwise each size is clamped to it.
 FILL = {"fill": True, "y": 14, "inset": 20}
@@ -415,6 +417,37 @@ async def _match(session, el, ctx):
     return got or None
 
 
+async def _year_grid(session, el, ctx):
+    return await year_days.fetch(session, el)
+
+
+def _ids(raw) -> tuple:
+    """A widget's chosen sensors (a list, or older: one, or several by commas), in order."""
+    items = raw if isinstance(raw, list) else str(raw or "").split(",")
+    return tuple(str(x).strip() for x in items if str(x or "").strip())
+
+
+async def _commute(session, el, ctx):
+    got = await commute.fetch_routes(session, _ids(el.get("entities")))
+    return None if got is None else {**got, "tz": ctx.home_tz}
+
+
+async def _departures(session, el, ctx):
+    keys = tuple(departures.keys_of(el).items())
+    got = await departures.fetch_departures(session, _ids(el.get("entities")), keys)
+    return None if got is None else {**got, "tz": ctx.home_tz}
+
+
+async def _mail(session, el, ctx):
+    got = await mail.fetch_mail(session, str(el.get("entity") or "").strip())
+    return None if got is None else {**got, "tz": ctx.home_tz}
+
+
+async def _mail_unread(session, el, home_tz):
+    got = await mail.fetch_mail(session, str(el.get("entity") or "").strip())
+    return bool(got) and not got.get("missing") and (got.get("count") or 0) > 0
+
+
 # ---------------------------------------------------------------- the widgets, in the order the editor offers them
 
 STATION_FIELDS = [
@@ -521,6 +554,52 @@ WIDGETS: dict[str, Widget] = {w.type: w for w in (
                    {"kind": "window", "label": "Only show while there are any"},
                    {"kind": "sensorid", "note": "The add-on counts them as {sensor}, its own value: a page's "
                                                 "\"Only when\" or an alert can show by it."}]),
+    # A square per day, more ink for more (render/yeargrid.py): a GitHub user's contributions or any daily
+    # number Home Assistant keeps statistics of; the grid never knows which (sources/yeargrid.py).
+    Widget("year_grid", "Year grid", "days", _year_grid,
+           lambda el, now: examples.year_grid("github" if el.get("source") == "github" else "statistic", now.date()),
+           defaults={"source": "statistic", "entity": "", "user": "", "span": "year", "show_totals": True},
+           fields=[sel("source", "From", [["statistic", "A Home Assistant sensor"], ["github", "GitHub contributions"]], "statistic"),
+                   entity("entity", "Sensor", ["sensor"], when={"key": "source", "is": "statistic"}),
+                   {**sel("how", "Each day is", [["auto", "Picked from the sensor"], ["change", "How much it went up"],
+                                                 ["max", "Its highest"], ["mean", "Its average"]], "auto"),
+                    "when": {"key": "source", "is": "statistic"}},
+                   {**text("user", "GitHub user", "A username"), "when": {"key": "source", "is": "github"}},
+                   sel("span", "Shows", [["year", "A year"], ["half", "6 months"], ["quarter", "3 months"], ["month", "A month"]], "year"),
+                   sel("first_weekday", "Week starts", [["0", "Monday"], ["6", "Sunday"]], "0"),
+                   toggle("show_totals", "Totals", True),
+                   {"kind": "note", "text": "A smaller device shows as many weeks as stay easy to see. "
+                                            "GitHub is asked at most four times a day."}]),
+    # Travel times from Home Assistant (Waze Travel Time and the like), each against its own usual.
+    Widget("commute", "Commute", "car", _commute, lambda el, now: {**examples.commute(now), "tz": None},
+           live=(commute.fetch_routes,), defaults={"entities": [], "title": ""},
+           fields=[{"kind": "entities", "key": "entities", "label": "Routes", "domains": ["sensor"], "most": 6,
+                    "none": "Every travel time in Home Assistant"},
+                   text("title", "Title", "Travel times"),
+                   {"kind": "note", "text": "Usual is each route's own: the middle of its last four weeks at this hour, "
+                                            "weekdays and weekends apart."}]),
+    # The next departures from any transit integration, its shape read by the add-on (sources/departures.py).
+    Widget("departures", "Departures", "tram", _departures, lambda el, now: {**examples.departures(now), "tz": None},
+           live=(departures.fetch_departures,), defaults={"entities": [], "title": ""},
+           fields=[{"kind": "entities", "key": "entities", "label": "Stops", "domains": ["sensor"], "most": 6,
+                    "none": "Any sensor that gives departures"},
+                   text("title", "Title", "The stop's name"),
+                   {"kind": "note", "text": "Most transit integrations are read as they are. If yours shows the wrong "
+                                            "thing, say which of its details holds each part:"},
+                   text("list_key", "List of departures", "Found by itself"),
+                   text("time_key", "Time", "Found by itself"),
+                   text("line_key", "Line", "Found by itself"),
+                   text("to_key", "Destination", "Found by itself")]),
+    # The latest mail from Home Assistant's IMAP integration; the add-on never holds the password.
+    Widget("mail_list", "Mail", "mail", _mail, lambda el, now: {**examples.mail(now), "tz": None},
+           defaults={"entity": "", "title": ""},
+           gate=Gate(check=_mail_unread, says="there's unread mail"),
+           fields=[entity("entity", "Mailbox", ["sensor"], ph="The first IMAP mailbox"),
+                   text("title", "Title", "The mailbox's name"),
+                   {"kind": "window", "label": "Only show while there's unread mail"},
+                   {"kind": "note", "text": "Reads Home Assistant's IMAP integration, which holds the password: "
+                                            "Settings › Devices & services › Add integration › IMAP. "
+                                            "Messages show from the next one that arrives."}]),
     # A number on an icon, as on an app's icon, for a corner of any page; nothing at all at zero.
     Widget("badge", "Badge", "badge", _badge, lambda el, now: examples.badge(needs_you.badge_counts(el)),
            box={"x": 672, "y": 14, "w": 96, "h": 96}, defaults={"counts": "updates"}, keeps_size=True,

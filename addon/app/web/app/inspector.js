@@ -502,8 +502,27 @@ function typeSections(app, el, set, i) {
     else if (f.kind === "countdown") s.append((el.to === "bins" ? binsEditor : dateEditor)(el, () => app.doc.commit()));
     // A world clock's cities: adding, removing or reordering one redraws the canvas at once (each commit does).
     else if (f.kind === "zones") s.append(field(f.label || "Cities", zonesEditor(el, () => app.doc.commit(), { most: f.most || 4 }), { wide: true }));
+    // Several sensors in order (a commute's routes, a board's stops); none: what the widget finds itself.
+    else if (f.kind === "entities") s.append(field(f.label || "Sensors", entitiesEditor(app, el, f, set), { wide: true }));
   }
   return [s];
+}
+
+/* A widget's several sensors (its descriptor's "entities" field), each a row with Remove, then Add.
+   None chosen is a choice too: the widget shows what it finds by itself, which `f.none` says. */
+function entitiesEditor(app, el, f, set) {
+  const ids = Array.isArray(el[f.key]) ? el[f.key].filter(Boolean) : [];
+  const save = (next) => set(f.key, next.length ? next : "");
+  const nameOf = (id) => app.entMap.get(id)?.name || id;
+  const rows = ids.map((id, k) => h("div", { class: "entrow" },
+    entityButton(app, id, (nid) => save(nid ? ids.map((x, j) => (j === k ? nid : x)) : ids.filter((_, j) => j !== k)), { domains: f.domains, label: f.label }),
+    h("button", { class: "btn icon", "aria-label": `Remove ${nameOf(id)}`, onclick: () => save(ids.filter((_, j) => j !== k)) }, icon("trash", "sm"))));
+  const add = linkButton(ids.length ? "Add another" : "Choose", (ev) => app.openEntityPicker(ev.currentTarget, (nid) => {
+    if (nid && !ids.includes(nid)) save([...ids, nid]);
+  }, { domains: f.domains }));
+  return h("div", { class: "entlist" }, ...[...rows,
+    ids.length ? null : h("p", { class: "fnote", text: f.none || "" }),
+    ids.length < (f.most || 6) ? add : h("p", { class: "fnote", text: `Up to ${f.most || 6}.` })].filter(Boolean));
 }
 
 function lineSection(app, el) {

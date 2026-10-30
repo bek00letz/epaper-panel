@@ -209,3 +209,50 @@ def badge(counts: str) -> int:
     """What a badge counts, from the samples above: 4 updates, 3 notifications, 1 repair, 8 in all."""
     n = {"updates": len(updates()), "notifications": len(notifications()), "repairs": REPAIRS}
     return sum(n.values()) if counts == "all" else n.get(counts, n["updates"])
+
+
+# ---------------------------------------------------------------- pages built on Home Assistant's own data
+
+def year_grid(what: str, today) -> dict:
+    """A year of days (sources/yeargrid.py's shape): a solar year's kWh, or a year of contributions,
+    busy on weekdays and with quiet weeks. The same from one day to the next: no randomness."""
+    days = []
+    for k in range(371):
+        day = today - timedelta(days=370 - k)
+        n = day.toordinal()
+        wobble = (n * 7919 % 97) / 97                       # steady, unpredictable-looking
+        if what == "github":
+            quiet = (n // 7) % 9 in (3, 7) or day.weekday() >= 5 and wobble < 0.7
+            value = 0 if quiet or wobble < 0.18 else int(1 + wobble * 9 + (wobble > 0.9) * 14)
+        else:
+            season = math.sin(math.pi * (day.timetuple().tm_yday - 80) / 365) * 0.5 + 0.5
+            value = round((4 + 18 * season) * (0.45 + 0.55 * wobble), 1)
+        days.append([day.isoformat(), value])
+    return {"days": days, "today": today.isoformat(), "unit": "" if what == "github" else "kWh", "what": what}
+
+
+def commute(now: datetime) -> dict:
+    """Two routes: one as usual, one slower than usual."""
+    return {"routes": [{"entity": "sensor.to_work", "name": "Work", "minutes": 34.0, "usual": 25.0, "route": "Ring road", "state": "ok"},
+                       {"entity": "sensor.to_school", "name": "School", "minutes": 12.0, "usual": 12.0, "route": "", "state": "ok"}],
+            "found": True}
+
+
+def departures(now: datetime) -> dict:
+    """The next departures from a stop: a few lines, one late."""
+    rows = [("12", "Old Town", 2, 0, "2"), ("N3", "Airport", 6, 2, ""), ("12", "Riverside", 14, 0, "2"),
+            ("40", "University", 21, 0, "1"), ("N3", "Airport", 36, 0, "")]
+    base = now.replace(second=0, microsecond=0)
+    return {"departures": [{"at": (base + timedelta(minutes=m)).isoformat(), "line": line, "destination": to,
+                            "delay": delay, "platform": platform} for line, to, m, delay, platform in rows],
+            "stop": "", "found": True}
+
+
+def mail(now: datetime | None = None) -> dict:
+    """Three unread messages, newest first."""
+    now = now or datetime.now().astimezone()
+    rows = [("Ana", "Dinner on Saturday?", 9), ("City library", "Your books are due on Friday", 95),
+            ("Sam", "Photos from the weekend", 26 * 60)]
+    return {"count": 3, "name": "", "more": 0,
+            "messages": [{"entry": "", "uid": str(k), "sender": s, "subject": subj,
+                          "date": (now - timedelta(minutes=ago)).isoformat()} for k, (s, subj, ago) in enumerate(rows)]}

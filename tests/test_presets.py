@@ -668,10 +668,11 @@ class TestNotedNeverHidden(unittest.TestCase):
     ASLEEP = {"timing": {"always_on": False, "update_minutes": 15}}
 
     def test_the_rule_finds_the_five(self):
-        """The user's five, and Race weekend (live timing, framework review #6), from each widget's
-        descriptor and the watts rule."""
+        """The user's five, and Race weekend (live timing, framework review #6), Commute and Departures
+        (ha-pages, 30 Oct), from each widget's descriptor and the watts rule."""
         got = run_js("console.log(JSON.stringify(P.PRESETS.filter((p) => P.presetChangesEvery(p) != null).map((p) => p.title)))")
-        self.assertEqual(sorted(got), sorted(["Planes overhead", "Now playing", "Scores", "Race weekend", "Grid now", "Battery and solar"]))
+        self.assertEqual(sorted(got), sorted(["Planes overhead", "Now playing", "Scores", "Race weekend", "Grid now", "Battery and solar",
+                                             "Commute", "Departures"]))
     def test_the_line_names_the_devices_own_interval(self):
         got = run_js(f"""const asleep = {json.dumps(self.ASLEEP)};
           console.log(JSON.stringify([P.staleNote(1, asleep), P.staleNote(1, asleep, {{ short: true }}),

@@ -893,6 +893,12 @@ pre.formex:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px
 .tile.lifted ~ .tileacts { opacity: 0; }
 .tile.lifted ~ .tileacts .tileact { pointer-events: none; }
 
+/* A widget's several sensors: a row each (the sensor, Remove), then Add. */
+.entlist { display: flex; flex-direction: column; gap: 8px; align-items: stretch; }
+.entrow { display: flex; align-items: center; gap: 8px; }
+.entrow .entbtn { flex: 1; }
+.entlist > .linkbtn { align-self: flex-start; }
+
 /* A world clock's cities: a row each (grip, city, its name, remove), the search under the one being picked. */
 .cities { display: flex; flex-direction: column; gap: 8px; }
 .cities .group { margin: 0; }

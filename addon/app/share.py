@@ -145,6 +145,8 @@ def _home_only(el: dict) -> dict:
             el["data"] = data
         else:
             el.pop("data")
+    if el.get("type") == "year_grid" and el.get("user"):
+        el["user"] = ""                                          # whose GitHub it shows: the opener picks their own
     if el.get("type") == "dynamic_grid" and el.get("batteries"):
         # A rule, not a list: every battery of its kind in the importer's home. The ticks were yours.
         el.update({"except": [], "also": [], "items": []})
