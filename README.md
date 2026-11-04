@@ -461,6 +461,20 @@ the panel offers these as `esphome.<device>_<action>`:
 | `lock_toggle` | | Lock or unlock, whichever is active |
 | `category_pin_toggle`, `hold_toggle` | | Lock the category, or this page |
 
+#### Scroll it with an IKEA BILRESA
+
+A blueprint does it for you: turn the wheel to step through the pages, and
+choose what a click and a long press do (switch between pages and their
+items, lock where it is, or fetch new pages now). It works on any always-on
+panel on this add-on's own firmware.
+
+[![Open your Home Assistant instance and show the blueprint import dialog with this blueprint.](https://my.home-assistant.io/badges/blueprint_import.svg)](https://my.home-assistant.io/redirect/blueprint_import/?blueprint_url=https%3A%2F%2Fgithub.com%2Fbek00letz%2Fepaper-panel%2Fblob%2Fmain%2Faddon%2Fapp%2Fblueprints%2Fremote.yaml)
+
+Then create an automation from it, pick the wheel's three events for the
+channel you want (usually Button 1, 2 and 3 for channel 1), and enter the
+panel's ESPHome name: for `esphome.crowpanel_epaper_page_step` it's
+`crowpanel_epaper`.
+
 ### Entities
 
 From the panel: **Sleep**, **Refresh interval** (kept at the device's

@@ -1,0 +1,145 @@
+blueprint:
+  name: Scroll an e-paper panel with an IKEA BILRESA
+  description: >-
+    Turn the BILRESA scroll wheel to step through an E-paper panel's pages, and
+    give its button two jobs of your choice. For panels on the E-paper panel
+    add-on's own firmware (CrowPanels, the Seeed XIAO 7.5") that are always on:
+    a panel that sleeps between updates isn't listening, and a TRMNL can't be
+    scrolled.
+
+
+    The wheel has three channels, each with its own three events: usually
+    Button (1), (2) and (3) for channel 1, (4), (5) and (6) for channel 2, and
+    (7), (8) and (9) for channel 3.
+  domain: automation
+  author: E-paper panel add-on
+  source_url: https://github.com/bek00letz/epaper-panel/blob/main/addon/app/blueprints/remote.yaml
+  homeassistant:
+    min_version: "2024.10.0"
+  input:
+    panel:
+      name: Panel
+      description: >-
+        The panel's ESPHome name, as its actions are named in Home Assistant.
+        For esphome.crowpanel_epaper_page_step it's crowpanel_epaper. To find
+        it, search for "page_step" in Developer tools › Actions.
+      default: crowpanel_epaper
+      selector:
+        text: {}
+    clockwise:
+      name: Turning clockwise
+      description: The wheel's event for turning clockwise, such as Button (1).
+      selector:
+        entity:
+          filter:
+            - domain: event
+    anticlockwise:
+      name: Turning anticlockwise
+      description: The wheel's event for turning anticlockwise, such as Button (2).
+      selector:
+        entity:
+          filter:
+            - domain: event
+    button:
+      name: The button
+      description: The wheel's centre button, such as Button (3).
+      selector:
+        entity:
+          filter:
+            - domain: event
+    click:
+      name: A click
+      default: mode_toggle
+      selector:
+        select:
+          options:
+            - label: Switch between pages and their items
+              value: mode_toggle
+            - label: Lock or unlock where it is
+              value: lock_toggle
+            - label: Fetch new pages now
+              value: refresh_now
+            - label: Nothing
+              value: none
+    long_press:
+      name: A long press
+      default: lock_toggle
+      selector:
+        select:
+          options:
+            - label: Switch between pages and their items
+              value: mode_toggle
+            - label: Lock or unlock where it is
+              value: lock_toggle
+            - label: Fetch new pages now
+              value: refresh_now
+            - label: Nothing
+              value: none
+
+# Turns arrive faster than a panel redraws, so they wait their turn instead of being dropped.
+mode: queued
+max: 4
+max_exceeded: silent
+
+variables:
+  panel: !input panel
+  click: !input click
+  long_press: !input long_press
+  # esphome.<panel>_<action>; ESPHome names its actions with underscores.
+  actions: "esphome.{{ panel | trim | lower | replace('-', '_') }}"
+
+triggers:
+  # An event entity changes state on every press. Coming back after a restart isn't a press.
+  - trigger: state
+    entity_id: !input clockwise
+    id: clockwise
+    not_from: unavailable
+    not_to: [unavailable, unknown]
+  - trigger: state
+    entity_id: !input anticlockwise
+    id: anticlockwise
+    not_from: unavailable
+    not_to: [unavailable, unknown]
+  - trigger: state
+    entity_id: !input button
+    id: button
+    not_from: unavailable
+    not_to: [unavailable, unknown]
+
+actions:
+  - variables:
+      event: "{{ trigger.to_state.attributes.event_type | default('') }}"
+      # A quick turn arrives as one event for several ticks: multi_press_3 is three steps.
+      ticks: >-
+        {{ (event | replace('multi_press_', '') | int(1)) if event is string and event.startswith('multi_press_') else 1 }}
+  - choose:
+      - alias: Clockwise steps forward
+        conditions:
+          - condition: trigger
+            id: clockwise
+        sequence:
+          - action: "{{ actions }}_page_step"
+            data:
+              delta: "{{ ticks | int(1) }}"
+      - alias: Anticlockwise steps back
+        conditions:
+          - condition: trigger
+            id: anticlockwise
+        sequence:
+          - action: "{{ actions }}_page_step"
+            data:
+              delta: "{{ 0 - (ticks | int(1)) }}"
+      - alias: A click does what you chose
+        conditions:
+          - condition: trigger
+            id: button
+          - "{{ event == 'multi_press_1' and click != 'none' }}"
+        sequence:
+          - action: "{{ actions }}_{{ click }}"
+      - alias: A long press does what you chose
+        conditions:
+          - condition: trigger
+            id: button
+          - "{{ event == 'long_press' and long_press != 'none' }}"
+        sequence:
+          - action: "{{ actions }}_{{ long_press }}"

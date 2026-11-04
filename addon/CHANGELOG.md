@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- **A blueprint to scroll a panel with an IKEA BILRESA**, with an import
+  button in the README. Turning the wheel steps through the pages, and you
+  choose what its button's click and long press do. For always-on panels on
+  the add-on's own firmware.
+
 ## 0.23.3
 TRMNL devices are always there, and pairing one says how to flash its
 firmware first. No firmware change and no Home Assistant restart: updating
