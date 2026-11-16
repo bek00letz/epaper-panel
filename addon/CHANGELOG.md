@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.24.1
+The add-on moves to Python 3.14. No firmware change and no Home Assistant
+restart: updating the add-on is enough, though it takes a little longer this
+time while its image is rebuilt.
 
 - **Python 3.14.** The add-on now runs on Home Assistant's newest base image
   (Alpine 3.24). Its packages, Pillow included, come from one list with
