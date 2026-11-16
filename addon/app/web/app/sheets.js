@@ -360,7 +360,7 @@ export function openPairing(app, id, listen = true) {
         app.loadScreens(id).catch(() => {});
         body.replaceChildren(h("div", { class: "pairdone" }, icon("check"), h("h3", { text: `${scr().name} is paired` }),
           h("p", { class: "fnote", text: kindle
-            ? `It shows your pages from now on, updating every ${span(info.update_minutes || 15)}. Slide its power switch for the next page. Home gives you the Kindle back until it restarts.`
+            ? `It shows your pages from now on, updating every ${span(info.update_minutes || 15)}. Slide its power switch for the next page. Home gives you the Kindle back; your pages return when it goes to sleep.`
             : `It shows your pages from now on, updating every ${span(info.update_minutes || 15)}. On its own screen it calls itself ${info.friendly_id}.` })));
         foot.append(h("button", { class: "btn primary", onclick: () => close() }, "Done"));
         return;

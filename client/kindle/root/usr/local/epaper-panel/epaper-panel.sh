@@ -249,19 +249,35 @@ screen_text() {
 }
 
 # Take the screen over: the Kindle's own reader is stopped so it doesn't draw
-# over the pages or sleep on its own schedule. hand_back undoes it.
+# over the pages or sleep on its own schedule. hand_back undoes it, Wi-Fi
+# included: as the Kindle had it before (the client turns it off between wakes).
 take_over() {
+    w=$(lipc-get-prop com.lab126.cmd wirelessEnable 2>/dev/null)
+    case "$w" in 0|1) state_put wireless_before "$w" ;; esac
     lipc-set-prop com.lab126.powerd preventScreenSaver 1 2>/dev/null
     "$EPP_SYS/etc/init.d/framework" stop >/dev/null 2>&1
     sleep 2
 }
 
+# Home: the Kindle as it was, until it goes to sleep (the power switch, or
+# dozing off on its own): then the pages come back instead of its screensaver.
 hand_back() {
-    log "handing the Kindle back (until the next restart)"
+    log "handing the Kindle back, until it goes to sleep"
     stop_keys
     : > "$EPP_STATE/handed_back"
+    lipc-set-prop com.lab126.cmd wirelessEnable "$(state_get wireless_before || echo 1)" 2>/dev/null
     lipc-set-prop com.lab126.powerd preventScreenSaver 0 2>/dev/null
     "$EPP_SYS/etc/init.d/framework" start >/dev/null 2>&1
+    back_when_asleep &
+}
+
+back_when_asleep() {
+    # Blocks until powerd says the Kindle is going to its screensaver. Anything else
+    # (an error, the client stopped): nothing; the next restart starts it as usual.
+    lipc-wait-event com.lab126.powerd goingToScreenSaver >/dev/null 2>&1 || return 0
+    [ -f "$EPP_STATE/handed_back" ] || return 0
+    log "the Kindle went to sleep: the pages come back"
+    exec "$EPP_HOME/epaper-panel.sh" run
 }
 
 # Sleep until `deadline` (seconds since 1970), suspended on the clock's alarm.

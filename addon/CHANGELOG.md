@@ -12,7 +12,8 @@
   Assistant's address, to copy onto the Kindle together, then
   Update Your Kindle. No KUAL or other tools. Slide its power switch for the
   next page (the page-turn buttons work for a minute after), and press Home
-  to use it as a Kindle again until it restarts. When something's wrong it
+  to use it as a Kindle again: your pages come back when it goes to sleep.
+  When something's wrong it
   says so on screen in plain words and tries again later, never in a loop.
   Its uninstaller is in Settings › Device. On a charger it can be always
   on, like a panel: its buttons then answer at once, and pages turn every

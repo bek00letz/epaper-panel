@@ -43,10 +43,13 @@ FAKES = {
     "lipc-get-prop": '''case "$2" in
   macAddress) echo "${FAKE_MAC:-e0:cb:1d:c1:b7:b6}" ;;
   cmState) echo "${FAKE_WIFI:-CONNECTED}" ;;
+  wirelessEnable) echo "${FAKE_WIRELESS:-1}" ;;
   *) echo "" ;;
 esac''',
     "gasgauge-info": '[ "$1" = -v ] && echo "4170 mV" || echo "97%"',
     "iwconfig": 'echo "wlan0     IEEE 802.11bg  ESSID:\\"home\\"  Link Quality=80/100  Signal level=-58 dBm"',
+    # Waits for powerd's event: here it says it was asked and fails, so nothing restarts in a test.
+    "lipc-wait-event": 'echo "lipc-wait-event $*" >> "$CALLS"; exit 1',
 }
 
 
@@ -380,11 +383,19 @@ class TestKeysAndSleep(unittest.TestCase):
         self.assertEqual((self.kindle.sys / "sys/power/state").read_text().strip(), "mem")
 
     def test_taking_over_and_handing_back(self):
-        self.kindle.shell("take_over; hand_back")
+        self.kindle.shell("take_over; wifi_down; hand_back; wait")
         calls = self.kindle.took_calls()
         self.assertEqual(calls, ["lipc-set-prop com.lab126.powerd preventScreenSaver 1", "framework stop",
-                                 "lipc-set-prop com.lab126.powerd preventScreenSaver 0", "framework start"])
+                                 "lipc-set-prop com.lab126.cmd wirelessEnable 0",
+                                 "lipc-set-prop com.lab126.cmd wirelessEnable 1",
+                                 "lipc-set-prop com.lab126.powerd preventScreenSaver 0", "framework start",
+                                 "lipc-wait-event com.lab126.powerd goingToScreenSaver"])
         self.assertTrue((self.kindle.state / "handed_back").exists())
+
+    def test_wifi_as_the_kindle_had_it(self):
+        self.kindle.shell("take_over; hand_back; wait", FAKE_WIRELESS="0")
+        self.assertIn("lipc-set-prop com.lab126.cmd wirelessEnable 0", self.kindle.took_calls()[-4:],
+                      "Wi-Fi was off before: it stays off")
 
 
 class TestSmallParts(unittest.TestCase):

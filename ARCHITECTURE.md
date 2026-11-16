@@ -759,7 +759,8 @@ What's its own:
   (`/api/kindle/{install,uninstall}`, `/api/devices/{id}/kindle-settings`).
 - **Its button is the power switch**: a sleeping Kindle 4 wakes only for it, so
   it sends `Update-Source: button`, and the page-turn buttons answer for a
-  minute after. Home hands the Kindle back until it restarts.
+  minute after. Home hands the Kindle back (its Wi-Fi as it was) until it goes to
+  sleep: powerd's `goingToScreenSaver` brings the pages back.
 - **It can stay on** (`stays_on` in its profile, `Kind.can_stay_on`), though a
   TRMNL can't: Update every 1 minute. Then it's still paged here, at each
   wake, but asks as often as its pages turn (`paging.always_on`: a minute, or

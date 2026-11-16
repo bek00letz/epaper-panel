@@ -46,7 +46,9 @@ made on a Kindle 4). The update servers include `todo-g7g.amazon.com` and
   minute after that, the **page-turn buttons** go forwards and backwards, as
   on a CrowPanel, and so does the 5-way (left back, right and middle on). (A
   sleeping Kindle 4 only wakes for its power switch.)
-- **Home** gives you the Kindle back, until it next restarts.
+- **Home** gives you the Kindle back, with Wi-Fi as it was. When you're done and
+  it goes to sleep (the power switch, or dozing off on its own), your pages
+  come back instead of its screensaver.
 - When something's wrong it says so in plain words at the bottom of the page
   that's showing (or on its own screen before it's paired), and tries again
   after 1, 2, 5, 10 and 30 minutes, then every 30 minutes. It never retries
