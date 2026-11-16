@@ -218,7 +218,7 @@ class TestFooterAtEverySize(unittest.TestCase):
 
     def test_the_band_does_not_grow(self):
         band = {(792, 272): 32, (272, 792): 36, (400, 300): 32, (300, 400): 36, (296, 128): 25, (128, 296): 32,
-                (800, 480): 36, (480, 800): 36, (960, 640): 36, (640, 960): 36}
+                (800, 480): 36, (480, 800): 36, (960, 640): 36, (640, 960): 36, (600, 800): 36, (800, 600): 36}
         for display, deg, strip, pages, plan in every_footer():
             self.assertEqual(plan["canvas"][1] - plan["rule_y"], band[plan["canvas"]], (display, deg))
             self.assertEqual(T.footer_band(deg, display), band[plan["canvas"]])

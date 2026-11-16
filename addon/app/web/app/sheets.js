@@ -751,7 +751,7 @@ function timersBox(app, scr, redraw) {
     (v) => change({ update_minutes: Number(v) }, updateSaid(Number(v))), { "aria-label": "Update every" });
   const rotate = select(rotateOptions(t), t.always_on ? t.rotate_seconds : t.rotate_updates, (v) => change(...rotateChange(t, v)), { "aria-label": "Rotate every" });
   const rows = [
-    grow("Update every", t.always_on ? (pairs ? "Always on: for a screen on a charger" : "Always on: for a panel on a cable") : t.can_stay_on ? "It sleeps in between. Longer lasts longer on a battery" : "Longer lasts longer on its battery", update),
+    grow("Update every", t.always_on ? (pairs ? "Always on: for a device on a charger" : "Always on: for a panel on a cable") : t.can_stay_on ? "It sleeps in between. Longer lasts longer on a battery" : "Longer lasts longer on its battery", update),
     grow("Rotate every", t.always_on ? "How long each page shows" : "Each update refreshes the page on screen; this moves to the next", rotate)];
   if (!t.always_on && !pairs) {
     const stay = info.stay_awake || {};

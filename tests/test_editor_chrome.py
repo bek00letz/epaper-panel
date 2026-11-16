@@ -86,7 +86,7 @@ class TestAddAScreen(unittest.TestCase):
         self.assertIn('choice("sleep", "Sleeps between updates"', self.sheet)
         self.assertIn('"power", everySel)', self.sheet, "the picker sits on the card")
         self.assertIn("st.kind.update_choices.filter((m) => m !== 1)", self.sheet)
-        self.assertIn('update_minutes: !pairs() && st.power === "on" ? 1 : st.minutes', self.sheet)
+        self.assertIn('update_minutes: staysOn() && st.power === "on" ? 1 : st.minutes', self.sheet)
 
     def test_picking_a_time_picks_sleeping(self):
         self.assertIn('st.minutes = Number(v); st.power = "sleep"', self.sheet)
