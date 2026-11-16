@@ -151,12 +151,23 @@ class TestAKindsShortestUpdate(unittest.TestCase):
             stays_on = False
             shortest_update = 2
 
-        self.assertEqual(timing.update_choices(**Quick().timers)[0], 2)
+        self.assertEqual(timing.update_choices(**Quick().timers_of({}))[0], 2)
         self.assertEqual(Quick().update_minutes({"update_minutes": 2}), 2)
-        self.assertEqual(timing.settings({}, {"update_minutes": 2}, **Quick().timers), {"update_minutes": 2})
-        self.assertEqual(timing.describe({"update_minutes": 2}, **Quick().timers)["update_choices"][0], 2)
+        self.assertEqual(timing.settings({}, {"update_minutes": 2}, **Quick().timers_of({})), {"update_minutes": 2})
+        self.assertEqual(timing.describe({"update_minutes": 2}, **Quick().timers_of({}))["update_choices"][0], 2)
 
     def test_a_trmnl_still_starts_at_five(self):
         from kinds import trmnl
         kind = next(k for k in vars(trmnl).values() if isinstance(k, type) and getattr(k, "id", "") == "trmnl")
-        self.assertEqual(timing.update_choices(**kind().timers)[0], 5)
+        self.assertEqual(timing.update_choices(**kind().timers_of({"display": "trmnl_og"}))[0], 5)
+
+    def test_a_kindle_can_stay_on_though_a_trmnl_cant(self):
+        """Staying on is the display's word as well as the kind's: a Kindle's profile says it can."""
+        from kinds import trmnl
+        self.assertFalse(trmnl.KIND.can_stay_on("trmnl_og"))
+        self.assertTrue(trmnl.KIND.can_stay_on("kindle"))
+        self.assertTrue(trmnl.KIND.can_stay_on("kindle_758x1024"), "another Kindle's size too")
+        self.assertEqual(timing.update_choices(**trmnl.KIND.timers_of({"display": "kindle"}))[0], 1)
+        self.assertEqual(trmnl.KIND.update_minutes({"display": "kindle", "update_minutes": 1}), 1)
+        self.assertEqual(trmnl.KIND.update_minutes({"display": "trmnl_og", "update_minutes": 1}), 15,
+                         "a TRMNL set to always on (it can't be) is asleep")

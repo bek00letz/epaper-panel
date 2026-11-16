@@ -6,6 +6,25 @@
   button in the README. Turning the wheel steps through the pages, and you
   choose what its button's click and long press do. For always-on panels on
   the add-on's own firmware.
+- **A Kindle can be a screen.** A jailbroken Kindle 4 shows your pages and
+  sleeps between updates. Add it under Add new device › Kindle: the
+  pairing sheet gives you its installer and a file with your Home
+  Assistant's address, to copy onto the Kindle together, then
+  Update Your Kindle. No KUAL or other tools. Slide its power switch for the
+  next page (the page-turn buttons work for a minute after), and press Home
+  to use it as a Kindle again until it restarts. When something's wrong it
+  says so on screen in plain words and tries again later, never in a loop.
+  Its uninstaller is in Settings › Device. On a charger it can be always
+  on, like a panel: its buttons then answer at once, and pages turn every
+  few seconds if you like. Amazon can still update a Kindle
+  on Wi-Fi, which removes it: whether to block that is up to you, and the
+  sheet says how.
+- **16 greys on screens that show them.** A Kindle gets its pages in 16
+  shades of grey, so text has smooth edges. How many shades a screen shows
+  belongs to its model; every black-and-white screen's pictures are exactly
+  what they were.
+- What a TRMNL or a Kindle shows before it's paired says "add this screen",
+  not "this TRMNL". (None of this changes the panels' firmware.)
 
 ## 0.23.3
 TRMNL devices are always there, and pairing one says how to flash its

@@ -48,6 +48,9 @@ class TestTheCursor(unittest.TestCase):
         self.assertEqual(paging.step(plans, {"pos": 2, "name": "c", "item": 2}, False), (0, 0), "round again")
         self.assertEqual(paging.step(plans, {"pos": 5, "name": "c", "item": 0}, False), (2, 1), "found by name")
         self.assertEqual(paging.step(plans, {"pos": 1, "name": "gone", "item": 0}, False), (0, 0))
+        self.assertEqual(paging.step(plans, {"pos": 2, "name": "c", "item": 2}, True, back=True), (1, 0),
+                         "a person going back: the previous page, from its start")
+        self.assertEqual(paging.step(plans, {"pos": 0, "name": "a", "item": 1}, True, back=True), (2, 0), "round the other way")
 
     def test_only_what_a_wake_can_reach_is_drawn_ahead(self):
         # A Scores page with 80 games: not 80 pictures a minute, only what the next wakes can ask for.

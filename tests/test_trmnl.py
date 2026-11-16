@@ -37,6 +37,12 @@ MAC = "AA:BB:CC:DD:EE:FF"                   # the firmware's own test values (te
 OTHER_MAC = "11:22:33:44:55:66"
 
 
+def fresh_wrong_keys():
+    """A clean wrong-key count, in every module that holds it (trmnl.py imported it by name),
+    so one test's refusals never slow another's requests down."""
+    kinds.WRONG_KEYS = trmnl.WRONG_KEYS = kinds.WrongKeys()
+
+
 def setup_headers(mac=MAC):
     """buildSetupHeaders: ID, Content-Type, FW-Version, Model."""
     return {"ID": mac, "Content-Type": "application/json", "FW-Version": "1.8.5", "Model": "og"}
@@ -88,7 +94,7 @@ class TrmnlBase(unittest.IsolatedAsyncioTestCase):
 
     async def asyncSetUp(self):
         support.fresh_data_dir()
-        kinds.WRONG_KEYS = kinds.WrongKeys()
+        fresh_wrong_keys()
         trmnl._PAIRING.clear()
         await frames.refresh_frames(None)
         panel, editor = web.make_apps()
@@ -101,7 +107,7 @@ class TrmnlBase(unittest.IsolatedAsyncioTestCase):
         await self.lan.close()
         await self.ed.close()
         trmnl._PAIRING.clear()
-        kinds.WRONG_KEYS = kinds.WrongKeys()
+        fresh_wrong_keys()
         support.use_test_data_dir()
 
     async def add_trmnl(self, name="Desk", pages="new", **extra):
@@ -146,7 +152,9 @@ class TestAlwaysOffered(unittest.IsolatedAsyncioTestCase):
         panel, editor = web.make_apps()
         async with TestClient(TestServer(panel)) as lan, TestClient(TestServer(editor)) as ed:
             body = await (await ed.get("/api/devices")).json()
-            self.assertEqual([k["id"] for k in body["kinds"]], ["crowpanel", "trmnl"])
+            self.assertEqual([(k["id"], k["family"]) for k in body["kinds"]],
+                             [("crowpanel", "crowpanel"), ("trmnl", "trmnl"), ("trmnl", "kindle")],
+                             "a Kindle is a TRMNL to the add-on, offered under its own name")
             r = await lan.get("/api/setup", headers=setup_headers())
             self.assertEqual(r.status, 200, "its routes exist; outside a pairing window it's told what to do")
             self.assertNotIn("api_key", firmware_reads_setup(await r.json()))
@@ -164,7 +172,7 @@ class TestPairing(TrmnlBase):
         self.assertEqual(r.status, 200, "only a 200 lets the firmware read and show the message")
         got = firmware_reads_setup(await r.json())
         self.assertEqual(got["status"], 404, "device_setup.cpp: MacNotRegistered, then sleeps")
-        self.assertIn("add this TRMNL", got["message"])
+        self.assertIn("add this screen as a device", got["message"])
         self.assertNotIn("api_key", got)
         self.assertTrue(got["message"].isascii(), "its font is ASCII")
 

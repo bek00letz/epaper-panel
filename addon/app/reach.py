@@ -157,6 +157,28 @@ HOME_FALLBACK = "homeassistant.local"
 HOST_RE = re.compile(r"[A-Za-z0-9.-]{1,253}|\[[0-9A-Fa-f:.]+\]")
 
 
+async def home_ip(session: aiohttp.ClientSession | None) -> str:
+    """Home Assistant's IPv4 address on the home network (the Supervisor's primary interface),
+    or "": for a screen that can't look up a `.local` name (a Kindle: hosts file and DNS only)."""
+    if not config.HA_TOKEN or session is None:
+        return ""
+    try:
+        async with session.get("http://supervisor/network/info", headers={"Authorization": f"Bearer {config.HA_TOKEN}"},
+                               timeout=aiohttp.ClientTimeout(total=3)) as r:
+            if r.status != 200:
+                return ""
+            interfaces = ((await r.json()).get("data") or {}).get("interfaces") or []
+    except Exception as exc:
+        print(f"reach: couldn't ask the Supervisor for Home Assistant's address: {health.describe(exc)}", flush=True)
+        return ""
+    for iface in sorted(interfaces, key=lambda i: not i.get("primary")):
+        for addr in ((iface.get("ipv4") or {}).get("address") or []):
+            ip = str(addr).split("/", 1)[0]
+            if re.fullmatch(r"(\d{1,3}\.){3}\d{1,3}", ip) and not ip.startswith(("127.", "169.254.", "172.30.")):
+                return ip
+    return ""
+
+
 async def home_address(hass, session: aiohttp.ClientSession | None) -> str:
     """Home Assistant's own name on the home network, where a new screen fetches from: its
     internal URL's host if one is set, else its host's name (`<hostname>.local`). Never the

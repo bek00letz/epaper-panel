@@ -187,10 +187,15 @@ than a frame does.
   them.
 - **Everything in `theme.py` is in panel pixels** (792 × 272), so the numbers
   match the design directly. Do not introduce a scaling factor.
-- **Draw on an 8-bit canvas, threshold at the end** (`theme.to_1bit`). No
-  dithering: hard edges are what e-ink wants.
-- **No grey.** Size carries hierarchy. `theme.screen()` exists for large text
-  only; at small sizes a checkerboard just looks broken.
+- **Draw on an 8-bit canvas, turn it into the screen's shades at the end**
+  (`theme.for_screen`). How many shades a screen shows is its profile's
+  (`greys`: 2 unless it says, 16 for a Kindle), never a kind's or a page's.
+  Black and white is `theme.to_1bit`, a hard threshold: no dithering, hard
+  edges are what e-ink wants. Greys are the nearest shade, no dithering either.
+- **No grey on a black-and-white screen.** Size carries hierarchy, on every
+  screen. `theme.screen()` exists for large text only; at small sizes a
+  checkerboard just looks broken. A grey screen keeps type's smooth edges;
+  pages are still designed to read in black and white.
 - **Pages are data, not code** — `default_layouts.json`, or the user's own in
   `/data/designs/<id>.json`. An element carries its own box; there is no layout
   algorithm, because the editor produces absolute positions.
@@ -207,9 +212,11 @@ than a frame does.
   `full_refresh` and `keep_picture` (the C++ for its driver). `epf.py` and
   `firmware_gen.py` read them; never add a table keyed by a size elsewhere.
 - **A size a screen reports is a profile too**: `theme.sized_display` gives
-  the kind's own profile, or `<kind>_<w>x<h>` made from it, which
-  `theme.get_display` understands anywhere. Don't add one to `DISPLAYS` at
-  runtime.
+  its family's own profile, or `<family>_<w>x<h>` made from it, which
+  `theme.get_display` understands anywhere. A family is a profile's `family`
+  (else its kind): a Kindle is the TRMNL kind in the "kindle" family, offered
+  as Kindle (`Kind.choices`), and a device never leaves the family it was
+  added as (`Kind.offers`). Don't add one to `DISPLAYS` at runtime.
 - **The first device keeps its legacy names**: the install's frame token, its
   download address, its ESPHome node name, its entity IDs. Don't "tidy" them:
   that's what keeps an upgraded panel working without a reflash. Its name is

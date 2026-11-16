@@ -99,6 +99,38 @@ def _description(text: str, x, y, w, h, start: int) -> list[Line]:
     return lines + [place_line(say("place.credit"), x, min(bottom, y + h - credit_px), w, credit_px)]
 
 
+def _wide(name, where, text, facts, box, share: float, scale: float):
+    """The two-column page with `share` of the width for the place, or None when its facts
+    wouldn't fit whole there (a label cut short)."""
+    x, y, w, h = box
+    gap = max(16, w // 30)
+    left = round(w * share)
+    start = min(round(h * 0.34 * scale), 72)
+    fit = place_line(name, 0, 0, left, start, bold=True, floor=hero.MIN_VALUE).px          # as wide as it fits
+    name_px, where_px, value_px, label_px, need, base = _sizes(start, fit, bool(where), bool(facts), h)
+    if need > h:
+        facts = []
+        name_px, where_px, value_px, label_px, need, base = _sizes(start, fit, bool(where), False, h)
+    top = y + max(0, (h - need) // 2)
+    lines = [place_line(name, x, top, left, name_px, bold=True, floor=hero.MIN_VALUE)]
+    cy = top + name_px
+    if where:
+        lines.append(place_line(where, x, cy + _gap(base), left, where_px))
+        cy += _gap(base) + where_px
+    if facts:
+        row = _facts(facts, x, cy + 2 * _gap(base), left, label_px, value_px)
+        if [ln.text for ln in row] != [t for pair in facts for t in pair]:
+            return None                         # a label or value would be cut short
+        lines += row
+    desc = _description(text, x + left + gap, y, w - left - gap, h, min(DESC_MOST, round(h * 0.13 * scale)))
+    if desc:                                    # the paragraph sits level with the place, centred
+        used = desc[-1].y + desc[-1].px - y
+        shift = max(0, (h - used) // 2)
+        for ln in desc:
+            ln.y += shift
+    return lines + desc
+
+
 def plan(el: dict, data, box, now: datetime | None = None, scale: float = 1.0):
     """The lines of text, where each goes and how large. None when there's nothing to draw yet."""
     if not isinstance(data, dict) or not data.get("name"):
@@ -109,30 +141,12 @@ def plan(el: dict, data, box, now: datetime | None = None, scale: float = 1.0):
         facts = []
     x, y, w, h = box
     if w >= h * 1.6 and w >= WIDE and text:
-        # The place on the left, its story on the right.
-        gap = max(16, w // 30)
-        left = round(w * 0.4)
-        start = min(round(h * 0.34 * scale), 72)
-        fit = place_line(name, 0, 0, left, start, bold=True, floor=hero.MIN_VALUE).px          # as wide as it fits
-        name_px, where_px, value_px, label_px, need, base = _sizes(start, fit, bool(where), bool(facts), h)
-        if need > h:
-            facts = []
-            name_px, where_px, value_px, label_px, need, base = _sizes(start, fit, bool(where), False, h)
-        top = y + max(0, (h - need) // 2)
-        lines = [place_line(name, x, top, left, name_px, bold=True, floor=hero.MIN_VALUE)]
-        cy = top + name_px
-        if where:
-            lines.append(place_line(where, x, cy + _gap(base), left, where_px))
-            cy += _gap(base) + where_px
-        if facts:
-            lines += _facts(facts, x, cy + 2 * _gap(base), left, label_px, value_px)
-        desc = _description(text, x + left + gap, y, w - left - gap, h, min(DESC_MOST, round(h * 0.13 * scale)))
-        if desc:                                    # the paragraph sits level with the place, centred
-            used = desc[-1].y + desc[-1].px - y
-            shift = max(0, (h - used) // 2)
-            for ln in desc:
-                ln.y += shift
-        return lines + desc
+        # The place on the left, its story on the right. Its facts must fit whole: the left side
+        # widens for them, and when even half the width isn't enough, one column it is.
+        for share in (0.4, 0.5):
+            wide = _wide(name, where, text, facts, (x, y, w, h), share, scale)
+            if wide is not None:
+                return wide
     # One column: the place, what it is, its facts at the foot.
     start = min(round(h * 0.22 * scale), 64)
     fit = place_line(name, 0, 0, w, start, bold=True, floor=hero.MIN_VALUE).px

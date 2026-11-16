@@ -7,9 +7,10 @@ when a screen fetches and when it sleeps.
 - **Update every** (`update_minutes`). 1 minute is always on: a CrowPanel
   stays connected and checks every minute, its buttons answer at once, and
   alerts and Home Assistant reach it straight away. 2 minutes or more, it
-  sleeps between updates (paging.py), and longer is lower power. A kind that
-  can't stay connected (a TRMNL: `Kind.stays_on`) has no always-on choice and
-  starts at its own shortest (`Kind.shortest_update`; a TRMNL's is 5 minutes).
+  sleeps between updates (paging.py), and longer is lower power. A screen
+  that can't stay connected (a TRMNL: `Kind.can_stay_on`, the kind's word or
+  its display's, so a Kindle can) has no always-on choice and starts at its
+  kind's shortest (`Kind.shortest_update`; a TRMNL's is 5 minutes).
 - **Rotate every**. Always on, it's seconds (`rotate_seconds`) and the panel
   turns its pages itself. Asleep, it's a whole number of updates
   (`rotate_updates`): each wake refreshes the page on screen, and every Nth

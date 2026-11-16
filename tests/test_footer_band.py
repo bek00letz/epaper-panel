@@ -21,7 +21,7 @@ WEB_APP = support.APP / "web" / "app"
 
 # The band by canvas height, hairline included. Changing these is a design
 # decision: the panel, placement and the editor all move with it.
-BAND_BY_HEIGHT = {128: 25, 272: 32, 296: 32, 300: 32, 400: 36, 480: 36, 640: 36, 792: 36, 800: 36, 960: 36}
+BAND_BY_HEIGHT = {128: 25, 272: 32, 296: 32, 300: 32, 400: 36, 480: 36, 600: 36, 640: 36, 792: 36, 800: 36, 960: 36}
 
 
 def every_canvas():

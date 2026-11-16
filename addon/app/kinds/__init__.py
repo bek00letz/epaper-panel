@@ -18,7 +18,8 @@ Every screen has two timers, Update every and Rotate every (timing.py), the
 same settings for every kind. Updating every minute is always on; anything
 longer, the screen sleeps between updates and uses the shared mode in
 paging.py, the add-on picking its page: its kind keeps only the protocol. A
-kind that can't stay connected (a TRMNL) has no always-on choice (`stays_on`).
+screen that can't stay connected (a TRMNL; `Kind.can_stay_on`, which a display can grant: a Kindle
+can) has no always-on choice.
 
 A kind can be optional (an add-on option turns it on). While it's off its
 routes don't exist, its devices aren't drawn and the editor shows none of
@@ -55,10 +56,16 @@ class Kind:
     # The shortest sleep, in seconds, this kind's firmware takes (cadence.align_sleep).
     shortest_sleep = cadence.MIN_SLEEP
 
-    @property
-    def timers(self) -> dict:
-        """What timing.py needs to know about this kind: whether it can stay on, and its shortest update."""
-        return {"stays_on": self.stays_on, "shortest": self.shortest_update}
+    def can_stay_on(self, display=None) -> bool:
+        """Whether a screen of this kind with this display can stay connected (Update every 1 minute,
+        always on): the kind's own word, or its display's (`stays_on` in its profile: a Kindle can,
+        though a TRMNL can't)."""
+        from render import theme as T
+        return self.stays_on or (display is not None and bool(T.get_display(display).get("stays_on")))
+
+    def timers_of(self, dev: dict) -> dict:
+        """What timing.py needs to know about this screen: whether it can stay on, and its shortest update."""
+        return {"stays_on": self.can_stay_on(dev.get("display")), "shortest": self.shortest_update}
 
     def enabled(self) -> bool:
         """Whether this kind is on (an optional kind has an add-on option)."""
@@ -67,6 +74,23 @@ class Kind:
     def displays(self) -> list[str]:
         """Display profiles (render.theme.DISPLAYS) a device of this kind can have."""
         raise NotImplementedError
+
+    def choices(self) -> list[dict]:
+        """How Add new device offers this kind: one choice per family of its displays,
+        each under its family's name. A Kindle speaks TRMNL's protocol, so it's this
+        kind's code, offered as "Kindle" (theme.family). Most kinds have one."""
+        from render import theme as T
+        out: dict[str, list[str]] = {}
+        for d in self.displays():
+            out.setdefault(T.family(d), []).append(d)
+        return [{"family": fam, "name": T.family_name(fam, default=self.name), "displays": ds}
+                for fam, ds in out.items()]
+
+    def offers(self, dev: dict, display: str) -> bool:
+        """Whether a device of this kind can be set to `display`: one of the kind's, in
+        the family it was added as (a TRMNL can't become a Kindle, nor the other way)."""
+        from render import theme as T
+        return display in self.displays() and T.family(display) == T.family(dev.get("display"))
 
     def routes(self) -> list:
         """aiohttp routes this kind adds to the device port."""
@@ -82,7 +106,7 @@ class Kind:
 
     def update_minutes(self, dev: dict) -> int:
         """Update every: minutes between fetches (timing.py). 1 is always on."""
-        return timing.update_minutes(dev, **self.timers)
+        return timing.update_minutes(dev, **self.timers_of(dev))
 
     def describe(self, dev: dict) -> dict:
         """What the editor shows about the device beyond the core's fields. Never its key."""
@@ -101,7 +125,7 @@ class Kind:
     def sleeps(self, dev: dict) -> bool:
         """Whether this screen sleeps between updates, the add-on picking its page and when it
         wakes (paging.py): anything but always on. Its Update every says, never its kind."""
-        return timing.sleeps(dev, **self.timers)
+        return timing.sleeps(dev, **self.timers_of(dev))
 
     def room(self, dev: dict) -> tuple[int, int] | None:
         """(bytes a page takes, bytes it holds) for a screen that keeps its whole rotation in its own
@@ -240,14 +264,18 @@ async def _home_host() -> str:
     return await reach.home_address(runtime.HASS, runtime.SESSION)
 
 
-async def device_port_addresses() -> list[dict]:
+async def device_port_addresses(names_by_dns: bool = False) -> list[dict]:
     """Where something on the home network, and away from it, reaches the device port: what a TRMNL
     is told when it pairs, and where an AI usage reporter sends (reporters.py). [{"where", "url"}],
-    home first, away only while Reaching home is on."""
+    home first, away only while Reaching home is on. `names_by_dns`: for a screen that can't look up
+    a `.local` name (a Kindle), whose home address is then Home Assistant's IP address when known."""
     import panel_setup
     import runtime
     port = await panel_setup._detect_external_port(runtime.SESSION)
-    out = [{"where": "home", "url": f"http://{await _home_host()}:{port}"}]
+    host = await _home_host()
+    if names_by_dns and host.lower().endswith(".local"):
+        host = await reach.home_ip(runtime.SESSION) or host
+    out = [{"where": "home", "url": f"http://{host}:{port}"}]
     away = await reach.public_base(runtime.HASS)
     if away:
         out.append({"where": "away", "url": away})

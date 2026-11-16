@@ -223,9 +223,13 @@ export function openFullStrip(app) {
 // Like setting up a phone: new, a copy of another screen's pages, or the same
 // pages as another screen. Then on to installing it.
 export function openAddScreen(app) {
+  // Each choice is a kind in one family (a Kindle is a TRMNL to the add-on, offered as Kindle): keyed by both.
   const kinds = app.kinds.filter((k) => k.displays.length);
+  const keyOf = (k) => `${k.id}:${k.family}`;
   if (!kinds.length) { toast("This add-on doesn't know any kind of device it can add."); return; }
-  const st = { kind: kinds[0], display: kinds[0].displays[0].id, orientation: 0, pages: "new", from: app.screen?.id || app.screens[0]?.id, quiet: true, power: "on",
+  // A new screen starts always on when its kind does (a CrowPanel), asleep when only its model can stay on (a Kindle: often on its battery).
+  const powerOf = (k) => (k.starts_on ? "on" : "sleep");
+  const st = { kind: kinds[0], display: kinds[0].displays[0].id, orientation: 0, pages: "new", from: app.screen?.id || app.screens[0]?.id, quiet: true, power: powerOf(kinds[0]),
     minutes: kinds[0].asleep_default || 15 };
   // "Device", not "screen": next to "New page", "screen" read like another page (the user's call).
   sheet("Add new device", (node, close) => {
@@ -234,6 +238,7 @@ export function openAddScreen(app) {
     const err = h("p", { class: "fnote bad", role: "status", "aria-live": "polite" });
     const add = h("button", { class: "btn primary", onclick: () => submit() }, "Add device");
     const pairs = () => st.kind.setup === "pair";
+    const staysOn = () => st.kind.update_choices.includes(1);       // it can be always on (timing.py)
     const source = () => app.screens.find((d) => d.id === st.from) || app.screens[0];
     const pick = (opts, value, onChange, label) => select(opts, value, onChange, { "aria-label": label });
 
@@ -254,7 +259,7 @@ export function openAddScreen(app) {
       const screensOpts = app.screens.map((d) => [d.id, d.name]);
       const fromSel = () => pick(screensOpts, st.from, (v) => { st.from = v; draw(); }, "Which device");
       if (!sleepChoices().includes(st.minutes)) st.minutes = sleepChoices().includes(st.kind.asleep_default) ? st.kind.asleep_default : sleepChoices()[0];
-      const everySel = every(pairs() ? "Updates every" : "Sleeps between updates: how often it updates");
+      const everySel = every(staysOn() ? "Sleeps between updates: how often it updates" : "Updates every");
       everySel.dataset.every = "";
       const src = source();
       const qh = st.pages === "new" ? (app.screen || src)?.quiet : src?.quiet;
@@ -262,7 +267,7 @@ export function openAddScreen(app) {
       add.textContent = pairs() ? "Add and pair" : "Add device";
       body.replaceChildren(
         group(grow("Name", null, name),
-          kinds.length > 1 ? grow("Kind", null, pick(kinds.map((k) => [k.id, k.name]), st.kind.id, (v) => { st.kind = kinds.find((k) => k.id === v); st.display = st.kind.displays[0].id; draw(); }, "Kind")) : null,
+          kinds.length > 1 ? grow("Kind", null, pick(kinds.map((k) => [keyOf(k), k.name]), keyOf(st.kind), (v) => { st.kind = kinds.find((k) => keyOf(k) === v); st.display = st.kind.displays[0].id; st.power = powerOf(st.kind); draw(); }, "Kind")) : null,
           pairs() && st.kind.displays.length < 2
             ? grow("Size", "Another size is picked up when it pairs", h("span", { class: "fnote", text: `${disp.name}, ${disp.w} × ${disp.h}` }))
             : grow("Model", null, pick(st.kind.displays.map((d) => [d.id, `${d.name}, ${d.w} × ${d.h}`]), st.display, (v) => { st.display = v; }, "Model")),
@@ -270,9 +275,10 @@ export function openAddScreen(app) {
         // Power comes first after the hardware: like the model and how it's mounted, it's about the screen
         // itself (on a cable or a battery), and it's the choice every new screen makes. A TRMNL always sleeps.
         h("h4", { class: "gtitle", text: "Power" }),
-        pairs() ? group(grow("Updates every", "It sleeps in between, so it lasts months on its battery. Change it any time.", everySel))
+        !staysOn() ? group(grow("Updates every", "It sleeps in between, so it lasts months on its battery. Change it any time.", everySel))
           : h("div", { class: "choices", role: "radiogroup", "aria-label": "Power" },
-            choice("on", "Always on", "On a cable. Updates every minute; buttons and alerts answer at once.", null, "power"),
+            choice("on", "Always on", pairs() ? "On a charger. Updates every minute; its buttons answer at once."
+              : "On a cable. Updates every minute; buttons and alerts answer at once.", null, "power"),
             choice("sleep", "Sleeps between updates", "On a battery. The less often it updates, the longer it lasts. Change it any time.", null, "power", everySel)),
         h("h4", { class: "gtitle", text: "Pages" }),
         h("div", { class: "choices", role: "radiogroup", "aria-label": "Pages" },
@@ -291,7 +297,7 @@ export function openAddScreen(app) {
       add.disabled = true;
       try {
         const r = (await api("api/devices", { method: "POST", body: { kind: st.kind.id, name: name.value.trim(), display: st.display, orientation: st.orientation,
-          pages: st.pages, from: st.from, quiet_hours_from: st.quiet && qsrc?.quiet?.enabled ? qsrc.id : null, update_minutes: !pairs() && st.power === "on" ? 1 : st.minutes } })).body;
+          pages: st.pages, from: st.from, quiet_hours_from: st.quiet && qsrc?.quiet?.enabled ? qsrc.id : null, update_minutes: staysOn() && st.power === "on" ? 1 : st.minutes } })).body;
         close();
         await app.doc.flush();
         app.screens = r.devices; app.kinds = r.kinds;
@@ -308,9 +314,11 @@ export function openAddScreen(app) {
   }, { focus: "input" });
 }
 
-/* ---------- pairing a screen that asks to join (TRMNL) ---------- */
+/* ---------- pairing a screen that asks to join (TRMNL, Kindle) ---------- */
 // Listens for ten minutes. The screen is told this add-on's address, asks to
-// join, and gets its own key. Polls while open; nothing to type here.
+// join, and gets its own key. Polls while open; nothing to type here. A Kindle
+// speaks TRMNL's protocol, so it pairs the same way; only its steps differ
+// (its installer and its address come as two files, client/kindle).
 const hm = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "");
 const mmss = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
@@ -318,12 +326,14 @@ export function openPairing(app, id, listen = true) {
   let info = null, since = null, left = 0, poll = null, tick = null, problem = "";
   const url = `api/devices/${encodeURIComponent(id)}/pair`;
   const stop = () => { clearInterval(poll); clearInterval(tick); poll = tick = null; };
-  sheet("Pair your TRMNL", (node, close) => {
+  const kindle = (app.screens.find((d) => d.id === id) || {}).family === "kindle";
+  const called = kindle ? "Kindle" : "TRMNL";
+  sheet(`Pair your ${called}`, (node, close) => {
     const body = h("div", { class: "sheet-body" });
     const foot = h("div", { class: "sheet-foot" });
     const state = h("p", { class: "fnote pairstate", role: "status", "aria-live": "polite" });
     node.append(body, foot);
-    const scr = () => app.screens.find((d) => d.id === id) || { name: "Your TRMNL" };
+    const scr = () => app.screens.find((d) => d.id === id) || { name: `Your ${called}` };
     async function call(method) {
       try {
         info = (await api(url, method ? { method } : undefined)).body; problem = "";
@@ -349,10 +359,13 @@ export function openPairing(app, id, listen = true) {
         stop();
         app.loadScreens(id).catch(() => {});
         body.replaceChildren(h("div", { class: "pairdone" }, icon("check"), h("h3", { text: `${scr().name} is paired` }),
-          h("p", { class: "fnote", text: `It shows your pages from now on, updating every ${span(info.update_minutes || 15)}. On its own screen it calls itself ${info.friendly_id}.` })));
+          h("p", { class: "fnote", text: kindle
+            ? `It shows your pages from now on, updating every ${span(info.update_minutes || 15)}. Slide its power switch for the next page. Home gives you the Kindle back until it restarts.`
+            : `It shows your pages from now on, updating every ${span(info.update_minutes || 15)}. On its own screen it calls itself ${info.friendly_id}.` })));
         foot.append(h("button", { class: "btn primary", onclick: () => close() }, "Done"));
         return;
       }
+      if (kindle) { body.replaceChildren(...kindleSteps(), state); drawState(); footButtons(); return; }
       const away = info.addresses.find((a) => a.where === "away");
       body.replaceChildren(
         flashFirst(),
@@ -364,8 +377,33 @@ export function openPairing(app, id, listen = true) {
         away ? null : h("p", { class: "fnote", text: "To use it away from home too, turn on Reaching home in Settings first." }),
         state);
       drawState();
+      footButtons();
+    }
+    function footButtons() {
       if (left <= 0) foot.append(h("button", { class: "btn primary", onclick: () => { since = null; info = null; call("POST"); start(); } }, "Listen again"));
       else foot.append(h("button", { class: "btn tinted", onclick: () => close() }, "Pair later"));
+    }
+    // A Kindle: its installer and a file with this add-on's address, copied to it together. No KUAL, no typing.
+    function kindleSteps() {
+      const file = (href, label) => h("a", { class: "btn tinted", href, download: "", text: label });
+      const home = info.addresses[0];
+      return [
+        h("details", { class: "more flashfirst" }, h("summary", {}, icon("chev", "sm"), "Not jailbroken yet?"),
+          h("p", { class: "fnote", text: "A Kindle 4 needs MobileRead's jailbreak once, before it can show your pages:" }),
+          h("ol", { class: "steps" },
+            h("li", { text: "Turn the Kindle's Wi-Fi off, so it can't update itself first." }),
+            h("li", {}, "Follow the ", h("a", { class: "linkbtn inline", href: "https://wiki.mobileread.com/wiki/Kindle4NTHacking", target: "_blank", rel: "noopener noreferrer", text: "Kindle 4 jailbreak" }),
+              " and its own instructions, until a book called \u201cYou are Jailbroken\u201d appears."),
+            h("li", { text: "Then carry on with the steps below." }))),
+        h("ol", { class: "steps" },
+          h("li", {}, "Download its installer and its address file. ",
+            h("span", { class: "inline" }, file("api/kindle/install", "Installer"), " ", file(`api/devices/${encodeURIComponent(id)}/kindle-settings`, "Address file"))),
+          h("li", { text: "Plug the Kindle into a computer and copy both files to the top level of its drive. Eject it." }),
+          h("li", { text: "On the Kindle, choose Menu, Settings, Menu again, then Update Your Kindle. Once it restarts, it joins your Wi-Fi and asks to join here within a minute." })),
+        home ? group(addrRow(home)) : null,
+        h("p", { class: "fnote", text: "It needs your Wi-Fi joined in its own settings, and reaches Home Assistant at home only: a Kindle 4 is too old for the away address." }),
+        h("p", { class: "fnote", text: "On Wi-Fi, Amazon can update a Kindle, and an update removes this and the jailbreak. Whether to block Amazon (on your router, or with a tool from MobileRead) is up to you: it also stops the Kindle Store and syncing." }),
+      ];
     }
     // A TRMNL arrives with its firmware; a screen made to run it (Seeed's XIAO 7.5" ePaper Panel, a DIY kit)
     // needs it flashed once, before it can pair. Folded away, so a TRMNL's own steps stay the first thing read.
@@ -383,7 +421,7 @@ export function openPairing(app, id, listen = true) {
       if (!info || done()) return;
       state.classList.toggle("bad", left <= 0);
       state.replaceChildren(h("span", { class: "led " + (left > 0 ? "wait listening" : "bad") }),
-        left > 0 ? ` Listening for it · ${mmss(left)} left` : " The ten minutes are up and no TRMNL asked to join. Check the address, then listen again.");
+        left > 0 ? ` Listening for it · ${mmss(left)} left` : ` The ten minutes are up and no ${called} asked to join. Check the address, then listen again.`);
     }
     function start() {
       stop();
@@ -557,7 +595,10 @@ function pairedPane(app, pane, show) {
   pane.append(group(grow("Name", null, name),
     grow("Connection", info.log?.length ? `It said: ${info.log[info.log.length - 1]}` : null, h("span", { class: "fnote", text: seen })),
     grow(info.paired ? "Pair again" : "Pair it", info.paired ? "After it was reset, or to give it a new key" : "Listens for ten minutes",
-      h("button", { class: "btn tinted", onclick: () => openPairing(app, scr.id) }, info.paired ? "Pair again" : "Pair"))));
+      h("button", { class: "btn tinted", onclick: () => openPairing(app, scr.id) }, info.paired ? "Pair again" : "Pair")),
+    // A Kindle's way back: its uninstaller, run the same way as its installer (client/kindle).
+    scr.family === "kindle" ? grow("Take it off the Kindle", "Copy it to the Kindle and run Update Your Kindle, as with the installer",
+      h("a", { class: "btn tinted", href: "api/kindle/uninstall", download: "", text: "Uninstaller" })) : null));
   const disp = DISPLAYS[spec.display] || {};
   pane.append(h("h4", { class: "gtitle", text: "Display" }), group(
     grow("Size", "As it reports it", h("span", { class: "fnote", text: disp.w ? `${disp.name}, ${disp.w} × ${disp.h}` : "" })),
@@ -612,7 +653,7 @@ export async function removeScreen(app, scr) {
 
 async function panelPane(app, pane, show) {
   const doc = app.doc, spec = doc.spec, scr = app.screen || {};
-  const kind = app.kinds.find((k) => k.id === scr.kind) || { displays: Object.values(DISPLAYS) };
+  const kind = app.kinds.find((k) => k.id === scr.kind && k.family === scr.family) || { displays: Object.values(DISPLAYS) };
   const conn = h("span", { class: "fnote", text: "Checking…" });
   const name = input(scr.name || "", async (v) => {
     try {
@@ -710,7 +751,7 @@ function timersBox(app, scr, redraw) {
     (v) => change({ update_minutes: Number(v) }, updateSaid(Number(v))), { "aria-label": "Update every" });
   const rotate = select(rotateOptions(t), t.always_on ? t.rotate_seconds : t.rotate_updates, (v) => change(...rotateChange(t, v)), { "aria-label": "Rotate every" });
   const rows = [
-    grow("Update every", t.always_on ? "Always on: for a panel on a cable" : t.can_stay_on ? "It sleeps in between. Longer lasts longer on a battery" : "Longer lasts longer on its battery", update),
+    grow("Update every", t.always_on ? (pairs ? "Always on: for a device on a charger" : "Always on: for a panel on a cable") : t.can_stay_on ? "It sleeps in between. Longer lasts longer on a battery" : "Longer lasts longer on its battery", update),
     grow("Rotate every", t.always_on ? "How long each page shows" : "Each update refreshes the page on screen; this moves to the next", rotate)];
   if (!t.always_on && !pairs) {
     const stay = info.stay_awake || {};
@@ -725,9 +766,12 @@ function timersBox(app, scr, redraw) {
       } catch (e) { toast(`Couldn't ask it: ${e.message}`); }
     } }, stay.asked || stay.until ? "Cancel" : "Stay awake")));
   }
+  // A Kindle's button is its power switch: a sleeping Kindle 4 wakes for nothing else (client/kindle).
+  const button = scr.family === "kindle" ? "Slide its power switch for the next page." : "Its button shows the next page.";
   box.append(group(...rows), h("p", { class: "fnote", text: t.always_on
-    ? "Buttons and alerts answer at once, and Home Assistant can wake it. On a battery, choose 2 minutes or more and it sleeps in between."
-    : pairs ? "It sleeps between updates, so nothing can wake it early: new pages and alerts show at its next update. Its button shows the next page."
+    ? (pairs ? "Its buttons answer at once, and new pages and alerts show within a minute. On a battery, choose 2 minutes or more and it sleeps in between."
+      : "Buttons and alerts answer at once, and Home Assistant can wake it. On a battery, choose 2 minutes or more and it sleeps in between.")
+    : pairs ? `It sleeps between updates, so nothing can wake it early: new pages and alerts show at its next update. ${button}`
     : "It sleeps between updates, so new pages and alerts show at its next update. A button press updates it right away." }));
   if (!t.always_on && !pairs && !info.firmware_sleeps) box.append(h("p", { class: "note warn" }, icon("info", "sm"),
     h("span", { text: "This panel's firmware can't sleep yet, so it stays connected and checks on its own timer. Install it again from Install or update and it starts sleeping." })));

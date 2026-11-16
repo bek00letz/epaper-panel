@@ -71,14 +71,25 @@ def _kind(dev: dict):
     return kinds.of(dev)
 
 
+def always_on(dev: dict) -> bool:
+    """A screen this mode pages that stays awake and connected (a Kindle at Update every 1 minute):
+    it asks at least every minute, as often as its pages turn, and is told to stay awake (`Wake.stay`)."""
+    return not _kind(dev).sleeps(dev)
+
+
 def update_seconds(dev: dict) -> int:
-    """Update every, in seconds: how long it sleeps when nothing cuts it short."""
+    """Seconds between wakes when nothing cuts it short: Update every, or for one that's always on,
+    a minute or its Rotate every (seconds) when that's shorter."""
+    if always_on(dev):
+        return max(5, min(60, timers.rotate_seconds(dev)))
     return _kind(dev).update_minutes(dev) * 60
 
 
 def rotate_updates(dev: dict) -> int:
-    """Rotate every, as a number of updates."""
-    return timers.rotate_updates(dev, **_kind(dev).timers)
+    """Rotate every, as a number of wakes. Always on, it's its Rotate every in seconds, counted in wakes."""
+    if always_on(dev):
+        return max(1, round(timers.rotate_seconds(dev) / update_seconds(dev)))
+    return timers.rotate_updates(dev, **_kind(dev).timers_of(dev))
 
 
 # ---------------------------------------------------------------- drawn ahead
@@ -264,16 +275,19 @@ def here(plans: list[dict], cursor: dict) -> tuple[int, int]:
     return pos, max(0, min(item, max(1, plans[pos]["want"]) - 1))
 
 
-def step(plans: list[dict], cursor: dict, by_page: bool) -> tuple[int, int]:
+def step(plans: list[dict], cursor: dict, by_page: bool, back: bool = False) -> tuple[int, int]:
     """The next (page position, item) after the cursor. A timer wake moves through every
-    item of every page; a person goes to the next page. A page that has gone is
-    looked for by name; failing that, the rotation starts again."""
+    item of every page; a person goes to the next page, or `back` to the previous one
+    (its first item). A page that has gone is looked for by name; failing that, the
+    rotation starts again."""
     n = len(plans)
     pos, name, item = cursor.get("pos", -1), cursor.get("name"), int(cursor.get("item") or 0)
     if not (isinstance(pos, int) and 0 <= pos < n and plans[pos]["name"] == name):
         pos = next((i for i, p in enumerate(plans) if p["name"] == name), None)
         if pos is None:
             return 0, 0
+    if back:
+        return (pos - 1) % n, 0
     if not by_page and item + 1 < max(1, plans[pos]["want"]):
         return pos, item + 1
     return (pos + 1) % n, 0
@@ -292,8 +306,13 @@ def quiet_now(ahead: Ahead, now: datetime) -> tuple[bool, str]:
 
 def sleep_seconds(dev: dict, ahead: Ahead, now: datetime, person: bool) -> int:
     """How long to sleep after this wake: cut to wake a moment after a minute's render
-    (cadence.align_sleep), so "updated" and any time shown are right to the minute."""
-    return cadence.align_sleep(_sleep_wanted(dev, ahead, now, person), now.timestamp(), _kind(dev).shortest_sleep)
+    (cadence.align_sleep), so "updated" and any time shown are right to the minute. An
+    always-on screen whose pages turn faster than that asks again when they do."""
+    wanted = _sleep_wanted(dev, ahead, now, person)
+    if always_on(dev):
+        # Awake anyway: no floor beyond a few seconds (a kind's floor is for a firmware that sleeps).
+        return int(wanted) if wanted < 60 else cadence.align_sleep(wanted, now.timestamp(), 5)
+    return cadence.align_sleep(wanted, now.timestamp(), _kind(dev).shortest_sleep)
 
 
 def _sleep_wanted(dev: dict, ahead: Ahead, now: datetime, person: bool) -> int:
@@ -316,17 +335,19 @@ def _sleep_wanted(dev: dict, ahead: Ahead, now: datetime, person: bool) -> int:
 
 @dataclass
 class Wake:
-    """What one wake gets: a picture (None: keep what it shows), how long to sleep, and how long to stay awake first."""
+    """What one wake gets: a picture (None: keep what it shows), how long to sleep, how long to stay
+    awake first, and whether it stays awake and connected instead of sleeping (always on)."""
     picture: bytes | None
     sleep: int
     awake: int = 0
     key: str = ""
+    stay: bool = False
 
 
-def _choose(dev: dict, ahead: Ahead, now: datetime, person: bool) -> str | None:
+def _choose(dev: dict, ahead: Ahead, now: datetime, person: bool, back: bool = False) -> str | None:
     """Which picture this wake shows (None: keep what it shows). Moves the cursor: a person
-    to the next page; a timer once the page has been shown at N wakes (Rotate every),
-    counted in the cursor."""
+    to the next page (or the previous, `back`); a timer once the page has been shown at N
+    wakes (Rotate every), counted in the cursor."""
     qh = _qh(ahead.spec)
     quiet, reason = quiet_now(ahead, now)
     alert = bool(ahead.st.alert) and (not quiet or qh.get("allow_alerts", True))
@@ -340,7 +361,7 @@ def _choose(dev: dict, ahead: Ahead, now: datetime, person: bool) -> str | None:
     cursor = devices.state(dev["id"]).get("cursor") or {}
     shown = int(cursor.get("shown") or 0) if cursor else 0
     if person or shown >= rotate_updates(dev):
-        pos, item = step(plans, cursor, by_page=person)
+        pos, item = step(plans, cursor, by_page=person, back=person and back)
         shown = 1
     else:
         pos, item = here(plans, cursor)               # the same page, drawn fresh
@@ -415,18 +436,20 @@ def timing(dev: dict, *, person: bool, now: datetime | None = None) -> Wake:
     return Wake(None, sleep_seconds(dev, ahead, now, person), awake)
 
 
-async def wake(dev: dict, *, person: bool, art: Art, now: datetime | None = None) -> Wake:
-    """One wake: pick the picture from what the cycle drew, and say how long to sleep."""
+async def wake(dev: dict, *, person: bool, art: Art, now: datetime | None = None, back: bool = False) -> Wake:
+    """One wake: pick the picture from what the cycle drew, and say how long to sleep. A person's
+    wake goes to the next page, or with `back` to the previous one."""
     now = now or datetime.now().astimezone()
     ahead = ahead_of(dev)
     awake = awake_seconds(dev, person)
     if ahead is None:
-        return Wake(None, FIRST_RENDER_SECONDS, awake)    # just started: nothing rendered yet
+        return Wake(None, FIRST_RENDER_SECONDS, awake, stay=always_on(dev))   # just started: nothing rendered yet
     sleep_for = sleep_seconds(dev, ahead, now, person)
-    key = _choose(dev, ahead, now, person)
+    stay = always_on(dev)
+    key = _choose(dev, ahead, now, person, back)
     rt = runtime.device(dev["id"]).kind
     if key is None:
-        return Wake(rt.get("last"), sleep_for, awake)
+        return Wake(rt.get("last"), sleep_for, awake, stay=stay)
     display = T.get_display(dev.get("display"))["id"]
     picture = ahead.pictures.get(key) if ahead.display == display else None
     if picture is None:
@@ -437,9 +460,9 @@ async def wake(dev: dict, *, person: bool, art: Art, now: datetime | None = None
             print(f"{dev.get('name')}: couldn't draw its picture: {health.describe(exc)}", flush=True)
             picture = None
         if picture is None:
-            return Wake(rt.get("last"), sleep_for, awake)
+            return Wake(rt.get("last"), sleep_for, awake, stay=stay)
     rt["last"] = picture
-    return Wake(picture, sleep_for, awake, key)
+    return Wake(picture, sleep_for, awake, key, stay)
 
 
 # ---------------------------------------------------------------- how long it's awake
