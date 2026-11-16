@@ -310,9 +310,11 @@ export function openAddScreen(app) {
   }, { focus: "input" });
 }
 
-/* ---------- pairing a screen that asks to join (TRMNL) ---------- */
+/* ---------- pairing a screen that asks to join (TRMNL, Kindle) ---------- */
 // Listens for ten minutes. The screen is told this add-on's address, asks to
-// join, and gets its own key. Polls while open; nothing to type here.
+// join, and gets its own key. Polls while open; nothing to type here. A Kindle
+// speaks TRMNL's protocol, so it pairs the same way; only its steps differ
+// (its installer and its address come as two files, client/kindle).
 const hm = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "");
 const mmss = (s) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
 
@@ -320,12 +322,14 @@ export function openPairing(app, id, listen = true) {
   let info = null, since = null, left = 0, poll = null, tick = null, problem = "";
   const url = `api/devices/${encodeURIComponent(id)}/pair`;
   const stop = () => { clearInterval(poll); clearInterval(tick); poll = tick = null; };
-  sheet("Pair your TRMNL", (node, close) => {
+  const kindle = (app.screens.find((d) => d.id === id) || {}).family === "kindle";
+  const called = kindle ? "Kindle" : "TRMNL";
+  sheet(`Pair your ${called}`, (node, close) => {
     const body = h("div", { class: "sheet-body" });
     const foot = h("div", { class: "sheet-foot" });
     const state = h("p", { class: "fnote pairstate", role: "status", "aria-live": "polite" });
     node.append(body, foot);
-    const scr = () => app.screens.find((d) => d.id === id) || { name: "Your TRMNL" };
+    const scr = () => app.screens.find((d) => d.id === id) || { name: `Your ${called}` };
     async function call(method) {
       try {
         info = (await api(url, method ? { method } : undefined)).body; problem = "";
@@ -351,10 +355,13 @@ export function openPairing(app, id, listen = true) {
         stop();
         app.loadScreens(id).catch(() => {});
         body.replaceChildren(h("div", { class: "pairdone" }, icon("check"), h("h3", { text: `${scr().name} is paired` }),
-          h("p", { class: "fnote", text: `It shows your pages from now on, updating every ${span(info.update_minutes || 15)}. On its own screen it calls itself ${info.friendly_id}.` })));
+          h("p", { class: "fnote", text: kindle
+            ? `It shows your pages from now on, updating every ${span(info.update_minutes || 15)}. Slide its power switch for the next page. Home gives you the Kindle back until it restarts.`
+            : `It shows your pages from now on, updating every ${span(info.update_minutes || 15)}. On its own screen it calls itself ${info.friendly_id}.` })));
         foot.append(h("button", { class: "btn primary", onclick: () => close() }, "Done"));
         return;
       }
+      if (kindle) { body.replaceChildren(...kindleSteps(), state); drawState(); footButtons(); return; }
       const away = info.addresses.find((a) => a.where === "away");
       body.replaceChildren(
         flashFirst(),
@@ -366,8 +373,32 @@ export function openPairing(app, id, listen = true) {
         away ? null : h("p", { class: "fnote", text: "To use it away from home too, turn on Reaching home in Settings first." }),
         state);
       drawState();
+      footButtons();
+    }
+    function footButtons() {
       if (left <= 0) foot.append(h("button", { class: "btn primary", onclick: () => { since = null; info = null; call("POST"); start(); } }, "Listen again"));
       else foot.append(h("button", { class: "btn tinted", onclick: () => close() }, "Pair later"));
+    }
+    // A Kindle: its installer and a file with this add-on's address, copied to it together. No KUAL, no typing.
+    function kindleSteps() {
+      const file = (href, label) => h("a", { class: "btn tinted", href, download: "", text: label });
+      const home = info.addresses[0];
+      return [
+        h("details", { class: "more flashfirst" }, h("summary", {}, icon("chev", "sm"), "Not jailbroken yet?"),
+          h("p", { class: "fnote", text: "A Kindle 4 needs MobileRead's jailbreak once, before it can show your pages:" }),
+          h("ol", { class: "steps" },
+            h("li", { text: "Turn the Kindle's Wi-Fi off, so it can't update itself first." }),
+            h("li", {}, "Follow the ", h("a", { class: "linkbtn inline", href: "https://wiki.mobileread.com/wiki/Kindle4NTHacking", target: "_blank", rel: "noopener noreferrer", text: "Kindle 4 jailbreak" }),
+              " and its own instructions, until a book called \u201cYou are Jailbroken\u201d appears."),
+            h("li", { text: "Then carry on with the steps below." }))),
+        h("ol", { class: "steps" },
+          h("li", {}, "Download its installer and its address file. ",
+            h("span", { class: "inline" }, file("api/kindle/install", "Installer"), " ", file(`api/devices/${encodeURIComponent(id)}/kindle-settings`, "Address file"))),
+          h("li", { text: "Plug the Kindle into a computer and copy both files to the top level of its drive. Eject it." }),
+          h("li", { text: "On the Kindle, choose Menu, Settings, Menu again, then Update Your Kindle. Once it restarts, it joins your Wi-Fi and asks to join here within a minute." })),
+        home ? group(addrRow(home)) : null,
+        h("p", { class: "fnote", text: "It needs your Wi-Fi joined in its own settings, and reaches Home Assistant at home only: a Kindle 4 is too old for the away address." }),
+      ];
     }
     // A TRMNL arrives with its firmware; a screen made to run it (Seeed's XIAO 7.5" ePaper Panel, a DIY kit)
     // needs it flashed once, before it can pair. Folded away, so a TRMNL's own steps stay the first thing read.
@@ -385,7 +416,7 @@ export function openPairing(app, id, listen = true) {
       if (!info || done()) return;
       state.classList.toggle("bad", left <= 0);
       state.replaceChildren(h("span", { class: "led " + (left > 0 ? "wait listening" : "bad") }),
-        left > 0 ? ` Listening for it · ${mmss(left)} left` : " The ten minutes are up and no TRMNL asked to join. Check the address, then listen again.");
+        left > 0 ? ` Listening for it · ${mmss(left)} left` : ` The ten minutes are up and no ${called} asked to join. Check the address, then listen again.`);
     }
     function start() {
       stop();
@@ -559,7 +590,10 @@ function pairedPane(app, pane, show) {
   pane.append(group(grow("Name", null, name),
     grow("Connection", info.log?.length ? `It said: ${info.log[info.log.length - 1]}` : null, h("span", { class: "fnote", text: seen })),
     grow(info.paired ? "Pair again" : "Pair it", info.paired ? "After it was reset, or to give it a new key" : "Listens for ten minutes",
-      h("button", { class: "btn tinted", onclick: () => openPairing(app, scr.id) }, info.paired ? "Pair again" : "Pair"))));
+      h("button", { class: "btn tinted", onclick: () => openPairing(app, scr.id) }, info.paired ? "Pair again" : "Pair")),
+    // A Kindle's way back: its uninstaller, run the same way as its installer (client/kindle).
+    scr.family === "kindle" ? grow("Take it off the Kindle", "Copy it to the Kindle and run Update Your Kindle, as with the installer",
+      h("a", { class: "btn tinted", href: "api/kindle/uninstall", download: "", text: "Uninstaller" })) : null));
   const disp = DISPLAYS[spec.display] || {};
   pane.append(h("h4", { class: "gtitle", text: "Display" }), group(
     grow("Size", "As it reports it", h("span", { class: "fnote", text: disp.w ? `${disp.name}, ${disp.w} × ${disp.h}` : "" })),

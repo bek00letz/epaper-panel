@@ -257,14 +257,18 @@ async def _home_host() -> str:
     return await reach.home_address(runtime.HASS, runtime.SESSION)
 
 
-async def device_port_addresses() -> list[dict]:
+async def device_port_addresses(names_by_dns: bool = False) -> list[dict]:
     """Where something on the home network, and away from it, reaches the device port: what a TRMNL
     is told when it pairs, and where an AI usage reporter sends (reporters.py). [{"where", "url"}],
-    home first, away only while Reaching home is on."""
+    home first, away only while Reaching home is on. `names_by_dns`: for a screen that can't look up
+    a `.local` name (a Kindle), whose home address is then Home Assistant's IP address when known."""
     import panel_setup
     import runtime
     port = await panel_setup._detect_external_port(runtime.SESSION)
-    out = [{"where": "home", "url": f"http://{await _home_host()}:{port}"}]
+    host = await _home_host()
+    if names_by_dns and host.lower().endswith(".local"):
+        host = await reach.home_ip(runtime.SESSION) or host
+    out = [{"where": "home", "url": f"http://{host}:{port}"}]
     away = await reach.public_base(runtime.HASS)
     if away:
         out.append({"where": "away", "url": away})

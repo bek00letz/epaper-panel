@@ -35,6 +35,7 @@ import time
 import unicodedata
 from collections import OrderedDict, deque
 from datetime import datetime
+from pathlib import Path
 
 from aiohttp import web
 
@@ -97,6 +98,8 @@ class Trmnl(Kind):
         return [
             web.get("/api/devices/{id}/pair", editor_pair_get),
             web.post("/api/devices/{id}/pair", editor_pair_open),
+            web.get("/api/devices/{id}/kindle-settings", editor_kindle_settings),
+            web.get("/api/kindle/{which}", editor_kindle_package),
         ]
 
     def describe(self, dev: dict) -> dict:
@@ -264,7 +267,7 @@ async def api_setup(request):
                       firmware=_clip(request.headers.get("FW-Version")),
                       paired_at=datetime.now().astimezone().isoformat(timespec="seconds"))
     _PAIRING.clear()
-    print(f"{dev['name']}: paired a TRMNL ({_clip(request.headers.get('Model')) or 'model not said'})", flush=True)
+    print(f"{dev['name']}: paired a {_called(dev)} ({_clip(request.headers.get('Model')) or 'model not said'})", flush=True)
     return web.json_response({"status": 200, "api_key": key, "friendly_id": fid,
                               # Empty: no setup picture. One would replace the device's own logo,
                               # and the first page follows in the same wake (bl.cpp).
@@ -443,10 +446,27 @@ def _trmnl_by_path(request) -> dict:
     return dev
 
 
+def _called(dev: dict) -> str:
+    """What it's called in the log: its family's name ("Kindle"), else TRMNL."""
+    return T.family_name(T.family(dev.get("display")), default=Trmnl.name)
+
+
+def _is_kindle(dev: dict) -> bool:
+    return T.family(dev.get("display")) == "kindle"
+
+
+async def _addresses(dev: dict) -> list[dict]:
+    """Where it's told to fetch from. A Kindle: home only (its TLS is too old for the away address),
+    and by IP address when Home Assistant's name is a .local one (it looks names up by DNS only)."""
+    if _is_kindle(dev):
+        return (await device_port_addresses(names_by_dns=True))[:1]
+    return await device_port_addresses()
+
+
 async def _pairing(request, dev: dict) -> dict:
-    addresses = await device_port_addresses()
     dev = devices.get(dev["id"])
-    return {"device": dev["id"], **KIND.describe(dev), "update_minutes": KIND.update_minutes(dev), "addresses": addresses,
+    return {"device": dev["id"], "family": T.family(dev.get("display")), **KIND.describe(dev),
+            "update_minutes": KIND.update_minutes(dev), "addresses": await _addresses(dev),
             "reach": reach.settings()["mode"]}
 
 
@@ -458,8 +478,39 @@ async def editor_pair_open(request):
     """Listen for this TRMNL for ten minutes (a new one, or pairing an old one again)."""
     dev = _trmnl_by_path(request)
     open_pairing(dev["id"])
-    print(f"{dev['name']}: listening for a TRMNL for {PAIR_SECONDS // 60} minutes", flush=True)
+    print(f"{dev['name']}: listening for a {_called(dev)} for {PAIR_SECONDS // 60} minutes", flush=True)
     return web.json_response(await _pairing(request, dev))
 
 
 KIND = register(Trmnl())
+
+
+# ---------------------------------------------------------------- a Kindle's files (client/kindle)
+
+KINDLE_FILES = Path(__file__).resolve().parents[1] / "kindle"     # built by client/kindle/build.py
+KINDLE_PACKAGES = {"install": "Update_epaper-panel_install.bin", "uninstall": "Update_epaper-panel_uninstall.bin"}
+
+
+async def editor_kindle_package(request):
+    """The Kindle client's install (or uninstall) package, for Update Your Kindle."""
+    name = KINDLE_PACKAGES.get(request.match_info["which"])
+    if name is None or not (KINDLE_FILES / name).is_file():
+        raise web.HTTPNotFound(text="That Kindle package isn't in this add-on.")
+    return web.FileResponse(KINDLE_FILES / name, headers={
+        "Content-Type": "application/octet-stream", "Cache-Control": "no-cache",
+        "Content-Disposition": f'attachment; filename="{name}"'})
+
+
+async def editor_kindle_settings(request):
+    """epaper-panel.txt for a Kindle: where it finds the add-on, to copy beside the installer."""
+    dev = _trmnl_by_path(request)
+    if not _is_kindle(dev):
+        raise web.HTTPNotFound(text="That device isn't a Kindle.")
+    home = (await _addresses(dev))[0]["url"]
+    text = ("# E-paper panel: where this Kindle finds your pages.\n"
+            "# Made by the e-Paper editor. If the Kindle can't reach it, put Home Assistant's\n"
+            "# IP address here instead, like http://192.168.1.20:8099\n"
+            f"server = {home}\n")
+    return web.Response(text=text, content_type="text/plain", charset="utf-8", headers={
+        "Cache-Control": "no-cache", "Content-Disposition": 'attachment; filename="epaper-panel.txt"'})
+

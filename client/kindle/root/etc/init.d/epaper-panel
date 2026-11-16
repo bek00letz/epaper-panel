@@ -1,0 +1,21 @@
+#!/bin/sh
+# E-paper panel: starts the Kindle client once the Kindle has started
+# (rc5.d/S99epaper-panel, after the framework). It only takes the screen over
+# when epaper-panel.txt is on the Kindle's drive; otherwise the Kindle stays a Kindle.
+
+CLIENT=/usr/local/epaper-panel/epaper-panel.sh
+
+case "$1" in
+    start)
+        [ -x "$CLIENT" ] || exit 0
+        ( "$CLIENT" boot > /dev/null 2>&1 & )
+        ;;
+    stop)
+        [ -x "$CLIENT" ] && "$CLIENT" stop
+        ;;
+    *)
+        echo "Usage: $0 {start|stop}" >&2
+        exit 1
+        ;;
+esac
+exit 0

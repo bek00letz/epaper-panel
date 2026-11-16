@@ -9,12 +9,15 @@ The client itself is tests/test_kindle_client.py.
 """
 import io
 import unittest
+from unittest import mock
 
 from PIL import Image, ImageDraw
 
 import support
 import devices
 import frames
+import kinds
+import reach
 import web
 from kinds import trmnl
 from render import layout, theme as T
@@ -165,6 +168,69 @@ class TestAKindleOnTheAddOn(KindleBase):
         self.assertEqual(r.status, 400, "a TRMNL's pages can't be saved for a Kindle's screen")
         r = await self.ed.put(f"/api/layouts?device={t['id']}", json={**view, "display": "trmnl_og"})
         self.assertEqual(r.status, 200, await r.text())
+
+
+class TestTheEditorGivesAKindleItsFiles(KindleBase):
+    async def test_the_installer_and_the_way_back(self):
+        for which, name in (("install", "Update_epaper-panel_install.bin"), ("uninstall", "Update_epaper-panel_uninstall.bin")):
+            r = await self.ed.get(f"/api/kindle/{which}")
+            self.assertEqual(r.status, 200)
+            self.assertEqual(await r.read(), (trmnl.KINDLE_FILES / name).read_bytes())
+            self.assertIn(f'filename="{name}"', r.headers["Content-Disposition"])
+        self.assertEqual((await self.ed.get("/api/kindle/../config")).status, 404)
+        self.assertEqual((await self.ed.get("/api/kindle/anything")).status, 404)
+
+    async def test_its_address_file_and_pairing_say_home_by_ip_address(self):
+        dev = await self.add_kindle()
+        with mock.patch.object(kinds, "_home_host", mock.AsyncMock(return_value="homeassistant.local")), \
+                mock.patch.object(reach, "home_ip", mock.AsyncMock(return_value="192.168.1.20")), \
+                mock.patch.object(reach, "public_base", mock.AsyncMock(return_value="https://ha.example.com/api/epaper")):
+            r = await self.ed.get(f"/api/devices/{dev['id']}/kindle-settings")
+            self.assertEqual(r.status, 200)
+            self.assertIn('filename="epaper-panel.txt"', r.headers["Content-Disposition"])
+            text = await r.text()
+            self.assertRegex(text, r"\nserver = http://192\.168\.1\.20:\d+\n", "it can't look up a .local name")
+            info = await (await self.ed.post(f"/api/devices/{dev['id']}/pair")).json()
+            self.assertEqual(info["family"], "kindle")
+            self.assertEqual([a["where"] for a in info["addresses"]], ["home"], "its TLS is too old for the away address")
+            t = await self.add_trmnl()
+            info = await (await self.ed.post(f"/api/devices/{t['id']}/pair")).json()
+            self.assertEqual([a["url"].split(":")[1] for a in info["addresses"]][0], "//homeassistant.local",
+                             "a TRMNL keeps the name, and gets the away address")
+            self.assertEqual(len(info["addresses"]), 2)
+            self.assertEqual((await self.ed.get(f"/api/devices/{t['id']}/kindle-settings")).status, 404)
+
+    async def test_without_its_ip_address_the_name_is_kept(self):
+        dev = await self.add_kindle()
+        with mock.patch.object(kinds, "_home_host", mock.AsyncMock(return_value="homeassistant.local")), \
+                mock.patch.object(reach, "home_ip", mock.AsyncMock(return_value="")):
+            text = await (await self.ed.get(f"/api/devices/{dev['id']}/kindle-settings")).text()
+        self.assertIn("server = http://homeassistant.local:", text)
+        self.assertIn("put Home Assistant's", text)
+
+
+class TestHomeIp(unittest.IsolatedAsyncioTestCase):
+    async def test_the_supervisors_primary_ipv4_address(self):
+        class Answer:
+            status = 200
+            def __init__(self, body): self.body = body
+            async def json(self): return self.body
+            async def __aenter__(self): return self
+            async def __aexit__(self, *a): return False
+
+        class Session:
+            def __init__(self, body): self.body = body
+            def get(self, url, **kw):
+                assert url == "http://supervisor/network/info"
+                return Answer(self.body)
+
+        body = {"data": {"interfaces": [
+            {"primary": False, "ipv4": {"address": ["172.30.32.1/23"]}},
+            {"primary": True, "ipv4": {"address": ["192.168.50.5/24"]}}]}}
+        with mock.patch.object(reach.config, "HA_TOKEN", "t"):
+            self.assertEqual(await reach.home_ip(Session(body)), "192.168.50.5")
+            self.assertEqual(await reach.home_ip(Session({"data": {"interfaces": []}})), "")
+        self.assertEqual(await reach.home_ip(Session(body)), "", "not under the Supervisor: nothing to ask")
 
 
 if __name__ == "__main__":
