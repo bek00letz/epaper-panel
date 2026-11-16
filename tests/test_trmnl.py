@@ -146,7 +146,9 @@ class TestAlwaysOffered(unittest.IsolatedAsyncioTestCase):
         panel, editor = web.make_apps()
         async with TestClient(TestServer(panel)) as lan, TestClient(TestServer(editor)) as ed:
             body = await (await ed.get("/api/devices")).json()
-            self.assertEqual([k["id"] for k in body["kinds"]], ["crowpanel", "trmnl"])
+            self.assertEqual([(k["id"], k["family"]) for k in body["kinds"]],
+                             [("crowpanel", "crowpanel"), ("trmnl", "trmnl"), ("trmnl", "kindle")],
+                             "a Kindle is a TRMNL to the add-on, offered under its own name")
             r = await lan.get("/api/setup", headers=setup_headers())
             self.assertEqual(r.status, 200, "its routes exist; outside a pairing window it's told what to do")
             self.assertNotIn("api_key", firmware_reads_setup(await r.json()))
@@ -164,7 +166,7 @@ class TestPairing(TrmnlBase):
         self.assertEqual(r.status, 200, "only a 200 lets the firmware read and show the message")
         got = firmware_reads_setup(await r.json())
         self.assertEqual(got["status"], 404, "device_setup.cpp: MacNotRegistered, then sleeps")
-        self.assertIn("add this TRMNL", got["message"])
+        self.assertIn("add this screen as a device", got["message"])
         self.assertNotIn("api_key", got)
         self.assertTrue(got["message"].isascii(), "its font is ASCII")
 

@@ -727,7 +727,7 @@ async def draw_category(plan: dict, sub_count: int, page_no: int, *, footer: dic
             layout.render_page, cloned_page, cloned_vals,
             footer=footer, page_no=page_no, item_no=s_idx, items=sub_count,
             series=plan["series"], orientation=orient, display=display, date_for_time=today)
-        page_imgs.append(T.orient_for_panel(T.to_1bit(img), orient, display=display))
+        page_imgs.append(T.orient_for_panel(T.for_screen(img, display), orient, display=display))
     return page_imgs
 
 

@@ -205,7 +205,9 @@ async def api_layouts_put(request):
     # The size is the screen's own: one of its kind's, never another kind's (that one can't be drawn).
     spec.setdefault("display", dev.get("display"))
     kind = kinds.of(dev)
-    if T.get_display(spec.get("display")).get("kind") != kind.id:
+    # ...and of the family it was added as (a TRMNL never becomes a Kindle's size).
+    shown_as = T.get_display(spec.get("display"))
+    if shown_as.get("kind") != kind.id or T.family(shown_as["id"]) != T.family(dev.get("display")):
         raise web.HTTPBadRequest(text="Pick one of the models this kind of device offers.")
     try:
         clean = sanitize_layouts(spec)
@@ -644,7 +646,7 @@ async def _drawn(request, body: dict, page: dict, vals: dict, series: dict, toda
         distance_m=dist, display=display, date_for_time=today)
     # Effective font sizes ride back on a header so the editor can report
     # what you actually got, in millimetres, rather than what you asked for.
-    return web.Response(body=_png(T.to_1bit(img)), content_type="image/png",
+    return web.Response(body=_png(T.for_screen(img, display)), content_type="image/png",
                         headers={"X-Metrics": json.dumps(metrics)})
 
 
@@ -881,8 +883,11 @@ def _screen(dev: dict, everyone: list[dict]) -> dict:
     """A device as the editor shows it. Never its key."""
     kind = kinds.of(dev)
     disp = T.get_display(dev.get("display"))
+    family = T.family(disp["id"])
     return {
-        "id": dev["id"], "name": dev.get("name") or "", "kind": kind.id, "kind_name": kind.name,
+        "id": dev["id"], "name": dev.get("name") or "", "kind": kind.id,
+        # The family it was added as, and its name ("Kindle"): which choice of Add new device it is.
+        "family": family, "kind_name": T.family_name(family, default=kind.name),
         "display": disp["id"], "display_name": disp["name"], "orientation": int(dev.get("orientation") or 0),
         "canvas": devices.canvas_of(dev), "design": dev["design"],
         # On the design's own size, boxes are the design's; elsewhere they're this size's arrangement.
@@ -911,12 +916,13 @@ def _screens() -> dict:
     sizes = list(dict.fromkeys([*(d for d, v in T.DISPLAYS.items() if v.get("kind") in ids),
                                 *(d for k in on for d in k.displays())]))
     return {"devices": [_screen(d, everyone) for d in everyone],
-            "kinds": [{"id": k.id, "name": k.name, "setup": k.setup_flow,
+            # One entry per choice Add new device offers: a kind, in each family it has (k.choices()).
+            "kinds": [{"id": k.id, "family": c["family"], "name": c["name"], "setup": k.setup_flow,
                        # What Update every offers a new screen of this kind, and where sleeping starts.
                        "update_choices": timing.update_choices(**k.timers), "asleep_default": timing.ASLEEP_DEFAULT,
                        "displays": [{"id": d, "name": T.get_display(d)["name"], "w": T.get_display(d)["w"],
-                                     "h": T.get_display(d)["h"]} for d in k.displays()]}
-                      for k in on],
+                                     "h": T.get_display(d)["h"]} for d in c["displays"]]}
+                      for k in on for c in k.choices()],
             # Every model's canvases, so the editor's guides and new elements
             # use the renderer's own numbers (footer band, margins).
             "displays": {d: {"id": d, "name": v["name"], "w": v["w"], "h": v["h"], "mm_w": v["mm_w"],
@@ -1082,7 +1088,7 @@ async def api_arrange(request):
     if not isinstance(spec, dict) or not isinstance(spec.get("pages"), dict):
         raise web.HTTPBadRequest(text="expected {spec, display, orientation}")
     display = str(body.get("display") or "")
-    if display not in kinds.of(dev).displays():
+    if not kinds.of(dev).offers(dev, display):
         raise web.HTTPBadRequest(text="That size isn't one this device comes in.")
     try:
         orientation = int(body.get("orientation") or 0)

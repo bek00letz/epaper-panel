@@ -230,6 +230,26 @@ DISPLAYS = {
         "reports_size": True,
         "sized_name": "TRMNL",
     },
+    # A Kindle running our own client (clients/kindle/): it speaks the TRMNL
+    # protocol, so it's a TRMNL to the add-on, in a family of its own. The
+    # Kindle 4's 6" screen at 167 ppi; any other Kindle says its size and gets
+    # a profile made from this one (sized_display), the same 6" across, which
+    # nearly every Kindle is. Its screen shows 16 greys.
+    "kindle": {
+        "kind": "trmnl",
+        "family": "kindle",
+        "id": "kindle",
+        "name": "Kindle",
+        "w": 600,
+        "h": 800,
+        "mm_w": 91.3,
+        "mm_h": 121.7,
+        "margin": 48,
+        "greys": 16,
+        "reports_size": True,
+        "sized_keeps": "diagonal",
+        "sized_name": "Kindle",
+    },
 }
 
 DEFAULT_DISPLAY = "crowpanel_579"
@@ -239,34 +259,61 @@ SIZED_ID = re.compile(r"^([a-z0-9]+)_([0-9]{2,4})x([0-9]{2,4})$")
 SIZED_MIN, SIZED_MAX = 64, 4096
 
 
-def sized_display(kind, w, h):
+def family(display=None) -> str:
+    """The family a profile belongs to: what a size it reports is made from
+    ("kindle"), and otherwise its kind ("trmnl")."""
+    disp = get_display(display)
+    return disp.get("family") or disp["kind"]
+
+
+def family_name(fam: str, default: str = "") -> str:
+    """What a family is called where people pick it ("Kindle"): its own profile's
+    name for a size it reports, or `default` (the kind's name) for a kind's own."""
+    base = next((d for d in DISPLAYS.values() if d.get("family") == fam), None)
+    return (base.get("sized_name") or base["name"]) if base else default
+
+
+def sized_display(kind, w, h, family=None):
     """The profile id for a screen of `kind` that says it is w x h pixels: one of
-    the kind's own when the size matches, otherwise one made for that size."""
+    its family's own when the size matches, otherwise one made for that size.
+    `family` is the one the screen was added as (a Kindle stays a Kindle); the
+    kind's own when not given."""
+    fam = family or kind
     for k, d in DISPLAYS.items():
-        if d.get("kind") == kind and (d["w"], d["h"]) == (int(w), int(h)):
+        if d.get("kind") == kind and (d.get("family") or d["kind"]) == fam and (d["w"], d["h"]) == (int(w), int(h)):
             return k
-    key = f"{kind}_{int(w)}x{int(h)}"
-    return key if _made_display(key) else None
+    key = f"{fam}_{int(w)}x{int(h)}"
+    made = _made_display(key)
+    return key if made and made["kind"] == kind else None
 
 
 @lru_cache(maxsize=64)
 def _made_display(key):
-    """A profile made for a reported size, from its kind's own profile (same
-    pixel density and margins), or None when the kind doesn't report sizes."""
+    """A profile made for a reported size, from its family's own profile (same
+    margins, greys, and pixel density, or the same diagonal when the family's
+    screens share one), or None when the family doesn't report sizes."""
     m = SIZED_ID.match(key)
     if not m:
         return None
-    kind, w, h = m.group(1), int(m.group(2)), int(m.group(3))
+    fam, w, h = m.group(1), int(m.group(2)), int(m.group(3))
     if not (SIZED_MIN <= w <= SIZED_MAX and SIZED_MIN <= h <= SIZED_MAX):
         return None
-    base = next((d for d in DISPLAYS.values() if d.get("kind") == kind and d.get("reports_size")), None)
+    base = next((d for d in DISPLAYS.values() if (d.get("family") or d["kind"]) == fam and d.get("reports_size")), None)
     if base is None:
         return None
-    px_per_mm = base["w"] / base["mm_w"]          # an estimate: the size is known, the density isn't
+    # An estimate: the size is known, the density isn't.
+    if base.get("sized_keeps") == "diagonal":
+        px_per_mm = (w * w + h * h) ** 0.5 / (base["mm_w"] ** 2 + base["mm_h"] ** 2) ** 0.5
+    else:
+        px_per_mm = base["w"] / base["mm_w"]
     margin = max(16, min(64, round(min(w, h) * base["margin"] / min(base["w"], base["h"]) / 8) * 8))
-    return {"kind": kind, "id": key, "name": base.get("sized_name") or base["name"], "w": w, "h": h,
+    made = {"kind": base["kind"], "id": key, "name": base.get("sized_name") or base["name"], "w": w, "h": h,
             "mm_w": round(w / px_per_mm, 1), "mm_h": round(h / px_per_mm, 1), "margin": margin,
             "reports_size": True, "sized": True}
+    for k in ("family", "greys"):
+        if k in base:
+            made[k] = base[k]
+    return made
 
 
 def mm_per_px_of_canvas(key: str) -> float | None:
@@ -417,7 +464,7 @@ def canvas_dims(orientation=0, display=None):
 
 
 def new_canvas(orientation=0, display=None):
-    """8-bit greyscale working canvas; converted to 1-bit on save."""
+    """8-bit greyscale working canvas; turned into the screen's shades on save (for_screen)."""
     cw, ch = canvas_dims(orientation, display)
     img = Image.new("L", (cw, ch), WHITE)
     return img, ImageDraw.Draw(img)
@@ -426,6 +473,35 @@ def new_canvas(orientation=0, display=None):
 def to_1bit(img):
     """Hard threshold, no dithering -- crisp edges are what e-ink wants."""
     return img.convert("1", dither=Image.Dither.NONE)
+
+
+def greys(display=None) -> int:
+    """How many shades the screen shows: 2 (black and white) unless its profile says more."""
+    try:
+        n = int(get_display(display).get("greys") or 2)
+    except (TypeError, ValueError):
+        n = 2
+    return n if 2 <= n <= 256 else 2
+
+
+@lru_cache(maxsize=8)
+def _grey_steps(n: int) -> tuple:
+    # Each 8-bit value to the nearest of n evenly spaced shades, black and white exact.
+    return tuple(round(round(v * (n - 1) / 255) * 255 / (n - 1)) for v in range(256))
+
+
+def to_greys(img, n: int):
+    """An 8-bit picture in n shades, nearest shade, no dithering: smooth type edges
+    stay smooth, flat areas stay flat (dither is noise on a screen this size)."""
+    return img.convert("L").point(list(_grey_steps(n)))
+
+
+def for_screen(img, display=None):
+    """The rendered page as the screen will show it: 1-bit for a black-and-white
+    screen (exactly to_1bit, so those pictures don't change by a byte), its own
+    shades for one that shows greys."""
+    n = greys(display)
+    return to_1bit(img) if n == 2 else to_greys(img, n)
 
 
 def panel_turns(display=None):

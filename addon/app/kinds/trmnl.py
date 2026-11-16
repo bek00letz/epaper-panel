@@ -150,7 +150,8 @@ def _orientation(spec: dict) -> int:
 
 
 class _Art(paging.Art):
-    """A TRMNL's pictures: 1-bit PNGs at its size, turned for its mounting."""
+    """A TRMNL's pictures: PNGs at its size in its shades (1-bit, or 16 greys for a
+    Kindle: theme.for_screen), turned for its mounting."""
 
     async def page(self, dev, spec, st, plans, pos, item, clock) -> bytes:
         orient, display = _orientation(spec), T.get_display(spec.get("display"))["id"]
@@ -166,12 +167,12 @@ class _Art(paging.Art):
     async def sleep(self, dev, spec, text) -> bytes:
         orient, display = _orientation(spec), T.get_display(spec.get("display"))["id"]
         img = await asyncio.to_thread(sleep.render_sleep_page, text, orient, display)
-        return frames._png(T.orient_for_panel(T.to_1bit(img), orient, display=display))
+        return frames._png(T.orient_for_panel(T.for_screen(img, display), orient, display=display))
 
     async def empty(self, dev, spec, clock) -> bytes:
         orient, display = _orientation(spec), T.get_display(spec.get("display"))["id"]
         img = await asyncio.to_thread(frames.empty_page, orient, display, clock)
-        return frames._png(T.orient_for_panel(T.to_1bit(img), orient, display=display))
+        return frames._png(T.orient_for_panel(T.for_screen(img, display), orient, display=display))
 
 
 ART = _Art()
@@ -379,7 +380,8 @@ async def api_display(request):
     now = datetime.now().astimezone()
 
     if rep["width"] and rep["height"]:
-        size = T.sized_display(Trmnl.id, rep["width"], rep["height"])
+        # A size it reports keeps the family it was added as (a Kindle stays a Kindle).
+        size = T.sized_display(Trmnl.id, rep["width"], rep["height"], family=T.family(dev.get("display")))
         if size and size != T.get_display(dev.get("display"))["id"]:
             dev = devices.update(dev["id"], display=size)
             print(f"{dev['name']}: says it is {rep['width']} × {rep['height']}; drawing for that", flush=True)

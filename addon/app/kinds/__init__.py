@@ -68,6 +68,23 @@ class Kind:
         """Display profiles (render.theme.DISPLAYS) a device of this kind can have."""
         raise NotImplementedError
 
+    def choices(self) -> list[dict]:
+        """How Add new device offers this kind: one choice per family of its displays,
+        each under its family's name. A Kindle speaks TRMNL's protocol, so it's this
+        kind's code, offered as "Kindle" (theme.family). Most kinds have one."""
+        from render import theme as T
+        out: dict[str, list[str]] = {}
+        for d in self.displays():
+            out.setdefault(T.family(d), []).append(d)
+        return [{"family": fam, "name": T.family_name(fam, default=self.name), "displays": ds}
+                for fam, ds in out.items()]
+
+    def offers(self, dev: dict, display: str) -> bool:
+        """Whether a device of this kind can be set to `display`: one of the kind's, in
+        the family it was added as (a TRMNL can't become a Kindle, nor the other way)."""
+        from render import theme as T
+        return display in self.displays() and T.family(display) == T.family(dev.get("display"))
+
     def routes(self) -> list:
         """aiohttp routes this kind adds to the device port."""
         return []

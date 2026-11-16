@@ -223,7 +223,9 @@ export function openFullStrip(app) {
 // Like setting up a phone: new, a copy of another screen's pages, or the same
 // pages as another screen. Then on to installing it.
 export function openAddScreen(app) {
+  // Each choice is a kind in one family (a Kindle is a TRMNL to the add-on, offered as Kindle): keyed by both.
   const kinds = app.kinds.filter((k) => k.displays.length);
+  const keyOf = (k) => `${k.id}:${k.family}`;
   if (!kinds.length) { toast("This add-on doesn't know any kind of device it can add."); return; }
   const st = { kind: kinds[0], display: kinds[0].displays[0].id, orientation: 0, pages: "new", from: app.screen?.id || app.screens[0]?.id, quiet: true, power: "on",
     minutes: kinds[0].asleep_default || 15 };
@@ -262,7 +264,7 @@ export function openAddScreen(app) {
       add.textContent = pairs() ? "Add and pair" : "Add device";
       body.replaceChildren(
         group(grow("Name", null, name),
-          kinds.length > 1 ? grow("Kind", null, pick(kinds.map((k) => [k.id, k.name]), st.kind.id, (v) => { st.kind = kinds.find((k) => k.id === v); st.display = st.kind.displays[0].id; draw(); }, "Kind")) : null,
+          kinds.length > 1 ? grow("Kind", null, pick(kinds.map((k) => [keyOf(k), k.name]), keyOf(st.kind), (v) => { st.kind = kinds.find((k) => keyOf(k) === v); st.display = st.kind.displays[0].id; draw(); }, "Kind")) : null,
           pairs() && st.kind.displays.length < 2
             ? grow("Size", "Another size is picked up when it pairs", h("span", { class: "fnote", text: `${disp.name}, ${disp.w} × ${disp.h}` }))
             : grow("Model", null, pick(st.kind.displays.map((d) => [d.id, `${d.name}, ${d.w} × ${d.h}`]), st.display, (v) => { st.display = v; }, "Model")),
@@ -612,7 +614,7 @@ export async function removeScreen(app, scr) {
 
 async function panelPane(app, pane, show) {
   const doc = app.doc, spec = doc.spec, scr = app.screen || {};
-  const kind = app.kinds.find((k) => k.id === scr.kind) || { displays: Object.values(DISPLAYS) };
+  const kind = app.kinds.find((k) => k.id === scr.kind && k.family === scr.family) || { displays: Object.values(DISPLAYS) };
   const conn = h("span", { class: "fnote", text: "Checking…" });
   const name = input(scr.name || "", async (v) => {
     try {
