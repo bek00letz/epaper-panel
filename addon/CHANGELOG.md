@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.24.0
+A Kindle 4 can be a screen, in 16 greys. No firmware change for the panels
+and no Home Assistant restart: updating the add-on is enough.
 
 - **A blueprint to scroll a panel with an IKEA BILRESA**, with an import
   button in the README. Turning the wheel steps through the pages, and you
