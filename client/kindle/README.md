@@ -86,7 +86,8 @@ tools.
   "power button held", and powerd goes to Shutdown until a restart.
 - **Keys** (`/dev/input/event0` and `event1`, 16-byte `input_event`): left
   side previous 193, next 104 (it bounces); right side previous 109, next
-  191; Home 102, Menu 139, Back 158, Keyboard 29; 5-way left 105, right 106,
+  191 (the Kindle's own convention: KOReader's `event_map_kindle4.lua` agrees);
+  Home 102, Menu 139, Back 158, Keyboard 29; 5-way left 105, right 106,
   up 103, down 108, middle 194. The keypad sends a press as a burst (a scan
   code, the key, a sync), so a reader must keep the device open: one that
   reopens it per event misses the key.
