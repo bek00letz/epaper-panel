@@ -38,6 +38,12 @@ from sources import HOURS_AROUND
 from sources.geo import get_home_timezone
 
 
+def _now() -> datetime:
+    """The moment the page decides for: which session, and whether the page is on. One place, so
+    the tests can hold it still (a run that takes minutes mustn't move it under them)."""
+    return datetime.now(timezone.utc)
+
+
 @dataclass(frozen=True)
 class Calendar:
     """One place a series' race calendar is published: the service it's at (services.py, so a mirror
@@ -557,7 +563,7 @@ async def fetch_racing_data(session, entity_or_series="f1", fallback=None, tz_na
             return data
 
     # 2. The season, every calendar merged (your own source's races in their place), and the one rule
-    now = datetime.now(timezone.utc)
+    now = _now()
     races = await _races(session, ser, now, own)
     if races is None:
         return None                     # no calendar could be read: nothing yet, never a made-up race
@@ -607,7 +613,7 @@ async def compute_racing_active_window(session, series="f1", pre_buffer_hours=HO
     if cached and (now_ts - cached["at"] < 60.0):
         return cached["data"]
 
-    now_utc = datetime.now(timezone.utc)
+    now_utc = _now()
     event_name = f"{series_title} Championship"
     circuit_name = ""
     is_live = False
