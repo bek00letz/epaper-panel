@@ -573,6 +573,9 @@ measurements behind each decision.
 ## Development
 
 ```bash
+# once: the add-on's own Python and packages, and ESPHome (needs uv)
+scripts/dev-env.sh
+
 # run it on your computer, with stand-in data when there's no Home Assistant
 DATA_DIR=/tmp/epaper-data ./.venv/bin/python addon/app/server.py
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- **Python 3.14.** The add-on now runs on Home Assistant's newest base image
+  (Alpine 3.24). Its packages, Pillow included, come from one list with
+  exact versions, the same list its tests use, so pages are drawn in Home
+  Assistant exactly as the tests check them. Updating takes a little longer
+  this once, while the image is rebuilt.
+
 ## 0.24.0
 A Kindle 4 can be a screen, in 16 greys. No firmware change for the panels
 and no Home Assistant restart: updating the add-on is enough.

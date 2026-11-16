@@ -265,6 +265,10 @@ than a frame does.
 ## Verifying a change
 
 ```bash
+# once, and again whenever addon/requirements.txt changes: the add-on's Python and packages
+# as ./.venv, and ESPHome as ./.esphome-venv (needs uv)
+scripts/dev-env.sh
+
 # run the service locally; it falls back to render/fixture.json with no HA token
 DATA_DIR=/tmp/epaper-data ./.venv/bin/python addon/app/server.py
 

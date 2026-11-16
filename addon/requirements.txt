@@ -1,0 +1,19 @@
+# The add-on's Python packages, every one at its exact version, dependencies included.
+# The image installs exactly this (Dockerfile), and so does the test environment
+# (scripts/dev-env.sh), so the tests draw pages with the same Pillow that draws them in
+# Home Assistant. Each has a ready-built wheel for Alpine (musllinux) on aarch64 and
+# amd64 for the image's Python: nothing is compiled. To change one, change it here and
+# run scripts/dev-env.sh.
+aiohappyeyeballs==2.7.1
+aiohttp==3.14.5
+aiomqtt==2.3.0
+aiosignal==1.4.0
+attrs==26.1.0
+frozenlist==1.8.0
+idna==3.20
+multidict==7.2.1
+paho-mqtt==2.1.0
+pillow==13.0.0
+propcache==0.5.4
+typing-extensions==4.16.0
+yarl==1.25.1
