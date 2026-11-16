@@ -7,7 +7,8 @@
 # device port on the home network (a Kindle 4's TLS is too old for HTTPS).
 #
 #   pairing  GET /api/setup    ID (its Wi-Fi MAC), Model, FW-Version
-#   a wake   GET /api/display  ID, Access-Token, battery, Wi-Fi, size, ...
+#   a wake   GET /api/display  ID, Access-Token, battery, Wi-Fi, size, Update-Source
+#            (timer, button, powercycle, and ours: back for the previous page), ...
 #            then the picture it names, drawn with the Kindle's own eips,
 #            then sleep for refresh_rate seconds on the clock's alarm.
 #
@@ -36,7 +37,9 @@ SHORTEST_AWAKE=5                        # always on, it asks as often as its pag
 LONGEST=86400
 DEFAULT_REFRESH=900
 WIFI_WAIT=45                            # seconds for Wi-Fi to join before giving up this wake
-PAGE_KEYS=" 104 109 191 193 194 "       # page turn (both sides), 5-way middle: the next page
+# Measured on a Kindle 4 (client/kindle/README.md), as the CrowPanel's NEXT and PRV:
+NEXT_KEYS=" 104 191 106 194 "           # next page (left, right side), 5-way right and middle
+BACK_KEYS=" 193 109 105 "               # previous page (left, right side), 5-way left
 HOME_KEY=102                            # Home: the Kindle back, until the next restart
 AWAKE_AFTER_PRESS=60                    # seconds it stays awake after a press, for the next one
 BLANK="                                                  "   # a row of the Kindle's font: 50 columns
@@ -265,7 +268,8 @@ hand_back() {
 # Until `awake` (optional, seconds since 1970) it stays awake instead, so the
 # page-turn buttons answer: they can't wake a sleeping Kindle 4; only its power
 # switch can (measured). WAKE says why it returned: "timer" (the time is up),
-# "button" (a page-turn button, or the power switch), "home" (Home).
+# "button" (next page: a button, or the power switch), "back" (previous page),
+# "home" (Home).
 sleep_until() {
     deadline=$1; awake=${2:-0}; WAKE=timer
     while :; do
@@ -273,7 +277,8 @@ sleep_until() {
         left=$(( deadline - now ))
         key=$(take_key)
         if [ -n "$key" ]; then
-            if [ "$key" = "$HOME_KEY" ]; then WAKE=home; else WAKE=button; fi
+            case "$BACK_KEYS" in *" $key "*) WAKE=back ;; *) WAKE=button ;; esac
+            [ "$key" = "$HOME_KEY" ] && WAKE=home
             return 0
         fi
         [ "$left" -le 0 ] && return 0
@@ -309,14 +314,20 @@ suspend_for() {
 # One reader per key device, each appending the code of every key pressed to
 # $EPP_STATE/keys. take_key hands over the latest one, ignoring a key that
 # repeats within a second (one page button bounces).
+#
+# The device stays open the whole time (fd 3): the keypad sends a press as a
+# burst (a scan code, the key, a sync), and a reader that closed it after one
+# event would miss the key (measured: only the 5-way, which sends the key
+# first, got through).
 start_keys() {
     stop_keys
     : > "$EPP_STATE/keys"
     for dev in "$EPP_SYS"/dev/input/event0 "$EPP_SYS"/dev/input/event1; do
         [ -r "$dev" ] || continue
         (
+            exec 3< "$dev" || exit 0
             while :; do
-                rec=$(dd if="$dev" bs=16 count=1 2>/dev/null | hexdump -v -e '8/2 "%u " "\n"')
+                rec=$(dd bs=16 count=1 <&3 2>/dev/null | hexdump -v -e '8/2 "%u " "\n"')
                 [ -n "$rec" ] || { sleep 1; continue; }
                 # struct input_event: time (4 halves), type, code, value (2 halves)
                 set -- $rec
@@ -346,7 +357,7 @@ take_key() {
     before=$(state_get key_at)
     state_put key_at "$at"
     [ -n "$before" ] && [ $(( at - before )) -le 1 ] && return 0
-    case "$PAGE_KEYS" in *" $code "*) echo "$code"; return 0 ;; esac
+    case "$NEXT_KEYS$BACK_KEYS" in *" $code "*) echo "$code"; return 0 ;; esac
     [ "$code" = "$HOME_KEY" ] && echo "$code"
     return 0
 }
@@ -575,12 +586,13 @@ run() {
         wake_once
         until=$(( $(now_s) + ${NEXT:-$DEFAULT_REFRESH} ))
         awake=0
-        [ "$SOURCE" = button ] && awake=$(( $(now_s) + AWAKE_AFTER_PRESS ))
+        case "$SOURCE" in button|back) awake=$(( $(now_s) + AWAKE_AFTER_PRESS )) ;; esac
         [ "$(state_get stay)" = true ] && awake=$until        # always on: never suspends
         sleep_until "$until" "$awake"
         case "$WAKE" in
             home) hand_back; return 0 ;;
             button) SOURCE=button ;;
+            back) SOURCE=back ;;                   # ours: the add-on goes to the previous page
             *) SOURCE=timer ;;
         esac
     done

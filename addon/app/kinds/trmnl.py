@@ -9,7 +9,8 @@ src/display_session.cpp, lib/trmnl/src/parse_response_api_*.cpp):
                      "status": 404 says it isn't known, and it shows "message".
   GET  /api/display  ID, Access-Token (its key), Refresh-Rate, Battery-Voltage,
                      RSSI, Width, Height, Model, FW-Version, Update-Source
-                     ("timer", "button", ...), Image-Cached. The answer says
+                     ("timer", "button", ...; "back" is ours, from a Kindle: the
+                     previous page), Image-Cached. The answer says
                      which picture (image_url, filename) and how long to sleep
                      (refresh_rate). "status" 0 is the only one we send: 202
                      makes it poll every 5 s, 500 wipes its Wi-Fi.
@@ -397,7 +398,9 @@ async def api_display(request):
     await _publish(dev, rep, seen)
 
     try:
-        got = await paging.wake(dev, person=rep["source"] not in ("timer", ""), art=ART, now=now)
+        # "back" is ours (a Kindle's previous-page buttons): the previous page. Anything else a person did, the next.
+        got = await paging.wake(dev, person=rep["source"] not in ("timer", ""), art=ART, now=now,
+                                back=rep["source"] == "back")
         png, sleep_for, stay = got.picture, got.sleep, got.stay
     except Exception as exc:
         # Nothing new to show: it keeps its picture and asks again at its next wake.

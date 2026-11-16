@@ -186,6 +186,14 @@ class TestPairingAndAWake(KindleClientBase):
         self.assertEqual(rc, 0)
         self.assertNotEqual(self.kindle.get("last_name"), first)
 
+    async def test_back_goes_to_the_previous_page(self):
+        await self.paired(pages="copy")
+        first = self.kindle.get("last_name")
+        await self.kindle.wake("button")
+        self.assertNotEqual(self.kindle.get("last_name"), first)
+        rc, _ = await self.kindle.wake("back")
+        self.assertEqual((rc, self.kindle.get("last_name")), (0, first))
+
     async def test_its_key_replaced_means_pairing_again(self):
         dev = await self.paired()
         devices.rekey(dev["id"])
@@ -322,16 +330,24 @@ class TestKeysAndSleep(unittest.TestCase):
         r = self.kindle.shell(f'{extra} {lines} sleep_until $(( $(now_s) + {deadline} )) {awake}; echo "WAKE=$WAKE"')
         return r.stdout.strip().splitlines()[-1]
 
-    def test_a_page_turn_button_or_the_5_way_goes_to_the_next_page(self):
-        for code in (104, 109, 191, 193, 194):
+    def test_next_page_buttons(self):
+        for code in (104, 191, 106, 194):
             (self.kindle.state / "key_at").unlink(missing_ok=True)      # a press of its own, not a bounce
             self.assertEqual(self.wake_after([(0, code)]), "WAKE=button", code)
+
+    def test_previous_page_buttons(self):
+        """Measured on a Kindle 4: left side 193 (previous) / 104 (next), right side 109 / 191; 5-way left."""
+        for code in (193, 109, 105):
+            (self.kindle.state / "key_at").unlink(missing_ok=True)
+            self.assertEqual(self.wake_after([(0, code)]), "WAKE=back", code)
 
     def test_home_gives_the_kindle_back(self):
         self.assertEqual(self.wake_after([(0, 102)]), "WAKE=home")
 
     def test_other_keys_and_a_bounce_are_ignored(self):
-        self.assertEqual(self.wake_after([(0, 139)]), "WAKE=timer", "Menu does nothing")
+        for code in (139, 158, 29, 103, 108):           # Menu, Back, Keyboard, 5-way up and down
+            (self.kindle.state / "key_at").unlink(missing_ok=True)
+            self.assertEqual(self.wake_after([(0, code)]), "WAKE=timer", code)
         self.kindle.shell('state_put key_at "$(now_s)"')
         self.assertEqual(self.wake_after([(0, 104)]), "WAKE=timer", "the same press bouncing")
 
@@ -345,6 +361,17 @@ class TestKeysAndSleep(unittest.TestCase):
         start = int(out[out.index("start") + 1])
         first = int(out[out.index("suspend") + 2])
         self.assertGreaterEqual(first - start, 2, "no sleep while it waits for the next press")
+
+    def test_a_keypad_press_is_read_whole(self):
+        """The keypad sends a press as a burst: a scan code (EV_MSC), the key, a sync (measured on a
+        Kindle 4). The reader keeps the device open, so the key after the scan code isn't lost."""
+        ev = lambda t, c, v: struct.pack("<IIHHi", 1794859586, 706672, t, c, v)
+        dev = self.kindle.sys / "dev/input/event0"
+        dev.parent.mkdir(parents=True, exist_ok=True)
+        dev.write_bytes(ev(4, 4, 3) + ev(1, 191, 1) + ev(0, 0, 0) + ev(4, 4, 3) + ev(1, 191, 0) + ev(0, 0, 0))
+        self.kindle.shell("start_keys; sleep 2; stop_keys")
+        self.assertEqual([line.split()[1] for line in self.kindle.get("keys").splitlines()], ["191"],
+                         "the press (not the scan code, not the release), once")
 
     def test_the_clock_alarm_is_set_before_it_suspends(self):
         r = self.kindle.shell("suspend_for 900; echo rc=$?")

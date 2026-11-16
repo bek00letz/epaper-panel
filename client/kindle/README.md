@@ -43,8 +43,9 @@ made on a Kindle 4). The update servers include `todo-g7g.amazon.com` and
   buttons, the 5-way and Home answer at any time. The add-on says so in each
   answer (`"stay_awake": true`).
 - **Slide the power switch** for the next page, like a TRMNL's button. For a
-  minute after that, the **page-turn buttons** flip pages too. (A sleeping
-  Kindle 4 only wakes for its power switch.)
+  minute after that, the **page-turn buttons** go forwards and backwards, as
+  on a CrowPanel, and so does the 5-way (left back, right and middle on). (A
+  sleeping Kindle 4 only wakes for its power switch.)
 - **Home** gives you the Kindle back, until it next restarts.
 - When something's wrong it says so in plain words at the bottom of the page
   that's showing (or on its own screen before it's paired), and tries again
@@ -83,9 +84,12 @@ tools.
   power switch wakes it early**: the page-turn buttons don't.
 - **Never run `powerd_test`**, not even for its help: any argument sends
   "power button held", and powerd goes to Shutdown until a restart.
-- **Keys** (`/dev/input/event0` and `event1`, 16-byte `input_event`): page
-  turn 104, 109, 191, 193 (104 bounces), Home 102, Menu 139, Back 158,
-  Keyboard 29; 5-way left 105, right 106, up 103, down 108, middle 194.
+- **Keys** (`/dev/input/event0` and `event1`, 16-byte `input_event`): left
+  side previous 193, next 104 (it bounces); right side previous 109, next
+  191; Home 102, Menu 139, Back 158, Keyboard 29; 5-way left 105, right 106,
+  up 103, down 108, middle 194. The keypad sends a press as a burst (a scan
+  code, the key, a sync), so a reader must keep the device open: one that
+  reopens it per event misses the key.
 - **Battery:** `gasgauge-info -v` (millivolts), `-c` (percent). **Wi-Fi:**
   `lipc-get-prop com.lab126.wifid macAddress` / `cmState`, and
   `lipc-set-prop com.lab126.cmd wirelessEnable 0|1`.

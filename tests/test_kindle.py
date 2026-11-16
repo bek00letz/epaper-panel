@@ -291,5 +291,20 @@ class TestAlwaysOn(KindleBase):
         self.assertNotIn("stay_awake", await r.json(), "its answer is exactly what its firmware knows")
 
 
+class TestPreviousPage(KindleBase):
+    async def test_a_back_press_goes_to_the_previous_page(self):
+        """Update-Source "back" (ours, a Kindle's previous-page buttons): the page before, as a CrowPanel's PRV."""
+        dev = await self.add_kindle(pages="copy")
+        got = await self.pair_kindle(dev["id"])
+        await frames.refresh_frames(None)
+        names = []
+        for source in ("timer", "button", "button", "back", "back"):
+            r = await self.lan.get("/api/display", headers=kindle_display_headers(got["api_key"], source=source))
+            names.append((await r.json())["filename"])
+        first, second, third, back1, back2 = names
+        self.assertEqual(len({first, second, third}), 3)
+        self.assertEqual((back1, back2), (second, first))
+
+
 if __name__ == "__main__":
     unittest.main()
