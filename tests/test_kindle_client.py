@@ -454,5 +454,28 @@ class TestBusyBoxAsh(unittest.TestCase):
                 self.assertIsNone(re.search(bad, code, re.M), f"{p.name}: {why}")
 
 
+class TestAlwaysOnClient(KindleClientBase):
+    async def test_told_to_stay_awake_it_keeps_wifi_and_never_suspends(self):
+        await self.paired(update_minutes=1)
+        calls = self.kindle.took_calls()
+        self.assertEqual(self.kindle.get("stay"), "true")
+        self.assertNotIn("lipc-set-prop com.lab126.cmd wirelessEnable 0", calls, "Wi-Fi stays on")
+        self.assertEqual(self.kindle.get("refresh"), "30", "it asks as often as its pages turn")
+        r = self.kindle.shell('suspend_for() { echo SUSPENDED; return 0; }; '
+                              'sleep_until $(( $(now_s) + 2 )) $(( $(now_s) + 2 )); echo "WAKE=$WAKE"')
+        self.assertNotIn("SUSPENDED", r.stdout)
+        self.assertIn("WAKE=timer", r.stdout)
+
+    async def test_back_to_sleeping(self):
+        dev = await self.paired(update_minutes=1)
+        await self.ed.patch(f"/api/devices/{dev['id']}", json={"update_minutes": 15})
+        self.kindle.took_calls()
+        rc, said = await self.kindle.wake()
+        self.assertEqual(rc, 0, said)
+        self.assertEqual(self.kindle.get("stay"), "false")
+        self.assertIn("lipc-set-prop com.lab126.cmd wirelessEnable 0", self.kindle.took_calls())
+        self.assertGreaterEqual(int(self.kindle.get("refresh")), 60)
+
+
 if __name__ == "__main__":
     unittest.main()

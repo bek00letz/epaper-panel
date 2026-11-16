@@ -760,6 +760,13 @@ What's its own:
 - **Its button is the power switch**: a sleeping Kindle 4 wakes only for it, so
   it sends `Update-Source: button`, and the page-turn buttons answer for a
   minute after. Home hands the Kindle back until it restarts.
+- **It can stay on** (`stays_on` in its profile, `Kind.can_stay_on`), though a
+  TRMNL can't: Update every 1 minute. Then it's still paged here, at each
+  wake, but asks as often as its pages turn (`paging.always_on`: a minute, or
+  Rotate every in seconds when that's shorter, counted in wakes), and the
+  answer carries `"stay_awake": true`, ours and not TRMNL's (its firmware
+  ignores it, and a TRMNL never gets it). The client keeps Wi-Fi on, never
+  suspends, and every button answers at once. A new Kindle starts asleep.
 - **The add-on leaves Amazon alone** (the user's call, 16 Nov): an update
   from Amazon removes the client and the jailbreak, and blocking Amazon is the
   owner's choice. The pairing sheet and the README say so.

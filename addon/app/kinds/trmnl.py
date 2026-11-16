@@ -398,13 +398,17 @@ async def api_display(request):
 
     try:
         got = await paging.wake(dev, person=rep["source"] not in ("timer", ""), art=ART, now=now)
-        png, sleep_for = got.picture, got.sleep
+        png, sleep_for, stay = got.picture, got.sleep, got.stay
     except Exception as exc:
         # Nothing new to show: it keeps its picture and asks again at its next wake.
         print(f"{dev['name']}: couldn't pick its picture: {health.describe(exc)}", flush=True)
-        png, sleep_for = None, paging.update_seconds(dev)
+        png, sleep_for, stay = None, paging.update_seconds(dev), paging.always_on(dev)
     body = {"status": 0, "image_url": "", "filename": "", "refresh_rate": int(sleep_for),
             "update_firmware": False, "firmware_url": "", "reset_firmware": False}
+    if stay:
+        # Ours, not TRMNL's (its firmware ignores what it doesn't know): stay awake and connected,
+        # and ask again in refresh_rate seconds. Only a screen that can stay on (a Kindle) gets it.
+        body["stay_awake"] = True
     if png:
         name = _keep_image(dev, png)
         body.update(image_url=f"{base_address(request)}/api/image/{name}", filename=name)

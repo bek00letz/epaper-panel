@@ -227,7 +227,9 @@ export function openAddScreen(app) {
   const kinds = app.kinds.filter((k) => k.displays.length);
   const keyOf = (k) => `${k.id}:${k.family}`;
   if (!kinds.length) { toast("This add-on doesn't know any kind of device it can add."); return; }
-  const st = { kind: kinds[0], display: kinds[0].displays[0].id, orientation: 0, pages: "new", from: app.screen?.id || app.screens[0]?.id, quiet: true, power: "on",
+  // A new screen starts always on when its kind does (a CrowPanel), asleep when only its model can stay on (a Kindle: often on its battery).
+  const powerOf = (k) => (k.starts_on ? "on" : "sleep");
+  const st = { kind: kinds[0], display: kinds[0].displays[0].id, orientation: 0, pages: "new", from: app.screen?.id || app.screens[0]?.id, quiet: true, power: powerOf(kinds[0]),
     minutes: kinds[0].asleep_default || 15 };
   // "Device", not "screen": next to "New page", "screen" read like another page (the user's call).
   sheet("Add new device", (node, close) => {
@@ -236,6 +238,7 @@ export function openAddScreen(app) {
     const err = h("p", { class: "fnote bad", role: "status", "aria-live": "polite" });
     const add = h("button", { class: "btn primary", onclick: () => submit() }, "Add device");
     const pairs = () => st.kind.setup === "pair";
+    const staysOn = () => st.kind.update_choices.includes(1);       // it can be always on (timing.py)
     const source = () => app.screens.find((d) => d.id === st.from) || app.screens[0];
     const pick = (opts, value, onChange, label) => select(opts, value, onChange, { "aria-label": label });
 
@@ -256,7 +259,7 @@ export function openAddScreen(app) {
       const screensOpts = app.screens.map((d) => [d.id, d.name]);
       const fromSel = () => pick(screensOpts, st.from, (v) => { st.from = v; draw(); }, "Which device");
       if (!sleepChoices().includes(st.minutes)) st.minutes = sleepChoices().includes(st.kind.asleep_default) ? st.kind.asleep_default : sleepChoices()[0];
-      const everySel = every(pairs() ? "Updates every" : "Sleeps between updates: how often it updates");
+      const everySel = every(staysOn() ? "Sleeps between updates: how often it updates" : "Updates every");
       everySel.dataset.every = "";
       const src = source();
       const qh = st.pages === "new" ? (app.screen || src)?.quiet : src?.quiet;
@@ -264,7 +267,7 @@ export function openAddScreen(app) {
       add.textContent = pairs() ? "Add and pair" : "Add device";
       body.replaceChildren(
         group(grow("Name", null, name),
-          kinds.length > 1 ? grow("Kind", null, pick(kinds.map((k) => [keyOf(k), k.name]), keyOf(st.kind), (v) => { st.kind = kinds.find((k) => keyOf(k) === v); st.display = st.kind.displays[0].id; draw(); }, "Kind")) : null,
+          kinds.length > 1 ? grow("Kind", null, pick(kinds.map((k) => [keyOf(k), k.name]), keyOf(st.kind), (v) => { st.kind = kinds.find((k) => keyOf(k) === v); st.display = st.kind.displays[0].id; st.power = powerOf(st.kind); draw(); }, "Kind")) : null,
           pairs() && st.kind.displays.length < 2
             ? grow("Size", "Another size is picked up when it pairs", h("span", { class: "fnote", text: `${disp.name}, ${disp.w} × ${disp.h}` }))
             : grow("Model", null, pick(st.kind.displays.map((d) => [d.id, `${d.name}, ${d.w} × ${d.h}`]), st.display, (v) => { st.display = v; }, "Model")),
@@ -272,9 +275,10 @@ export function openAddScreen(app) {
         // Power comes first after the hardware: like the model and how it's mounted, it's about the screen
         // itself (on a cable or a battery), and it's the choice every new screen makes. A TRMNL always sleeps.
         h("h4", { class: "gtitle", text: "Power" }),
-        pairs() ? group(grow("Updates every", "It sleeps in between, so it lasts months on its battery. Change it any time.", everySel))
+        !staysOn() ? group(grow("Updates every", "It sleeps in between, so it lasts months on its battery. Change it any time.", everySel))
           : h("div", { class: "choices", role: "radiogroup", "aria-label": "Power" },
-            choice("on", "Always on", "On a cable. Updates every minute; buttons and alerts answer at once.", null, "power"),
+            choice("on", "Always on", pairs() ? "On a charger. Updates every minute; its buttons answer at once."
+              : "On a cable. Updates every minute; buttons and alerts answer at once.", null, "power"),
             choice("sleep", "Sleeps between updates", "On a battery. The less often it updates, the longer it lasts. Change it any time.", null, "power", everySel)),
         h("h4", { class: "gtitle", text: "Pages" }),
         h("div", { class: "choices", role: "radiogroup", "aria-label": "Pages" },
@@ -293,7 +297,7 @@ export function openAddScreen(app) {
       add.disabled = true;
       try {
         const r = (await api("api/devices", { method: "POST", body: { kind: st.kind.id, name: name.value.trim(), display: st.display, orientation: st.orientation,
-          pages: st.pages, from: st.from, quiet_hours_from: st.quiet && qsrc?.quiet?.enabled ? qsrc.id : null, update_minutes: !pairs() && st.power === "on" ? 1 : st.minutes } })).body;
+          pages: st.pages, from: st.from, quiet_hours_from: st.quiet && qsrc?.quiet?.enabled ? qsrc.id : null, update_minutes: staysOn() && st.power === "on" ? 1 : st.minutes } })).body;
         close();
         await app.doc.flush();
         app.screens = r.devices; app.kinds = r.kinds;
@@ -747,7 +751,7 @@ function timersBox(app, scr, redraw) {
     (v) => change({ update_minutes: Number(v) }, updateSaid(Number(v))), { "aria-label": "Update every" });
   const rotate = select(rotateOptions(t), t.always_on ? t.rotate_seconds : t.rotate_updates, (v) => change(...rotateChange(t, v)), { "aria-label": "Rotate every" });
   const rows = [
-    grow("Update every", t.always_on ? "Always on: for a panel on a cable" : t.can_stay_on ? "It sleeps in between. Longer lasts longer on a battery" : "Longer lasts longer on its battery", update),
+    grow("Update every", t.always_on ? (pairs ? "Always on: for a screen on a charger" : "Always on: for a panel on a cable") : t.can_stay_on ? "It sleeps in between. Longer lasts longer on a battery" : "Longer lasts longer on its battery", update),
     grow("Rotate every", t.always_on ? "How long each page shows" : "Each update refreshes the page on screen; this moves to the next", rotate)];
   if (!t.always_on && !pairs) {
     const stay = info.stay_awake || {};
@@ -762,9 +766,12 @@ function timersBox(app, scr, redraw) {
       } catch (e) { toast(`Couldn't ask it: ${e.message}`); }
     } }, stay.asked || stay.until ? "Cancel" : "Stay awake")));
   }
+  // A Kindle's button is its power switch: a sleeping Kindle 4 wakes for nothing else (client/kindle).
+  const button = scr.family === "kindle" ? "Slide its power switch for the next page." : "Its button shows the next page.";
   box.append(group(...rows), h("p", { class: "fnote", text: t.always_on
-    ? "Buttons and alerts answer at once, and Home Assistant can wake it. On a battery, choose 2 minutes or more and it sleeps in between."
-    : pairs ? "It sleeps between updates, so nothing can wake it early: new pages and alerts show at its next update. Its button shows the next page."
+    ? (pairs ? "Its buttons answer at once, and new pages and alerts show within a minute. On a battery, choose 2 minutes or more and it sleeps in between."
+      : "Buttons and alerts answer at once, and Home Assistant can wake it. On a battery, choose 2 minutes or more and it sleeps in between.")
+    : pairs ? `It sleeps between updates, so nothing can wake it early: new pages and alerts show at its next update. ${button}`
     : "It sleeps between updates, so new pages and alerts show at its next update. A button press updates it right away." }));
   if (!t.always_on && !pairs && !info.firmware_sleeps) box.append(h("p", { class: "note warn" }, icon("info", "sm"),
     h("span", { text: "This panel's firmware can't sleep yet, so it stays connected and checks on its own timer. Install it again from Install or update and it starts sleeping." })));

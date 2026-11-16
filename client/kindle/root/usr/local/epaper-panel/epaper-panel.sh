@@ -31,7 +31,8 @@ PATH=$PATH:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin    # eips is in /usr/sbi
 # 30 minutes (or the screen's own update interval when that's longer). Never a
 # tight loop, and never more than one try per wait.
 BACKOFF="60 120 300 600 1800"
-SHORTEST=60                             # the add-on never asks for less (trmnl.shortest_sleep)
+SHORTEST=60                             # asleep, the add-on never asks for less (trmnl.shortest_sleep)
+SHORTEST_AWAKE=5                        # always on, it asks as often as its pages turn
 LONGEST=86400
 DEFAULT_REFRESH=900
 WIFI_WAIT=45                            # seconds for Wi-Fi to join before giving up this wake
@@ -84,7 +85,9 @@ clamp_refresh() {
         ''|*[!0-9]*) echo "$DEFAULT_REFRESH"; return ;;
     esac
     r=$1
-    [ "$r" -lt "$SHORTEST" ] && r=$SHORTEST
+    least=$SHORTEST
+    [ "$(state_get stay)" = true ] && least=$SHORTEST_AWAKE
+    [ "$r" -lt "$least" ] && r=$least
     [ "$r" -gt "$LONGEST" ] && r=$LONGEST
     echo "$r"
 }
@@ -481,6 +484,11 @@ display() {
     esac
     status=$(json_get status "$EPP_STATE/display.json")
     [ "${status:-0}" = "0" ] || { FAILED="Home Assistant answered with status $status."; return 1; }
+    # Always on (Update every 1 minute in the editor): stay awake and connected. Ours, not TRMNL's.
+    stay=$(json_get stay_awake "$EPP_STATE/display.json")
+    [ "$stay" = true ] || stay=false
+    [ "$stay" != "$(state_get stay)" ] && log "always on: $stay"
+    state_put stay "$stay"
     refresh=$(clamp_refresh "$(json_get refresh_rate "$EPP_STATE/display.json")")
     state_put refresh "$refresh"
     NEXT=$refresh
@@ -534,7 +542,7 @@ wake_once() {
     else
         FAILED="No Wi-Fi. Join your network in the Kindle's settings: press Home, then Menu, Settings, Wi-Fi Networks."
     fi
-    wifi_down
+    [ "$(state_get stay)" = true ] || wifi_down
     if [ "$ok" -eq 0 ]; then
         state_put failures 0
     else
@@ -565,9 +573,11 @@ run() {
     SOURCE=powercycle
     while :; do
         wake_once
+        until=$(( $(now_s) + ${NEXT:-$DEFAULT_REFRESH} ))
         awake=0
         [ "$SOURCE" = button ] && awake=$(( $(now_s) + AWAKE_AFTER_PRESS ))
-        sleep_until $(( $(now_s) + ${NEXT:-$DEFAULT_REFRESH} )) "$awake"
+        [ "$(state_get stay)" = true ] && awake=$until        # always on: never suspends
+        sleep_until "$until" "$awake"
         case "$WAKE" in
             home) hand_back; return 0 ;;
             button) SOURCE=button ;;

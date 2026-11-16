@@ -897,7 +897,7 @@ def _screen(dev: dict, everyone: list[dict]) -> dict:
         "can_wake": kind.link(dev) is not None, "picks_page": kind.picks_page,
         # A screen that sleeps between updates (paging.py) wakes when the add-on says, whatever its kind.
         "owns_interval": "addon" if kind.sleeps(dev) else kind.owns_interval, "sleeps": kind.sleeps(dev),
-        "timing": timing.describe(dev, **kind.timers),
+        "timing": timing.describe(dev, **kind.timers_of(dev)),
         "setup": kind.setup_flow, "info": kind.describe(dev),
         "entity_suffix": dev.get("entity_suffix") or "",
         # Its language: its own choice ("" is Home Assistant's), and the one it speaks (render/words.py).
@@ -918,8 +918,11 @@ def _screens() -> dict:
     return {"devices": [_screen(d, everyone) for d in everyone],
             # One entry per choice Add new device offers: a kind, in each family it has (k.choices()).
             "kinds": [{"id": k.id, "family": c["family"], "name": c["name"], "setup": k.setup_flow,
-                       # What Update every offers a new screen of this kind, and where sleeping starts.
-                       "update_choices": timing.update_choices(**k.timers), "asleep_default": timing.ASLEEP_DEFAULT,
+                       # What Update every offers a new screen of this kind, where sleeping starts, and
+                       # whether a new one starts always on (a kind that stays on) or asleep (one whose
+                       # display only can: a Kindle starts asleep, on its battery).
+                       "update_choices": timing.update_choices(**k.timers_of({"display": c["displays"][0]})),
+                       "asleep_default": timing.ASLEEP_DEFAULT, "starts_on": k.stays_on,
                        "displays": [{"id": d, "name": T.get_display(d)["name"], "w": T.get_display(d)["w"],
                                      "h": T.get_display(d)["h"]} for d in c["displays"]]}
                       for k in on for c in k.choices()],
@@ -983,7 +986,10 @@ async def api_devices_add(request):
     mode = body.get("pages") or "new"
     try:
         # Its timers (always on or sleeping, from the cards) and its kind's own settings, checked before it exists.
-        extra = {**timing.settings({"kind": kind.id}, body, **kind.timers), **kind.settings({"kind": kind.id}, body)}
+        new = {"kind": kind.id, "display": display}
+        extra = {**timing.settings(new, body, **kind.timers_of(new)), **kind.settings(new, body)}
+        if "update_minutes" not in extra and not kind.stays_on:
+            extra["update_minutes"] = timing.ASLEEP_DEFAULT       # asleep unless asked: it may be on its battery
     except ValueError as exc:
         raise web.HTTPBadRequest(text=str(exc))
     try:
@@ -1023,7 +1029,7 @@ async def api_devices_update(request):
         fields["language"] = lang or None                # none: Home Assistant's
     kind = kinds.of(dev)
     try:
-        fields.update(timing.settings(dev, body, **kind.timers))
+        fields.update(timing.settings(dev, body, **kind.timers_of(dev)))
         fields.update(kind.settings(dev, body))
     except ValueError as exc:
         raise web.HTTPBadRequest(text=str(exc))

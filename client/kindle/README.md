@@ -38,6 +38,10 @@ made on a Kindle 4). The update servers include `todo-g7g.amazon.com` and
 ## Using it
 
 - It wakes on the add-on's schedule (Update every), shows the page, and sleeps.
+- **Always on** (Update every › 1 minute, for a Kindle on a charger): it never
+  sleeps and keeps Wi-Fi on, pages turn on Rotate every, and the page-turn
+  buttons, the 5-way and Home answer at any time. The add-on says so in each
+  answer (`"stay_awake": true`).
 - **Slide the power switch** for the next page, like a TRMNL's button. For a
   minute after that, the **page-turn buttons** flip pages too. (A sleeping
   Kindle 4 only wakes for its power switch.)

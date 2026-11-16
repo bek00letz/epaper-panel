@@ -71,14 +71,25 @@ def _kind(dev: dict):
     return kinds.of(dev)
 
 
+def always_on(dev: dict) -> bool:
+    """A screen this mode pages that stays awake and connected (a Kindle at Update every 1 minute):
+    it asks at least every minute, as often as its pages turn, and is told to stay awake (`Wake.stay`)."""
+    return not _kind(dev).sleeps(dev)
+
+
 def update_seconds(dev: dict) -> int:
-    """Update every, in seconds: how long it sleeps when nothing cuts it short."""
+    """Seconds between wakes when nothing cuts it short: Update every, or for one that's always on,
+    a minute or its Rotate every (seconds) when that's shorter."""
+    if always_on(dev):
+        return max(5, min(60, timers.rotate_seconds(dev)))
     return _kind(dev).update_minutes(dev) * 60
 
 
 def rotate_updates(dev: dict) -> int:
-    """Rotate every, as a number of updates."""
-    return timers.rotate_updates(dev, **_kind(dev).timers)
+    """Rotate every, as a number of wakes. Always on, it's its Rotate every in seconds, counted in wakes."""
+    if always_on(dev):
+        return max(1, round(timers.rotate_seconds(dev) / update_seconds(dev)))
+    return timers.rotate_updates(dev, **_kind(dev).timers_of(dev))
 
 
 # ---------------------------------------------------------------- drawn ahead
@@ -292,8 +303,13 @@ def quiet_now(ahead: Ahead, now: datetime) -> tuple[bool, str]:
 
 def sleep_seconds(dev: dict, ahead: Ahead, now: datetime, person: bool) -> int:
     """How long to sleep after this wake: cut to wake a moment after a minute's render
-    (cadence.align_sleep), so "updated" and any time shown are right to the minute."""
-    return cadence.align_sleep(_sleep_wanted(dev, ahead, now, person), now.timestamp(), _kind(dev).shortest_sleep)
+    (cadence.align_sleep), so "updated" and any time shown are right to the minute. An
+    always-on screen whose pages turn faster than that asks again when they do."""
+    wanted = _sleep_wanted(dev, ahead, now, person)
+    if always_on(dev):
+        # Awake anyway: no floor beyond a few seconds (a kind's floor is for a firmware that sleeps).
+        return int(wanted) if wanted < 60 else cadence.align_sleep(wanted, now.timestamp(), 5)
+    return cadence.align_sleep(wanted, now.timestamp(), _kind(dev).shortest_sleep)
 
 
 def _sleep_wanted(dev: dict, ahead: Ahead, now: datetime, person: bool) -> int:
@@ -316,11 +332,13 @@ def _sleep_wanted(dev: dict, ahead: Ahead, now: datetime, person: bool) -> int:
 
 @dataclass
 class Wake:
-    """What one wake gets: a picture (None: keep what it shows), how long to sleep, and how long to stay awake first."""
+    """What one wake gets: a picture (None: keep what it shows), how long to sleep, how long to stay
+    awake first, and whether it stays awake and connected instead of sleeping (always on)."""
     picture: bytes | None
     sleep: int
     awake: int = 0
     key: str = ""
+    stay: bool = False
 
 
 def _choose(dev: dict, ahead: Ahead, now: datetime, person: bool) -> str | None:
@@ -421,12 +439,13 @@ async def wake(dev: dict, *, person: bool, art: Art, now: datetime | None = None
     ahead = ahead_of(dev)
     awake = awake_seconds(dev, person)
     if ahead is None:
-        return Wake(None, FIRST_RENDER_SECONDS, awake)    # just started: nothing rendered yet
+        return Wake(None, FIRST_RENDER_SECONDS, awake, stay=always_on(dev))   # just started: nothing rendered yet
     sleep_for = sleep_seconds(dev, ahead, now, person)
+    stay = always_on(dev)
     key = _choose(dev, ahead, now, person)
     rt = runtime.device(dev["id"]).kind
     if key is None:
-        return Wake(rt.get("last"), sleep_for, awake)
+        return Wake(rt.get("last"), sleep_for, awake, stay=stay)
     display = T.get_display(dev.get("display"))["id"]
     picture = ahead.pictures.get(key) if ahead.display == display else None
     if picture is None:
@@ -437,9 +456,9 @@ async def wake(dev: dict, *, person: bool, art: Art, now: datetime | None = None
             print(f"{dev.get('name')}: couldn't draw its picture: {health.describe(exc)}", flush=True)
             picture = None
         if picture is None:
-            return Wake(rt.get("last"), sleep_for, awake)
+            return Wake(rt.get("last"), sleep_for, awake, stay=stay)
     rt["last"] = picture
-    return Wake(picture, sleep_for, awake, key)
+    return Wake(picture, sleep_for, awake, key, stay)
 
 
 # ---------------------------------------------------------------- how long it's awake

@@ -14,7 +14,9 @@
   next page (the page-turn buttons work for a minute after), and press Home
   to use it as a Kindle again until it restarts. When something's wrong it
   says so on screen in plain words and tries again later, never in a loop.
-  Its uninstaller is in Settings › Device. Amazon can still update a Kindle
+  Its uninstaller is in Settings › Device. On a charger it can be always
+  on, like a panel: its buttons then answer at once, and pages turn every
+  few seconds if you like. Amazon can still update a Kindle
   on Wi-Fi, which removes it: whether to block that is up to you, and the
   sheet says how.
 - **16 greys on screens that show them.** A Kindle gets its pages in 16

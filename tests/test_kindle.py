@@ -233,5 +233,63 @@ class TestHomeIp(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await reach.home_ip(Session(body)), "", "not under the Supervisor: nothing to ask")
 
 
+class TestAlwaysOn(KindleBase):
+    """A Kindle can stay on (its profile's `stays_on`), unlike a TRMNL: Update every 1 minute. Then the
+    add-on tells it to stay awake and connected, and it asks as often as its pages turn."""
+
+    async def wake_kindle(self, key, source="timer") -> dict:
+        r = await self.lan.get("/api/display", headers=kindle_display_headers(key, source=source))
+        return await r.json()
+
+    async def test_offered_and_starts_asleep(self):
+        listed = await (await self.ed.get("/api/devices")).json()
+        by = {k["family"]: k for k in listed["kinds"]}
+        self.assertEqual((by["kindle"]["update_choices"][0], by["kindle"]["starts_on"]), (1, False))
+        self.assertEqual((by["trmnl"]["update_choices"][0], by["trmnl"]["starts_on"]), (5, False))
+        self.assertTrue(by["crowpanel"]["starts_on"])
+        dev = await self.add_kindle()
+        self.assertEqual(dev["timing"]["update_minutes"], 15, "asleep unless asked: it may be on its battery")
+        self.assertTrue(dev["timing"]["can_stay_on"])
+
+    async def test_always_on_it_stays_awake_and_asks_as_often_as_pages_turn(self):
+        dev = await self.add_kindle(pages="copy", update_minutes=1)
+        self.assertTrue(dev["timing"]["always_on"])
+        got = await self.pair_kindle(dev["id"])
+        await frames.refresh_frames(None)
+        names = []
+        for _ in range(3):
+            body = await self.wake_kindle(got["api_key"])
+            self.assertIs(body.get("stay_awake"), True)
+            self.assertEqual(body["refresh_rate"], 30, "Rotate every 30 seconds: it asks every 30")
+            names.append(body["filename"])
+        self.assertEqual(len(set(names)), 3, "a new page each time its pages turn")
+
+    async def test_pages_turning_slower_than_a_minute(self):
+        dev = await self.add_kindle(pages="copy", update_minutes=1, rotate_seconds=120)
+        got = await self.pair_kindle(dev["id"])
+        await frames.refresh_frames(None)
+        bodies = [await self.wake_kindle(got["api_key"]) for _ in range(3)]
+        self.assertTrue(all(0 < b["refresh_rate"] <= 65 for b in bodies), "about every minute, lined up to the minute")
+        names = [b["filename"] for b in bodies]
+        self.assertEqual((names[0] == names[1], names[1] == names[2]), (True, False), "a page shows for two wakes, then the next")
+
+    async def test_asleep_it_isnt_told_to_stay_awake(self):
+        dev = await self.add_kindle()
+        got = await self.pair_kindle(dev["id"])
+        await frames.refresh_frames(None)
+        body = await self.wake_kindle(got["api_key"])
+        self.assertNotIn("stay_awake", body)
+        self.assertGreaterEqual(body["refresh_rate"], 60)
+
+    async def test_a_trmnl_never_stays_on(self):
+        t = await self.add_trmnl()
+        r = await self.ed.patch(f"/api/devices/{t['id']}", json={"update_minutes": 1})
+        self.assertEqual(r.status, 400)
+        got = await self.pair(t["id"])
+        await frames.refresh_frames(None)
+        r = await self.lan.get("/api/display", headers=__import__("test_trmnl").display_headers(got["api_key"]))
+        self.assertNotIn("stay_awake", await r.json(), "its answer is exactly what its firmware knows")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -246,6 +246,8 @@ DISPLAYS = {
         "mm_h": 121.7,
         "margin": 48,
         "greys": 16,
+        # Unlike a TRMNL it can stay awake and connected (on a charger): Update every 1 minute.
+        "stays_on": True,
         "reports_size": True,
         "sized_keeps": "diagonal",
         "sized_name": "Kindle",
@@ -310,7 +312,7 @@ def _made_display(key):
     made = {"kind": base["kind"], "id": key, "name": base.get("sized_name") or base["name"], "w": w, "h": h,
             "mm_w": round(w / px_per_mm, 1), "mm_h": round(h / px_per_mm, 1), "margin": margin,
             "reports_size": True, "sized": True}
-    for k in ("family", "greys"):
+    for k in ("family", "greys", "stays_on"):
         if k in base:
             made[k] = base[k]
     return made
