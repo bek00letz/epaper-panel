@@ -5,6 +5,7 @@ that any battery can override, picked batteries, one direction per page."""
 import json
 import shutil
 import subprocess
+from pathlib import Path
 import unittest
 from unittest import mock
 
@@ -531,7 +532,7 @@ class TestABatteryThatStoppedAnswering(unittest.TestCase):
         happy = {**self.el, "filter_value": 5, "except": ["binary_sensor.remote_battery_low"]}
         self.assertFalse(batteries.needs_you(happy, batteries.chosen(happy, every), NOW), "nothing to show for them")
         import web
-        self.assertIn('by_id[eid]["restored"] = True', open(web.__file__).read())
+        self.assertIn('by_id[eid]["restored"] = True', Path(web.__file__).read_text())
 
     def test_it_says_since_when_in_the_panels_time_after_the_low_ones(self):
         from datetime import datetime, timezone

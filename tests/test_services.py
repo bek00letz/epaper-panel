@@ -36,11 +36,17 @@ class Mirror:
         year = datetime.now(timezone.utc).year
         self.down = False
         self.app = web.Application()
+
+        def answer(make):                     # aiohttp's handlers are coroutines; plain functions are deprecated
+            async def handler(request):
+                return make()
+            return handler
+
         self.app.router.add_get(f"/good/f1/{year}.json",
-                                lambda r: web.Response(status=404) if self.down else web.json_response(calendar(year)))
-        self.app.router.add_get(f"/odd/f1/{year}.json", lambda r: web.json_response({"races": "not a list"}))
-        self.app.router.add_get(f"/html/f1/{year}.json", lambda r: web.Response(text="<html>hello</html>"))
-        self.app.router.add_get(f"/down/f1/{year}.json", lambda r: web.Response(status=503))
+                                answer(lambda: web.Response(status=404) if self.down else web.json_response(calendar(year))))
+        self.app.router.add_get(f"/odd/f1/{year}.json", answer(lambda: web.json_response({"races": "not a list"})))
+        self.app.router.add_get(f"/html/f1/{year}.json", answer(lambda: web.Response(text="<html>hello</html>")))
+        self.app.router.add_get(f"/down/f1/{year}.json", answer(lambda: web.Response(status=503)))
 
     async def __aenter__(self):
         self.runner = web.AppRunner(self.app)
