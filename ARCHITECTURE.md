@@ -49,6 +49,7 @@ Where things live in `addon/app/`:
 | `config.py` / `runtime.py` | Settings from the environment; what the running add-on holds. Always read as `config.X` / `runtime.X`, so changes are seen everywhere |
 | `devices.py` | The screens the add-on drives, the design each shows, the shared library; keys; the move in from one panel |
 | `kinds/` | Kinds of device (`crowpanel.py`, `trmnl.py`): their sizes, device-port and editor routes, how they're woken, and what they fetch; which kinds are on; the one key check (`device_for`) and the wrong-key slowdown |
+| `kindle/` | The Kindle client's signed install and uninstall packages, built by `client/kindle/build.py` and served to the editor ([A Kindle](#a-kindle)) |
 | `paging.py` | Screens that sleep between updates (a TRMNL; a CrowPanel updating every 2 minutes or more): pictures drawn ahead, the cursor, the sleep time, the awake time |
 | `cadence.py` | When things happen on the clock: the render cycle just after each minute starts, and when each device asks (the always-on hint, a sleep's wake) |
 | `timing.py` | Every screen's two timers, Update every and Rotate every: the choices, what a screen set before 0.13 means, and what the editor shows |
@@ -713,9 +714,9 @@ requests and reads the answers the way that source does.
 - **Each wake** (`GET /api/display`) needs its key in `Access-Token` and
   its MAC in `ID`. Its battery, Wi-Fi, model and firmware go to
   `state/<id>.json` and to sensors. A reported `Width` × `Height` that isn't
-  the device's size becomes its size (`theme.sized_display`: the TRMNL OG's
-  own profile, or `trmnl_<w>x<h>` made from it), and it renders at the new
-  size at once.
+  the device's size becomes its size (`theme.sized_display`: its family's
+  own profile, or `trmnl_<w>x<h>` / `kindle_<w>x<h>` made from it), and it
+  renders at the new size at once.
 - **The page** is the shared mode's ([Screens that sleep](#screens-that-sleep)):
   drawn ahead in the cycle, picked at the wake. A timer wake moves through
   the rotation; a button wake, or any other wake reason, goes to the next page.
@@ -725,7 +726,8 @@ requests and reads the answers the way that source does.
   the shared mode's sleep time.
 - **`Wake-Time`** (how long it was awake at its previous wake) is kept for the
   editor's average.
-- **The picture** (`image_url`) is a 1-bit PNG, `Content-Type: image/png`
+- **The picture** (`image_url`) is a PNG in the screen's shades (1-bit, or
+  8-bit with 16 greys for a Kindle: `theme.for_screen`), `Content-Type: image/png`
   exactly (what `bl.cpp` decodes as PNG). Its address is built from the one
   the device called (`base_address`: the forwarded host and the companion's
   prefix when it came through a proxy) because the firmware sends `ID` and
@@ -733,6 +735,34 @@ requests and reads the answers the way that source does.
 - **Only `status` 0 is ever sent**: 202 makes it poll every five seconds,
   and 500 makes it forget its key and its Wi-Fi.
 - `/api/log` is kept in memory (the last 20 lines) for the editor.
+
+### A Kindle
+
+`client/kindle/` (its README has the steps and what was measured on a Kindle 4).
+A jailbroken Kindle 4 runs a shell client that speaks this protocol, so to
+the add-on it's a TRMNL: same routes, same pairing window, same shared mode.
+What's its own:
+
+- **A family, not a kind** (`theme.family`): the "kindle" profile is in the
+  TRMNL kind, and Add new device offers it as Kindle (`Kind.choices`, one
+  choice per family). Another Kindle's size is `kindle_<w>x<h>`, made with the
+  same 6" diagonal; a device keeps its family when its size changes
+  (`Kind.offers`). Pairing and logs call it a Kindle.
+- **16 greys** (`greys: 16` in its profile). Its picture is an 8-bit grey PNG
+  in 16 shades, what `eips -g` draws.
+- **Home only, by IP address.** Its TLS (OpenSSL 0.9.8) is too old for the
+  away address, and it looks names up by DNS only, so a `.local` home name
+  becomes Home Assistant's IP address from the Supervisor (`reach.home_ip`,
+  `device_port_addresses(names_by_dns=True)`).
+- **Its own installer**, no KUAL: the editor serves the packages in
+  `addon/app/kindle/` and an `epaper-panel.txt` with the address
+  (`/api/kindle/{install,uninstall}`, `/api/devices/{id}/kindle-settings`).
+- **Its button is the power switch**: a sleeping Kindle 4 wakes only for it, so
+  it sends `Update-Source: button`, and the page-turn buttons answer for a
+  minute after. Home hands the Kindle back until it restarts.
+- **The add-on leaves Amazon alone** (the user's call, 16 Nov): an update
+  from Amazon removes the client and the jailbreak, and blocking Amazon is the
+  owner's choice. The pairing sheet and the README say so.
 
 ## Reaching home
 

@@ -26,6 +26,15 @@ to 4.1.4. The package is signed for the Kindle 4 only (device codes 0x0E and
 
 That's all. Nothing else is needed: not KUAL, not MKK, not USBNetwork.
 
+**Amazon's updates are your call.** On Wi-Fi, Amazon can update a Kindle, and
+an update replaces its system: this client and the jailbreak go with it. The
+installer leaves the Kindle's network alone on purpose, because blocking
+Amazon also stops the Kindle Store, syncing and registration. If you want to
+block it, do it on your router, or on the Kindle with a tool from MobileRead
+(for example [kindle-block-amazon](https://www.mobileread.com/forums/showthread.php?p=4545829),
+made on a Kindle 4). The update servers include `todo-g7g.amazon.com` and
+`firs-g7g.amazon.com`.
+
 ## Using it
 
 - It wakes on the add-on's schedule (Update every), shows the page, and sleeps.

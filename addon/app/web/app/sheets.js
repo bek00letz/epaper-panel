@@ -398,6 +398,7 @@ export function openPairing(app, id, listen = true) {
           h("li", { text: "On the Kindle, choose Menu, Settings, Menu again, then Update Your Kindle. Once it restarts, it joins your Wi-Fi and asks to join here within a minute." })),
         home ? group(addrRow(home)) : null,
         h("p", { class: "fnote", text: "It needs your Wi-Fi joined in its own settings, and reaches Home Assistant at home only: a Kindle 4 is too old for the away address." }),
+        h("p", { class: "fnote", text: "On Wi-Fi, Amazon can update a Kindle, and an update removes this and the jailbreak. Whether to block Amazon (on your router, or with a tool from MobileRead) is up to you: it also stops the Kindle Store and syncing." }),
       ];
     }
     // A TRMNL arrives with its firmware; a screen made to run it (Seeed's XIAO 7.5" ePaper Panel, a DIY kit)

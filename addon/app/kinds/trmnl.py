@@ -14,7 +14,8 @@ src/display_session.cpp, lib/trmnl/src/parse_response_api_*.cpp):
                      (refresh_rate). "status" 0 is the only one we send: 202
                      makes it poll every 5 s, 500 wipes its Wi-Fi.
   POST /api/log      its log lines, kept briefly for the editor.
-  GET  image_url     the picture: a 1-bit PNG at the size it reports. It sends
+  GET  image_url     the picture: a PNG at the size it reports, in its shades
+                     (1-bit; 16 greys on a Kindle, client/kindle/). It sends
                      ID and Access-Token here too, because the address starts
                      with the server address it was given.
 
