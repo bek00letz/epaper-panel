@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.24.2
+Kindle fixes. After updating the add-on, install the Kindle again from its
+pairing sheet (the installer and a fresh Address file). No firmware change for
+the panels and no Home Assistant restart.
 
 - **A Kindle's buttons work like a CrowPanel's.** The page buttons (and the
   5-way's left and right) go back and forward; the 5-way's middle switches
