@@ -4,6 +4,7 @@ device asking a moment after it, so the time on a page is right within a few sec
 import asyncio
 import unittest
 from datetime import datetime, timezone
+from pathlib import Path
 from unittest import mock
 from zoneinfo import ZoneInfo
 
@@ -152,5 +153,5 @@ class TestAKindsShortestSleep(unittest.TestCase):
 
     def test_paging_asks_the_kind(self):
         import paging
-        src = open(paging.__file__).read()
+        src = Path(paging.__file__).read_text()
         self.assertIn("_kind(dev).shortest_sleep", src)

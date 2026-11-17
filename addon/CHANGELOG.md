@@ -1,6 +1,19 @@
 # Changelog
 
-## Unreleased
+## 0.24.1
+The add-on moves to Python 3.14. No firmware change and no Home Assistant
+restart: updating the add-on is enough, though it takes a little longer this
+time while its image is rebuilt.
+
+- **Python 3.14.** The add-on now runs on Home Assistant's newest base image
+  (Alpine 3.24). Its packages, Pillow included, come from one list with
+  exact versions, the same list its tests use, so pages are drawn in Home
+  Assistant exactly as the tests check them. Updating takes a little longer
+  this once, while the image is rebuilt.
+
+## 0.24.0
+A Kindle 4 can be a screen, in 16 greys. No firmware change for the panels
+and no Home Assistant restart: updating the add-on is enough.
 
 - **A blueprint to scroll a panel with an IKEA BILRESA**, with an import
   button in the README. Turning the wheel steps through the pages, and you

@@ -321,7 +321,7 @@ class TestEveryWordFits(unittest.TestCase):
         from PIL import Image, ImageDraw
         img = Image.new("L", (792, 272), T.WHITE)
         draw.draw(img, ImageDraw.Draw(img), (24, 14, 744, 208), {}, widgets.example({"type": "markets"}, datetime.now()))
-        self.assertLess(min(img.getdata()), 128)
+        self.assertLess(min(img.get_flattened_data()), 128)
 
 
 if __name__ == "__main__":

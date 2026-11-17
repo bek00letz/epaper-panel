@@ -11,6 +11,18 @@ from sources import racing
 NOW = datetime.now(timezone.utc)
 
 
+def setUpModule():
+    """Every test here places sessions around NOW, so the racing code decides at NOW too: a long
+    run must not move "now" past a test's few minutes of margin."""
+    global _clock
+    _clock = racing._now
+    racing._now = lambda: NOW
+
+
+def tearDownModule():
+    racing._now = _clock
+
+
 def iso(dt: datetime) -> str:
     return dt.strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -170,7 +182,8 @@ class TestBetweenSeasons(unittest.IsolatedAsyncioTestCase):
         return data, win
 
     async def test_formula_e_with_only_a_past_season_says_the_calendar_isnt_out(self):
-        london = NOW - timedelta(days=66)
+        # At noon: a race ends hours after it starts, so one started late in the evening ends tomorrow.
+        london = (NOW - timedelta(days=66)).replace(hour=12, minute=0, second=0, microsecond=0)
         web = FakeWeb({f"/_db/fe/{NOW.year}.json": sessions_file(("London ePrix", "London", london)),
                        "formulaecal.com/api/year/%d" % NOW.year: sessions_file(("London ePrix", "London", london))})
         data, win = await self.both(web, "fe")

@@ -1,7 +1,7 @@
 # Status
 
 The one place the project's state lives. The coordinator updates it after
-every release and every finished piece of work. Last updated 30 Oct 2026.
+every release and every finished piece of work. Last updated 16 Nov 2026.
 Where we're going and why: [ROADMAP.md](ROADMAP.md).
 
 ## Released
@@ -11,6 +11,8 @@ Every release is tagged `v<version>` on GitHub. Older ones: see
 
 | Version | Date | What |
 |---|---|---|
+| 0.24.1 | 17 Nov | Python 3.14 on Alpine 3.24; one pinned package list (addon/requirements.txt) for the image and the tests, which had drifted (Pillow 11 vs 13); scripts/dev-env.sh rebuilds the test and ESPHome environments on a uv-managed Python; two clock-dependent racing tests fixed. The image build is untried (no Docker here); every package's Alpine wheel was downloaded for both chips. Add-on only. |
+| 0.24.0 | 16 Nov | A jailbroken Kindle 4 is a screen (Add new device › Kindle, an installer and an address file, no KUAL), sleeping or always on, buttons both ways; 16 greys as a property of the display, black-and-white pictures unchanged; the BILRESA blueprint (pushed 4 Nov). Tried on the user's Kindle 4 against a test add-on; untried on their Home Assistant. Add-on only. |
 | 0.23.3 | 30 Oct | TRMNL devices always on (the add-on option is gone; the Supervisor ignores a saved one); Pair your TRMNL says how to flash its firmware first. Add-on only. The Seeed seen working always on with 0.23.1 (the user, 30 Oct). |
 | 0.23.2 | 30 Oct | The moving window: a rotation bigger than a panel's memory holds the pages around the one on screen and refills ahead, scrolling past it fetches once, a page too big holds a run of its items; nothing dropped. Old firmware keeps trimming. **Firmware change** (optional; panels not installed again work as before). Untried on hardware at release. |
 | 0.23.1 | 30 Oct | The Seeed XIAO 7.5" always on: one fit rule in compressed bytes (a device with room for one page gets one), pages deflated in the frame file and inflated on the panel, so its whole rotation fits and a BILRESA can scroll it. The Kind is "Our firmware". **Firmware change** (needed for the Seeed; optional for a CrowPanel). Untried on hardware at release. |
@@ -178,9 +180,8 @@ Next one when a good amount of work has piled up since v0.15.0.
    - Not buildable: a traffic map (Google's map images have no traffic
      layer); commute times cover the need.
    Also found: no way to copy another device's pages onto an existing device;
-   one unexplained test error at the 0.23.0 release (test_firmware +
-   test_no_key_paste, errors=1 once, then OK in five runs; also once in a
-   partial run during the merge). Watch for it.
+   one unexplained test error, three sightings (0.23.0 release; a merge; 17 Nov in the racing group),
+   errors=1 once each, then OK on every rerun (five in a row on 17 Nov). Watch for it; capture the output.
 
 The New page presets plan shipped in 0.15.0.
 9. **The shipped fallback icon set is older than Home Assistant's** (7.4.47,
