@@ -8,6 +8,9 @@
   join). When you're done and it goes to sleep, your pages come back by
   themselves: no restart needed. Anything it shows full screen says how to
   get the Kindle: slide the power switch, then press Home.
+- **A Kindle whose key is refused asks to pair again at once**, in the same
+  wake, so an open pairing window isn't missed (before, it waited for its
+  next try, up to 30 minutes).
 - **The Kindle's 5-way middle refreshes the page** on screen: fetched now
   and redrawn whole, which also clears any ghosting. The rotation doesn't
   move.

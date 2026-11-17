@@ -587,6 +587,12 @@ wake_once() {
         if [ -n "$(state_get key)" ] || pair; then
             [ -n "$PAIRED_SAYS" ] && card "E-paper panel" "" "$PAIRED_SAYS"
             display && ok=0
+            # Its key was refused (paired again, or with another Home Assistant): ask to
+            # pair now, in this wake, so an open pairing window isn't missed.
+            if [ "$ok" -ne 0 ] && [ -z "$(state_get key)" ] && pair; then
+                [ -n "$PAIRED_SAYS" ] && card "E-paper panel" "" "$PAIRED_SAYS"
+                display && ok=0
+            fi
         fi
     else
         FAILED="No Wi-Fi. To join your network, slide the power switch, press Home, then Menu, Settings, Wi-Fi Networks."

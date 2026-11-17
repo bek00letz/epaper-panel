@@ -209,11 +209,22 @@ class TestPairingAndAWake(KindleClientBase):
     async def test_its_key_replaced_means_pairing_again(self):
         dev = await self.paired()
         devices.rekey(dev["id"])
-        self.kindle.took_calls()
         rc, said = await self.kindle.wake()
         self.assertEqual(rc, 1)
         self.assertEqual(self.kindle.get("key"), "")
-        self.assertIn("isn't paired any more", said["FAILED"])
+        self.assertIn("add this screen as a device", said["FAILED"], "it asked to pair at once; no window open")
+
+    async def test_a_refused_key_pairs_in_the_same_wake_when_the_window_is_open(self):
+        """Measured: a Kindle paired with a test add-on, then pointed at the real one, was refused
+        and then waited 30 minutes before asking to pair, missing the ten-minute window."""
+        dev = await self.paired()
+        devices.rekey(dev["id"])
+        await self.ed.post(f"/api/devices/{dev['id']}/pair")
+        old = self.kindle.get("key")
+        rc, said = await self.kindle.wake()
+        self.assertEqual(rc, 0, said)
+        self.assertTrue(self.kindle.get("key"))
+        self.assertNotEqual(self.kindle.get("key"), old)
 
 
 class TestWhenThingsGoWrong(KindleClientBase):
