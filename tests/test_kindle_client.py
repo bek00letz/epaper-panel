@@ -189,6 +189,15 @@ class TestPairingAndAWake(KindleClientBase):
         self.assertEqual(rc, 0)
         self.assertNotEqual(self.kindle.get("last_name"), first)
 
+    async def test_a_refresh_redraws_the_same_page(self):
+        await self.paired()
+        name = self.kindle.get("last_name")
+        self.kindle.took_calls()
+        rc, _ = await self.kindle.wake("refresh")
+        self.assertEqual((rc, self.kindle.get("last_name")), (0, name))
+        self.assertEqual(self.kindle.drew(self.kindle.took_calls()), [f"eips -f -g {self.kindle.state}/last.png"],
+                         "drawn whole again, though nothing changed")
+
     async def test_back_goes_to_the_previous_page(self):
         await self.paired(pages="copy")
         first = self.kindle.get("last_name")
@@ -334,7 +343,7 @@ class TestKeysAndSleep(unittest.TestCase):
         return r.stdout.strip().splitlines()[-1]
 
     def test_next_page_buttons(self):
-        for code in (104, 191, 106, 194):
+        for code in (104, 191, 106):
             (self.kindle.state / "key_at").unlink(missing_ok=True)      # a press of its own, not a bounce
             self.assertEqual(self.wake_after([(0, code)]), "WAKE=button", code)
 
@@ -343,6 +352,9 @@ class TestKeysAndSleep(unittest.TestCase):
         for code in (193, 109, 105):
             (self.kindle.state / "key_at").unlink(missing_ok=True)
             self.assertEqual(self.wake_after([(0, code)]), "WAKE=back", code)
+
+    def test_the_5_way_middle_refreshes(self):
+        self.assertEqual(self.wake_after([(0, 194)]), "WAKE=refresh")
 
     def test_home_gives_the_kindle_back(self):
         self.assertEqual(self.wake_after([(0, 102)]), "WAKE=home")

@@ -305,6 +305,18 @@ class TestPreviousPage(KindleBase):
         self.assertEqual(len({first, second, third}), 3)
         self.assertEqual((back1, back2), (second, first))
 
+    async def test_a_refresh_shows_the_page_on_screen_again(self):
+        """Update-Source "refresh" (ours, the 5-way's middle): the same page, and the rotation doesn't move."""
+        dev = await self.add_kindle(pages="copy", rotate_updates=2)
+        got = await self.pair_kindle(dev["id"])
+        await frames.refresh_frames(None)
+        names = []
+        for source in ("timer", "refresh", "refresh", "timer", "timer"):
+            r = await self.lan.get("/api/display", headers=kindle_display_headers(got["api_key"], source=source))
+            names.append((await r.json())["filename"])
+        self.assertEqual(names[:4], [names[0]] * 4, "a refresh doesn't count as a showing")
+        self.assertNotEqual(names[4], names[0], "the rotation moves on as before")
+
 
 if __name__ == "__main__":
     unittest.main()

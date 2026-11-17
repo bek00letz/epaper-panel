@@ -44,8 +44,9 @@ made on a Kindle 4). The update servers include `todo-g7g.amazon.com` and
   answer (`"stay_awake": true`).
 - **Slide the power switch** for the next page, like a TRMNL's button. For a
   minute after that, the **page-turn buttons** go forwards and backwards, as
-  on a CrowPanel, and so does the 5-way (left back, right and middle on). (A
-  sleeping Kindle 4 only wakes for its power switch.)
+  on a CrowPanel, and so does the 5-way (left back, right on). The 5-way's
+  middle fetches the page on screen again and redraws it whole. (A sleeping
+  Kindle 4 only wakes for its power switch.)
 - **Home** gives you the Kindle back, with Wi-Fi as it was. When you're done and
   it goes to sleep (the power switch, or dozing off on its own), your pages
   come back instead of its screensaver.

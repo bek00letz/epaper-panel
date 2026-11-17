@@ -8,7 +8,8 @@
 #
 #   pairing  GET /api/setup    ID (its Wi-Fi MAC), Model, FW-Version
 #   a wake   GET /api/display  ID, Access-Token, battery, Wi-Fi, size, Update-Source
-#            (timer, button, powercycle, and ours: back for the previous page), ...
+#            (timer, button, powercycle, and ours: back for the previous page,
+#            refresh for the page on screen), ...
 #            then the picture it names, drawn with the Kindle's own eips,
 #            then sleep for refresh_rate seconds on the clock's alarm.
 #
@@ -38,8 +39,9 @@ LONGEST=86400
 DEFAULT_REFRESH=900
 WIFI_WAIT=45                            # seconds for Wi-Fi to join before giving up this wake
 # Measured on a Kindle 4 (client/kindle/README.md), as the CrowPanel's NEXT and PRV:
-NEXT_KEYS=" 104 191 106 194 "           # next page (left, right side), 5-way right and middle
+NEXT_KEYS=" 104 191 106 "               # next page (left, right side), 5-way right
 BACK_KEYS=" 193 109 105 "               # previous page (left, right side), 5-way left
+REFRESH_KEYS=" 194 "                    # 5-way middle: the page on screen, fetched and redrawn now
 HOME_KEY=102                            # Home: the Kindle back, until the next restart
 AWAKE_AFTER_PRESS=60                    # seconds it stays awake after a press, for the next one
 BLANK="                                                  "   # a row of the Kindle's font: 50 columns
@@ -285,7 +287,7 @@ back_when_asleep() {
 # page-turn buttons answer: they can't wake a sleeping Kindle 4; only its power
 # switch can (measured). WAKE says why it returned: "timer" (the time is up),
 # "button" (next page: a button, or the power switch), "back" (previous page),
-# "home" (Home).
+# "refresh" (the page on screen, now), "home" (Home).
 sleep_until() {
     deadline=$1; awake=${2:-0}; WAKE=timer
     while :; do
@@ -294,6 +296,7 @@ sleep_until() {
         key=$(take_key)
         if [ -n "$key" ]; then
             case "$BACK_KEYS" in *" $key "*) WAKE=back ;; *) WAKE=button ;; esac
+            case "$REFRESH_KEYS" in *" $key "*) WAKE=refresh ;; esac
             [ "$key" = "$HOME_KEY" ] && WAKE=home
             return 0
         fi
@@ -373,7 +376,7 @@ take_key() {
     before=$(state_get key_at)
     state_put key_at "$at"
     [ -n "$before" ] && [ $(( at - before )) -le 1 ] && return 0
-    case "$NEXT_KEYS$BACK_KEYS" in *" $code "*) echo "$code"; return 0 ;; esac
+    case "$NEXT_KEYS$BACK_KEYS$REFRESH_KEYS" in *" $code "*) echo "$code"; return 0 ;; esac
     [ "$code" = "$HOME_KEY" ] && echo "$code"
     return 0
 }
@@ -521,9 +524,14 @@ display() {
     NEXT=$refresh
     url=$(json_get image_url "$EPP_STATE/display.json")
     name=$(json_get filename "$EPP_STATE/display.json")
-    # Nothing new: what's on screen stays (no download, no flash).
+    # Nothing new: what's on screen stays (no download, no flash), unless a person asked
+    # for it again (refresh): then it's redrawn whole, which also clears any ghosting.
     if [ -z "$url" ] || { [ -n "$name" ] && [ "$name" = "$(state_get last_name)" ] && [ -f "$EPP_STATE/last.png" ]; }; then
-        redraw
+        if [ "$SOURCE" = refresh ] && [ -f "$EPP_STATE/last.png" ]; then
+            rm -f "$EPP_STATE/note"; screen_picture "$EPP_STATE/last.png"
+        else
+            redraw
+        fi
         return 0
     fi
     # Its key goes only to its own server (as a TRMNL's firmware does).
@@ -602,13 +610,14 @@ run() {
         wake_once
         until=$(( $(now_s) + ${NEXT:-$DEFAULT_REFRESH} ))
         awake=0
-        case "$SOURCE" in button|back) awake=$(( $(now_s) + AWAKE_AFTER_PRESS )) ;; esac
+        case "$SOURCE" in button|back|refresh) awake=$(( $(now_s) + AWAKE_AFTER_PRESS )) ;; esac
         [ "$(state_get stay)" = true ] && awake=$until        # always on: never suspends
         sleep_until "$until" "$awake"
         case "$WAKE" in
             home) hand_back; return 0 ;;
             button) SOURCE=button ;;
             back) SOURCE=back ;;                   # ours: the add-on goes to the previous page
+            refresh) SOURCE=refresh ;;             # ours: the page on screen, fetched now
             *) SOURCE=timer ;;
         esac
     done

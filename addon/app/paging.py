@@ -344,10 +344,12 @@ class Wake:
     stay: bool = False
 
 
-def _choose(dev: dict, ahead: Ahead, now: datetime, person: bool, back: bool = False) -> str | None:
+def _choose(dev: dict, ahead: Ahead, now: datetime, person: bool, back: bool = False,
+            refresh: bool = False) -> str | None:
     """Which picture this wake shows (None: keep what it shows). Moves the cursor: a person
-    to the next page (or the previous, `back`); a timer once the page has been shown at N
-    wakes (Rotate every), counted in the cursor."""
+    to the next page (or the previous, `back`; or nowhere, `refresh`: the page on screen,
+    drawn fresh); a timer once the page has been shown at N wakes (Rotate every), counted
+    in the cursor."""
     qh = _qh(ahead.spec)
     quiet, reason = quiet_now(ahead, now)
     alert = bool(ahead.st.alert) and (not quiet or qh.get("allow_alerts", True))
@@ -360,7 +362,10 @@ def _choose(dev: dict, ahead: Ahead, now: datetime, person: bool, back: bool = F
         return EMPTY_KEY
     cursor = devices.state(dev["id"]).get("cursor") or {}
     shown = int(cursor.get("shown") or 0) if cursor else 0
-    if person or shown >= rotate_updates(dev):
+    if person and refresh:
+        pos, item = here(plans, cursor)               # where it is: the count isn't touched
+        shown = max(1, shown)
+    elif person or shown >= rotate_updates(dev):
         pos, item = step(plans, cursor, by_page=person, back=person and back)
         shown = 1
     else:
@@ -436,9 +441,11 @@ def timing(dev: dict, *, person: bool, now: datetime | None = None) -> Wake:
     return Wake(None, sleep_seconds(dev, ahead, now, person), awake)
 
 
-async def wake(dev: dict, *, person: bool, art: Art, now: datetime | None = None, back: bool = False) -> Wake:
+async def wake(dev: dict, *, person: bool, art: Art, now: datetime | None = None, back: bool = False,
+               refresh: bool = False) -> Wake:
     """One wake: pick the picture from what the cycle drew, and say how long to sleep. A person's
-    wake goes to the next page, or with `back` to the previous one."""
+    wake goes to the next page, with `back` to the previous one, with `refresh` nowhere (the
+    page on screen, fresh)."""
     now = now or datetime.now().astimezone()
     ahead = ahead_of(dev)
     awake = awake_seconds(dev, person)
@@ -446,7 +453,7 @@ async def wake(dev: dict, *, person: bool, art: Art, now: datetime | None = None
         return Wake(None, FIRST_RENDER_SECONDS, awake, stay=always_on(dev))   # just started: nothing rendered yet
     sleep_for = sleep_seconds(dev, ahead, now, person)
     stay = always_on(dev)
-    key = _choose(dev, ahead, now, person, back)
+    key = _choose(dev, ahead, now, person, back, refresh)
     rt = runtime.device(dev["id"]).kind
     if key is None:
         return Wake(rt.get("last"), sleep_for, awake, stay=stay)
