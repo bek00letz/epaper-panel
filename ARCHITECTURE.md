@@ -757,9 +757,16 @@ What's its own:
 - **Its own installer**, no KUAL: the editor serves the packages in
   `addon/app/kindle/` and an `epaper-panel.txt` with the address
   (`/api/kindle/{install,uninstall}`, `/api/devices/{id}/kindle-settings`).
-- **Its button is the power switch**: a sleeping Kindle 4 wakes only for it, so
-  it sends `Update-Source: button`, and the page-turn buttons answer for a
-  minute after. Home hands the Kindle back until it restarts.
+- **Its buttons are a CrowPanel's** (`paging.ACTIONS`): next and back move a page, or
+  a sub-page in sub-page mode ("mode", the 5-way's middle); "lock" (Menu) locks the
+  page (its own items keep rotating) or, in sub-page mode, the item (it stays); "refresh"
+  (Home) shows where it is again. They're `Update-Source` values of ours, the mode and
+  lock live in the device's cursor, and the footer shows them as the firmware does
+  (`theme.draw_footer_marks`, pixel for pixel `draw_overlays`), on a display that
+  `navigates`. A sleeping Kindle 4 wakes only for its power switch: that wake is a
+  refresh, and the buttons answer for a minute after the last press. Back hands the
+  Kindle back (its Wi-Fi as it was) until it goes to sleep: powerd's
+  `goingToScreenSaver` brings the pages back.
 - **It can stay on** (`stays_on` in its profile, `Kind.can_stay_on`), though a
   TRMNL can't: Update every 1 minute. Then it's still paged here, at each
   wake, but asks as often as its pages turn (`paging.always_on`: a minute, or

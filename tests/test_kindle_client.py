@@ -15,6 +15,7 @@ key, for the Kindle 4; and the script stays inside what BusyBox 1.7's ash runs.
 import asyncio
 import os
 import re
+import shlex
 import shutil
 import struct
 import subprocess
@@ -36,17 +37,33 @@ SCRIPT = CLIENT / "root" / "usr" / "local" / "epaper-panel" / "epaper-panel.sh"
 sys.path.insert(0, str(CLIENT))
 import build  # noqa: E402
 
+# The Kindle 4's eips font has every printable ASCII character but these (measured), and eips
+# gives up on a line at the first one it lacks.
+EIPS_MISSING = set("!#$%';\\^`{}")
+
 FAKES = {
-    # Each fake writes its name and arguments, one line, to $CALLS.
-    "eips": 'echo "eips $*" >> "$CALLS"',
+    # Each fake writes its name and arguments, one line, to $CALLS. eips is as strict as the real
+    # one: a line with a character its font lacks is written down as MISSING, and fails.
+    "eips": f"""#!{sys.executable}
+import os, sys
+args = sys.argv[1:]
+text = args[2] if len(args) == 3 and args[0].isdigit() else ""
+bad = [c for c in text if c in {"".join(sorted(EIPS_MISSING))!r} or not (32 <= ord(c) < 127)]
+with open(os.environ["CALLS"], "a") as f:
+    f.write(("eips MISSING " if bad else "eips ") + " ".join(args) + "\\n")
+sys.exit(1 if bad else 0)
+""",
     "lipc-set-prop": 'echo "lipc-set-prop $*" >> "$CALLS"',
     "lipc-get-prop": '''case "$2" in
   macAddress) echo "${FAKE_MAC:-e0:cb:1d:c1:b7:b6}" ;;
   cmState) echo "${FAKE_WIFI:-CONNECTED}" ;;
+  wirelessEnable) echo "${FAKE_WIRELESS:-1}" ;;
   *) echo "" ;;
 esac''',
     "gasgauge-info": '[ "$1" = -v ] && echo "4170 mV" || echo "97%"',
     "iwconfig": 'echo "wlan0     IEEE 802.11bg  ESSID:\\"home\\"  Link Quality=80/100  Signal level=-58 dBm"',
+    # Waits for powerd's event: here it says it was asked and fails, so nothing restarts in a test.
+    "lipc-wait-event": 'echo "lipc-wait-event $*" >> "$CALLS"; exit 1',
 }
 
 
@@ -84,7 +101,7 @@ class Kindle:
 
     def fake(self, name, body):
         p = self.bin / name
-        p.write_text("#!/bin/sh\n" + body + "\n")
+        p.write_text(body if body.startswith("#!") else "#!/bin/sh\n" + body + "\n")
         p.chmod(0o755)
 
     def settings(self, server):
@@ -186,6 +203,15 @@ class TestPairingAndAWake(KindleClientBase):
         self.assertEqual(rc, 0)
         self.assertNotEqual(self.kindle.get("last_name"), first)
 
+    async def test_a_refresh_redraws_the_same_page(self):
+        await self.paired()
+        name = self.kindle.get("last_name")
+        self.kindle.took_calls()
+        rc, _ = await self.kindle.wake("refresh")
+        self.assertEqual((rc, self.kindle.get("last_name")), (0, name))
+        self.assertEqual(self.kindle.drew(self.kindle.took_calls()), [f"eips -f -g {self.kindle.state}/last.png"],
+                         "drawn whole again, though nothing changed")
+
     async def test_back_goes_to_the_previous_page(self):
         await self.paired(pages="copy")
         first = self.kindle.get("last_name")
@@ -197,11 +223,22 @@ class TestPairingAndAWake(KindleClientBase):
     async def test_its_key_replaced_means_pairing_again(self):
         dev = await self.paired()
         devices.rekey(dev["id"])
-        self.kindle.took_calls()
         rc, said = await self.kindle.wake()
         self.assertEqual(rc, 1)
         self.assertEqual(self.kindle.get("key"), "")
-        self.assertIn("isn't paired any more", said["FAILED"])
+        self.assertIn("add this screen as a device", said["FAILED"], "it asked to pair at once; no window open")
+
+    async def test_a_refused_key_pairs_in_the_same_wake_when_the_window_is_open(self):
+        """Measured: a Kindle paired with a test add-on, then pointed at the real one, was refused
+        and then waited 30 minutes before asking to pair, missing the ten-minute window."""
+        dev = await self.paired()
+        devices.rekey(dev["id"])
+        await self.ed.post(f"/api/devices/{dev['id']}/pair")
+        old = self.kindle.get("key")
+        rc, said = await self.kindle.wake()
+        self.assertEqual(rc, 0, said)
+        self.assertTrue(self.kindle.get("key"))
+        self.assertNotEqual(self.kindle.get("key"), old)
 
 
 class TestWhenThingsGoWrong(KindleClientBase):
@@ -216,6 +253,7 @@ class TestWhenThingsGoWrong(KindleClientBase):
         words = self.kindle.screen_text(self.kindle.took_calls())
         self.assertIn("add this screen as a device", words)
         self.assertIn("Trying again in 30 minutes.", words)
+        self.assertIn("slide the power switch, then press Back", words, "every card says how to get the Kindle")
         self.assertEqual(self.kindle.get("key"), "")
 
     async def test_home_assistant_unreachable_keeps_the_page_and_says_so(self):
@@ -229,7 +267,7 @@ class TestWhenThingsGoWrong(KindleClientBase):
         self.assertEqual(said["NEXT"], "60")
         self.assertEqual(self.kindle.drew(calls), [], "what's on screen stays")
         self.assertNotIn("eips -c", calls, "no blank screen")
-        self.assertIn("Can't reach Home Assistant at http://127.0.0.1:9. Trying again in a minute.",
+        self.assertIn("Cannot reach Home Assistant at http://127.0.0.1:9. Trying again in a minute.",
                       self.kindle.screen_text(calls))
         self.assertEqual((self.kindle.state / "last.png").read_bytes(), page)
 
@@ -271,7 +309,7 @@ echo '{{"status": 0, "image_url": "http://elsewhere.example/x.png", "filename": 
 printf 200''')
         rc, said = await self.kindle.wake()
         self.assertEqual(rc, 1)
-        self.assertIn("isn't this Home Assistant's", said["FAILED"])
+        self.assertIn("other than this Home Assistant", said["FAILED"])
         self.assertNotIn("elsewhere.example", log.read_text())
 
     async def test_an_error_from_home_assistant(self):
@@ -315,7 +353,7 @@ class TestSetUp(unittest.TestCase):
         self.kindle.shell("SOURCE=timer; wake_once")
         calls = self.kindle.took_calls()
         self.assertFalse([c for c in calls if c.startswith("curl")])
-        self.assertIn("can't use https", self.kindle.screen_text(calls))
+        self.assertIn("cannot use https", self.kindle.screen_text(calls), "as the Kindle's font can draw it")
 
 
 class TestKeysAndSleep(unittest.TestCase):
@@ -331,7 +369,7 @@ class TestKeysAndSleep(unittest.TestCase):
         return r.stdout.strip().splitlines()[-1]
 
     def test_next_page_buttons(self):
-        for code in (104, 191, 106, 194):
+        for code in (104, 191, 106):
             (self.kindle.state / "key_at").unlink(missing_ok=True)      # a press of its own, not a bounce
             self.assertEqual(self.wake_after([(0, code)]), "WAKE=button", code)
 
@@ -341,18 +379,41 @@ class TestKeysAndSleep(unittest.TestCase):
             (self.kindle.state / "key_at").unlink(missing_ok=True)
             self.assertEqual(self.wake_after([(0, code)]), "WAKE=back", code)
 
-    def test_home_gives_the_kindle_back(self):
-        self.assertEqual(self.wake_after([(0, 102)]), "WAKE=home")
+    def test_the_crowpanels_buttons(self):
+        """5-way middle: pages <-> sub-pages; Menu: the lock; Home: refresh (paging.ACTIONS)."""
+        for code, wake in ((194, "mode"), (139, "lock"), (102, "refresh")):
+            (self.kindle.state / "key_at").unlink(missing_ok=True)
+            self.assertEqual(self.wake_after([(0, code)]), f"WAKE={wake}", code)
+
+    def test_back_gives_the_kindle_back_at_once(self):
+        """Back is handled by the key reader the moment it's read, whatever the loop is doing:
+        the loop is stopped and the Kindle handed back."""
+        ev = lambda t, c, v: struct.pack("<IIHHi", 1794859586, 706672, t, c, v)
+        dev = self.kindle.sys / "dev/input/event0"
+        dev.parent.mkdir(parents=True, exist_ok=True)
+        dev.write_bytes(ev(4, 4, 3) + ev(1, 158, 1) + ev(0, 0, 0))
+        busy = subprocess.Popen(["sleep", "30"])                # the loop, waiting for Wi-Fi say
+        try:
+            (self.kindle.state / "run.pid").write_text(str(busy.pid))
+            self.kindle.shell("start_keys; sleep 2")
+            self.assertIsNotNone(busy.poll(), "the loop was stopped")
+        finally:
+            busy.kill()
+        calls = self.kindle.took_calls()
+        self.assertIn("framework start", calls)
+        self.assertIn("lipc-wait-event com.lab126.powerd goingToScreenSaver", calls)
+        self.assertTrue((self.kindle.state / "handed_back").exists())
+        self.assertNotIn("158", self.kindle.get("keys"), "the loop never sees it")
 
     def test_other_keys_and_a_bounce_are_ignored(self):
-        for code in (139, 158, 29, 103, 108):           # Menu, Back, Keyboard, 5-way up and down
+        for code in (29, 103, 108):                     # Keyboard, 5-way up and down
             (self.kindle.state / "key_at").unlink(missing_ok=True)
             self.assertEqual(self.wake_after([(0, code)]), "WAKE=timer", code)
         self.kindle.shell('state_put key_at "$(now_s)"')
         self.assertEqual(self.wake_after([(0, 104)]), "WAKE=timer", "the same press bouncing")
 
-    def test_the_power_switch_waking_it_early_is_a_press(self):
-        self.assertEqual(self.wake_after([], deadline=100, extra="suspend_for() { return 0; };"), "WAKE=button")
+    def test_the_power_switch_wakes_it_to_its_page_fresh(self):
+        self.assertEqual(self.wake_after([], deadline=100, extra="suspend_for() { return 0; };"), "WAKE=refresh")
 
     def test_it_stays_awake_after_a_press_then_sleeps(self):
         r = self.kindle.shell('suspend_for() { echo "suspend at $(now_s)"; return 1; }; start=$(now_s); '
@@ -380,11 +441,19 @@ class TestKeysAndSleep(unittest.TestCase):
         self.assertEqual((self.kindle.sys / "sys/power/state").read_text().strip(), "mem")
 
     def test_taking_over_and_handing_back(self):
-        self.kindle.shell("take_over; hand_back")
+        self.kindle.shell("take_over; wifi_down; hand_back; wait")
         calls = self.kindle.took_calls()
         self.assertEqual(calls, ["lipc-set-prop com.lab126.powerd preventScreenSaver 1", "framework stop",
-                                 "lipc-set-prop com.lab126.powerd preventScreenSaver 0", "framework start"])
+                                 "lipc-set-prop com.lab126.cmd wirelessEnable 0",
+                                 "lipc-set-prop com.lab126.cmd wirelessEnable 1",
+                                 "lipc-set-prop com.lab126.powerd preventScreenSaver 0", "framework start",
+                                 "lipc-wait-event com.lab126.powerd goingToScreenSaver"])
         self.assertTrue((self.kindle.state / "handed_back").exists())
+
+    def test_wifi_as_the_kindle_had_it(self):
+        self.kindle.shell("take_over; hand_back; wait", FAKE_WIRELESS="0")
+        self.assertIn("lipc-set-prop com.lab126.cmd wirelessEnable 0", self.kindle.took_calls()[-4:],
+                      "Wi-Fi was off before: it stays off")
 
 
 class TestSmallParts(unittest.TestCase):
@@ -421,6 +490,25 @@ class TestSmallParts(unittest.TestCase):
     def test_what_it_says_about_itself(self):
         self.assertEqual(self.out("kindle_model; kindle_firmware; kindle_size; kindle_battery_volts; echo; kindle_rssi; kindle_mac").splitlines(),
                          ["Kindle 4", "1.0.0 / Kindle 4.1.1", "600 800", "4.17", "-58", "E0:CB:1D:C1:B7:B6"])
+
+    def test_words_the_kindles_font_can_draw(self):
+        cases = {"This Kindle isn't paired any more.": "This Kindle is not paired any more.",
+                 "Can't reach it; 50% done!": "Cannot reach it, 50 percent done.",
+                 "a\\b {x} #1 $5 ^ `q`": "a/b (x) 1 5  q",
+                 "l\u2019appareil caf\u00e9": "lappareil caf"}
+        for given, shown in cases.items():
+            self.assertEqual(self.out(f"screen_safe {shlex.quote(given)}"), shown, given)
+
+    def test_no_message_is_cut_short_on_the_kindle(self):
+        """Every message the client can show goes through screen_safe: none hits a character the
+        Kindle's font lacks (where the real eips stops drawing the line)."""
+        script = SCRIPT.read_text()
+        messages = re.findall(r'FAILED="([^"]*)"', script) + re.findall(r'echo "(This Kindle[^"]*|The address[^"]*)"', script)
+        self.assertGreater(len(messages), 8)
+        for msg in messages:
+            self.kindle.shell(f"card {shlex.quote(msg)}; note {shlex.quote(msg)}")
+        calls = self.kindle.took_calls()
+        self.assertFalse([c for c in calls if c.startswith("eips MISSING")])
 
     def test_a_note_fits_the_kindles_font(self):
         self.kindle.shell('note "Can\'t reach Home Assistant at http://192.168.100.200:8099. Trying again in 10 minutes."')

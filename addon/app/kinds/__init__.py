@@ -274,7 +274,7 @@ async def device_port_addresses(names_by_dns: bool = False) -> list[dict]:
     port = await panel_setup._detect_external_port(runtime.SESSION)
     host = await _home_host()
     if names_by_dns and host.lower().endswith(".local"):
-        host = await reach.home_ip(runtime.SESSION) or host
+        host = await reach.home_ip(runtime.HASS, runtime.SESSION) or host
     out = [{"where": "home", "url": f"http://{host}:{port}"}]
     away = await reach.public_base(runtime.HASS)
     if away:

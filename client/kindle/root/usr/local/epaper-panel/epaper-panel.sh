@@ -8,7 +8,8 @@
 #
 #   pairing  GET /api/setup    ID (its Wi-Fi MAC), Model, FW-Version
 #   a wake   GET /api/display  ID, Access-Token, battery, Wi-Fi, size, Update-Source
-#            (timer, button, powercycle, and ours: back for the previous page), ...
+#            (timer, button, powercycle, and ours: back, mode, lock, refresh:
+#            the add-on's paging.ACTIONS), ...
 #            then the picture it names, drawn with the Kindle's own eips,
 #            then sleep for refresh_rate seconds on the clock's alarm.
 #
@@ -37,10 +38,15 @@ SHORTEST_AWAKE=5                        # always on, it asks as often as its pag
 LONGEST=86400
 DEFAULT_REFRESH=900
 WIFI_WAIT=45                            # seconds for Wi-Fi to join before giving up this wake
-# Measured on a Kindle 4 (client/kindle/README.md), as the CrowPanel's NEXT and PRV:
-NEXT_KEYS=" 104 191 106 194 "           # next page (left, right side), 5-way right and middle
-BACK_KEYS=" 193 109 105 "               # previous page (left, right side), 5-way left
-HOME_KEY=102                            # Home: the Kindle back, until the next restart
+# Measured on a Kindle 4 (client/kindle/README.md). What each does is the add-on's (paging.ACTIONS),
+# as a CrowPanel's buttons: next and previous move a page, or a sub-page in sub-page mode.
+NEXT_KEYS=" 104 191 106 "               # next (left, right side), 5-way right
+BACK_KEYS=" 193 109 105 "               # previous (left, right side), 5-way left
+MODE_KEYS=" 194 "                       # 5-way middle: pages <-> the page's sub-pages
+LOCK_KEYS=" 139 "                       # Menu: lock the page (or the sub-page), or unlock
+REFRESH_KEYS=" 102 "                    # Home: the page on screen, fetched and redrawn now
+GIVE_BACK_KEY=158                       # Back: the Kindle back, until it goes to sleep
+WAY_OUT="To use the Kindle, slide the power switch, then press Back."
 AWAKE_AFTER_PRESS=60                    # seconds it stays awake after a press, for the next one
 BLANK="                                                  "   # a row of the Kindle's font: 50 columns
 
@@ -167,7 +173,7 @@ read_settings() {
 # Why an address can't be used, in plain words, or nothing when it can.
 server_problem() {
     case "$1" in
-        https://*) echo "This Kindle can't use https. In $EPP_SETTINGS_NAME, use the add-on's home address, starting with http://." ;;
+        https://*) echo "This Kindle can't use https. In $EPP_SETTINGS_NAME, use the address at home, starting with http://." ;;
         http://*) rest=${1#http://}
                   case "$rest" in
                       ''|*/*|*' '*) echo "The address in $EPP_SETTINGS_NAME isn't one this Kindle can use: $1" ;;
@@ -245,31 +251,71 @@ screen_clear() {
 
 # One line of text at a row of the Kindle's own font (50 columns by 40 rows).
 screen_text() {
-    eips "$1" "$2" "$3" >/dev/null 2>&1
+    eips "$1" "$2" "$(screen_safe "$3")" >/dev/null 2>&1
+}
+
+# Words the Kindle's own font can draw. It has every printable ASCII character
+# except ! # $ % ' ; \ ^ ` { } (measured on a Kindle 4), and eips drops the rest
+# of a line at the first one it lacks ("This Kindle isn" was all it showed of
+# "isn't paired"). So contractions are spelled out, the rest swapped for one it
+# has or left out, and anything outside ASCII dropped: our words and the add-on's.
+screen_safe() {
+    printf '%s' "$*" | sed -e "s/Can't/Cannot/g; s/can't/cannot/g; s/Won't/Will not/g; s/won't/will not/g" \
+        -e "s/n't/ not/g; s/'re/ are/g; s/'ll/ will/g; s/'ve/ have/g; s/I'm/I am/g; s/'//g" \
+        -e 's/%/ percent/g; s/!/./g; s/;/,/g; s/{/(/g; s/}/)/g' \
+        | tr '\\' '/' | tr -d '#$^`' | LC_ALL=C tr -cd ' -~'
 }
 
 # Take the screen over: the Kindle's own reader is stopped so it doesn't draw
-# over the pages or sleep on its own schedule. hand_back undoes it.
+# over the pages or sleep on its own schedule. hand_back undoes it, Wi-Fi
+# included: as the Kindle had it before (the client turns it off between wakes).
 take_over() {
+    w=$(lipc-get-prop com.lab126.cmd wirelessEnable 2>/dev/null)
+    case "$w" in 0|1) state_put wireless_before "$w" ;; esac
     lipc-set-prop com.lab126.powerd preventScreenSaver 1 2>/dev/null
     "$EPP_SYS/etc/init.d/framework" stop >/dev/null 2>&1
     sleep 2
 }
 
+# Back, from the key reader: whatever the loop is doing (asleep between tries,
+# waiting for Wi-Fi, fetching), it stops, and the Kindle is handed back at once.
+# So "slide the power switch, then Back" always gets the Kindle within seconds.
+give_back_now() {
+    [ -f "$EPP_STATE/handed_back" ] && return 0
+    p=$(state_get run.pid)
+    [ -n "$p" ] && kill "$p" 2>/dev/null
+    hand_back
+}
+
+# Back: the Kindle as it was, until it goes to sleep (the power switch, or
+# dozing off on its own): then the pages come back instead of its screensaver.
 hand_back() {
-    log "handing the Kindle back (until the next restart)"
+    log "handing the Kindle back, until it goes to sleep"
     stop_keys
     : > "$EPP_STATE/handed_back"
+    lipc-set-prop com.lab126.cmd wirelessEnable "$(state_get wireless_before || echo 1)" 2>/dev/null
     lipc-set-prop com.lab126.powerd preventScreenSaver 0 2>/dev/null
     "$EPP_SYS/etc/init.d/framework" start >/dev/null 2>&1
+    back_when_asleep &
+}
+
+back_when_asleep() {
+    # Blocks until powerd says the Kindle is going to its screensaver. Anything else
+    # (an error, the client stopped): nothing; the next restart starts it as usual.
+    lipc-wait-event com.lab126.powerd goingToScreenSaver >/dev/null 2>&1 || return 0
+    [ -f "$EPP_STATE/handed_back" ] || return 0
+    log "the Kindle went to sleep: the pages come back"
+    exec "$EPP_HOME/epaper-panel.sh" run
 }
 
 # Sleep until `deadline` (seconds since 1970), suspended on the clock's alarm.
 # Until `awake` (optional, seconds since 1970) it stays awake instead, so the
 # page-turn buttons answer: they can't wake a sleeping Kindle 4; only its power
 # switch can (measured). WAKE says why it returned: "timer" (the time is up),
-# "button" (next page: a button, or the power switch), "back" (previous page),
-# "home" (Home).
+# "button" (next), "back" (previous), "mode", "lock" or "refresh" (a button: the
+# add-on's action), and "refresh" for the power switch too: it wakes the Kindle
+# to the page it's on, fresh, and the buttons answer for a minute. Back never
+# gets here: the key reader hands the Kindle back itself (give_back_now).
 sleep_until() {
     deadline=$1; awake=${2:-0}; WAKE=timer
     while :; do
@@ -277,16 +323,20 @@ sleep_until() {
         left=$(( deadline - now ))
         key=$(take_key)
         if [ -n "$key" ]; then
-            case "$BACK_KEYS" in *" $key "*) WAKE=back ;; *) WAKE=button ;; esac
-            [ "$key" = "$HOME_KEY" ] && WAKE=home
+            WAKE=button
+            case "$BACK_KEYS" in *" $key "*) WAKE=back ;; esac
+            case "$MODE_KEYS" in *" $key "*) WAKE=mode ;; esac
+            case "$LOCK_KEYS" in *" $key "*) WAKE=lock ;; esac
+            case "$REFRESH_KEYS" in *" $key "*) WAKE=refresh ;; esac
             return 0
         fi
         [ "$left" -le 0 ] && return 0
         if [ "$now" -ge "$awake" ] && [ "$left" -gt 20 ] && suspend_for $(( left - 5 )); then
-            # Woken early with no key on record: the power switch. It means "show
-            # me something now", like a TRMNL's button.
+            # Woken early with no key on record: the power switch. The page it's on,
+            # fresh, and then the buttons answer (the user's call: a sleeping Kindle 4
+            # wakes for nothing else).
             if [ $(( deadline - $(now_s) )) -gt 15 ] && [ -z "$(peek_key)" ]; then
-                WAKE=button; return 0
+                WAKE=refresh; return 0
             fi
             continue
         fi
@@ -331,7 +381,10 @@ start_keys() {
                 [ -n "$rec" ] || { sleep 1; continue; }
                 # struct input_event: time (4 halves), type, code, value (2 halves)
                 set -- $rec
-                [ "$5" = 1 ] && [ "$7" = 1 ] && echo "$(now_s) $6" >> "$EPP_STATE/keys"
+                [ "$5" = 1 ] && [ "$7" = 1 ] || continue
+                # Back, the moment it's pressed: not when the loop next looks.
+                [ "$6" = "$GIVE_BACK_KEY" ] && { give_back_now & exit 0; }
+                echo "$(now_s) $6" >> "$EPP_STATE/keys"
             done
         ) &
         echo $! >> "$EPP_STATE/keys.pids"
@@ -357,8 +410,7 @@ take_key() {
     before=$(state_get key_at)
     state_put key_at "$at"
     [ -n "$before" ] && [ $(( at - before )) -le 1 ] && return 0
-    case "$NEXT_KEYS$BACK_KEYS" in *" $code "*) echo "$code"; return 0 ;; esac
-    [ "$code" = "$HOME_KEY" ] && echo "$code"
+    case "$NEXT_KEYS$BACK_KEYS$MODE_KEYS$LOCK_KEYS$REFRESH_KEYS" in *" $code "*) echo "$code"; return 0 ;; esac
     return 0
 }
 
@@ -367,7 +419,7 @@ take_key() {
 # A note over the bottom of whatever is showing: the last page stays.
 note() {
     log "note: $*"
-    printf '%s\n' "$*" | awk '{
+    screen_safe "$*" | awk '{
         n = split($0, w, " "); line = ""; out = 0
         for (i = 1; i <= n; i++) {
             if (length(line) + length(w[i]) + 1 > 48 && line != "") { print line; line = w[i]; out++ }
@@ -384,12 +436,13 @@ note() {
     done < "$EPP_STATE/note"
 }
 
-# A whole screen of words, for when there's no page to keep (not set up, not paired).
+# A whole screen of words, for when there's no page to keep (not set up, not
+# paired), ending with how to get the Kindle back.
 card() {
     log "card: $*"
     screen_clear
     row=6
-    printf '%s\n' "$@" | awk '{
+    for line in "$@" "" "$WAY_OUT"; do screen_safe "$line"; echo; done | awk '{
         if ($0 == "") { print ""; next }
         n = split($0, w, " "); line = ""
         for (i = 1; i <= n; i++) {
@@ -446,7 +499,7 @@ pair() {
         "ID: $mac" "Model: $(kindle_model)" "FW-Version: $(kindle_firmware)" "Content-Type: application/json")
     log "setup: HTTP $code"
     case "$code" in
-        000) FAILED="Can't reach Home Assistant at $SERVER. Check the address in $EPP_SETTINGS_NAME and that the Kindle's Wi-Fi is your home network."; return 1 ;;
+        000) FAILED="Can't reach Home Assistant at $SERVER. Check the address in $EPP_SETTINGS_NAME and that the Kindle is on your home Wi-Fi."; return 1 ;;
         200) ;;
         *) FAILED="Home Assistant answered with an error (HTTP $code)."; return 1 ;;
     esac
@@ -505,15 +558,20 @@ display() {
     NEXT=$refresh
     url=$(json_get image_url "$EPP_STATE/display.json")
     name=$(json_get filename "$EPP_STATE/display.json")
-    # Nothing new: what's on screen stays (no download, no flash).
+    # Nothing new: what's on screen stays (no download, no flash), unless a person asked
+    # for it again (refresh): then it's redrawn whole, which also clears any ghosting.
     if [ -z "$url" ] || { [ -n "$name" ] && [ "$name" = "$(state_get last_name)" ] && [ -f "$EPP_STATE/last.png" ]; }; then
-        redraw
+        if [ "$SOURCE" = refresh ] && [ -f "$EPP_STATE/last.png" ]; then
+            rm -f "$EPP_STATE/note"; screen_picture "$EPP_STATE/last.png"
+        else
+            redraw
+        fi
         return 0
     fi
     # Its key goes only to its own server (as a TRMNL's firmware does).
     case "$url" in
         "$SERVER"/*) ;;
-        *) FAILED="The page's address isn't this Home Assistant's: $url"; return 1 ;;
+        *) FAILED="The page is at an address other than this Home Assistant: $url"; return 1 ;;
     esac
     code=$(http_get "$url" "$EPP_STATE/next.png" "ID: $(state_get mac)" "Access-Token: $key")
     if [ "$code" != 200 ] || ! png_fits "$EPP_STATE/next.png"; then
@@ -549,9 +607,15 @@ wake_once() {
         if [ -n "$(state_get key)" ] || pair; then
             [ -n "$PAIRED_SAYS" ] && card "E-paper panel" "" "$PAIRED_SAYS"
             display && ok=0
+            # Its key was refused (paired again, or with another Home Assistant): ask to
+            # pair now, in this wake, so an open pairing window isn't missed.
+            if [ "$ok" -ne 0 ] && [ -z "$(state_get key)" ] && pair; then
+                [ -n "$PAIRED_SAYS" ] && card "E-paper panel" "" "$PAIRED_SAYS"
+                display && ok=0
+            fi
         fi
     else
-        FAILED="No Wi-Fi. Join your network in the Kindle's settings: press Home, then Menu, Settings, Wi-Fi Networks."
+        FAILED="No Wi-Fi. To join your network, slide the power switch, press Back, then Menu, Settings, Wi-Fi Networks."
     fi
     [ "$(state_get stay)" = true ] || wifi_down
     if [ "$ok" -eq 0 ]; then
@@ -586,13 +650,12 @@ run() {
         wake_once
         until=$(( $(now_s) + ${NEXT:-$DEFAULT_REFRESH} ))
         awake=0
-        case "$SOURCE" in button|back) awake=$(( $(now_s) + AWAKE_AFTER_PRESS )) ;; esac
+        case "$SOURCE" in button|back|mode|lock|refresh) awake=$(( $(now_s) + AWAKE_AFTER_PRESS )) ;; esac
         [ "$(state_get stay)" = true ] && awake=$until        # always on: never suspends
         sleep_until "$until" "$awake"
         case "$WAKE" in
-            home) hand_back; return 0 ;;
             button) SOURCE=button ;;
-            back) SOURCE=back ;;                   # ours: the add-on goes to the previous page
+            back|mode|lock|refresh) SOURCE=$WAKE ;;   # ours: the add-on's actions
             *) SOURCE=timer ;;
         esac
     done

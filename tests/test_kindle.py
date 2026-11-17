@@ -227,10 +227,24 @@ class TestHomeIp(unittest.IsolatedAsyncioTestCase):
         body = {"data": {"interfaces": [
             {"primary": False, "ipv4": {"address": ["172.30.32.1/23"]}},
             {"primary": True, "ipv4": {"address": ["192.168.50.5/24"]}}]}}
+        class NoHass:
+            available = False
+
         with mock.patch.object(reach.config, "HA_TOKEN", "t"):
-            self.assertEqual(await reach.home_ip(Session(body)), "192.168.50.5")
-            self.assertEqual(await reach.home_ip(Session({"data": {"interfaces": []}})), "")
-        self.assertEqual(await reach.home_ip(Session(body)), "", "not under the Supervisor: nothing to ask")
+            self.assertEqual(await reach.home_ip(NoHass(), Session(body)), "192.168.50.5")
+            self.assertEqual(await reach.home_ip(NoHass(), Session({"data": {"interfaces": []}})), "")
+        self.assertEqual(await reach.home_ip(NoHass(), Session(body)), "", "not under the Supervisor: nothing to ask")
+
+    async def test_home_assistants_own_network_settings_first(self):
+        """No Supervisor rights needed (the add-on has none): Home Assistant's `network` command."""
+        class Hass:
+            available = True
+            async def ws(self, payload):
+                assert payload == {"type": "network"}
+                return {"adapters": [
+                    {"name": "docker0", "enabled": True, "default": False, "ipv4": [{"address": "172.30.32.1"}]},
+                    {"name": "end0", "enabled": True, "default": True, "ipv4": [{"address": "192.168.50.5"}]}]}
+        self.assertEqual(await reach.home_ip(Hass(), None), "192.168.50.5")
 
 
 class TestAlwaysOn(KindleBase):
@@ -304,6 +318,200 @@ class TestPreviousPage(KindleBase):
         first, second, third, back1, back2 = names
         self.assertEqual(len({first, second, third}), 3)
         self.assertEqual((back1, back2), (second, first))
+
+    async def test_a_refresh_shows_the_page_on_screen_again(self):
+        """Update-Source "refresh" (ours, the 5-way's middle): the same page, and the rotation doesn't move."""
+        dev = await self.add_kindle(pages="copy", rotate_updates=2)
+        got = await self.pair_kindle(dev["id"])
+        await frames.refresh_frames(None)
+        names = []
+        for source in ("timer", "refresh", "refresh", "timer", "timer"):
+            r = await self.lan.get("/api/display", headers=kindle_display_headers(got["api_key"], source=source))
+            names.append((await r.json())["filename"])
+        self.assertEqual(names[:4], [names[0]] * 4, "a refresh doesn't count as a showing")
+        self.assertNotEqual(names[4], names[0], "the rotation moves on as before")
+
+
+MARKS_PROGRAM = r"""
+#include <cstdio>
+#include <cstdlib>
+#include <vector>
+#include "epf_core.h"
+// argv: w h pill_y0 pill_y1 cat_x0 sub_x0 sub_x1 cat_pill_w has_sub highlight_sub cat_locked panel_locked
+int main(int argc, char **argv) {
+  if (argc != 13) return 2;
+  int v[12];
+  for (int i = 0; i < 12; i++) v[i] = std::atoi(argv[i + 1]);
+  epf::Geometry g;
+  g.logical_w = v[0]; g.logical_h = v[1]; g.quarter_turns = 0;
+  g.pill_y0 = v[2]; g.pill_y1 = v[3]; g.cat_x0 = v[4]; g.sub_x0 = v[5]; g.sub_x1 = v[6];
+  epf::OverlayState st;
+  st.cat_pill_w = v[7]; st.has_sub = v[8]; st.highlight_sub = v[9]; st.cat_locked = v[10]; st.panel_locked = v[11];
+  const int stride = (v[0] + 7) / 8;
+  std::vector<uint8_t> buf((size_t) stride * v[1], 0xFF);
+  epf::draw_overlays(buf.data(), v[0], v[1], g, st);
+  for (int y = 0; y < v[1]; y++)
+    for (int x = 0; x < v[0]; x++)
+      if (!(buf[(size_t) y * stride + x / 8] & (1 << (7 - x % 8)))) std::printf("%d %d\n", x, y);
+  return 0;
+}
+"""
+
+
+class TestTheKindlesFooterMarksAreTheCrowPanels(unittest.TestCase):
+    """theme.draw_footer_marks draws what the firmware's draw_overlays draws (epf_core.h), pixel for
+    pixel, from the same footer plan: the highlighted pill and the padlocks, every combination."""
+
+    @classmethod
+    def setUpClass(cls):
+        import shutil
+        import subprocess
+        import tempfile
+        from pathlib import Path
+        compiler = shutil.which("c++")
+        if not compiler:
+            raise unittest.SkipTest("no C++ compiler here")
+        cls.tmp = Path(tempfile.mkdtemp(prefix="marks-"))
+        src = cls.tmp / "marks.cpp"
+        src.write_text(MARKS_PROGRAM)
+        cls.exe = cls.tmp / "marks"
+        built = subprocess.run([compiler, "-std=c++17", "-O1", "-I", str(support.APP.parents[1] / "components" / "epf"),
+                                "-o", str(cls.exe), str(src), "-lz"], capture_output=True, text=True)
+        if built.returncode != 0:
+            raise AssertionError(built.stderr)
+
+    def firmware(self, plan, w, h, pos, has_sub, sub, page_lock, item_lock):
+        import subprocess
+        cat_w = plan["pages"][pos]["w"]
+        args = [w, h, plan["pill_y0"], plan["pill_y1"], plan["cat_x0"], plan["sub_x0"], plan["sub_x1"], cat_w,
+                int(has_sub), int(sub), int(page_lock), int(item_lock)]
+        out = subprocess.run([str(self.exe), *map(str, args)], capture_output=True, text=True, check=True).stdout
+        return {tuple(map(int, line.split())) for line in out.splitlines()}
+
+    def ours(self, plan, w, h, pos, has_sub, sub, page_lock, item_lock):
+        img = Image.new("L", (w, h), 255)
+        T.draw_footer_marks(img, plan, pos, has_sub=has_sub, sub=sub, page_lock=page_lock, item_lock=item_lock)
+        data = img.tobytes()
+        return {(i % w, i // w) for i, v in enumerate(data) if v == 0}
+
+    def test_every_combination(self):
+        for display, orientation in (("kindle", 0), ("kindle", 90), ("kindle_758x1024", 0)):
+            w, h = T.canvas_dims(orientation, display)
+            plan = T.footer_plan(clock="14:05", pages=[("solar", 1), ("scores", 5), ("weather", 1)],
+                                 orientation=orientation, display=display)
+            for pos, has_sub in ((0, False), (1, True)):
+                for sub in (False, True):
+                    for page_lock in (False, True):
+                        for item_lock in (False, True):
+                            with self.subTest(display=display, orientation=orientation, pos=pos, sub=sub,
+                                              page_lock=page_lock, item_lock=item_lock):
+                                want = self.firmware(plan, w, h, pos, has_sub, sub, page_lock, item_lock)
+                                got = self.ours(plan, w, h, pos, has_sub, sub, page_lock, item_lock)
+                                self.assertTrue(want, "the firmware drew something")
+                                self.assertEqual(got, want)
+
+
+class TestSubPagesAndLocks(KindleBase):
+    """A Kindle's buttons, as a CrowPanel's (paging.ACTIONS): sub-page mode on a page with several
+    items, the page lock (rotates its own items), the item lock (stays put), and their marks."""
+
+    async def setup_kindle(self):
+        dev = await self.add_kindle(pages="copy", rotate_updates=1)
+        self.key = (await self.pair_kindle(dev["id"]))["api_key"]
+        await frames.refresh_frames(None)
+        self.dev = dev
+        return dev
+
+    async def press(self, source):
+        r = await self.lan.get("/api/display", headers=kindle_display_headers(self.key, source=source))
+        body = await r.json()
+        cursor = devices.state(self.dev["id"])["cursor"]
+        return body["filename"], cursor
+
+    def plans(self):
+        import paging
+        ahead = paging.ahead_of(devices.get(self.dev["id"]))
+        return paging._plans(ahead.spec, ahead.st)
+
+    async def choose(self, dev, action, person=True):
+        """paging._choose on a rotation of three pages, the middle one with three items."""
+        import paging
+        from datetime import datetime
+
+        class St:
+            alert = None
+            live = ["a", "b", "c"]
+            plans = [{"name": "a", "want": 1}, {"name": "b", "want": 3}, {"name": "c", "want": 1}]
+
+        ahead = paging.Ahead("kindle", {"pages": {"a": {}, "b": {}, "c": {}}}, St(), False, "", {})
+        key = paging._choose(devices.get(dev["id"]), ahead, datetime.now().astimezone(), person, action)
+        return key, devices.state(dev["id"])["cursor"]
+
+    async def test_sub_page_mode_steps_through_the_pages_items(self):
+        dev = await self.add_kindle()
+        devices.set_state(dev["id"], cursor={"pos": 1, "name": "b", "item": 0, "shown": 1})
+        key, cursor = await self.choose(dev, "mode")
+        self.assertEqual((cursor["mode"], cursor["name"], cursor["item"]), ("items", "b", 0))
+        self.assertEqual(key, "b#0|s", "the item pill highlighted")
+        _, cursor = await self.choose(dev, "next")
+        self.assertEqual((cursor["name"], cursor["item"]), ("b", 1), "the next item, not the next page")
+        _, cursor = await self.choose(dev, "back")
+        _, cursor = await self.choose(dev, "back")
+        self.assertEqual((cursor["name"], cursor["item"]), ("b", 2), "round its own items")
+        key, cursor = await self.choose(dev, "mode")
+        self.assertNotIn("mode", cursor)
+        self.assertEqual(key, "b#2|p")
+        _, cursor = await self.choose(dev, "next")
+        self.assertEqual((cursor["name"], cursor["item"]), ("c", 0), "a page step again")
+
+    async def test_sub_page_mode_needs_items(self):
+        dev = await self.add_kindle()
+        devices.set_state(dev["id"], cursor={"pos": 0, "name": "a", "item": 0, "shown": 1})
+        _, cursor = await self.choose(dev, "mode")
+        self.assertNotIn("mode", cursor, "a page with one item has no sub-pages")
+
+    async def test_the_page_lock_keeps_rotating_through_its_own_items(self):
+        dev = await self.add_kindle(rotate_updates=1)
+        devices.set_state(dev["id"], cursor={"pos": 1, "name": "b", "item": 0, "shown": 1})
+        key, cursor = await self.choose(dev, "lock")
+        self.assertEqual((cursor["lock"], key), ("page", "b#0|pL"))
+        items = []
+        for _ in range(4):
+            _, cursor = await self.choose(dev, None, person=False)
+            self.assertEqual(cursor["name"], "b", "it stays on its page")
+            items.append(cursor["item"])
+        self.assertEqual(items, [1, 2, 0, 1])
+        _, cursor = await self.choose(dev, "next")
+        self.assertEqual((cursor["name"], cursor["lock"]), ("c", "page"), "a person still moves; the lock follows")
+        _, cursor = await self.choose(dev, "lock")
+        self.assertNotIn("lock", cursor)
+
+    async def test_the_item_lock_stays_put(self):
+        dev = await self.add_kindle(rotate_updates=1)
+        devices.set_state(dev["id"], cursor={"pos": 1, "name": "b", "item": 1, "shown": 1, "mode": "items"})
+        key, cursor = await self.choose(dev, "lock")
+        self.assertEqual((cursor["lock"], key), ("item", "b#1|sl"))
+        for _ in range(3):
+            _, cursor = await self.choose(dev, None, person=False)
+            self.assertEqual((cursor["name"], cursor["item"]), ("b", 1))
+
+    async def test_a_lock_and_the_mode_show_in_the_footer(self):
+        await self.setup_kindle()
+        plain, _ = await self.press("refresh")
+        locked, _ = await self.press("lock")
+        self.assertNotEqual(plain, locked, "the padlock changes the picture")
+        r = await self.lan.get(f"/api/image/{locked}", headers={"ID": KINDLE_MAC, "Access-Token": self.key})
+        img = Image.open(io.BytesIO(await r.read())).convert("L")
+        w, h = img.size
+        footer = img.crop((0, h - 40, w, h))
+        self.assertTrue(any(v == 0 for v in footer.tobytes()), "a dark badge in the footer")
+        unlocked, _ = await self.press("lock")
+        self.assertEqual(unlocked, plain, "unlocked, the same picture as before")
+
+    async def test_a_trmnl_has_no_marks(self):
+        import paging
+        t = await self.add_trmnl()
+        self.assertIsNone(paging.marks(devices.get(t["id"]), [{"name": "a", "want": 3}], 0))
 
 
 if __name__ == "__main__":

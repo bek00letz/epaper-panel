@@ -248,6 +248,8 @@ DISPLAYS = {
         "greys": 16,
         # Unlike a TRMNL it can stay awake and connected (on a charger): Update every 1 minute.
         "stays_on": True,
+        # It has page buttons: sub-pages and locks, shown in its footer as on a CrowPanel (paging.marks).
+        "navigates": True,
         "reports_size": True,
         "sized_keeps": "diagonal",
         "sized_name": "Kindle",
@@ -312,7 +314,7 @@ def _made_display(key):
     made = {"kind": base["kind"], "id": key, "name": base.get("sized_name") or base["name"], "w": w, "h": h,
             "mm_w": round(w / px_per_mm, 1), "mm_h": round(h / px_per_mm, 1), "margin": margin,
             "reports_size": True, "sized": True}
-    for k in ("family", "greys", "stays_on"):
+    for k in ("family", "greys", "stays_on", "navigates"):
         if k in base:
             made[k] = base[k]
     return made
@@ -518,9 +520,11 @@ def panel_dims(display=None):
     return (disp["h"], disp["w"]) if panel_turns(display) % 2 else (disp["w"], disp["h"])
 
 
-def orient_for_panel(img, orientation=0, display=None):
-    """Rotate a rendered logical page into the physical panel buffer."""
+def orient_for_panel(img, orientation=0, display=None, back=False):
+    """Rotate a rendered logical page into the physical panel buffer (`back`: the other way)."""
     deg = (int(orientation or 0) + 90 * panel_turns(display)) % 360
+    if back:
+        deg = (360 - deg) % 360
     if deg == 180:
         return img.transpose(Image.Transpose.ROTATE_180)
     if deg == 90:
@@ -814,6 +818,61 @@ def footer_plan(*, clock, pages=(), orientation=0, display=None):
                 return plan
     # Narrower than any screen we make: the smallest version, even if it crowds.
     return attempt({**FOOTER_STEPS[-1], "fit": False}, CLOCK_FLOOR)
+
+
+def _in_rounded_box(px, py, x0, y0, x1, y1, r):
+    if px < x0 or px > x1 or py < y0 or py > y1:
+        return False
+    cx = x0 + r if px < x0 + r else (x1 - r if px > x1 - r else px)
+    cy = y0 + r if py < y0 + r else (y1 - r if py > y1 - r else py)
+    return (px - cx) ** 2 + (py - cy) ** 2 <= r * r
+
+
+def draw_footer_marks(img, plan, pos, *, has_sub, sub, page_lock, item_lock):
+    """The CrowPanel's footer marks, drawn into a page picture (logical, 8-bit): the page pill,
+    or the item pill in sub-page mode, highlighted; a padlock after the page pill when the page
+    is locked, and before the item pill (or at the right edge) when the item is. Pixel for pixel
+    what the firmware draws over its frames (epf_core.h draw_overlays), from the same plan, for a
+    screen the add-on draws whole (a Kindle)."""
+    px = img.load()
+    w, h = img.size
+
+    def pixel(x, y, mode):                         # 0 black, 1 white, 2 invert
+        if 0 <= x < w and 0 <= y < h:
+            px[x, y] = 255 - px[x, y] if mode == 2 else (WHITE if mode == 1 else BLACK)
+
+    def invert_pill(x0, y0, x1, y1):
+        for y in range(y0, y1 + 1):
+            for x in range(x0, x1 + 1):
+                if _in_rounded_box(x, y, x0, y0, x1, y1, 4):
+                    pixel(x, y, 2)
+
+    def padlock(bx, by):                           # 22 x 20: dark badge, white padlock
+        bw, bh = LOCK_W, 20
+        cx, cy = bx + bw // 2, by + bh // 2
+        for y in range(by, by + bh):
+            for x in range(bx, bx + bw):
+                if not _in_rounded_box(x, y, bx, by, bx + bw - 1, by + bh - 1, 4):
+                    continue
+                dx, dy = x - cx, y - cy
+                shackle = -6 <= dy <= -2 and ((-4 <= dx <= 3) if dy <= -4 else (-5 <= dx <= -3 or 2 <= dx <= 4))
+                body = -1 <= dy <= 6 and -6 <= dx <= 5
+                keyhole = (1 <= dy <= 2 and -1 <= dx <= 0) or (3 <= dy <= 4 and dx == 0)
+                pixel(x, y, 1 if (shackle or body) and not keyhole else 0)
+
+    y0, y1 = plan["pill_y0"], plan["pill_y1"]
+    pages = plan.get("pages") or []
+    cat_w = pages[pos]["w"] if 0 <= pos < len(pages) else 0
+    cat_x0 = plan["cat_x0"]
+    cat_x1 = cat_x0 + cat_w
+    if sub and has_sub:
+        invert_pill(plan["sub_x0"], y0, plan["sub_x1"], y1)
+    elif cat_w > 0:
+        invert_pill(cat_x0, y0, cat_x1, y1)
+    if page_lock and cat_w > 0:
+        padlock(cat_x1 + LOCK_GAP, y0 + 2)
+    if item_lock:
+        padlock((plan["sub_x0"] - LOCK_GAP - LOCK_W) if has_sub else (plan["sub_x1"] - LOCK_W), y0 + 2)
 
 
 def item_label(plan, item, items):

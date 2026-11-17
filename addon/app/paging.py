@@ -60,8 +60,43 @@ def sleep_key(text: str) -> str:
     return f"\x00sleep:{text}"
 
 
-def page_key(name: str, item: int) -> str:
-    return f"{name}#{item}"
+def page_key(name: str, item: int, marks: str = "") -> str:
+    """A picture's key: the page, its item, and the footer marks drawn on it (`marks_key`)."""
+    return f"{name}#{item}" + (f"|{marks}" if marks else "")
+
+
+def _page_of(key: str) -> tuple[str, int]:
+    name, _, item = key.split("|", 1)[0].rpartition("#")
+    return name, int(item)
+
+
+# ---------------------------------------------------------------- moving by hand (a Kindle's buttons)
+#
+# The CrowPanel's way, for a screen the add-on pages (epf_core.h: MODE_TOGGLE, LOCK_TOGGLE):
+# the buttons move between pages, or (sub-page mode, on a page with several items) between
+# that page's items. A lock is the page's in page mode (it keeps rotating through its own
+# items) or the item's in sub-page mode (it stays put). Kept in the cursor ("mode", "lock").
+ACTIONS = ("next", "back", "refresh", "mode", "lock")
+
+
+def marks(dev: dict, plans: list[dict], pos: int) -> dict | None:
+    """The footer's marks for the picture of page `pos`, as the CrowPanel draws them
+    (theme.draw_footer_marks): which pill is highlighted, and the padlocks. None for a
+    screen without page buttons (its display doesn't `navigate`)."""
+    if not T.get_display(dev.get("display")).get("navigates"):
+        return None
+    cursor = devices.state(dev["id"]).get("cursor") or {}
+    here_pos = here(plans, cursor)[0] if plans else 0
+    on_it = pos == here_pos
+    lock = cursor.get("lock")
+    return {"sub": on_it and cursor.get("mode") == "items" and max(1, plans[pos]["want"]) > 1,
+            "page_lock": lock == "page", "item_lock": lock == "item" and on_it}
+
+
+def marks_key(m: dict | None) -> str:
+    if not m:
+        return ""
+    return ("s" if m["sub"] else "p") + ("L" if m["page_lock"] else "") + ("l" if m["item_lock"] else "")
 
 
 # ---------------------------------------------------------------- its timers
@@ -164,7 +199,7 @@ async def draw_ahead(dev: dict, spec: dict, st, quiet: bool, reason: str, art: A
     if not st.live or not plans:
         await keep(EMPTY_KEY, lambda: steady(dev, EMPTY_KEY, now, lambda clock: art.empty(dev, spec, clock)))
     for pos, item in reachable(plans, devices.state(dev["id"]).get("cursor") or {}, steps_ahead(dev)):
-        key = page_key(plans[pos]["name"], item)
+        key = page_key(plans[pos]["name"], item, marks_key(marks(dev, plans, pos)))
         if key in pictures:
             continue                                  # a page twice in the rotation is one picture
         await keep(key, lambda pos=pos, item=item, key=key: steady(
@@ -344,10 +379,14 @@ class Wake:
     stay: bool = False
 
 
-def _choose(dev: dict, ahead: Ahead, now: datetime, person: bool, back: bool = False) -> str | None:
-    """Which picture this wake shows (None: keep what it shows). Moves the cursor: a person
-    to the next page (or the previous, `back`); a timer once the page has been shown at N
-    wakes (Rotate every), counted in the cursor."""
+def _choose(dev: dict, ahead: Ahead, now: datetime, person: bool, action: str | None = None) -> str | None:
+    """Which picture this wake shows (None: keep what it shows), and the cursor's move.
+
+    A timer wake moves through every item of every page, once the page has been shown at N
+    wakes (Rotate every); a page lock keeps it on its page's items, an item lock where it is.
+    A person's `action` (default "next"): "next" and "back" go to the next or previous page,
+    or item in sub-page mode; "refresh" shows where it is again; "mode" switches between pages
+    and the page's items; "lock" locks the page, or the item in sub-page mode, or unlocks."""
     qh = _qh(ahead.spec)
     quiet, reason = quiet_now(ahead, now)
     alert = bool(ahead.st.alert) and (not quiet or qh.get("allow_alerts", True))
@@ -358,17 +397,54 @@ def _choose(dev: dict, ahead: Ahead, now: datetime, person: bool, back: bool = F
     plans = _plans(ahead.spec, ahead.st)
     if not ahead.st.live or not plans:
         return EMPTY_KEY
-    cursor = devices.state(dev["id"]).get("cursor") or {}
+    cursor = dict(devices.state(dev["id"]).get("cursor") or {})
     shown = int(cursor.get("shown") or 0) if cursor else 0
-    if person or shown >= rotate_updates(dev):
-        pos, item = step(plans, cursor, by_page=person, back=person and back)
+    mode, lock = cursor.get("mode") or "pages", cursor.get("lock")
+    pos, item = here(plans, cursor)
+    if (cursor.get("name") and plans[pos]["name"] != cursor.get("name")):
+        mode, lock = "pages", None                    # its page has gone: a lock on it goes too
+    want = max(1, plans[pos]["want"])
+    action = (action or "next") if person else None
+    if action == "refresh":
+        shown = max(1, shown)                         # where it is: the count isn't touched
+    elif action == "mode":
+        mode = "items" if mode == "pages" and want > 1 else "pages"
+        shown = max(1, shown)
+    elif action == "lock":
+        if mode == "items":
+            lock = None if lock == "item" else "item"
+        else:
+            lock = None if lock == "page" else "page"
+        shown = max(1, shown)
+    elif action in ("next", "back"):
+        delta = 1 if action == "next" else -1
+        if mode == "items" and want > 1:
+            item = (item + delta) % want
+        else:
+            pos, item = step(plans, cursor, by_page=True, back=delta < 0)
+            mode = "pages"
+        shown = 1
+    elif lock == "item":
+        shown += 1                                    # locked here
+    elif shown >= rotate_updates(dev):
+        if lock == "page" and want > 1:
+            item = (item + 1) % want                  # round its own items
+        elif lock != "page":
+            pos, item = step(plans, cursor, by_page=False)
+            if pos != here(plans, cursor)[0]:
+                mode = "pages"                        # sub-page mode belongs to its page
         shown = 1
     else:
-        pos, item = here(plans, cursor)               # the same page, drawn fresh
-        shown += 1
+        shown += 1                                    # the same page, drawn fresh
     plan = plans[pos]
-    devices.set_state(dev["id"], cursor={"pos": pos, "name": plan["name"], "item": item, "shown": shown})
-    return page_key(plan["name"], min(item, max(1, plan["want"]) - 1))
+    cursor = {"pos": pos, "name": plan["name"], "item": item, "shown": shown}
+    if mode == "items":
+        cursor["mode"] = "items"
+    if lock:
+        cursor["lock"] = lock
+    devices.set_state(dev["id"], cursor=cursor)
+    item = min(item, max(1, plan["want"]) - 1)
+    return page_key(plan["name"], item, marks_key(marks(dev, plans, pos)))
 
 
 async def _draw_now(dev: dict, ahead: Ahead, key: str, now: datetime, art: Art, why: str) -> bytes | None:
@@ -386,11 +462,11 @@ async def _drawn_now(dev: dict, ahead: Ahead, key: str, now: datetime, art: Art)
     if key.startswith("\x00sleep:"):
         return await art.sleep(dev, spec, key[len("\x00sleep:"):])
     plans = _plans(spec, st)
-    name, _, item = key.rpartition("#")
+    name, item = _page_of(key)
     pos = next((i for i, p in enumerate(plans) if p["name"] == name), None)
     if pos is None:
         return None
-    return await steady(dev, key, now, lambda clock: art.page(dev, spec, st, plans, pos, int(item), clock))
+    return await steady(dev, key, now, lambda clock: art.page(dev, spec, st, plans, pos, item, clock))
 
 
 def awake_seconds(dev: dict, person: bool) -> int:
@@ -436,9 +512,10 @@ def timing(dev: dict, *, person: bool, now: datetime | None = None) -> Wake:
     return Wake(None, sleep_seconds(dev, ahead, now, person), awake)
 
 
-async def wake(dev: dict, *, person: bool, art: Art, now: datetime | None = None, back: bool = False) -> Wake:
+async def wake(dev: dict, *, person: bool, art: Art, now: datetime | None = None,
+               action: str | None = None) -> Wake:
     """One wake: pick the picture from what the cycle drew, and say how long to sleep. A person's
-    wake goes to the next page, or with `back` to the previous one."""
+    wake does `action` (`ACTIONS`; the next page when not said)."""
     now = now or datetime.now().astimezone()
     ahead = ahead_of(dev)
     awake = awake_seconds(dev, person)
@@ -446,7 +523,7 @@ async def wake(dev: dict, *, person: bool, art: Art, now: datetime | None = None
         return Wake(None, FIRST_RENDER_SECONDS, awake, stay=always_on(dev))   # just started: nothing rendered yet
     sleep_for = sleep_seconds(dev, ahead, now, person)
     stay = always_on(dev)
-    key = _choose(dev, ahead, now, person, back)
+    key = _choose(dev, ahead, now, person, action)
     rt = runtime.device(dev["id"]).kind
     if key is None:
         return Wake(rt.get("last"), sleep_for, awake, stay=stay)

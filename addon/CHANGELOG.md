@@ -1,5 +1,35 @@
 # Changelog
 
+## Unreleased
+
+- **A Kindle's buttons work like a CrowPanel's.** The page buttons (and the
+  5-way's left and right) go back and forward; the 5-way's middle switches
+  between pages and a page's sub-pages; Menu locks the page, or the
+  sub-page, or unlocks; Home fetches the page on screen again; Back gives
+  you the Kindle. Its footer shows the mode and the lock as a CrowPanel's
+  does: the pill highlighted, a padlock beside what's locked. Sliding the
+  power switch wakes it to its page, and every button then answers until a
+  minute after your last press.
+- **A Kindle gives itself back properly.** Press Back and you get the
+  Kindle at once, even while it's still trying Wi-Fi or fetching a page,
+  with its Wi-Fi as it was (before, it could be left with no networks to
+  join). When you're done and it goes to sleep, your pages come back by
+  themselves: no restart needed. Anything it shows full screen says how to
+  get the Kindle: slide the power switch, then press Back.
+- **A Kindle's messages are no longer cut short.** Its built-in font has no
+  apostrophe (and a few other characters), and it dropped the rest of a
+  line at the first one ("This Kindle isn"). Messages now spell
+  contractions out and leave such characters out.
+- **A Kindle whose key is refused asks to pair again at once**, in the same
+  wake, so an open pairing window isn't missed (before, it waited for its
+  next try, up to 30 minutes).
+- **A Kindle is told Home Assistant's IP address**, from Home Assistant's
+  own network settings, so its address file works on networks that don't
+  answer `homeassistant.local`. A Kindle can't look such names up itself.
+  For a Kindle set up with 0.24: download its installer and Address file
+  again (Settings › Device › Pair), copy both to it, and run Update Your
+  Kindle. (None of this changes the panels' firmware.)
+
 ## 0.24.1
 The add-on moves to Python 3.14. No firmware change and no Home Assistant
 restart: updating the add-on is enough, though it takes a little longer this

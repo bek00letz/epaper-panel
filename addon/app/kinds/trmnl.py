@@ -9,8 +9,8 @@ src/display_session.cpp, lib/trmnl/src/parse_response_api_*.cpp):
                      "status": 404 says it isn't known, and it shows "message".
   GET  /api/display  ID, Access-Token (its key), Refresh-Rate, Battery-Voltage,
                      RSSI, Width, Height, Model, FW-Version, Update-Source
-                     ("timer", "button", ...; "back" is ours, from a Kindle: the
-                     previous page), Image-Cached. The answer says
+                     ("timer", "button", ...; "back", "refresh", "mode" and "lock"
+                     are ours, a Kindle's buttons: paging.ACTIONS), Image-Cached. The answer says
                      which picture (image_url, filename) and how long to sleep
                      (refresh_rate). "status" 0 is the only one we send: 202
                      makes it poll every 5 s, 500 wipes its Wi-Fi.
@@ -167,6 +167,12 @@ class _Art(paging.Art):
         imgs = await frames.draw_category(plan, count, pos, footer=fg, page_def=spec["pages"][plan["name"]],
                                           orient=orient, display=display, only=min(item, count - 1),
                                           today=await frames.date_for_time(kind_of(dev).sleeps(dev)))
+        m = paging.marks(dev, plans, pos)
+        if m:                                       # a screen with page buttons: the CrowPanel's marks
+            img = T.orient_for_panel(imgs[0], orient, display=display, back=True).convert("L")
+            T.draw_footer_marks(img, fg, pos, has_sub=count > 1, sub=m["sub"], page_lock=m["page_lock"],
+                                item_lock=m["item_lock"])
+            return frames._png(T.orient_for_panel(T.for_screen(img, display), orient, display=display))
         return frames._png(imgs[0])
 
     async def sleep(self, dev, spec, text) -> bytes:
@@ -398,9 +404,11 @@ async def api_display(request):
     await _publish(dev, rep, seen)
 
     try:
-        # "back" is ours (a Kindle's previous-page buttons): the previous page. Anything else a person did, the next.
-        got = await paging.wake(dev, person=rep["source"] not in ("timer", ""), art=ART, now=now,
-                                back=rep["source"] == "back")
+        # "back", "refresh", "mode" and "lock" are ours, a Kindle's buttons (paging.ACTIONS); anything
+        # else a person did (a TRMNL's "button", "powercycle", ...) is the next page.
+        source = rep["source"]
+        got = await paging.wake(dev, person=source not in ("timer", ""), art=ART, now=now,
+                                action=source if source in paging.ACTIONS else "next")
         png, sleep_for, stay = got.picture, got.sleep, got.stay
     except Exception as exc:
         # Nothing new to show: it keeps its picture and asks again at its next wake.
