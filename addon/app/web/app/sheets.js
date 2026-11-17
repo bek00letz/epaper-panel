@@ -360,7 +360,7 @@ export function openPairing(app, id, listen = true) {
         app.loadScreens(id).catch(() => {});
         body.replaceChildren(h("div", { class: "pairdone" }, icon("check"), h("h3", { text: `${scr().name} is paired` }),
           h("p", { class: "fnote", text: kindle
-            ? `It shows your pages from now on, updating every ${span(info.update_minutes || 15)}. Slide its power switch for the next page. Home gives you the Kindle back; your pages return when it goes to sleep.`
+            ? `It shows your pages from now on, updating every ${span(info.update_minutes || 15)}. Slide its power switch to wake it; its buttons work as on a CrowPanel. Back gives you the Kindle; your pages return when it goes to sleep.`
             : `It shows your pages from now on, updating every ${span(info.update_minutes || 15)}. On its own screen it calls itself ${info.friendly_id}.` })));
         foot.append(h("button", { class: "btn primary", onclick: () => close() }, "Done"));
         return;
@@ -767,7 +767,7 @@ function timersBox(app, scr, redraw) {
     } }, stay.asked || stay.until ? "Cancel" : "Stay awake")));
   }
   // A Kindle's button is its power switch: a sleeping Kindle 4 wakes for nothing else (client/kindle).
-  const button = scr.family === "kindle" ? "Slide its power switch for the next page." : "Its button shows the next page.";
+  const button = scr.family === "kindle" ? "Slide its power switch to wake it; then its buttons work for a minute." : "Its button shows the next page.";
   box.append(group(...rows), h("p", { class: "fnote", text: t.always_on
     ? (pairs ? "Its buttons answer at once, and new pages and alerts show within a minute. On a battery, choose 2 minutes or more and it sleeps in between."
       : "Buttons and alerts answer at once, and Home Assistant can wake it. On a battery, choose 2 minutes or more and it sleeps in between.")

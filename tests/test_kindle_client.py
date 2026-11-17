@@ -253,7 +253,7 @@ class TestWhenThingsGoWrong(KindleClientBase):
         words = self.kindle.screen_text(self.kindle.took_calls())
         self.assertIn("add this screen as a device", words)
         self.assertIn("Trying again in 30 minutes.", words)
-        self.assertIn("slide the power switch, then press Home", words, "every card says how to get the Kindle")
+        self.assertIn("slide the power switch, then press Back", words, "every card says how to get the Kindle")
         self.assertEqual(self.kindle.get("key"), "")
 
     async def test_home_assistant_unreachable_keeps_the_page_and_says_so(self):
@@ -379,16 +379,19 @@ class TestKeysAndSleep(unittest.TestCase):
             (self.kindle.state / "key_at").unlink(missing_ok=True)
             self.assertEqual(self.wake_after([(0, code)]), "WAKE=back", code)
 
-    def test_the_5_way_middle_refreshes(self):
-        self.assertEqual(self.wake_after([(0, 194)]), "WAKE=refresh")
+    def test_the_crowpanels_buttons(self):
+        """5-way middle: pages <-> sub-pages; Menu: the lock; Home: refresh (paging.ACTIONS)."""
+        for code, wake in ((194, "mode"), (139, "lock"), (102, "refresh")):
+            (self.kindle.state / "key_at").unlink(missing_ok=True)
+            self.assertEqual(self.wake_after([(0, code)]), f"WAKE={wake}", code)
 
-    def test_home_gives_the_kindle_back_at_once(self):
-        """Home is handled by the key reader the moment it's read, whatever the loop is doing:
+    def test_back_gives_the_kindle_back_at_once(self):
+        """Back is handled by the key reader the moment it's read, whatever the loop is doing:
         the loop is stopped and the Kindle handed back."""
         ev = lambda t, c, v: struct.pack("<IIHHi", 1794859586, 706672, t, c, v)
         dev = self.kindle.sys / "dev/input/event0"
         dev.parent.mkdir(parents=True, exist_ok=True)
-        dev.write_bytes(ev(4, 4, 3) + ev(1, 102, 1) + ev(0, 0, 0))
+        dev.write_bytes(ev(4, 4, 3) + ev(1, 158, 1) + ev(0, 0, 0))
         busy = subprocess.Popen(["sleep", "30"])                # the loop, waiting for Wi-Fi say
         try:
             (self.kindle.state / "run.pid").write_text(str(busy.pid))
@@ -400,17 +403,17 @@ class TestKeysAndSleep(unittest.TestCase):
         self.assertIn("framework start", calls)
         self.assertIn("lipc-wait-event com.lab126.powerd goingToScreenSaver", calls)
         self.assertTrue((self.kindle.state / "handed_back").exists())
-        self.assertNotIn("102", self.kindle.get("keys"), "the loop never sees it")
+        self.assertNotIn("158", self.kindle.get("keys"), "the loop never sees it")
 
     def test_other_keys_and_a_bounce_are_ignored(self):
-        for code in (139, 158, 29, 103, 108):           # Menu, Back, Keyboard, 5-way up and down
+        for code in (29, 103, 108):                     # Keyboard, 5-way up and down
             (self.kindle.state / "key_at").unlink(missing_ok=True)
             self.assertEqual(self.wake_after([(0, code)]), "WAKE=timer", code)
         self.kindle.shell('state_put key_at "$(now_s)"')
         self.assertEqual(self.wake_after([(0, 104)]), "WAKE=timer", "the same press bouncing")
 
-    def test_the_power_switch_waking_it_early_is_a_press(self):
-        self.assertEqual(self.wake_after([], deadline=100, extra="suspend_for() { return 0; };"), "WAKE=button")
+    def test_the_power_switch_wakes_it_to_its_page_fresh(self):
+        self.assertEqual(self.wake_after([], deadline=100, extra="suspend_for() { return 0; };"), "WAKE=refresh")
 
     def test_it_stays_awake_after_a_press_then_sleeps(self):
         r = self.kindle.shell('suspend_for() { echo "suspend at $(now_s)"; return 1; }; start=$(now_s); '

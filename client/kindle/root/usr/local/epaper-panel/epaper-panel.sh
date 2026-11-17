@@ -8,8 +8,8 @@
 #
 #   pairing  GET /api/setup    ID (its Wi-Fi MAC), Model, FW-Version
 #   a wake   GET /api/display  ID, Access-Token, battery, Wi-Fi, size, Update-Source
-#            (timer, button, powercycle, and ours: back for the previous page,
-#            refresh for the page on screen), ...
+#            (timer, button, powercycle, and ours: back, mode, lock, refresh:
+#            the add-on's paging.ACTIONS), ...
 #            then the picture it names, drawn with the Kindle's own eips,
 #            then sleep for refresh_rate seconds on the clock's alarm.
 #
@@ -38,12 +38,15 @@ SHORTEST_AWAKE=5                        # always on, it asks as often as its pag
 LONGEST=86400
 DEFAULT_REFRESH=900
 WIFI_WAIT=45                            # seconds for Wi-Fi to join before giving up this wake
-# Measured on a Kindle 4 (client/kindle/README.md), as the CrowPanel's NEXT and PRV:
-NEXT_KEYS=" 104 191 106 "               # next page (left, right side), 5-way right
-BACK_KEYS=" 193 109 105 "               # previous page (left, right side), 5-way left
-REFRESH_KEYS=" 194 "                    # 5-way middle: the page on screen, fetched and redrawn now
-HOME_KEY=102                            # Home: the Kindle back, until it goes to sleep
-WAY_OUT="To use the Kindle, slide the power switch, then press Home."
+# Measured on a Kindle 4 (client/kindle/README.md). What each does is the add-on's (paging.ACTIONS),
+# as a CrowPanel's buttons: next and previous move a page, or a sub-page in sub-page mode.
+NEXT_KEYS=" 104 191 106 "               # next (left, right side), 5-way right
+BACK_KEYS=" 193 109 105 "               # previous (left, right side), 5-way left
+MODE_KEYS=" 194 "                       # 5-way middle: pages <-> the page's sub-pages
+LOCK_KEYS=" 139 "                       # Menu: lock the page (or the sub-page), or unlock
+REFRESH_KEYS=" 102 "                    # Home: the page on screen, fetched and redrawn now
+GIVE_BACK_KEY=158                       # Back: the Kindle back, until it goes to sleep
+WAY_OUT="To use the Kindle, slide the power switch, then press Back."
 AWAKE_AFTER_PRESS=60                    # seconds it stays awake after a press, for the next one
 BLANK="                                                  "   # a row of the Kindle's font: 50 columns
 
@@ -274,17 +277,17 @@ take_over() {
     sleep 2
 }
 
-# Home, from the key reader: whatever the loop is doing (asleep between tries,
+# Back, from the key reader: whatever the loop is doing (asleep between tries,
 # waiting for Wi-Fi, fetching), it stops, and the Kindle is handed back at once.
-# So "slide the power switch, then Home" always gets the Kindle within seconds.
-home_now() {
+# So "slide the power switch, then Back" always gets the Kindle within seconds.
+give_back_now() {
     [ -f "$EPP_STATE/handed_back" ] && return 0
     p=$(state_get run.pid)
     [ -n "$p" ] && kill "$p" 2>/dev/null
     hand_back
 }
 
-# Home: the Kindle as it was, until it goes to sleep (the power switch, or
+# Back: the Kindle as it was, until it goes to sleep (the power switch, or
 # dozing off on its own): then the pages come back instead of its screensaver.
 hand_back() {
     log "handing the Kindle back, until it goes to sleep"
@@ -309,9 +312,10 @@ back_when_asleep() {
 # Until `awake` (optional, seconds since 1970) it stays awake instead, so the
 # page-turn buttons answer: they can't wake a sleeping Kindle 4; only its power
 # switch can (measured). WAKE says why it returned: "timer" (the time is up),
-# "button" (next page: a button, or the power switch), "back" (previous page),
-# "refresh" (the page on screen, now). Home never gets here: the key reader
-# hands the Kindle back itself (home_now).
+# "button" (next), "back" (previous), "mode", "lock" or "refresh" (a button: the
+# add-on's action), and "refresh" for the power switch too: it wakes the Kindle
+# to the page it's on, fresh, and the buttons answer for a minute. Back never
+# gets here: the key reader hands the Kindle back itself (give_back_now).
 sleep_until() {
     deadline=$1; awake=${2:-0}; WAKE=timer
     while :; do
@@ -319,16 +323,20 @@ sleep_until() {
         left=$(( deadline - now ))
         key=$(take_key)
         if [ -n "$key" ]; then
-            case "$BACK_KEYS" in *" $key "*) WAKE=back ;; *) WAKE=button ;; esac
+            WAKE=button
+            case "$BACK_KEYS" in *" $key "*) WAKE=back ;; esac
+            case "$MODE_KEYS" in *" $key "*) WAKE=mode ;; esac
+            case "$LOCK_KEYS" in *" $key "*) WAKE=lock ;; esac
             case "$REFRESH_KEYS" in *" $key "*) WAKE=refresh ;; esac
             return 0
         fi
         [ "$left" -le 0 ] && return 0
         if [ "$now" -ge "$awake" ] && [ "$left" -gt 20 ] && suspend_for $(( left - 5 )); then
-            # Woken early with no key on record: the power switch. It means "show
-            # me something now", like a TRMNL's button.
+            # Woken early with no key on record: the power switch. The page it's on,
+            # fresh, and then the buttons answer (the user's call: a sleeping Kindle 4
+            # wakes for nothing else).
             if [ $(( deadline - $(now_s) )) -gt 15 ] && [ -z "$(peek_key)" ]; then
-                WAKE=button; return 0
+                WAKE=refresh; return 0
             fi
             continue
         fi
@@ -374,8 +382,8 @@ start_keys() {
                 # struct input_event: time (4 halves), type, code, value (2 halves)
                 set -- $rec
                 [ "$5" = 1 ] && [ "$7" = 1 ] || continue
-                # Home, the moment it's pressed: not when the loop next looks.
-                [ "$6" = "$HOME_KEY" ] && { home_now & exit 0; }
+                # Back, the moment it's pressed: not when the loop next looks.
+                [ "$6" = "$GIVE_BACK_KEY" ] && { give_back_now & exit 0; }
                 echo "$(now_s) $6" >> "$EPP_STATE/keys"
             done
         ) &
@@ -402,7 +410,7 @@ take_key() {
     before=$(state_get key_at)
     state_put key_at "$at"
     [ -n "$before" ] && [ $(( at - before )) -le 1 ] && return 0
-    case "$NEXT_KEYS$BACK_KEYS$REFRESH_KEYS" in *" $code "*) echo "$code"; return 0 ;; esac
+    case "$NEXT_KEYS$BACK_KEYS$MODE_KEYS$LOCK_KEYS$REFRESH_KEYS" in *" $code "*) echo "$code"; return 0 ;; esac
     return 0
 }
 
@@ -607,7 +615,7 @@ wake_once() {
             fi
         fi
     else
-        FAILED="No Wi-Fi. To join your network, slide the power switch, press Home, then Menu, Settings, Wi-Fi Networks."
+        FAILED="No Wi-Fi. To join your network, slide the power switch, press Back, then Menu, Settings, Wi-Fi Networks."
     fi
     [ "$(state_get stay)" = true ] || wifi_down
     if [ "$ok" -eq 0 ]; then
@@ -642,13 +650,12 @@ run() {
         wake_once
         until=$(( $(now_s) + ${NEXT:-$DEFAULT_REFRESH} ))
         awake=0
-        case "$SOURCE" in button|back|refresh) awake=$(( $(now_s) + AWAKE_AFTER_PRESS )) ;; esac
+        case "$SOURCE" in button|back|mode|lock|refresh) awake=$(( $(now_s) + AWAKE_AFTER_PRESS )) ;; esac
         [ "$(state_get stay)" = true ] && awake=$until        # always on: never suspends
         sleep_until "$until" "$awake"
         case "$WAKE" in
             button) SOURCE=button ;;
-            back) SOURCE=back ;;                   # ours: the add-on goes to the previous page
-            refresh) SOURCE=refresh ;;             # ours: the page on screen, fetched now
+            back|mode|lock|refresh) SOURCE=$WAKE ;;   # ours: the add-on's actions
             *) SOURCE=timer ;;
         esac
     done
