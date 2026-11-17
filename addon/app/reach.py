@@ -157,9 +157,31 @@ HOME_FALLBACK = "homeassistant.local"
 HOST_RE = re.compile(r"[A-Za-z0-9.-]{1,253}|\[[0-9A-Fa-f:.]+\]")
 
 
-async def home_ip(session: aiohttp.ClientSession | None) -> str:
-    """Home Assistant's IPv4 address on the home network (the Supervisor's primary interface),
-    or "": for a screen that can't look up a `.local` name (a Kindle: hosts file and DNS only)."""
+IPV4 = re.compile(r"(\d{1,3}\.){3}\d{1,3}")
+
+
+def _usable(ip: str) -> bool:
+    return bool(IPV4.fullmatch(ip)) and not ip.startswith(("127.", "169.254.", "172.30."))
+
+
+async def home_ip(hass, session: aiohttp.ClientSession | None) -> str:
+    """Home Assistant's IPv4 address on the home network, or "": for a screen that can't look up a
+    `.local` name (a Kindle: hosts file and DNS only). Home Assistant's own network settings first
+    (its `network` websocket command: the default adapter's address, no Supervisor rights needed),
+    else the Supervisor's primary interface."""
+    try:
+        if getattr(hass, "available", True):
+            got = await hass.ws({"type": "network"})
+            adapters = sorted((got or {}).get("adapters") or [], key=lambda a: not a.get("default"))
+            for adapter in adapters:
+                if adapter.get("enabled") is False:
+                    continue
+                for addr in adapter.get("ipv4") or []:
+                    ip = str((addr or {}).get("address") or "")
+                    if _usable(ip):
+                        return ip
+    except Exception as exc:
+        print(f"reach: couldn't ask Home Assistant for its address: {health.describe(exc)}", flush=True)
     if not config.HA_TOKEN or session is None:
         return ""
     try:
@@ -174,7 +196,7 @@ async def home_ip(session: aiohttp.ClientSession | None) -> str:
     for iface in sorted(interfaces, key=lambda i: not i.get("primary")):
         for addr in ((iface.get("ipv4") or {}).get("address") or []):
             ip = str(addr).split("/", 1)[0]
-            if re.fullmatch(r"(\d{1,3}\.){3}\d{1,3}", ip) and not ip.startswith(("127.", "169.254.", "172.30.")):
+            if _usable(ip):
                 return ip
     return ""
 

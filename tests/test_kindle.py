@@ -227,10 +227,24 @@ class TestHomeIp(unittest.IsolatedAsyncioTestCase):
         body = {"data": {"interfaces": [
             {"primary": False, "ipv4": {"address": ["172.30.32.1/23"]}},
             {"primary": True, "ipv4": {"address": ["192.168.50.5/24"]}}]}}
+        class NoHass:
+            available = False
+
         with mock.patch.object(reach.config, "HA_TOKEN", "t"):
-            self.assertEqual(await reach.home_ip(Session(body)), "192.168.50.5")
-            self.assertEqual(await reach.home_ip(Session({"data": {"interfaces": []}})), "")
-        self.assertEqual(await reach.home_ip(Session(body)), "", "not under the Supervisor: nothing to ask")
+            self.assertEqual(await reach.home_ip(NoHass(), Session(body)), "192.168.50.5")
+            self.assertEqual(await reach.home_ip(NoHass(), Session({"data": {"interfaces": []}})), "")
+        self.assertEqual(await reach.home_ip(NoHass(), Session(body)), "", "not under the Supervisor: nothing to ask")
+
+    async def test_home_assistants_own_network_settings_first(self):
+        """No Supervisor rights needed (the add-on has none): Home Assistant's `network` command."""
+        class Hass:
+            available = True
+            async def ws(self, payload):
+                assert payload == {"type": "network"}
+                return {"adapters": [
+                    {"name": "docker0", "enabled": True, "default": False, "ipv4": [{"address": "172.30.32.1"}]},
+                    {"name": "end0", "enabled": True, "default": True, "ipv4": [{"address": "192.168.50.5"}]}]}
+        self.assertEqual(await reach.home_ip(Hass(), None), "192.168.50.5")
 
 
 class TestAlwaysOn(KindleBase):
