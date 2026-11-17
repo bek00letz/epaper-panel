@@ -79,7 +79,9 @@ tools.
 - Linux 2.6.31, **BusyBox 1.7.2**. Its `timeout` segfaults, and so do `evtest`
   and `waitforkey`. There's no `od` and no `rtcwake`. `curl` 7.21.4 (OpenSSL
   0.9.8, too old for today's HTTPS), `awk`, `hexdump` and `dd` are there.
-- **Screen:** 600 × 800, 8-bit grey framebuffer, 91 × 121 mm. `eips -f -g`
+- **Screen:** 600 × 800, 8-bit grey framebuffer, 91 × 121 mm. Its own text font
+  (`eips col row text`) lacks `! # $ % ' ; \ ^ \` { }`, and eips drops the rest of a line
+  at the first one: everything on screen goes through `screen_safe`. `eips -f -g`
   draws an 8-bit grey PNG, and all 16 grey levels show cleanly.
 - **Sleep:** write the seconds to `/sys/devices/platform/mxc_rtc.0/wakeup_enable`,
   then `mem` to `/sys/power/state`. It sleeps for real (about a second awake

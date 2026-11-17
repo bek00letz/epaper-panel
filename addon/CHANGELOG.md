@@ -8,6 +8,10 @@
   join). When you're done and it goes to sleep, your pages come back by
   themselves: no restart needed. Anything it shows full screen says how to
   get the Kindle: slide the power switch, then press Home.
+- **A Kindle's messages are no longer cut short.** Its built-in font has no
+  apostrophe (and a few other characters), and it dropped the rest of a
+  line at the first one ("This Kindle isn"). Messages now spell
+  contractions out and leave such characters out.
 - **A Kindle whose key is refused asks to pair again at once**, in the same
   wake, so an open pairing window isn't missed (before, it waited for its
   next try, up to 30 minutes).

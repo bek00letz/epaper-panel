@@ -170,7 +170,7 @@ read_settings() {
 # Why an address can't be used, in plain words, or nothing when it can.
 server_problem() {
     case "$1" in
-        https://*) echo "This Kindle can't use https. In $EPP_SETTINGS_NAME, use the add-on's home address, starting with http://." ;;
+        https://*) echo "This Kindle can't use https. In $EPP_SETTINGS_NAME, use the address at home, starting with http://." ;;
         http://*) rest=${1#http://}
                   case "$rest" in
                       ''|*/*|*' '*) echo "The address in $EPP_SETTINGS_NAME isn't one this Kindle can use: $1" ;;
@@ -248,7 +248,19 @@ screen_clear() {
 
 # One line of text at a row of the Kindle's own font (50 columns by 40 rows).
 screen_text() {
-    eips "$1" "$2" "$3" >/dev/null 2>&1
+    eips "$1" "$2" "$(screen_safe "$3")" >/dev/null 2>&1
+}
+
+# Words the Kindle's own font can draw. It has every printable ASCII character
+# except ! # $ % ' ; \ ^ ` { } (measured on a Kindle 4), and eips drops the rest
+# of a line at the first one it lacks ("This Kindle isn" was all it showed of
+# "isn't paired"). So contractions are spelled out, the rest swapped for one it
+# has or left out, and anything outside ASCII dropped: our words and the add-on's.
+screen_safe() {
+    printf '%s' "$*" | sed -e "s/Can't/Cannot/g; s/can't/cannot/g; s/Won't/Will not/g; s/won't/will not/g" \
+        -e "s/n't/ not/g; s/'re/ are/g; s/'ll/ will/g; s/'ve/ have/g; s/I'm/I am/g; s/'//g" \
+        -e 's/%/ percent/g; s/!/./g; s/;/,/g; s/{/(/g; s/}/)/g' \
+        | tr '\\' '/' | tr -d '#$^`' | LC_ALL=C tr -cd ' -~'
 }
 
 # Take the screen over: the Kindle's own reader is stopped so it doesn't draw
@@ -399,7 +411,7 @@ take_key() {
 # A note over the bottom of whatever is showing: the last page stays.
 note() {
     log "note: $*"
-    printf '%s\n' "$*" | awk '{
+    screen_safe "$*" | awk '{
         n = split($0, w, " "); line = ""; out = 0
         for (i = 1; i <= n; i++) {
             if (length(line) + length(w[i]) + 1 > 48 && line != "") { print line; line = w[i]; out++ }
@@ -422,7 +434,7 @@ card() {
     log "card: $*"
     screen_clear
     row=6
-    printf '%s\n' "$@" "" "$WAY_OUT" | awk '{
+    for line in "$@" "" "$WAY_OUT"; do screen_safe "$line"; echo; done | awk '{
         if ($0 == "") { print ""; next }
         n = split($0, w, " "); line = ""
         for (i = 1; i <= n; i++) {
@@ -479,7 +491,7 @@ pair() {
         "ID: $mac" "Model: $(kindle_model)" "FW-Version: $(kindle_firmware)" "Content-Type: application/json")
     log "setup: HTTP $code"
     case "$code" in
-        000) FAILED="Can't reach Home Assistant at $SERVER. Check the address in $EPP_SETTINGS_NAME and that the Kindle's Wi-Fi is your home network."; return 1 ;;
+        000) FAILED="Can't reach Home Assistant at $SERVER. Check the address in $EPP_SETTINGS_NAME and that the Kindle is on your home Wi-Fi."; return 1 ;;
         200) ;;
         *) FAILED="Home Assistant answered with an error (HTTP $code)."; return 1 ;;
     esac
@@ -551,7 +563,7 @@ display() {
     # Its key goes only to its own server (as a TRMNL's firmware does).
     case "$url" in
         "$SERVER"/*) ;;
-        *) FAILED="The page's address isn't this Home Assistant's: $url"; return 1 ;;
+        *) FAILED="The page is at an address other than this Home Assistant: $url"; return 1 ;;
     esac
     code=$(http_get "$url" "$EPP_STATE/next.png" "ID: $(state_get mac)" "Access-Token: $key")
     if [ "$code" != 200 ] || ! png_fits "$EPP_STATE/next.png"; then

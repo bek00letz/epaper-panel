@@ -15,6 +15,7 @@ key, for the Kindle 4; and the script stays inside what BusyBox 1.7's ash runs.
 import asyncio
 import os
 import re
+import shlex
 import shutil
 import struct
 import subprocess
@@ -36,9 +37,22 @@ SCRIPT = CLIENT / "root" / "usr" / "local" / "epaper-panel" / "epaper-panel.sh"
 sys.path.insert(0, str(CLIENT))
 import build  # noqa: E402
 
+# The Kindle 4's eips font has every printable ASCII character but these (measured), and eips
+# gives up on a line at the first one it lacks.
+EIPS_MISSING = set("!#$%';\\^`{}")
+
 FAKES = {
-    # Each fake writes its name and arguments, one line, to $CALLS.
-    "eips": 'echo "eips $*" >> "$CALLS"',
+    # Each fake writes its name and arguments, one line, to $CALLS. eips is as strict as the real
+    # one: a line with a character its font lacks is written down as MISSING, and fails.
+    "eips": f"""#!{sys.executable}
+import os, sys
+args = sys.argv[1:]
+text = args[2] if len(args) == 3 and args[0].isdigit() else ""
+bad = [c for c in text if c in {"".join(sorted(EIPS_MISSING))!r} or not (32 <= ord(c) < 127)]
+with open(os.environ["CALLS"], "a") as f:
+    f.write(("eips MISSING " if bad else "eips ") + " ".join(args) + "\\n")
+sys.exit(1 if bad else 0)
+""",
     "lipc-set-prop": 'echo "lipc-set-prop $*" >> "$CALLS"',
     "lipc-get-prop": '''case "$2" in
   macAddress) echo "${FAKE_MAC:-e0:cb:1d:c1:b7:b6}" ;;
@@ -87,7 +101,7 @@ class Kindle:
 
     def fake(self, name, body):
         p = self.bin / name
-        p.write_text("#!/bin/sh\n" + body + "\n")
+        p.write_text(body if body.startswith("#!") else "#!/bin/sh\n" + body + "\n")
         p.chmod(0o755)
 
     def settings(self, server):
@@ -253,7 +267,7 @@ class TestWhenThingsGoWrong(KindleClientBase):
         self.assertEqual(said["NEXT"], "60")
         self.assertEqual(self.kindle.drew(calls), [], "what's on screen stays")
         self.assertNotIn("eips -c", calls, "no blank screen")
-        self.assertIn("Can't reach Home Assistant at http://127.0.0.1:9. Trying again in a minute.",
+        self.assertIn("Cannot reach Home Assistant at http://127.0.0.1:9. Trying again in a minute.",
                       self.kindle.screen_text(calls))
         self.assertEqual((self.kindle.state / "last.png").read_bytes(), page)
 
@@ -295,7 +309,7 @@ echo '{{"status": 0, "image_url": "http://elsewhere.example/x.png", "filename": 
 printf 200''')
         rc, said = await self.kindle.wake()
         self.assertEqual(rc, 1)
-        self.assertIn("isn't this Home Assistant's", said["FAILED"])
+        self.assertIn("other than this Home Assistant", said["FAILED"])
         self.assertNotIn("elsewhere.example", log.read_text())
 
     async def test_an_error_from_home_assistant(self):
@@ -339,7 +353,7 @@ class TestSetUp(unittest.TestCase):
         self.kindle.shell("SOURCE=timer; wake_once")
         calls = self.kindle.took_calls()
         self.assertFalse([c for c in calls if c.startswith("curl")])
-        self.assertIn("can't use https", self.kindle.screen_text(calls))
+        self.assertIn("cannot use https", self.kindle.screen_text(calls), "as the Kindle's font can draw it")
 
 
 class TestKeysAndSleep(unittest.TestCase):
@@ -473,6 +487,25 @@ class TestSmallParts(unittest.TestCase):
     def test_what_it_says_about_itself(self):
         self.assertEqual(self.out("kindle_model; kindle_firmware; kindle_size; kindle_battery_volts; echo; kindle_rssi; kindle_mac").splitlines(),
                          ["Kindle 4", "1.0.0 / Kindle 4.1.1", "600 800", "4.17", "-58", "E0:CB:1D:C1:B7:B6"])
+
+    def test_words_the_kindles_font_can_draw(self):
+        cases = {"This Kindle isn't paired any more.": "This Kindle is not paired any more.",
+                 "Can't reach it; 50% done!": "Cannot reach it, 50 percent done.",
+                 "a\\b {x} #1 $5 ^ `q`": "a/b (x) 1 5  q",
+                 "l\u2019appareil caf\u00e9": "lappareil caf"}
+        for given, shown in cases.items():
+            self.assertEqual(self.out(f"screen_safe {shlex.quote(given)}"), shown, given)
+
+    def test_no_message_is_cut_short_on_the_kindle(self):
+        """Every message the client can show goes through screen_safe: none hits a character the
+        Kindle's font lacks (where the real eips stops drawing the line)."""
+        script = SCRIPT.read_text()
+        messages = re.findall(r'FAILED="([^"]*)"', script) + re.findall(r'echo "(This Kindle[^"]*|The address[^"]*)"', script)
+        self.assertGreater(len(messages), 8)
+        for msg in messages:
+            self.kindle.shell(f"card {shlex.quote(msg)}; note {shlex.quote(msg)}")
+        calls = self.kindle.took_calls()
+        self.assertFalse([c for c in calls if c.startswith("eips MISSING")])
 
     def test_a_note_fits_the_kindles_font(self):
         self.kindle.shell('note "Can\'t reach Home Assistant at http://192.168.100.200:8099. Trying again in 10 minutes."')
