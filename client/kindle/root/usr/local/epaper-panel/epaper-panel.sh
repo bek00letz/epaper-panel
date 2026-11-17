@@ -42,7 +42,8 @@ WIFI_WAIT=45                            # seconds for Wi-Fi to join before givin
 NEXT_KEYS=" 104 191 106 "               # next page (left, right side), 5-way right
 BACK_KEYS=" 193 109 105 "               # previous page (left, right side), 5-way left
 REFRESH_KEYS=" 194 "                    # 5-way middle: the page on screen, fetched and redrawn now
-HOME_KEY=102                            # Home: the Kindle back, until the next restart
+HOME_KEY=102                            # Home: the Kindle back, until it goes to sleep
+WAY_OUT="To use the Kindle, slide the power switch, then press Home."
 AWAKE_AFTER_PRESS=60                    # seconds it stays awake after a press, for the next one
 BLANK="                                                  "   # a row of the Kindle's font: 50 columns
 
@@ -261,6 +262,16 @@ take_over() {
     sleep 2
 }
 
+# Home, from the key reader: whatever the loop is doing (asleep between tries,
+# waiting for Wi-Fi, fetching), it stops, and the Kindle is handed back at once.
+# So "slide the power switch, then Home" always gets the Kindle within seconds.
+home_now() {
+    [ -f "$EPP_STATE/handed_back" ] && return 0
+    p=$(state_get run.pid)
+    [ -n "$p" ] && kill "$p" 2>/dev/null
+    hand_back
+}
+
 # Home: the Kindle as it was, until it goes to sleep (the power switch, or
 # dozing off on its own): then the pages come back instead of its screensaver.
 hand_back() {
@@ -287,7 +298,8 @@ back_when_asleep() {
 # page-turn buttons answer: they can't wake a sleeping Kindle 4; only its power
 # switch can (measured). WAKE says why it returned: "timer" (the time is up),
 # "button" (next page: a button, or the power switch), "back" (previous page),
-# "refresh" (the page on screen, now), "home" (Home).
+# "refresh" (the page on screen, now). Home never gets here: the key reader
+# hands the Kindle back itself (home_now).
 sleep_until() {
     deadline=$1; awake=${2:-0}; WAKE=timer
     while :; do
@@ -297,7 +309,6 @@ sleep_until() {
         if [ -n "$key" ]; then
             case "$BACK_KEYS" in *" $key "*) WAKE=back ;; *) WAKE=button ;; esac
             case "$REFRESH_KEYS" in *" $key "*) WAKE=refresh ;; esac
-            [ "$key" = "$HOME_KEY" ] && WAKE=home
             return 0
         fi
         [ "$left" -le 0 ] && return 0
@@ -350,7 +361,10 @@ start_keys() {
                 [ -n "$rec" ] || { sleep 1; continue; }
                 # struct input_event: time (4 halves), type, code, value (2 halves)
                 set -- $rec
-                [ "$5" = 1 ] && [ "$7" = 1 ] && echo "$(now_s) $6" >> "$EPP_STATE/keys"
+                [ "$5" = 1 ] && [ "$7" = 1 ] || continue
+                # Home, the moment it's pressed: not when the loop next looks.
+                [ "$6" = "$HOME_KEY" ] && { home_now & exit 0; }
+                echo "$(now_s) $6" >> "$EPP_STATE/keys"
             done
         ) &
         echo $! >> "$EPP_STATE/keys.pids"
@@ -377,7 +391,6 @@ take_key() {
     state_put key_at "$at"
     [ -n "$before" ] && [ $(( at - before )) -le 1 ] && return 0
     case "$NEXT_KEYS$BACK_KEYS$REFRESH_KEYS" in *" $code "*) echo "$code"; return 0 ;; esac
-    [ "$code" = "$HOME_KEY" ] && echo "$code"
     return 0
 }
 
@@ -403,12 +416,13 @@ note() {
     done < "$EPP_STATE/note"
 }
 
-# A whole screen of words, for when there's no page to keep (not set up, not paired).
+# A whole screen of words, for when there's no page to keep (not set up, not
+# paired), ending with how to get the Kindle back.
 card() {
     log "card: $*"
     screen_clear
     row=6
-    printf '%s\n' "$@" | awk '{
+    printf '%s\n' "$@" "" "$WAY_OUT" | awk '{
         if ($0 == "") { print ""; next }
         n = split($0, w, " "); line = ""
         for (i = 1; i <= n; i++) {
@@ -575,7 +589,7 @@ wake_once() {
             display && ok=0
         fi
     else
-        FAILED="No Wi-Fi. Join your network in the Kindle's settings: press Home, then Menu, Settings, Wi-Fi Networks."
+        FAILED="No Wi-Fi. To join your network, slide the power switch, press Home, then Menu, Settings, Wi-Fi Networks."
     fi
     [ "$(state_get stay)" = true ] || wifi_down
     if [ "$ok" -eq 0 ]; then
@@ -614,7 +628,6 @@ run() {
         [ "$(state_get stay)" = true ] && awake=$until        # always on: never suspends
         sleep_until "$until" "$awake"
         case "$WAKE" in
-            home) hand_back; return 0 ;;
             button) SOURCE=button ;;
             back) SOURCE=back ;;                   # ours: the add-on goes to the previous page
             refresh) SOURCE=refresh ;;             # ours: the page on screen, fetched now

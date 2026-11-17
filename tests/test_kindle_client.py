@@ -228,6 +228,7 @@ class TestWhenThingsGoWrong(KindleClientBase):
         words = self.kindle.screen_text(self.kindle.took_calls())
         self.assertIn("add this screen as a device", words)
         self.assertIn("Trying again in 30 minutes.", words)
+        self.assertIn("slide the power switch, then press Home", words, "every card says how to get the Kindle")
         self.assertEqual(self.kindle.get("key"), "")
 
     async def test_home_assistant_unreachable_keeps_the_page_and_says_so(self):
@@ -356,8 +357,25 @@ class TestKeysAndSleep(unittest.TestCase):
     def test_the_5_way_middle_refreshes(self):
         self.assertEqual(self.wake_after([(0, 194)]), "WAKE=refresh")
 
-    def test_home_gives_the_kindle_back(self):
-        self.assertEqual(self.wake_after([(0, 102)]), "WAKE=home")
+    def test_home_gives_the_kindle_back_at_once(self):
+        """Home is handled by the key reader the moment it's read, whatever the loop is doing:
+        the loop is stopped and the Kindle handed back."""
+        ev = lambda t, c, v: struct.pack("<IIHHi", 1794859586, 706672, t, c, v)
+        dev = self.kindle.sys / "dev/input/event0"
+        dev.parent.mkdir(parents=True, exist_ok=True)
+        dev.write_bytes(ev(4, 4, 3) + ev(1, 102, 1) + ev(0, 0, 0))
+        busy = subprocess.Popen(["sleep", "30"])                # the loop, waiting for Wi-Fi say
+        try:
+            (self.kindle.state / "run.pid").write_text(str(busy.pid))
+            self.kindle.shell("start_keys; sleep 2")
+            self.assertIsNotNone(busy.poll(), "the loop was stopped")
+        finally:
+            busy.kill()
+        calls = self.kindle.took_calls()
+        self.assertIn("framework start", calls)
+        self.assertIn("lipc-wait-event com.lab126.powerd goingToScreenSaver", calls)
+        self.assertTrue((self.kindle.state / "handed_back").exists())
+        self.assertNotIn("102", self.kindle.get("keys"), "the loop never sees it")
 
     def test_other_keys_and_a_bounce_are_ignored(self):
         for code in (139, 158, 29, 103, 108):           # Menu, Back, Keyboard, 5-way up and down
